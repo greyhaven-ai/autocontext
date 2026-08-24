@@ -1,5 +1,5 @@
 {
-  "protocol_version": 1,
+  "protocol_version": 2,
   "server_messages": {
     "$defs": {
       "AckMsg": {
@@ -566,7 +566,7 @@
             "type": "string"
           },
           "protocol_version": {
-            "default": 1,
+            "default": 2,
             "title": "Protocol Version",
             "type": "integer"
           },

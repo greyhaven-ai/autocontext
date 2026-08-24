@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from prime_sandboxes import CommandResponse, CreateSandboxRequest
 
 from autocontext.config.settings import AppSettings
 from autocontext.context_bundles.runtime_evaluator import materialize_runtime_fixture
@@ -25,6 +26,7 @@ from autocontext.execution.remote_execution import (
     remote_request_sha256,
 )
 from autocontext.execution.runtime_factory import prime_default_requirements, prime_resource_capabilities
+from autocontext.integrations.primeintellect.accelerators import create_kwargs
 from autocontext.integrations.primeintellect.client import (
     PrimeIntellectClient,
     UnsupportedRemoteCapabilityError,
@@ -51,18 +53,12 @@ class _AcceleratorSandbox:
         self.gpu_count = count
 
 
-class _AcceleratorResponse:
-    stdout = "{}"
-    stderr = ""
-    exit_code = 0
-    accelerator_seconds = 3.25
-    accelerator_peak_memory_mb = 24_576.0
-
-
 class _AcceleratorAsyncClient:
     created_requests: list[Any] = []
     command_calls = 0
+    get_calls = 0
     deleted_ids: list[str] = []
+    initial_sandbox = _AcceleratorSandbox()
     sandbox = _AcceleratorSandbox()
 
     def __init__(self, api_key: str) -> None:
@@ -76,15 +72,20 @@ class _AcceleratorAsyncClient:
 
     async def create(self, request: Any) -> _AcceleratorSandbox:
         self.__class__.created_requests.append(request)
-        return self.__class__.sandbox
+        return self.__class__.initial_sandbox
 
     async def wait_for_creation(self, sandbox_id: str, max_attempts: int) -> None:
         _ = (sandbox_id, max_attempts)
 
-    async def execute_command(self, sandbox_id: str, command: str, timeout: int) -> _AcceleratorResponse:
+    async def get(self, sandbox_id: str) -> _AcceleratorSandbox:
+        _ = sandbox_id
+        self.__class__.get_calls += 1
+        return self.__class__.sandbox
+
+    async def execute_command(self, sandbox_id: str, command: str, timeout: int) -> CommandResponse:
         _ = (sandbox_id, command, timeout)
         self.__class__.command_calls += 1
-        return _AcceleratorResponse()
+        return CommandResponse(stdout="{}", stderr="", exit_code=0)
 
     async def delete(self, sandbox_id: str) -> dict[str, str]:
         self.__class__.deleted_ids.append(sandbox_id)
@@ -92,23 +93,10 @@ class _AcceleratorAsyncClient:
 
 
 class _FailingCommandAcceleratorClient(_AcceleratorAsyncClient):
-    async def execute_command(self, sandbox_id: str, command: str, timeout: int) -> _AcceleratorResponse:
+    async def execute_command(self, sandbox_id: str, command: str, timeout: int) -> CommandResponse:
         _ = (sandbox_id, command, timeout)
         self.__class__.command_calls += 1
         raise RuntimeError("accelerator command unavailable")
-
-
-class _MissingTelemetryResponse:
-    stdout = "{}"
-    stderr = ""
-    exit_code = 0
-
-
-class _MissingTelemetryAcceleratorClient(_AcceleratorAsyncClient):
-    async def execute_command(self, sandbox_id: str, command: str, timeout: int) -> _MissingTelemetryResponse:
-        _ = (sandbox_id, command, timeout)
-        self.__class__.command_calls += 1
-        return _MissingTelemetryResponse()
 
 
 def _capabilities(*, kinds: dict[str, int] | None = None) -> RemoteProviderCapabilities:
@@ -116,7 +104,7 @@ def _capabilities(*, kinds: dict[str, int] | None = None) -> RemoteProviderCapab
         images=frozenset({PINNED_PYTHON_RUNTIME_IMAGE}),
         regions=frozenset({"us-central-1"}),
         accelerator_limits=kinds or {"H100": 2},
-        telemetry=frozenset({"hardware_identity", "accelerator_usage", "accelerator_peak_memory"}),
+        telemetry=frozenset({"hardware_identity"}),
     )
 
 
@@ -132,14 +120,16 @@ def _request(*, kind: str = "H100", count: int = 2, region: str = "us-central-1"
             accelerator=RemoteAcceleratorRequest(kind, count=count),
         ),
         region=region,
-        required_telemetry=frozenset({"hardware_identity", "accelerator_usage", "accelerator_peak_memory"}),
+        required_telemetry=frozenset({"hardware_identity"}),
     )
 
 
 def _reset_fake_client(client: type[_AcceleratorAsyncClient] = _AcceleratorAsyncClient) -> None:
     client.created_requests.clear()
     client.command_calls = 0
+    client.get_calls = 0
     client.deleted_ids.clear()
+    client.initial_sandbox = _AcceleratorSandbox()
     client.sandbox = _AcceleratorSandbox()
 
 
@@ -170,6 +160,7 @@ def test_accelerator_request_reaches_prime_unchanged_and_records_resolved_proven
     assert created.disk_size_gb == 40
     assert created.gpu_type == "H100"
     assert created.gpu_count == 2
+    assert created.vm is True
     assert created.region == "us-central-1"
     assert created.idempotency_key == remote_request_sha256(request)
     assert result.provenance.request_sha256 == remote_request_sha256(request)
@@ -180,11 +171,56 @@ def test_accelerator_request_reaches_prime_unchanged_and_records_resolved_proven
     assert result.provenance.resolved.accelerator_kind == "H100"
     assert result.provenance.resolved.accelerator_count == 2
     assert result.provenance.resolved.runtime.startswith("prime-sandboxes/")
-    assert result.usage.accelerator_seconds == pytest.approx(3.25)
-    assert result.usage.accelerator_peak_memory_mb == pytest.approx(24_576.0)
+    assert result.usage.accelerator_seconds is None
+    assert result.usage.accelerator_peak_memory_mb is None
     assert ledger == [result.to_ledger_entry()]
     assert ledger[0].provenance == result.provenance
     assert ledger[0].usage == result.usage
+
+
+def test_accelerator_kwargs_satisfy_the_real_prime_sdk_request_contract() -> None:
+    request = _request()
+
+    sdk_request = CreateSandboxRequest(
+        **create_kwargs(
+            request,
+            timeout_minutes=30,
+            network_access=True,
+        )
+    )
+
+    assert sdk_request.gpu_type == "H100"
+    assert sdk_request.gpu_count == 2
+    assert sdk_request.vm is True
+    assert sdk_request.region == "us-central-1"
+    assert sdk_request.idempotency_key == remote_request_sha256(request)
+    assert {"gpu_type", "gpu_count", "vm", "region", "idempotency_key"} <= set(CreateSandboxRequest.model_fields)
+    assert set(CommandResponse.model_fields) == {"stdout", "stderr", "exit_code"}
+
+
+def test_incompatible_prime_sdk_model_fails_before_provider_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _LegacyCreateSandboxRequest:
+        model_fields = {"gpu_count": object()}
+
+    _reset_fake_client()
+    monkeypatch.setattr(
+        "autocontext.integrations.primeintellect.client.AsyncSandboxClient",
+        _AcceleratorAsyncClient,
+    )
+    monkeypatch.setattr(
+        "autocontext.integrations.primeintellect.client.CreateSandboxRequest",
+        _LegacyCreateSandboxRequest,
+    )
+    client = PrimeIntellectClient(
+        api_key="test-key",
+        docker_image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resource_capabilities=_capabilities(),
+    )
+
+    with pytest.raises(UnsupportedRemoteCapabilityError, match="missing accelerator placement fields"):
+        client.execute_request(_request(), max_retries=3)
+
+    assert _AcceleratorAsyncClient.created_requests == []
 
 
 @pytest.mark.parametrize(
@@ -239,6 +275,9 @@ def test_provider_drift_is_terminal_before_command_and_never_retried(
     message: str,
 ) -> None:
     _reset_fake_client()
+    # The create acknowledgement matches the request; only the final sandbox
+    # fetched after provisioning exposes the drift.
+    _AcceleratorAsyncClient.initial_sandbox = _AcceleratorSandbox()
     _AcceleratorAsyncClient.sandbox = sandbox
     monkeypatch.setattr(
         "autocontext.integrations.primeintellect.client.AsyncSandboxClient",
@@ -255,28 +294,93 @@ def test_provider_drift_is_terminal_before_command_and_never_retried(
     assert result.status == "provider_error"
     assert message in result.error
     assert len(_AcceleratorAsyncClient.created_requests) == 1
+    assert _AcceleratorAsyncClient.get_calls == 1
     assert _AcceleratorAsyncClient.command_calls == 0
     assert _AcceleratorAsyncClient.deleted_ids == ["sbx-gpu-1"]
+    assert result.retryable is False
 
 
-def test_missing_advertised_usage_telemetry_is_provider_drift(monkeypatch: pytest.MonkeyPatch) -> None:
-    _reset_fake_client(_MissingTelemetryAcceleratorClient)
+def test_missing_cpu_hardware_identity_is_terminal_before_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_fake_client()
+    _AcceleratorAsyncClient.initial_sandbox = _AcceleratorSandbox(region="", kind="", count=0)
+    _AcceleratorAsyncClient.sandbox = _AcceleratorSandbox(image="", region="", kind="", count=0)
     monkeypatch.setattr(
         "autocontext.integrations.primeintellect.client.AsyncSandboxClient",
-        _MissingTelemetryAcceleratorClient,
+        _AcceleratorAsyncClient,
     )
     client = PrimeIntellectClient(
         api_key="test-key",
         docker_image=PINNED_PYTHON_RUNTIME_IMAGE,
         resource_capabilities=_capabilities(),
     )
+    request = RemoteExecutionRequest(
+        task_id="cpu-hardware-identity",
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
+        command="python benchmark.py",
+        required_telemetry=frozenset({"hardware_identity"}),
+    )
 
-    result = client.execute_request(_request(), max_retries=3, backoff_seconds=0)
+    result = client.execute_request(request, max_retries=3, backoff_seconds=0)
 
     assert result.status == "provider_error"
-    assert "provider omitted required telemetry" in result.error
-    assert len(_MissingTelemetryAcceleratorClient.created_requests) == 1
-    assert _MissingTelemetryAcceleratorClient.command_calls == 1
+    assert "provider omitted required telemetry: hardware_identity" in result.error
+    assert len(_AcceleratorAsyncClient.created_requests) == 1
+    assert _AcceleratorAsyncClient.get_calls == 1
+    assert _AcceleratorAsyncClient.command_calls == 0
+    assert _AcceleratorAsyncClient.deleted_ids == ["sbx-gpu-1"]
+
+
+def test_unsupported_sdk_telemetry_fails_before_provider_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_fake_client()
+    monkeypatch.setattr(
+        "autocontext.integrations.primeintellect.client.AsyncSandboxClient",
+        _AcceleratorAsyncClient,
+    )
+    advertised = replace(
+        _capabilities(),
+        telemetry=frozenset({"hardware_identity", "accelerator_usage"}),
+    )
+    client = PrimeIntellectClient(
+        api_key="test-key",
+        docker_image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resource_capabilities=advertised,
+    )
+    request = replace(
+        _request(),
+        required_telemetry=frozenset({"hardware_identity", "accelerator_usage"}),
+    )
+
+    with pytest.raises(UnsupportedRemoteCapabilityError, match="SDK does not expose.*accelerator_usage"):
+        client.execute_request(request, max_retries=3, backoff_seconds=0)
+
+    assert _AcceleratorAsyncClient.created_requests == []
+    assert _AcceleratorAsyncClient.command_calls == 0
+
+
+def test_accelerator_memory_selection_fails_before_provider_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_fake_client()
+    monkeypatch.setattr(
+        "autocontext.integrations.primeintellect.client.AsyncSandboxClient",
+        _AcceleratorAsyncClient,
+    )
+    request = replace(
+        _request(),
+        resources=replace(
+            _request().resources,
+            accelerator=RemoteAcceleratorRequest("H100", count=2, memory_gb=80),
+        ),
+    )
+    client = PrimeIntellectClient(
+        api_key="test-key",
+        docker_image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resource_capabilities=replace(_capabilities(), accelerator_memory_selection=True),
+    )
+
+    with pytest.raises(UnsupportedRemoteCapabilityError, match="selecting accelerator memory"):
+        client.execute_request(request, max_retries=0)
+
+    assert _AcceleratorAsyncClient.created_requests == []
+    assert _AcceleratorAsyncClient.command_calls == 0
 
 
 def test_accelerator_failure_cannot_use_enabled_cpu_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -317,7 +421,7 @@ def _settings(**updates: Any) -> AppSettings:
         "primeintellect_max_accelerator_count": 2,
         "primeintellect_supported_regions": "us-central-1",
         "primeintellect_supported_images": PINNED_PYTHON_RUNTIME_IMAGE,
-        "primeintellect_available_telemetry": ("hardware_identity,accelerator_usage,accelerator_peak_memory"),
+        "primeintellect_available_telemetry": "hardware_identity",
     }
     values.update(updates)
     return AppSettings(**values)
@@ -328,7 +432,7 @@ def test_settings_build_explicit_default_request_and_provider_capabilities() -> 
         primeintellect_accelerator_kind="H100",
         primeintellect_accelerator_count=2,
         primeintellect_region="us-central-1",
-        primeintellect_required_telemetry="hardware_identity,accelerator_usage",
+        primeintellect_required_telemetry="hardware_identity",
     )
 
     requirements = prime_default_requirements(settings)
@@ -336,7 +440,7 @@ def test_settings_build_explicit_default_request_and_provider_capabilities() -> 
 
     assert requirements.resources.accelerator == RemoteAcceleratorRequest("H100", count=2)
     assert requirements.region == "us-central-1"
-    assert requirements.required_telemetry == frozenset({"hardware_identity", "accelerator_usage"})
+    assert requirements.required_telemetry == frozenset({"hardware_identity"})
     assert capabilities.mismatch_reason(requirements) == ""
 
 
@@ -345,7 +449,7 @@ def test_server_environment_protocol_advertises_accelerator_requirements() -> No
         primeintellect_accelerator_kind="H100",
         primeintellect_accelerator_count=2,
         primeintellect_region="us-central-1",
-        primeintellect_required_telemetry="hardware_identity,accelerator_usage",
+        primeintellect_required_telemetry="hardware_identity",
     )
     manager = RunManager(MagicMock(), MagicMock(), settings)
 
@@ -357,7 +461,7 @@ def test_server_environment_protocol_advertises_accelerator_requirements() -> No
     assert prime.resources.accelerator.kind == "H100"
     assert prime.resources.accelerator.count == 2
     assert prime.resources.region == "us-central-1"
-    assert prime.resources.required_telemetry == ["accelerator_usage", "hardware_identity"]
+    assert prime.resources.required_telemetry == ["hardware_identity"]
 
 
 @pytest.mark.parametrize(
@@ -379,6 +483,7 @@ def test_server_environment_protocol_advertises_accelerator_requirements() -> No
             "primeintellect_accelerator_count": 1,
             "primeintellect_required_telemetry": "accelerator_usage",
         },
+        {"primeintellect_available_telemetry": "hardware_identity,accelerator_usage"},
     ],
 )
 def test_settings_reject_incomplete_or_unsupported_accelerator_configuration(updates: dict[str, Any]) -> None:

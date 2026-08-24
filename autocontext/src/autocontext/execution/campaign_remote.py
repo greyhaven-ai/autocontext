@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from typing import Any, cast
 
 from pydantic import Field, model_validator
 
+from autocontext.config.settings import AppSettings
 from autocontext.context_bundles.models import stable_digest
 from autocontext.execution.campaign_scheduler_adapters import campaign_result_from_remote
 from autocontext.execution.campaign_scheduler_models import (
@@ -23,6 +25,9 @@ from autocontext.execution.remote_execution import (
     RemoteTelemetryKind,
 )
 from autocontext.util.models import StrictModel
+
+_PRIME_CREATION_POLL_BOUND_SECONDS = 2.0
+_PRIME_CLEANUP_BOUND_SECONDS = 30.0
 
 
 class CampaignPlanAccelerator(StrictModel):
@@ -52,6 +57,43 @@ class CampaignPlanRemoteRequirements(StrictModel):
         if self.accelerator is not None and "hardware_identity" not in self.required_telemetry:
             raise ValueError("accelerator campaigns must require hardware_identity telemetry")
         return self
+
+
+@dataclass(frozen=True, slots=True)
+class CampaignExecutionEnvelope:
+    """Conservative time bounds for one scheduler attempt."""
+
+    provider_seconds: float
+    wall_seconds: float
+
+
+def campaign_execution_envelope(
+    settings: AppSettings | None,
+    command_timeout_seconds: float,
+    *,
+    remote_execution: bool,
+) -> CampaignExecutionEnvelope:
+    """Include Prime's configured provisioning retries in campaign admission.
+
+    ``prime-sandboxes`` 0.2.27 waits at most two seconds between creation
+    polls, while the adapter bounds every cleanup attempt at thirty seconds.
+    Failed provisioning attempts are cleaned before the configured linear
+    backoff, so backoff contributes to wall time but not paid accelerator time.
+    """
+
+    if settings is None or settings.executor_mode != "primeintellect" or not remote_execution:
+        return CampaignExecutionEnvelope(command_timeout_seconds, command_timeout_seconds)
+    attempts = settings.primeintellect_max_retries + 1
+    creation_wait = settings.primeintellect_wait_attempts * _PRIME_CREATION_POLL_BOUND_SECONDS
+    command_seconds = max(1, math.ceil(command_timeout_seconds))
+    provider_seconds = command_seconds + attempts * (creation_wait + _PRIME_CLEANUP_BOUND_SECONDS)
+    retry_backoff = settings.primeintellect_backoff_seconds * (
+        settings.primeintellect_max_retries * (settings.primeintellect_max_retries + 1) / 2
+    )
+    wall_seconds = provider_seconds + retry_backoff
+    if not math.isfinite(provider_seconds) or not math.isfinite(wall_seconds):
+        raise ValueError("Prime Intellect campaign execution envelope must be finite")
+    return CampaignExecutionEnvelope(provider_seconds, wall_seconds)
 
 
 def remote_requirements_payload(
@@ -124,6 +166,7 @@ def remote_result_dict(result: RemoteExecutionResult) -> dict[str, Any]:
         "session_id": result.session_id,
         "provenance": asdict(result.provenance),
         "events": [asdict(event) for event in result.events],
+        "retryable": result.retryable,
     }
 
 
@@ -134,13 +177,16 @@ def campaign_result_with_reservation(
     output_ref: str,
 ) -> CampaignJobResult:
     base = campaign_result_from_remote(remote)
-    compute_units = (
-        remote.usage.accelerator_seconds
-        if remote.usage.accelerator_seconds is not None
-        else remote.usage.cpu_seconds
-        if remote.usage.cpu_seconds is not None
-        else reservation.compute_units
-    )
+    accelerator_requested = remote.provenance.requested_accelerator_count > 0
+    if remote.usage.accelerator_seconds is not None:
+        compute_units = remote.usage.accelerator_seconds
+    elif accelerator_requested:
+        compute_units = max(
+            reservation.compute_units,
+            remote.usage.wall_seconds * remote.provenance.requested_accelerator_count,
+        )
+    else:
+        compute_units = remote.usage.cpu_seconds if remote.usage.cpu_seconds is not None else reservation.compute_units
     return CampaignJobResult(
         outcome=base.outcome,
         consumed=SchedulerBudget(
@@ -154,6 +200,7 @@ def campaign_result_with_reservation(
         detail=base.detail,
         cleanup_succeeded=base.cleanup_succeeded,
         metadata=base.metadata,
+        retryable=base.retryable,
     )
 
 
@@ -194,8 +241,10 @@ def remote_requirements_from_payload(
 
 
 __all__ = [
+    "CampaignExecutionEnvelope",
     "CampaignPlanAccelerator",
     "CampaignPlanRemoteRequirements",
+    "campaign_execution_envelope",
     "campaign_result_with_reservation",
     "job_capabilities",
     "job_resources",

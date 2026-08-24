@@ -44,6 +44,14 @@ failure is a candidate `task_error`. When task/artifact processing and resource 
 `cleanup_error` takes infrastructure precedence while the candidate failure is
 retained in the error detail.
 
+Remote results carry an explicit, fail-closed `retryable` disposition. The
+Prime adapter sets it only when provisioning failed before command dispatch
+and deletion of the identified sandbox was verified. Ambiguous creation,
+capability drift, cleanup failure, timeout, an unknown post-dispatch outcome,
+and malformed completed output are terminal. Campaign adapters preserve this
+disposition so a scheduler retry cannot allocate a second paid sandbox under a
+new task identity.
+
 ## Prime Intellect adapter
 
 The Prime Intellect integration implements this generic request contract and
@@ -66,6 +74,7 @@ kind, region, and digest available to your account):
 ```bash
 export AUTOCONTEXT_EXECUTOR_MODE=primeintellect
 export AUTOCONTEXT_PRIMEINTELLECT_API_KEY=...
+export AUTOCONTEXT_PRIMEINTELLECT_DOCKER_IMAGE="python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98cb49db5c7103c90539c56bb30e"
 export AUTOCONTEXT_PRIMEINTELLECT_ACCELERATOR_KIND=H100
 export AUTOCONTEXT_PRIMEINTELLECT_ACCELERATOR_COUNT=1
 export AUTOCONTEXT_PRIMEINTELLECT_REGION=us-central-1
@@ -84,8 +93,14 @@ requirement from the process environment. Supported kinds and
 `AUTOCONTEXT_PRIMEINTELLECT_MAX_ACCELERATOR_COUNT` must be configured together.
 Configured regions and images are exact allowlists. Telemetry names are
 `hardware_identity`, `accelerator_usage`, and `accelerator_peak_memory`;
-requesting usage telemetry that the provider integration cannot produce fails
-closed.
+the latter two are reserved contract fields that the installed Prime SDK does
+not currently expose. The adapter can therefore advertise and require only
+`hardware_identity`; attempting to configure either usage metric fails before
+paid dispatch.
+
+Every accelerator request, including one constructed directly through
+`RemoteExecutionRequest`, must use an immutable `@sha256` image reference.
+CPU-only requests retain the existing generic image contract.
 
 Every provider create call receives the exact validated image, CPU/memory/disk
 request, accelerator kind/count, region, and a SHA-256 idempotency key derived
@@ -98,10 +113,10 @@ eligible for the historical local fallback, even when
 
 Typed result and ledger provenance include the request digest, requested
 placement, required telemetry, resolved image/region/hardware, and Prime SDK
-runtime identity. Provider-reported accelerator seconds and peak memory are
-copied into `RemoteResourceUsage` when present. Missing required telemetry is
-provider drift; optional unavailable metrics remain `null` rather than being
-invented from candidate output.
+runtime identity. The current SDK command response has no verified accelerator
+seconds or peak-memory source, so those `RemoteResourceUsage` fields remain
+`null` and cannot be declared available. They must not be inferred from
+candidate output.
 
 CI retains the ordinary opt-in live Prime CPU smoke. A separate accelerator
 smoke runs only when repository variables

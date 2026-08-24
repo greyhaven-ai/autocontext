@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import threading
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from autocontext.execution.remote_execution import RemoteExecutionRequirements, RemoteExecutionResult
 from autocontext.execution.scenario_remote_task import build_scenario_remote_request
+from autocontext.integrations.primeintellect import _request as _request_helpers
 from autocontext.scenarios.base import (
     ExecutionLimits,
     Observation,
@@ -204,15 +204,7 @@ class PrimeIntellectExecutor:
                 fallback = self.client.fallback_local_response(scenario.name, seed)
                 return Result.model_validate(fallback["result"]), ReplayEnvelope.model_validate(fallback["replay"])
             raise RuntimeError(f"primeintellect {remote.status}: {remote.error}")
-        execution: dict[str, Any] = {}
-        for line in reversed(remote.stdout.splitlines()):
-            try:
-                parsed = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(parsed, dict):
-                execution = parsed
-                break
+        execution = _request_helpers.last_json_object(remote.stdout)
         result = Result.model_validate(execution.get("result"))
         replay = ReplayEnvelope.model_validate(execution.get("replay"))
         if fixture_digest is not None and execution.get("fixture_digest") != fixture_digest:

@@ -36,6 +36,12 @@ def as_float(value: object) -> float:
     return float(value)
 
 
+def as_bool(value: object) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError("expected a boolean")
+    return value
+
+
 def budget_from(value: object) -> SchedulerBudget:
     return SchedulerBudget(**mapping(value))
 
@@ -103,6 +109,7 @@ def job_from(value: object) -> CampaignJobRequest:
         prefer_warm_reuse=bool(data.get("prefer_warm_reuse", False)),
         evidence_grant_ids=tuple(str(item) for item in data.get("evidence_grant_ids", [])),
         payload=mapping(data.get("payload", {})),
+        retry_expired_lease=as_bool(data.get("retry_expired_lease", True)),
     )
 
 
@@ -132,8 +139,9 @@ def result_from(value: object) -> CampaignJobResult:
         consumed=budget_from(data["consumed"]),
         output_ref=str(data.get("output_ref", "")),
         detail=str(data.get("detail", "")),
-        cleanup_succeeded=bool(data.get("cleanup_succeeded", True)),
+        cleanup_succeeded=as_bool(data.get("cleanup_succeeded", True)),
         metadata=mapping(data.get("metadata", {})),
+        retryable=as_bool(data.get("retryable", True)),
     )
 
 

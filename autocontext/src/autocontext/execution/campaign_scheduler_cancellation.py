@@ -53,6 +53,7 @@ def provisional_cancellation_result(
         detail=reason,
         cleanup_succeeded=False,
         metadata={"usage_estimated": True, "cancellation_provisional": True},
+        retryable=False,
     )
 
 
@@ -76,6 +77,7 @@ def provisional_expired_lease_result(
         detail="lease_expired",
         cleanup_succeeded=False,
         metadata={"usage_estimated": True},
+        retryable=request.retry_expired_lease,
     )
 
 

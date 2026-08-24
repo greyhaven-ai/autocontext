@@ -24,6 +24,7 @@ from autocontext.execution.campaign_scheduler import (
     StaleCampaignSchedulerError,
     WorkerDescriptor,
 )
+from autocontext.execution.campaign_scheduler_codecs import job_from, job_to_dict, result_from
 from autocontext.execution.remote_execution import (
     RemoteCleanupOutcome,
     RemoteExecutionRequest,
@@ -211,6 +212,26 @@ def test_run_until_idle_waits_for_replayed_orphan_lease_then_retries(tmp_path: P
     assert restarted.job_status(orphan.job.job_id) == "succeeded"
     assert restarted.report().running == 0
     assert restarted.report().retries == 1
+
+
+def test_remote_expired_lease_is_terminal_without_duplicate_dispatch(tmp_path: Path) -> None:
+    now = [100.0]
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    scheduler = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    scheduler.register_worker(_worker("remote"))
+    scheduler.enqueue(_job(1, max_attempts=2, retry_expired_lease=False))
+    original = scheduler.claim("remote")[0]
+    now[0] = 111.0
+
+    assert scheduler.reconcile() == ("job-1",)
+    assert scheduler.job_status("job-1") == "infrastructure_failed"
+    result = scheduler.job_result("job-1")
+    assert result is not None
+    assert result.retryable is False
+    assert scheduler.claim("remote") == ()
+    assert scheduler.report().retries == 0
+    assert [event.event_type for event in store.read()].count("job_leased") == 1
+    assert original.lease.attempt == 1
 
 
 def test_scheduler_respects_capabilities_resources_budgets_and_comparable_lanes(tmp_path: Path) -> None:
@@ -566,7 +587,8 @@ def test_retried_infrastructure_attempt_charges_actual_usage(tmp_path: Path) -> 
     failed = CampaignJobResult(
         outcome="infrastructure_failure",
         consumed=SchedulerBudget(tokens=7, wall_seconds=2, compute_units=0.25, jobs=1),
-        detail="provider timeout",
+        detail="cleaned pre-dispatch provisioning failure",
+        retryable=True,
     )
     scheduler.complete(first.lease.lease_id, failed)
 
@@ -597,6 +619,61 @@ def test_retried_infrastructure_attempt_charges_actual_usage(tmp_path: Path) -> 
         compute_units=0.75,
         jobs=2,
     )
+
+
+def test_terminal_remote_failure_is_not_requeued_under_a_new_task_id(tmp_path: Path) -> None:
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    scheduler = CampaignScheduler(store)
+    paid_attempt_task_ids: list[str] = []
+
+    class TerminalRemoteAdapter:
+        def execute_request(self, request: RemoteExecutionRequest) -> RemoteExecutionResult:
+            paid_attempt_task_ids.append(request.task_id)
+            return RemoteExecutionResult(
+                task_id=request.task_id,
+                provider="primeintellect",
+                status="provider_error",
+                cleanup=RemoteCleanupOutcome(attempted=True, succeeded=True, resource_id="sbx-paid-1"),
+                error="provider capability drift",
+            )
+
+    scheduler.register_worker(
+        _worker("remote"),
+        RemoteCampaignWorker(
+            TerminalRemoteAdapter(),
+            lambda assignment: RemoteExecutionRequest(
+                task_id=f"{assignment.job.job_id}-{assignment.lease.lease_id}",
+                image="python:3.13",
+                command="true",
+            ),
+        ),
+    )
+    scheduler.enqueue(_job(1, max_attempts=2))
+
+    assert scheduler.run_until_idle() == 1
+    assert len(paid_attempt_task_ids) == 1
+    assert scheduler.job_status("job-1") == "infrastructure_failed"
+    assert not any(event.event_type == "job_requeued" for event in store.read())
+
+
+def test_retryability_is_strictly_typed_in_replay_codec() -> None:
+    with pytest.raises(TypeError, match="boolean"):
+        result_from(
+            {
+                "outcome": "infrastructure_failure",
+                "consumed": {},
+                "retryable": "false",
+            }
+        )
+
+
+def test_expired_lease_retry_policy_is_strict_and_defaults_true_for_legacy_logs() -> None:
+    serialized = job_to_dict(_job(1))
+    serialized.pop("retry_expired_lease")
+    assert job_from(serialized).retry_expired_lease is True
+    serialized["retry_expired_lease"] = "false"
+    with pytest.raises(TypeError, match="boolean"):
+        job_from(serialized)
 
 
 def test_live_scheduler_runs_integrity_and_final_audit_checkpoints(tmp_path: Path) -> None:

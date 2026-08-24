@@ -67,7 +67,7 @@ class FakeTransport implements TuiTransport {
     this.connection({ status: "connected", attempt: 1 });
     this.message({
       type: "hello",
-      protocol_version: 1,
+      protocol_version: 2,
       transcript_protocol_version: 1,
       capabilities: [],
     });

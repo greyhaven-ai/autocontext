@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import time
 
 import pytest
@@ -9,8 +10,12 @@ from autocontext.execution.campaign_scheduler_adapters import campaign_result_fr
 from autocontext.execution.remote_execution import (
     RemoteAcceleratorRequest,
     RemoteCleanupOutcome,
+    RemoteExecutionProvenance,
     RemoteExecutionRequest,
+    RemoteExecutionRequirements,
+    RemoteExecutionResult,
     RemoteInputArtifact,
+    RemoteInputProvenance,
     RemoteResourceRequest,
     RemoteResourceUsage,
     RemoteSecretGrant,
@@ -18,6 +23,7 @@ from autocontext.execution.remote_execution import (
     remote_request_provenance,
     requests_are_reuse_compatible,
 )
+from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
 
 
 def _request(**overrides: object) -> RemoteExecutionRequest:
@@ -33,6 +39,7 @@ def _request(**overrides: object) -> RemoteExecutionRequest:
 
 def test_remote_request_covers_resources_artifacts_network_and_scoped_secrets() -> None:
     request = _request(
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
         resources=RemoteResourceRequest(
             cpu_cores=4,
             memory_gb=16,
@@ -49,6 +56,61 @@ def test_remote_request_covers_resources_artifacts_network_and_scoped_secrets() 
     assert request.resources.accelerator and request.resources.accelerator.kind == "A100"
     assert request.secret_grants[0].grant_id == "grant-1"
     assert request.input_artifacts[0].name == "src/task.py"
+
+
+def test_accelerator_requirements_reject_mutable_images() -> None:
+    resources = RemoteResourceRequest(accelerator=RemoteAcceleratorRequest("H100"))
+
+    with pytest.raises(ValueError, match="immutable @sha256 digest"):
+        RemoteExecutionRequirements(image="gpu/runtime:latest", resources=resources)
+    with pytest.raises(ValueError, match="immutable @sha256 digest"):
+        _request(image="gpu/runtime:latest", resources=resources)
+
+
+def test_remote_request_preserves_legacy_positional_constructor_order() -> None:
+    resources = RemoteResourceRequest(cpu_cores=2, memory_gb=4, disk_gb=8)
+    request = RemoteExecutionRequest(
+        "task-1",
+        "python:3.13",
+        "python task.py",
+        resources,
+        120.0,
+        "allow",
+        "deny",
+        (),
+        (),
+        ("report.json",),
+        "ephemeral_per_eval",
+        {"MODE": "test"},
+        None,
+        2,
+        {"seed": "7"},
+    )
+
+    assert request.timeout_seconds == 120.0
+    assert request.network_policy == "allow"
+    assert request.max_reuse_tasks == 2
+    assert request.region is None
+    assert request.required_telemetry == frozenset()
+
+
+def test_remote_provenance_preserves_legacy_positional_constructor_order() -> None:
+    inputs = (RemoteInputProvenance("input.json", "a" * 64, 2, "application/json"),)
+    provenance = RemoteExecutionProvenance(
+        "python:3.13",
+        "b" * 64,
+        "c" * 64,
+        inputs,
+        7,
+        "d" * 64,
+        "e" * 64,
+        "f" * 64,
+    )
+
+    assert provenance.image == "python:3.13"
+    assert provenance.inputs == inputs
+    assert provenance.fixture_observation_sha256 == "f" * 64
+    assert provenance.request_sha256 == ""
 
 
 def test_remote_request_rejects_path_escape_expired_secrets_and_implicit_warmth() -> None:
@@ -90,6 +152,12 @@ def test_remote_resources_reject_nonfinite_values() -> None:
         RemoteResourceRequest(cpu_cores=float("nan"))
     with pytest.raises(ValueError, match="accelerator memory"):
         RemoteAcceleratorRequest("A100", memory_gb=float("inf"))
+
+
+@pytest.mark.parametrize("count", [True, 1.5])
+def test_remote_accelerator_count_must_be_an_integer(count: object) -> None:
+    with pytest.raises(TypeError, match="accelerator count must be an integer"):
+        RemoteAcceleratorRequest("H100", count=count)  # type: ignore[arg-type]
 
 
 def test_prepared_fixture_provenance_is_complete_valid_and_preserved() -> None:
@@ -223,6 +291,93 @@ def test_declared_bootstrap_failure_is_typed_as_infrastructure() -> None:
     assert result.status == "artifact_error"
     assert result.to_ledger_entry().infrastructure_succeeded is False
     assert campaign_result_from_remote(result).outcome == "infrastructure_failure"
+
+
+def test_remote_retryability_requires_verified_cleanup() -> None:
+    with pytest.raises(ValueError, match="verified cleanup"):
+        RemoteExecutionResult(
+            task_id="unsafe-retry",
+            provider="fake",
+            status="provider_error",
+            cleanup=RemoteCleanupOutcome(attempted=False, succeeded=True),
+            retryable=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "payload_update",
+    [
+        {"result": {"score": 1.0, "summary": "ok", "replay": [1], "metrics": {}, "validation_errors": []}},
+        {"replay": {"scenario": "othello", "seed": 7, "narrative": "ok", "timeline": [1]}},
+    ],
+)
+def test_scenario_parser_rejects_payloads_that_exact_result_models_reject_before_ledger(
+    payload_update: dict[str, object],
+) -> None:
+    payload: dict[str, object] = {
+        "result": {"score": 1.0, "summary": "ok", "replay": [], "metrics": {}, "validation_errors": []},
+        "replay": {"scenario": "othello", "seed": 7, "narrative": "ok", "timeline": []},
+    }
+    payload.update(payload_update)
+    request = _request(
+        expected_outputs=(),
+        metadata={"task_kind": "scenario_match", "scenario": "othello", "seed": "7"},
+    )
+
+    result = parse_remote_stdout(
+        request,
+        provider="fake",
+        stdout=json.dumps(payload),
+        stderr="",
+        exit_code=0,
+        usage=RemoteResourceUsage(),
+        cleanup=RemoteCleanupOutcome(True, True, "sandbox-1"),
+        session_id="sandbox-1",
+    )
+
+    assert result.status == "artifact_error"
+    assert "typed validation" in result.error
+    assert result.to_ledger_entry().candidate_succeeded is False
+    assert result.to_ledger_entry().infrastructure_succeeded is False
+
+
+@pytest.mark.parametrize("returned_fixture_digest", [None, "d" * 64])
+def test_scenario_parser_verifies_prepared_fixture_attestation_before_ledger(
+    returned_fixture_digest: str | None,
+) -> None:
+    expected_fixture_digest = "a" * 64
+    payload: dict[str, object] = {
+        "result": {"score": 1.0, "summary": "ok", "replay": [], "metrics": {}, "validation_errors": []},
+        "replay": {"scenario": "othello", "seed": 7, "narrative": "ok", "timeline": []},
+    }
+    if returned_fixture_digest is not None:
+        payload["fixture_digest"] = returned_fixture_digest
+    request = _request(
+        expected_outputs=(),
+        metadata={
+            "task_kind": "scenario_match",
+            "scenario": "othello",
+            "seed": "7",
+            "fixture_digest": expected_fixture_digest,
+            "fixture_state_sha256": "b" * 64,
+            "fixture_observation_sha256": "c" * 64,
+        },
+    )
+
+    result = parse_remote_stdout(
+        request,
+        provider="fake",
+        stdout=json.dumps(payload),
+        stderr="",
+        exit_code=0,
+        usage=RemoteResourceUsage(),
+        cleanup=RemoteCleanupOutcome(True, True, "sandbox-1"),
+        session_id="sandbox-1",
+    )
+
+    assert result.status == "artifact_error"
+    assert "prepared fixture attestation mismatch" in result.error
+    assert result.to_ledger_entry().candidate_succeeded is False
 
 
 def test_reuse_requires_a_bounded_equivalent_matched_lane() -> None:

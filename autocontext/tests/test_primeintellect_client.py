@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -15,10 +16,12 @@ from autocontext.execution.remote_execution import (
     RemoteResourceRequest,
     RemoteSecretGrant,
 )
+from autocontext.integrations.primeintellect import _request as request_helpers
 from autocontext.integrations.primeintellect.client import (
     PrimeIntellectClient,
     UnsupportedRemoteCapabilityError,
 )
+from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
 
 
 class _FakeSandbox:
@@ -59,6 +62,9 @@ class _SuccessAsyncClient:
         _ = (sandbox_id, max_attempts)
         return None
 
+    async def get(self, sandbox_id: str) -> _FakeSandbox:
+        return _FakeSandbox(sandbox_id)
+
     async def execute_command(self, sandbox_id: str, command: str, timeout: int) -> _FakeCommandResponse:
         _ = sandbox_id
         self.__class__.latest_command = command
@@ -86,6 +92,14 @@ class _ProvisionFailureAsyncClient(_SuccessAsyncClient):
         raise RuntimeError("provisioning unavailable")
 
 
+class _ClientEnterFailureAsyncClient(_SuccessAsyncClient):
+    enter_calls = 0
+
+    async def __aenter__(self) -> _ClientEnterFailureAsyncClient:
+        self.__class__.enter_calls += 1
+        raise RuntimeError("provider client startup failed")
+
+
 class _AmbiguousCreateFailureAsyncClient(_SuccessAsyncClient):
     create_calls = 0
 
@@ -108,6 +122,23 @@ class _TaskFailureAsyncClient(_SuccessAsyncClient):
     async def execute_command(self, sandbox_id: str, command: str, timeout: int) -> _FakeCommandResponse:
         _ = (sandbox_id, command, timeout)
         return _FakeCommandResponse(stdout="", stderr="bad candidate", exit_code=3)
+
+
+class _MalformedScenarioAsyncClient(_SuccessAsyncClient):
+    async def execute_command(self, sandbox_id: str, command: str, timeout: int) -> _FakeCommandResponse:
+        _ = (sandbox_id, command, timeout)
+        stdout = (
+            '{"result":{"score":0.64,"winner":"challenger","summary":"ok","replay":[1],"metrics":{},'
+            '"validation_errors":[]},"replay":{"scenario":"grid_ctf","seed":123,"narrative":"ok","timeline":[]}}'
+        )
+        return _FakeCommandResponse(stdout=stdout)
+
+
+def test_last_json_object_ignores_trailing_event_envelopes() -> None:
+    result = {"result": {"score": 1.0}, "replay": {"seed": 7}}
+    stdout = "\n".join((json.dumps(result), json.dumps({"type": "event", "event": "finished"})))
+
+    assert request_helpers.last_json_object(stdout) == result
 
 
 class _TimeoutAsyncClient(_SuccessAsyncClient):
@@ -205,6 +236,32 @@ def test_execute_strategy_uses_sandbox_lifecycle(monkeypatch: pytest.MonkeyPatch
     assert _SuccessAsyncClient.deleted_ids[-1] == "sbx-1"
 
 
+def test_invalid_typed_scenario_result_never_emits_a_success_ledger(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "autocontext.integrations.primeintellect.client.AsyncSandboxClient",
+        _MalformedScenarioAsyncClient,
+    )
+    ledger = []
+    client = PrimeIntellectClient(api_key="test-key", ledger_sink=ledger.append)
+
+    with pytest.raises(RuntimeError, match="primeintellect artifact_error"):
+        client.execute_strategy(
+            scenario_name="grid_ctf",
+            strategy={"aggression": 0.6, "defense": 0.4, "path_bias": 0.5},
+            seed=123,
+            timeout_seconds=10.0,
+            max_memory_mb=512,
+            network_access=False,
+            max_retries=3,
+            backoff_seconds=0,
+        )
+
+    assert len(ledger) == 1
+    assert ledger[0].status == "artifact_error"
+    assert ledger[0].candidate_succeeded is False
+    assert ledger[0].infrastructure_succeeded is False
+
+
 def test_fractional_remote_timeout_is_never_rounded_below_the_declared_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -259,6 +316,29 @@ def test_prime_fallback_is_fail_closed_by_default() -> None:
     assert PrimeIntellectClient(api_key="test-key").allow_fallback is False
 
 
+def test_prime_client_preserves_pre_accelerator_positional_field_order() -> None:
+    provider_capabilities = {"snapshot": True}
+    ledger: list[object] = []
+
+    client = PrimeIntellectClient(
+        "test-key",
+        PINNED_PYTHON_RUNTIME_IMAGE,
+        1.0,
+        2.0,
+        5.0,
+        30,
+        60,
+        True,
+        False,
+        provider_capabilities,
+        ledger.append,
+    )
+
+    assert client.provider_capabilities is provider_capabilities
+    assert client.ledger_sink == ledger.append
+    assert client.default_requirements is not None
+
+
 def test_prime_client_rejects_invalid_limits_and_redacts_api_key_repr() -> None:
     client = PrimeIntellectClient(api_key="super-secret-prime-key")
 
@@ -311,6 +391,32 @@ def test_pre_command_provisioning_failures_remain_retryable(monkeypatch: pytest.
     assert result.cleanup.resource_id == "sbx-1"
     assert len(_ProvisionFailureAsyncClient.created_requests) == before + 3
     assert result.usage.wall_seconds > 0
+    assert result.retryable is True
+    assert ledger == [result.to_ledger_entry()]
+    assert ledger[0].retryable is True
+
+
+def test_untyped_provider_exception_is_terminal_with_unknown_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "autocontext.integrations.primeintellect.client.AsyncSandboxClient",
+        _ClientEnterFailureAsyncClient,
+    )
+    _ClientEnterFailureAsyncClient.enter_calls = 0
+    ledger = []
+    request = RemoteExecutionRequest(task_id="unknown-provider-phase", image="python:3.13", command="true")
+
+    result = PrimeIntellectClient(api_key="test-key", ledger_sink=ledger.append).execute_request(
+        request,
+        max_retries=3,
+        backoff_seconds=0,
+    )
+
+    assert _ClientEnterFailureAsyncClient.enter_calls == 1
+    assert result.status == "cleanup_error"
+    assert result.cleanup.attempted is False
+    assert result.cleanup.succeeded is False
+    assert result.retryable is False
+    assert result.events[0].fields["phase"] == "unknown"
     assert ledger == [result.to_ledger_entry()]
 
 
@@ -388,6 +494,7 @@ def test_ambiguous_create_failure_is_not_retried(monkeypatch: pytest.MonkeyPatch
     assert result.cleanup.succeeded is False
     assert "no provider resource id" in result.error
     assert _AmbiguousCreateFailureAsyncClient.create_calls == 1
+    assert result.retryable is False
     assert ledger == [result.to_ledger_entry()]
 
 
@@ -559,6 +666,7 @@ def test_cleanup_call_is_bounded_and_reported_as_terminal(
     assert result.cleanup.succeeded is False
     assert result.cleanup.resource_id == "sbx-1"
     assert "cleanup timed out" in result.error
+    assert result.retryable is False
 
 
 def test_ledger_failure_does_not_retry_completed_remote_execution(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -579,7 +687,7 @@ def test_ledger_failure_does_not_retry_completed_remote_execution(monkeypatch: p
 def test_accelerators_fail_clearly_unless_provider_advertises_support() -> None:
     request = RemoteExecutionRequest(
         task_id="gpu",
-        image="research:latest",
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
         command="python train.py",
         resources=RemoteResourceRequest(accelerator=RemoteAcceleratorRequest("A100")),
     )

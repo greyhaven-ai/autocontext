@@ -1,7 +1,7 @@
 // AUTO-GENERATED from autocontext/src/autocontext/server/protocol.py
 // Do not edit manually. Run: python scripts/generate_protocol.py
 //
-// Protocol version: 1
+// Protocol version: 2
 
 import { z } from "zod";
 

@@ -43,7 +43,10 @@ def last_json_object(stdout: str) -> dict[str, Any]:
             parsed = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(parsed, dict):
+        # ``parse_remote_stdout`` treats event envelopes separately from the
+        # final result payload. Consumers must make the same distinction or a
+        # trailing progress event can invalidate an already-ledgered success.
+        if isinstance(parsed, dict) and parsed.get("type") != "event":
             return parsed
     return {}
 

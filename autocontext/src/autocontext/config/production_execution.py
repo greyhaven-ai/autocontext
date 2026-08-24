@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator  # type:
 
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE, require_pinned_runtime_image
 
+_PRIME_SUPPORTED_TELEMETRY = frozenset({"hardware_identity"})
+
 
 class ProductionExecutionFields(BaseModel):
     """Bounded production-runtime settings kept out of the core config monolith."""
@@ -51,7 +53,7 @@ class ProductionExecutionFields(BaseModel):
     primeintellect_region: str = Field(default="")
     primeintellect_required_telemetry: str = Field(
         default="hardware_identity",
-        description="Comma-separated telemetry required for configured accelerator execution.",
+        description="Telemetry required for configured accelerator execution; currently hardware_identity only.",
     )
     primeintellect_supported_accelerator_kinds: str = Field(
         default="",
@@ -63,7 +65,10 @@ class ProductionExecutionFields(BaseModel):
         default="",
         description="Comma-separated immutable images validated for the configured Prime accelerator pool.",
     )
-    primeintellect_available_telemetry: str = Field(default="hardware_identity")
+    primeintellect_available_telemetry: str = Field(
+        default="hardware_identity",
+        description="Prime telemetry exposed by the SDK integration; currently hardware_identity only.",
+    )
     primeintellect_timeout_minutes: int = Field(default=30, ge=1)
     primeintellect_wait_attempts: int = Field(default=60, ge=1)
     primeintellect_max_retries: int = Field(default=2, ge=0)
@@ -121,10 +126,9 @@ class ProductionExecutionFields(BaseModel):
         supported_images = parse_csv_values(self.primeintellect_supported_images)
         required_telemetry = parse_csv_values(self.primeintellect_required_telemetry)
         available_telemetry = parse_csv_values(self.primeintellect_available_telemetry)
-        telemetry_names = {"hardware_identity", "accelerator_usage", "accelerator_peak_memory"}
-        unknown = (required_telemetry | available_telemetry) - telemetry_names
-        if unknown:
-            raise ValueError(f"unknown Prime telemetry names: {', '.join(sorted(unknown))}")
+        unsupported_telemetry = (required_telemetry | available_telemetry) - _PRIME_SUPPORTED_TELEMETRY
+        if unsupported_telemetry:
+            raise ValueError(f"telemetry is unsupported by the Prime SDK integration: {', '.join(sorted(unsupported_telemetry))}")
         if bool(supported_kinds) != (self.primeintellect_max_accelerator_count > 0):
             raise ValueError(
                 "Prime supported accelerator kinds and primeintellect_max_accelerator_count must be configured together"

@@ -32,9 +32,13 @@ from autocontext.integrations.primeintellect import _lifecycle
 from autocontext.integrations.primeintellect import _request as _request_helpers
 from autocontext.integrations.primeintellect.accelerators import (
     ProviderCapabilityDriftError,
+    UnsupportedRemoteCapabilityError,
     create_kwargs,
     resolved_environment,
     resource_usage,
+    validate_accelerator_request_model,
+    validate_prime_requirements,
+    validate_request_capabilities,
     validate_required_telemetry,
     validate_resolved_environment,
 )
@@ -50,10 +54,6 @@ CreateSandboxRequest: Any | None = None
 
 class MissingPrimeIntellectExtraError(RuntimeError):
     """Raised when the PrimeIntellect optional extra is not installed."""
-
-
-class UnsupportedRemoteCapabilityError(RuntimeError):
-    """Raised when a request needs a capability the provider did not advertise."""
 
 
 class _CreateSandboxRequestFallback:
@@ -93,8 +93,6 @@ class PrimeIntellectClient:
     max_wait_attempts: int = 60
     network_access: bool = True
     allow_fallback: bool = False
-    default_requirements: RemoteExecutionRequirements | None = None
-    resource_capabilities: RemoteProviderCapabilities = field(default_factory=RemoteProviderCapabilities)
     provider_capabilities: Mapping[str, bool] = field(
         default_factory=lambda: {
             "accelerator": False,
@@ -109,6 +107,9 @@ class PrimeIntellectClient:
         }
     )
     ledger_sink: ExternalEvalLedgerSink | None = None
+    # Keep new public fields after the pre-existing positional API.
+    default_requirements: RemoteExecutionRequirements | None = None
+    resource_capabilities: RemoteProviderCapabilities = field(default_factory=RemoteProviderCapabilities)
     _active_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
     _active_sandboxes: dict[str, _lifecycle.ActiveSandbox] = field(default_factory=dict, init=False, repr=False)
     _inflight_tasks: set[str] = field(default_factory=set, init=False, repr=False)
@@ -146,9 +147,7 @@ class PrimeIntellectClient:
         }
 
     def validate_requirements(self, requirements: RemoteExecutionRequirements) -> None:
-        reason = self.resource_capabilities.mismatch_reason(requirements)
-        if reason:
-            raise UnsupportedRemoteCapabilityError(f"Prime Intellect capability mismatch: {reason}")
+        validate_prime_requirements(requirements, self.resource_capabilities)
 
     def _default_resource_request(self) -> RemoteResourceRequest:
         return RemoteResourceRequest(
@@ -244,27 +243,23 @@ class PrimeIntellectClient:
                     if self._is_cancellation_requested(request.task_id):
                         result = self._canceled_result(request, str(exc))
                         return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
-                    attempt += 1
-                    if attempt <= max_retries:
-                        time.sleep(backoff_seconds * attempt)
-                        continue
                     result = RemoteExecutionResult(
                         task_id=request.task_id,
                         provider="primeintellect",
-                        status="provider_error",
+                        status="cleanup_error",
                         cleanup=RemoteCleanupOutcome(
                             attempted=False,
-                            succeeded=True,
-                            detail="no provider resource was registered",
+                            succeeded=False,
+                            detail="provider phase and cleanup outcome are unknown",
                         ),
-                        error=str(exc),
+                        error=f"{exc}; provider phase and cleanup outcome are unknown",
                         provenance=remote_request_provenance(request),
                         events=(
                             RemoteExecutionEvent(
                                 sequence=1,
                                 event_type="provider_error",
                                 message=str(exc),
-                                fields={"attempts": attempt},
+                                fields={"phase": "unknown", "attempts": attempt + 1},
                             ),
                         ),
                     )
@@ -400,12 +395,19 @@ class PrimeIntellectClient:
                     ) from exc
                 active = self._register_sandbox(request.task_id, sandbox_id)
                 try:
-                    resolved = resolved_environment(sandbox)
-                    validate_resolved_environment(request, resolved)
                     if self._is_cancellation_requested(request.task_id):
                         cancellation_error = "remote task canceled"
                     else:
                         await client.wait_for_creation(sandbox_id, max_attempts=self.max_wait_attempts)
+                    if self._is_cancellation_requested(request.task_id):
+                        cancellation_error = "remote task canceled"
+                    elif not cancellation_error:
+                        # wait_for_creation polls fresh Sandbox objects but
+                        # returns None. Fetch and validate the final allocation
+                        # so provisioning drift cannot reach command dispatch.
+                        sandbox = await client.get(sandbox_id)
+                        resolved = resolved_environment(sandbox)
+                        validate_resolved_environment(request, resolved)
                     if self._is_cancellation_requested(request.task_id):
                         cancellation_error = "remote task canceled"
                     elif not cancellation_error:
@@ -741,21 +743,21 @@ class PrimeIntellectClient:
         return result
 
     def validate_request(self, request: RemoteExecutionRequest) -> None:
-        capabilities = self.capabilities()
         expired_grants = [grant.name for grant in request.secret_grants if grant.expires_at <= time.time()]
         if expired_grants:
             raise ValueError(f"remote secret grant expired before dispatch: {', '.join(sorted(expired_grants))}")
-        self.validate_requirements(request.requirements)
-        if request.resources.accelerator is not None and not capabilities["accelerator"]:
-            raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise accelerator support")
-        if request.lifecycle == "reuse_matched_trials" and not capabilities["session_reuse"]:
-            raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise session_reuse")
-        if request.lifecycle == "warm_snapshot" and not (capabilities["snapshot"] and capabilities["warm"]):
-            raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise warm snapshot support")
-        if request.secret_grants and not capabilities["secret_grants"]:
-            raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise scoped secret grants")
-        if request.network_policy == "allow" and not self.network_access:
-            raise UnsupportedRemoteCapabilityError("Prime Intellect network access is disabled by adapter policy")
+        validate_request_capabilities(
+            request,
+            advertised=self.capabilities(),
+            resources=self.resource_capabilities,
+            network_access=self.network_access,
+        )
+        if request.resources.accelerator is not None:
+            _, request_cls = _prime_sandboxes_sdk()
+            validate_accelerator_request_model(
+                request_cls,
+                transparent_fallback=_CreateSandboxRequestFallback,
+            )
 
     def _emit_ledger(self, result: RemoteExecutionResult) -> None:
         if self.ledger_sink is not None:

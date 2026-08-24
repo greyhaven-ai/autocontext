@@ -55,6 +55,8 @@ class ExecutionSupervisor:
         self.executor = executor or LocalExecutor()
 
     def run(self, scenario: ScenarioInterface, payload: ExecutionInput) -> ExecutionOutput:
+        if payload.remote_requirements is not None and payload.task_id is None:
+            raise RuntimeError("explicit remote requirements require a task-identified prepared fixture")
         if payload.fixture_state is not None:
             return self._run_prepared_fixture(scenario, payload)
         if payload.remote_requirements is not None:

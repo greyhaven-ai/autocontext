@@ -49,7 +49,7 @@ export type {
   AgentTaskPlanStepStatus,
 } from "../loop/agent-task-plan.js";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const TRANSCRIPT_PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
 export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);

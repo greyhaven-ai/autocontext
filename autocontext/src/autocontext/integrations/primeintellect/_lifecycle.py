@@ -144,6 +144,7 @@ def provider_error_result(
             ),
         ),
         provenance=remote_request_provenance(request),
+        retryable=True,
     )
 
 

@@ -13,9 +13,11 @@ All notable changes to this project will be documented in this file.
   create requests, result provenance, and external-evaluation ledgers.
   Configured capability mismatches fail before provider creation; resolved
   image/region/hardware drift fails before command execution; accelerator work
-  can never use the local CPU fallback. Provider-reported accelerator usage and
-  peak memory are recorded when available, while CPU-only execution remains the
-  unchanged default (AC-998).
+  can never use the local CPU fallback. The current Prime SDK exposes verified
+  hardware identity but not accelerator usage or peak-memory telemetry, so
+  unsupported telemetry is rejected before paid dispatch. The interactive
+  WebSocket protocol is version 2 for accelerator-aware environment metadata,
+  while CPU-only execution retains its legacy resource payload shape (AC-998).
 
 - Kernel evolution now supports provider-registry-backed autonomous campaigns
   with exact source/provenance receipts, fail-closed response validation,

@@ -94,6 +94,7 @@ def campaign_result_from_remote(result: RemoteExecutionResult) -> CampaignJobRes
         ),
         detail=result.error,
         cleanup_succeeded=result.cleanup.succeeded,
+        retryable=result.retryable,
         metadata={
             "remote_status": result.status,
             "provider": result.provider,

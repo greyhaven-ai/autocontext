@@ -28,33 +28,8 @@ from autocontext.config.settings import AppSettings
 from autocontext.context_bundles.assembly import evaluator_epoch_for
 from autocontext.context_bundles.models import stable_digest
 from autocontext.context_bundles.runtime_evaluator import materialize_runtime_fixture
-from autocontext.execution.campaign_remote import (
-    CampaignPlanAccelerator,
-    CampaignPlanRemoteRequirements,
-)
-from autocontext.execution.campaign_remote import (
-    campaign_result_with_reservation as _campaign_result_with_reservation,
-)
-from autocontext.execution.campaign_remote import (
-    job_capabilities as _job_capabilities,
-)
-from autocontext.execution.campaign_remote import (
-    job_resources as _job_resources,
-)
-from autocontext.execution.campaign_remote import (
-    remote_requirements_from_payload as _remote_requirements_from_payload,
-)
-from autocontext.execution.campaign_remote import (
-    remote_requirements_payload as _remote_requirements_payload,
-)
-from autocontext.execution.campaign_remote import (
-    remote_result_dict as _remote_result_dict,
-)
-from autocontext.execution.campaign_remote import (
-    worker_resources as _worker_resources,
-)
-from autocontext.execution.campaign_scheduler import CampaignScheduler
-from autocontext.execution.campaign_scheduler_adapters import CallableCampaignWorker
+from autocontext.execution import campaign_remote as _campaign_remote
+from autocontext.execution.campaign_scheduler import CallableCampaignWorker, CampaignScheduler
 from autocontext.execution.campaign_scheduler_models import (
     CampaignAssignment,
     CampaignJobRequest,
@@ -83,6 +58,9 @@ from autocontext.scenarios.base import ExecutionLimits, ScenarioInterface
 from autocontext.storage.campaign_mode_report_store import write_campaign_mode_report
 from autocontext.util.json_io import read_json, write_json
 from autocontext.util.models import StrictModel
+
+CampaignPlanAccelerator = _campaign_remote.CampaignPlanAccelerator
+CampaignPlanRemoteRequirements = _campaign_remote.CampaignPlanRemoteRequirements
 
 
 class CampaignPlanBudget(StrictModel):
@@ -217,7 +195,7 @@ class ScenarioCampaignWorker:
         if assignment.job.lane.fixture_digest != fixture.digest:
             raise ValueError("campaign job fixture digest does not match the actual scenario fixture")
         scenario: ScenarioInterface = self._scenario_type()
-        remote_requirements = _remote_requirements_from_payload(payload)
+        remote_requirements = _campaign_remote.remote_requirements_from_payload(payload)
         task_id = (
             _assignment_task_id(assignment) if callable(getattr(self._runtime.remote_adapter, "cancel_request", None)) else None
         )
@@ -244,8 +222,8 @@ class ScenarioCampaignWorker:
             if remote_result is None:
                 raise
             output_path = self._result_path(assignment.job.job_id, assignment.lease.lease_id)
-            artifact = _remote_result_dict(remote_result)
-            result = _campaign_result_with_reservation(
+            artifact = _campaign_remote.remote_result_dict(remote_result)
+            result = _campaign_remote.campaign_result_with_reservation(
                 remote_result,
                 assignment.job.reservation,
                 output_ref=str(output_path),
@@ -268,18 +246,17 @@ class ScenarioCampaignWorker:
         passed = output.result.passed_validation
         reservation = assignment.job.reservation
         if remote_result is not None:
-            result = _campaign_result_with_reservation(
+            result = _campaign_remote.campaign_result_with_reservation(
                 remote_result,
                 reservation,
                 output_ref=str(output_path),
             )
-            return CampaignJobResult(
+            return replace(
+                result,
                 outcome="candidate_success" if passed else "candidate_failure",
-                consumed=result.consumed,
-                output_ref=result.output_ref,
                 detail=output.result.summary,
-                cleanup_succeeded=result.cleanup_succeeded,
                 metadata={**result.metadata, "score": output.result.score, "seed": seed},
+                retryable=False,
             )
         return CampaignJobResult(
             outcome="candidate_success" if passed else "candidate_failure",
@@ -297,6 +274,7 @@ class ScenarioCampaignWorker:
             detail=output.result.summary,
             cleanup_succeeded=True,
             metadata={"score": output.result.score, "seed": seed},
+            retryable=False,
         )
 
     def cancel(self, assignment: CampaignAssignment) -> bool:
@@ -360,6 +338,7 @@ def run_campaign_plan(
                     item,
                     remote_requirements=requirements_by_job[item.job_id],
                     evaluation_identity=evaluation_identity,
+                    settings=settings,
                 )
                 for item in plan.jobs
             ),
@@ -379,7 +358,7 @@ def run_campaign_plan(
     )
     scheduler.run_until_idle(
         max_waves=sum(item.max_attempts for item in plan.jobs),
-        timeout_seconds=_campaign_drain_timeout(plan),
+        timeout_seconds=_campaign_drain_timeout(plan, settings),
     )
     scheduler_report = scheduler.report()
     scheduler_report_path = root / "scheduler-report.json"
@@ -408,6 +387,7 @@ def _job_request(
     *,
     remote_requirements: RemoteExecutionRequirements | None = None,
     evaluation_identity: CampaignEvaluationIdentity | None = None,
+    settings: AppSettings | None = None,
 ) -> CampaignJobRequest:
     evaluator_epoch = evaluation_identity.evaluator_epoch if evaluation_identity else item.evaluator_epoch
     verifier_contract = evaluation_identity.verifier_contract_ref if evaluation_identity else item.verifier_contract_ref
@@ -424,15 +404,18 @@ def _job_request(
             evaluator_epoch=evaluator_epoch,
             verifier_contract_ref=verifier_contract,
             execution_environment_digest=(
-                stable_digest(_remote_requirements_payload(remote_requirements)) if remote_requirements is not None else ""
+                stable_digest(_campaign_remote.remote_requirements_payload(remote_requirements))
+                if remote_requirements is not None
+                else ""
             ),
         ),
-        resources=_job_resources(remote_requirements),
-        required_capabilities=_job_capabilities(remote_requirements),
-        reservation=_campaign_job_reservation(item, remote_requirements),
+        resources=_campaign_remote.job_resources(remote_requirements),
+        required_capabilities=_campaign_remote.job_capabilities(remote_requirements),
+        reservation=_campaign_job_reservation(item, remote_requirements, settings=settings),
         max_attempts=item.max_attempts,
         cohort_id=item.cohort_id,
         prefer_warm_reuse=item.prefer_warm_reuse,
+        retry_expired_lease=remote_requirements is None,
         payload={
             "strategy": item.strategy,
             "seed": item.seed,
@@ -441,7 +424,7 @@ def _job_request(
             "network_access": item.network_access,
             "objective": item.objective,
             "remote_requirements": (
-                _remote_requirements_payload(remote_requirements) if remote_requirements is not None else None
+                _campaign_remote.remote_requirements_payload(remote_requirements) if remote_requirements is not None else None
             ),
         },
     )
@@ -556,15 +539,22 @@ def _branch_budget_dict(budget: CampaignPlanBudget) -> dict[str, Any]:
 def _campaign_job_reservation(
     item: CampaignPlanJob,
     remote_requirements: RemoteExecutionRequirements | None = None,
+    *,
+    settings: AppSettings | None = None,
 ) -> SchedulerBudget:
     """Prevent a plan from under-declaring costs the worker always incurs."""
 
     declared = item.reservation.scheduler_budget()
     accelerator = remote_requirements.resources.accelerator if remote_requirements is not None else None
-    required_compute = item.timeout_seconds * accelerator.count if accelerator is not None else 0.0
+    envelope = _campaign_remote.campaign_execution_envelope(
+        settings,
+        item.timeout_seconds,
+        remote_execution=remote_requirements is not None,
+    )
+    required_compute = envelope.provider_seconds * accelerator.count if accelerator is not None else 0.0
     return SchedulerBudget(
         tokens=declared.tokens,
-        wall_seconds=max(declared.wall_seconds, item.timeout_seconds),
+        wall_seconds=max(declared.wall_seconds, envelope.wall_seconds),
         compute_units=max(declared.compute_units, required_compute),
         jobs=max(declared.jobs, 1),
         shared_evidence_tokens=declared.shared_evidence_tokens,
@@ -633,7 +623,9 @@ def _validate_campaign_remote_requirements(
         if not item.cohort_id:
             continue
         requirements = requirements_by_job[item.job_id]
-        digest = stable_digest(_remote_requirements_payload(requirements)) if requirements is not None else "local"
+        digest = (
+            stable_digest(_campaign_remote.remote_requirements_payload(requirements)) if requirements is not None else "local"
+        )
         prior = cohort_requirements.setdefault(item.cohort_id, digest)
         if prior != digest:
             raise ValueError("matched cohort jobs must use the same resolved remote requirements")
@@ -648,7 +640,9 @@ def _campaign_worker_bindings(
 ) -> tuple[CampaignWorkerBinding, ...]:
     profiles: dict[str, RemoteExecutionRequirements | None] = {}
     for requirements in requirements_by_job.values():
-        digest = stable_digest(_remote_requirements_payload(requirements)) if requirements is not None else "local"
+        digest = (
+            stable_digest(_campaign_remote.remote_requirements_payload(requirements)) if requirements is not None else "local"
+        )
         profiles.setdefault(digest, requirements)
     bindings: list[CampaignWorkerBinding] = []
     for digest, requirements in sorted(profiles.items()):
@@ -668,8 +662,8 @@ def _campaign_worker_bindings(
                 descriptor=WorkerDescriptor(
                     worker_id=f"{settings.executor_mode}-{digest[:12]}",
                     runtime=settings.executor_mode,
-                    resources=_worker_resources(requirements, plan.max_concurrency),
-                    capabilities=_job_capabilities(requirements),
+                    resources=_campaign_remote.worker_resources(requirements, plan.max_concurrency),
+                    capabilities=_campaign_remote.job_capabilities(requirements),
                     sandbox_features=frozenset(_sandbox_features(settings)),
                     locality="remote" if runtime.remote_adapter is not None else "local",
                     concurrency=plan.max_concurrency,
@@ -681,8 +675,16 @@ def _campaign_worker_bindings(
     return tuple(bindings)
 
 
-def _campaign_drain_timeout(plan: CampaignPlan) -> float:
-    attempt_seconds = sum(item.timeout_seconds * item.max_attempts for item in plan.jobs)
+def _campaign_drain_timeout(plan: CampaignPlan, settings: AppSettings | None = None) -> float:
+    attempt_seconds = sum(
+        _campaign_remote.campaign_execution_envelope(
+            settings,
+            item.timeout_seconds,
+            remote_execution=settings is not None and settings.executor_mode == "primeintellect",
+        ).wall_seconds
+        * item.max_attempts
+        for item in plan.jobs
+    )
     replay_grace = plan.lease_seconds * sum(item.max_attempts for item in plan.jobs)
     timeout = attempt_seconds + replay_grace + 5.0
     if not math.isfinite(timeout):
@@ -708,7 +710,7 @@ def _execution_output_dict(
         "replay": output.replay.model_dump(mode="json"),
     }
     if remote_result is not None:
-        payload["remote_execution"] = _remote_result_dict(remote_result)
+        payload["remote_execution"] = _campaign_remote.remote_result_dict(remote_result)
     return payload
 
 

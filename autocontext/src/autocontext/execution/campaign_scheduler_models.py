@@ -225,6 +225,7 @@ class CampaignJobRequest:
     prefer_warm_reuse: bool = False
     evidence_grant_ids: tuple[str, ...] = ()
     payload: Mapping[str, object] = field(default_factory=dict)
+    retry_expired_lease: bool = True
 
     def __post_init__(self) -> None:
         identities = (self.job_id, self.idempotency_key, self.campaign_id, self.branch_id)
@@ -234,6 +235,8 @@ class CampaignJobRequest:
             raise TypeError("campaign job max_attempts must be an integer")
         if self.max_attempts < 1:
             raise ValueError("campaign job max_attempts must be positive")
+        if not isinstance(self.retry_expired_lease, bool):
+            raise TypeError("campaign job retry_expired_lease must be boolean")
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +247,7 @@ class CampaignJobResult:
     detail: str = ""
     cleanup_succeeded: bool = True
     metadata: Mapping[str, object] = field(default_factory=dict)
+    retryable: bool = True
 
     def __post_init__(self) -> None:
         if self.outcome not in {"candidate_success", "candidate_failure", "infrastructure_failure"}:
@@ -256,6 +260,8 @@ class CampaignJobResult:
             raise TypeError("campaign result cleanup_succeeded must be boolean")
         if not isinstance(self.metadata, Mapping):
             raise TypeError("campaign result metadata must be a mapping")
+        if not isinstance(self.retryable, bool):
+            raise TypeError("campaign result retryable must be boolean")
 
 
 @dataclass(frozen=True, slots=True)

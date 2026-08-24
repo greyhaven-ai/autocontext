@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal, Protocol, TypeAlias
 
+from autocontext.execution.scenario_remote_validation import malformed_scenario_output
+from autocontext.runtime_images import require_pinned_runtime_image
+
 RemoteLifecyclePolicy: TypeAlias = Literal[
     "ephemeral_per_eval",
     "reuse_matched_trials",
@@ -34,9 +37,7 @@ RemoteTelemetryKind: TypeAlias = Literal[
     "accelerator_usage",
     "accelerator_peak_memory",
 ]
-_REMOTE_TELEMETRY_KINDS = frozenset(
-    {"hardware_identity", "accelerator_usage", "accelerator_peak_memory"}
-)
+_REMOTE_TELEMETRY_KINDS = frozenset({"hardware_identity", "accelerator_usage", "accelerator_peak_memory"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,8 @@ class RemoteAcceleratorRequest:
     memory_gb: float | None = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.count, bool) or not isinstance(self.count, int):
+            raise TypeError("accelerator count must be an integer")
         if not self.kind.strip() or self.count < 1:
             raise ValueError("accelerator kind must be non-empty and count must be positive")
         if self.memory_gb is not None and (not math.isfinite(self.memory_gb) or self.memory_gb <= 0):
@@ -77,6 +80,8 @@ class RemoteExecutionRequirements:
     def __post_init__(self) -> None:
         if not self.image.strip():
             raise ValueError("remote execution image must be non-empty")
+        if self.resources.accelerator is not None:
+            require_pinned_runtime_image(self.image)
         if self.region is not None and not self.region.strip():
             raise ValueError("remote execution region must be non-empty when supplied")
         telemetry = frozenset(self.required_telemetry)
@@ -133,10 +138,7 @@ class RemoteProviderCapabilities:
         if limit is None:
             return f"accelerator kind {accelerator.kind!r} is not configured for the provider"
         if accelerator.count > limit:
-            return (
-                f"accelerator count {accelerator.count} exceeds the configured {accelerator.kind!r} "
-                f"provider limit of {limit}"
-            )
+            return f"accelerator count {accelerator.count} exceeds the configured {accelerator.kind!r} provider limit of {limit}"
         if accelerator.memory_gb is not None and not self.accelerator_memory_selection:
             return "the provider does not support selecting accelerator memory"
         return ""
@@ -191,8 +193,6 @@ class RemoteExecutionRequest:
     image: str
     command: str
     resources: RemoteResourceRequest = field(default_factory=RemoteResourceRequest)
-    region: str | None = None
-    required_telemetry: frozenset[RemoteTelemetryKind] = frozenset()
     timeout_seconds: float = 30.0
     network_policy: RemoteNetworkPolicy = "deny"
     secrets_policy: RemoteSecretsPolicy = "deny"
@@ -204,6 +204,8 @@ class RemoteExecutionRequest:
     snapshot_id: str | None = None
     max_reuse_tasks: int = 1
     metadata: Mapping[str, str] = field(default_factory=dict)
+    region: str | None = None
+    required_telemetry: frozenset[RemoteTelemetryKind] = frozenset()
 
     def __post_init__(self) -> None:
         if not self.task_id.strip() or not self.image.strip() or not self.command.strip():
@@ -239,16 +241,11 @@ class RemoteExecutionRequest:
         if self.lifecycle == "warm_snapshot" and not self.snapshot_id:
             raise ValueError("warm_snapshot lifecycle requires snapshot_id")
         if any(
-            not isinstance(name, str)
-            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None
-            or not isinstance(value, str)
+            not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None or not isinstance(value, str)
             for name, value in self.environment.items()
         ):
             raise ValueError("remote environment names must be POSIX identifiers and values must be strings")
-        if any(
-            not isinstance(name, str) or not isinstance(value, str) or not name
-            for name, value in self.metadata.items()
-        ):
+        if any(not isinstance(name, str) or not isinstance(value, str) or not name for name, value in self.metadata.items()):
             raise ValueError("remote metadata names and values must be strings with non-empty names")
         _prepared_fixture_provenance(self.metadata)
         # The request is replay provenance. Retaining caller-owned dictionaries
@@ -314,7 +311,6 @@ class RemoteResolvedEnvironment:
 
 @dataclass(frozen=True, slots=True)
 class RemoteExecutionProvenance:
-    request_sha256: str = ""
     image: str = ""
     image_digest: str = ""
     package_sha256: str = ""
@@ -323,6 +319,7 @@ class RemoteExecutionProvenance:
     fixture_digest: str = ""
     fixture_state_sha256: str = ""
     fixture_observation_sha256: str = ""
+    request_sha256: str = ""
     requested_region: str = ""
     requested_accelerator_kind: str = ""
     requested_accelerator_count: int = 0
@@ -351,6 +348,7 @@ class ExternalEvalLedgerEntry:
     cleanup: RemoteCleanupOutcome
     detail: str = ""
     provenance: RemoteExecutionProvenance = field(default_factory=RemoteExecutionProvenance)
+    retryable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,6 +366,15 @@ class RemoteExecutionResult:
     error: str = ""
     session_id: str = ""
     provenance: RemoteExecutionProvenance = field(default_factory=RemoteExecutionProvenance)
+    retryable: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.retryable, bool):
+            raise TypeError("remote result retryable must be boolean")
+        if self.retryable and self.status != "provider_error":
+            raise ValueError("only provider errors may be retryable")
+        if self.retryable and not (self.cleanup.attempted and self.cleanup.succeeded):
+            raise ValueError("retryable remote errors require verified cleanup")
 
     @property
     def succeeded(self) -> bool:
@@ -394,6 +401,7 @@ class RemoteExecutionResult:
             cleanup=self.cleanup,
             detail=self.error,
             provenance=self.provenance,
+            retryable=self.retryable,
         )
 
 
@@ -496,7 +504,7 @@ def parse_remote_stdout(
             session_id=session_id,
             provenance=provenance,
         )
-    malformed_scenario = _malformed_scenario_output(request, final_payload)
+    malformed_scenario = malformed_scenario_output(request.metadata, final_payload)
     if malformed_scenario:
         return RemoteExecutionResult(
             task_id=request.task_id,
@@ -509,11 +517,7 @@ def parse_remote_stdout(
             events=tuple(events),
             usage=usage,
             cleanup=cleanup,
-            error=(
-                _cleanup_failure_detail(malformed_scenario, cleanup)
-                if not cleanup.succeeded
-                else malformed_scenario
-            ),
+            error=(_cleanup_failure_detail(malformed_scenario, cleanup) if not cleanup.succeeded else malformed_scenario),
             session_id=session_id,
             provenance=provenance,
         )
@@ -559,9 +563,7 @@ def remote_request_provenance(
     except (TypeError, ValueError):
         seed = None
     image_digest = request.image.rsplit("@sha256:", 1)[-1] if "@sha256:" in request.image else ""
-    fixture_digest, fixture_state_sha256, fixture_observation_sha256 = _prepared_fixture_provenance(
-        request.metadata
-    )
+    fixture_digest, fixture_state_sha256, fixture_observation_sha256 = _prepared_fixture_provenance(request.metadata)
     accelerator = request.resources.accelerator
     return RemoteExecutionProvenance(
         request_sha256=remote_request_sha256(request),
@@ -610,8 +612,7 @@ def remote_request_sha256(request: RemoteExecutionRequest) -> str:
         "network_policy": request.network_policy,
         "secrets_policy": request.secrets_policy,
         "secret_grants": [
-            {"name": grant.name, "grant_id": grant.grant_id, "expires_at": grant.expires_at}
-            for grant in request.secret_grants
+            {"name": grant.name, "grant_id": grant.grant_id, "expires_at": grant.expires_at} for grant in request.secret_grants
         ],
         "inputs": [
             {
@@ -653,36 +654,6 @@ def _prepared_fixture_provenance(metadata: Mapping[str, str]) -> tuple[str, str,
             raise ValueError(f"prepared fixture provenance must use lowercase sha256 hex: {key}")
         values.append(raw_value)
     return values[0], values[1], values[2]
-
-
-def _malformed_scenario_output(request: RemoteExecutionRequest, payload: Mapping[str, object]) -> str:
-    if request.metadata.get("task_kind") != "scenario_match":
-        return ""
-    result = payload.get("result")
-    replay = payload.get("replay")
-    if not isinstance(result, Mapping) or not isinstance(replay, Mapping):
-        return "malformed scenario output: result and replay objects are required"
-    score = result.get("score")
-    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(float(score)):
-        return "malformed scenario output: result.score must be finite"
-    if not isinstance(result.get("summary"), str):
-        return "malformed scenario output: result.summary must be a string"
-    if not isinstance(result.get("replay"), list):
-        return "malformed scenario output: result.replay must be an array"
-    if not isinstance(result.get("metrics"), Mapping) or not isinstance(result.get("validation_errors"), list):
-        return "malformed scenario output: result metrics and validation_errors are required"
-    replay_seed = replay.get("seed")
-    if not isinstance(replay.get("scenario"), str) or isinstance(replay_seed, bool) or not isinstance(replay_seed, int):
-        return "malformed scenario output: replay scenario and seed are required"
-    if not isinstance(replay.get("narrative"), str) or not isinstance(replay.get("timeline"), list):
-        return "malformed scenario output: replay narrative and timeline are required"
-    expected_scenario = request.metadata.get("scenario")
-    if expected_scenario is not None and replay.get("scenario") != expected_scenario:
-        return "malformed scenario output: replay scenario provenance mismatch"
-    expected_seed = request.metadata.get("seed")
-    if expected_seed is not None and str(replay.get("seed")) != str(expected_seed):
-        return "malformed scenario output: replay seed provenance mismatch"
-    return ""
 
 
 def _parse_artifacts(raw: object) -> tuple[RemoteOutputArtifact, ...]:

@@ -9,14 +9,81 @@ from typing import Any
 
 from autocontext.execution.remote_execution import (
     RemoteExecutionRequest,
+    RemoteExecutionRequirements,
+    RemoteProviderCapabilities,
     RemoteResolvedEnvironment,
     RemoteResourceUsage,
     remote_request_sha256,
 )
 
+_PRIME_SUPPORTED_TELEMETRY = frozenset({"hardware_identity"})
+_PRIME_ACCELERATOR_CREATE_FIELDS = frozenset({"gpu_type", "gpu_count", "vm", "region", "idempotency_key"})
+
+
+class UnsupportedRemoteCapabilityError(RuntimeError):
+    """Raised when a request needs a capability the provider did not advertise."""
+
 
 class ProviderCapabilityDriftError(RuntimeError):
     """Raised when the provisioned resource differs from the validated request."""
+
+
+def validate_prime_requirements(
+    requirements: RemoteExecutionRequirements,
+    capabilities: RemoteProviderCapabilities,
+) -> None:
+    accelerator = requirements.resources.accelerator
+    if accelerator is not None and accelerator.memory_gb is not None:
+        raise UnsupportedRemoteCapabilityError("Prime Intellect does not support selecting accelerator memory")
+    unsupported_telemetry = requirements.required_telemetry - _PRIME_SUPPORTED_TELEMETRY
+    if unsupported_telemetry:
+        raise UnsupportedRemoteCapabilityError(
+            f"Prime Intellect SDK does not expose required telemetry: {', '.join(sorted(unsupported_telemetry))}"
+        )
+    reason = capabilities.mismatch_reason(requirements)
+    if reason:
+        raise UnsupportedRemoteCapabilityError(f"Prime Intellect capability mismatch: {reason}")
+
+
+def validate_request_capabilities(
+    request: RemoteExecutionRequest,
+    *,
+    advertised: Mapping[str, bool],
+    resources: RemoteProviderCapabilities,
+    network_access: bool,
+) -> None:
+    validate_prime_requirements(request.requirements, resources)
+    if request.resources.accelerator is not None and not advertised["accelerator"]:
+        raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise accelerator support")
+    if request.lifecycle == "reuse_matched_trials" and not advertised["session_reuse"]:
+        raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise session_reuse")
+    if request.lifecycle == "warm_snapshot" and not (advertised["snapshot"] and advertised["warm"]):
+        raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise warm snapshot support")
+    if request.secret_grants and not advertised["secret_grants"]:
+        raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise scoped secret grants")
+    if request.network_policy == "allow" and not network_access:
+        raise UnsupportedRemoteCapabilityError("Prime Intellect network access is disabled by adapter policy")
+
+
+def validate_accelerator_request_model(
+    request_cls: Any,
+    *,
+    transparent_fallback: type[Any] | None = None,
+) -> None:
+    """Fail closed if an installed SDK would discard paid-placement fields."""
+
+    if request_cls is transparent_fallback:
+        # Unit tests that replace the async client use this transparent carrier.
+        # Production always reaches the imported Pydantic SDK model.
+        return
+    model_fields = getattr(request_cls, "model_fields", None)
+    if not isinstance(model_fields, Mapping):
+        raise UnsupportedRemoteCapabilityError("Prime Intellect SDK request model does not expose a verifiable field contract")
+    missing = _PRIME_ACCELERATOR_CREATE_FIELDS - model_fields.keys()
+    if missing:
+        raise UnsupportedRemoteCapabilityError(
+            "Prime Intellect SDK request model is missing accelerator placement fields: " + ", ".join(sorted(missing))
+        )
 
 
 def resolved_environment(sandbox: Any) -> RemoteResolvedEnvironment:
@@ -38,6 +105,8 @@ def validate_resolved_environment(
     resolved: RemoteResolvedEnvironment,
 ) -> None:
     accelerator = request.resources.accelerator
+    if "hardware_identity" in request.required_telemetry and not resolved.image:
+        raise ProviderCapabilityDriftError("provider omitted required telemetry: hardware_identity")
     if resolved.image and resolved.image != request.image:
         raise ProviderCapabilityDriftError(f"provider resolved image {resolved.image!r}, expected {request.image!r}")
     if request.region is not None and resolved.region != request.region:
@@ -108,7 +177,15 @@ def create_kwargs(
         "idempotency_key": remote_request_sha256(request),
     }
     if resources.accelerator is not None:
-        kwargs.update({"gpu_type": resources.accelerator.kind, "gpu_count": resources.accelerator.count})
+        kwargs.update(
+            {
+                "gpu_type": resources.accelerator.kind,
+                "gpu_count": resources.accelerator.count,
+                # Prime's request model rejects gpu_count unless the sandbox
+                # is explicitly provisioned as a VM.
+                "vm": True,
+            }
+        )
     if request.region is not None:
         kwargs["region"] = request.region
     if request.snapshot_id:
@@ -138,9 +215,13 @@ def _safe_name(value: str) -> str:
 
 __all__ = [
     "ProviderCapabilityDriftError",
+    "UnsupportedRemoteCapabilityError",
     "create_kwargs",
     "resolved_environment",
     "resource_usage",
+    "validate_accelerator_request_model",
+    "validate_prime_requirements",
+    "validate_request_capabilities",
     "validate_required_telemetry",
     "validate_resolved_environment",
 ]

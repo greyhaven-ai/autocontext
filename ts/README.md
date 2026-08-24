@@ -213,9 +213,10 @@ The MCP server exposes 40+ tools across scenarios, runs, knowledge, evaluation, 
 
 ### Interactive run transcript extension
 
-The TypeScript `/ws/interactive` server keeps the base WebSocket
-`protocol_version` at `1`. Plain `/ws/interactive` connections retain the exact
-legacy v1 hello and run-frame shapes. Clients explicitly opt into durable
+The TypeScript `/ws/interactive` server uses base WebSocket
+`protocol_version: 2` for accelerator-aware environment descriptors. CPU-only
+environment resources omit the new optional fields and retain their legacy v1
+shape. Clients explicitly opt into durable
 transcripts with `/ws/interactive?transcript_protocol_version=1`; that connection
 advertises `transcript_protocol_version: 1` plus the `run_transcript_v1` and
 `safe_run_stop_v1` capabilities. TypeScript engines that publish live execution
@@ -256,7 +257,7 @@ client must fail closed when the capability is absent. Python parity is
 deferred; its interactive server does not advertise this capability.
 
 `chat_agent` and `inject_hint` accept the same optional additive
-`image_attachments` array without changing `protocol_version: 1`:
+`image_attachments` array without changing `protocol_version: 2`:
 
 ```json
 {

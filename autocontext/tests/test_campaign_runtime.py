@@ -13,6 +13,7 @@ from autocontext.cli import app
 from autocontext.config.settings import AppSettings
 from autocontext.context_bundles.models import stable_digest
 from autocontext.context_bundles.runtime_evaluator import materialize_runtime_fixture, runtime_fixture_digest
+from autocontext.execution.campaign_remote import campaign_result_with_reservation
 from autocontext.execution.campaign_runtime import (
     CampaignPlan,
     ScenarioCampaignWorker,
@@ -34,14 +35,18 @@ from autocontext.execution.campaign_scheduler_models import (
     WorkerDescriptor,
 )
 from autocontext.execution.remote_execution import (
+    RemoteAcceleratorRequest,
     RemoteCleanupOutcome,
+    RemoteExecutionProvenance,
+    RemoteExecutionRequirements,
     RemoteExecutionResult,
+    RemoteResourceRequest,
     RemoteResourceUsage,
 )
 from autocontext.execution.runtime_factory import ExecutionRuntime
-from autocontext.execution.supervisor import ExecutionSupervisor
+from autocontext.execution.supervisor import ExecutionInput, ExecutionSupervisor
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
-from autocontext.scenarios.base import ReplayEnvelope, Result
+from autocontext.scenarios.base import ExecutionLimits, ReplayEnvelope, Result
 from autocontext.scenarios.othello import OthelloScenario
 
 
@@ -145,6 +150,35 @@ def test_campaign_runtime_normalizes_mandatory_job_and_timeout_reservations() ->
 
     assert request.reservation.jobs == 1
     assert request.reservation.wall_seconds == 17.0
+
+
+def test_prime_campaign_reservation_and_drain_cover_provider_retry_envelope() -> None:
+    settings = AppSettings(
+        executor_mode="primeintellect",
+        primeintellect_wait_attempts=3,
+        primeintellect_max_retries=2,
+        primeintellect_backoff_seconds=0.5,
+    )
+    plan = _plan(settings)
+    item = plan.jobs[0].model_copy(update={"timeout_seconds": 30.25, "max_attempts": 2})
+    plan = plan.model_copy(update={"jobs": [item]})
+    requirements = RemoteExecutionRequirements(
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resources=RemoteResourceRequest(
+            accelerator=RemoteAcceleratorRequest(kind="H100", count=2),
+        ),
+    )
+
+    request = _job_request(plan, item, remote_requirements=requirements, settings=settings)
+
+    # Three provider attempts each reserve six seconds of creation polling and
+    # thirty seconds of cleanup; the command runs at most once. Linear retry
+    # backoff contributes only to the wall envelope.
+    assert request.reservation.compute_units == pytest.approx(278.0)
+    assert request.reservation.wall_seconds == pytest.approx(140.5)
+    assert request.retry_expired_lease is False
+    assert _campaign_drain_timeout(plan, settings) == pytest.approx(296.0)
+    assert _campaign_drain_timeout(plan) == pytest.approx(75.5)
 
 
 @pytest.mark.parametrize(
@@ -525,6 +559,94 @@ def test_campaign_worker_uses_same_lease_unique_remote_id_for_run_and_cancel(tmp
     assert "same-seed-job" not in executor.task_ids[0]
 
 
+def test_supervisor_rejects_prepared_remote_requirements_without_task_identity() -> None:
+    class LegacyPreparedExecutor:
+        calls = 0
+
+        def execute_prepared_fixture(self, *args: Any, **kwargs: Any) -> tuple[Result, ReplayEnvelope]:
+            self.calls += 1
+            raise AssertionError("remote requirements must never fall back to legacy prepared execution")
+
+    scenario = OthelloScenario()
+    fixture = materialize_runtime_fixture(scenario, 13)
+    executor = LegacyPreparedExecutor()
+    payload = ExecutionInput(
+        strategy={"mobility_weight": 1.0},
+        seed=13,
+        limits=ExecutionLimits(),
+        fixture_state=fixture.state,
+        fixture_observation=fixture.observation,
+        fixture_digest=fixture.digest,
+        remote_requirements=RemoteExecutionRequirements(
+            image=PINNED_PYTHON_RUNTIME_IMAGE,
+            resources=RemoteResourceRequest(
+                accelerator=RemoteAcceleratorRequest(kind="H100", count=1),
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="task-identified prepared fixture"):
+        ExecutionSupervisor(executor).run(scenario, payload)  # type: ignore[arg-type]
+
+    assert executor.calls == 0
+
+
+def test_campaign_accelerator_without_usage_telemetry_charges_admitted_reservation() -> None:
+    reservation = SchedulerBudget(compute_units=960.0, jobs=1)
+    accelerator_result = RemoteExecutionResult(
+        task_id="gpu-job",
+        provider="primeintellect",
+        status="success",
+        usage=RemoteResourceUsage(wall_seconds=0.25, cpu_seconds=0.25),
+        cleanup=RemoteCleanupOutcome(attempted=True, succeeded=True),
+        provenance=RemoteExecutionProvenance(
+            requested_accelerator_kind="H100",
+            requested_accelerator_count=8,
+        ),
+    )
+    cpu_result = replace(
+        accelerator_result,
+        task_id="cpu-job",
+        provenance=RemoteExecutionProvenance(),
+    )
+
+    accelerator_charge = campaign_result_with_reservation(
+        accelerator_result,
+        reservation,
+        output_ref="artifact://gpu-job",
+    )
+    cpu_charge = campaign_result_with_reservation(
+        cpu_result,
+        reservation,
+        output_ref="artifact://cpu-job",
+    )
+
+    assert accelerator_charge.consumed.compute_units == pytest.approx(960.0)
+    assert cpu_charge.consumed.compute_units == pytest.approx(0.25)
+
+
+def test_campaign_accelerator_without_telemetry_charges_aggregate_retry_duration() -> None:
+    remote = RemoteExecutionResult(
+        task_id="retrying-gpu-job",
+        provider="primeintellect",
+        status="provider_error",
+        usage=RemoteResourceUsage(wall_seconds=345.0, cpu_seconds=0.25),
+        cleanup=RemoteCleanupOutcome(attempted=True, succeeded=True),
+        provenance=RemoteExecutionProvenance(
+            requested_accelerator_kind="H100",
+            requested_accelerator_count=2,
+        ),
+    )
+
+    charge = campaign_result_with_reservation(
+        remote,
+        SchedulerBudget(compute_units=60.0, jobs=1),
+        output_ref="artifact://retrying-gpu-job",
+    )
+
+    assert charge.consumed.compute_units == pytest.approx(690.0)
+
+
 def test_campaign_worker_treats_invalid_successful_remote_payload_as_infrastructure_failure(
     tmp_path: Path,
 ) -> None:
@@ -780,6 +902,7 @@ def test_campaign_report_branch_usage_includes_retry_attempts(tmp_path: Path) ->
         CampaignJobResult(
             outcome="infrastructure_failure",
             consumed=SchedulerBudget(tokens=7, jobs=1),
+            retryable=True,
         ),
     )
     second = scheduler.claim("worker")[0]

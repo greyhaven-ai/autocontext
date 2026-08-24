@@ -270,7 +270,7 @@ class CampaignScheduler:
                     return state.result
                 raise ValueError("lease is no longer active")
             assignment = CampaignAssignment(job=state.request, lease=state.lease)
-            if result.outcome == "infrastructure_failure" and state.attempts < state.request.max_attempts:
+            if result.outcome == "infrastructure_failure" and result.retryable and state.attempts < state.request.max_attempts:
                 self._record(
                     "job_requeued",
                     {
@@ -327,7 +327,7 @@ class CampaignScheduler:
         return True
 
     def reconcile(self, *, now: float | None = None) -> tuple[str, ...]:
-        """Expire lost-worker leases and deterministically retry/fail their jobs."""
+        """Expire lost-worker leases without duplicating ambiguous dispatched work."""
         with self._lock:
             current = self.clock() if now is None else now
             reconciled: list[str] = []
@@ -347,7 +347,8 @@ class CampaignScheduler:
                     )
                     reconciled.append(state.request.job_id)
                     continue
-                event_type = "job_requeued" if state.attempts < state.request.max_attempts else "job_lease_failed"
+                retry_expired = state.request.retry_expired_lease and state.attempts < state.request.max_attempts
+                event_type = "job_requeued" if retry_expired else "job_lease_failed"
                 provisional = cancellation.provisional_expired_lease_result(state.request, lease)
                 self._record(
                     event_type,
@@ -360,7 +361,7 @@ class CampaignScheduler:
                     },
                 )
                 reconciled.append(state.request.job_id)
-                if event_type == "job_lease_failed":
+                if not retry_expired:
                     audit_items.append((CampaignAssignment(state.request, lease), provisional))
         for assignment, result in audit_items:
             failure = review_scheduler_checkpoint(
