@@ -195,6 +195,7 @@ def test_production_campaign_has_no_same_interpreter_override(runtime_modules: t
     assert "ExternalKernelBenchmarkRunner" not in source
     assert "trusted_unsafe" not in source
     assert "allow-untrusted" not in source
+    assert "max_retries=0" in source
     for evidence_field in (
         '"schema_version": "autocontext.kernel-h100-profile-evidence/v4"',
         '"champion":',
@@ -237,6 +238,9 @@ def test_mailbox_generator_stop_and_resume_reuse_the_exact_claim(
     assert result.source == source
     assert result.provider == "mailbox"
     assert result.model == "operator-supplied"
+    assert result.cost_usd == 0.0
+    assert result.cost_source == "not-billable"
+    assert result.usage.total_tokens == 0
     assert (mailbox / "accepted_candidate_0.json").is_file()
 
 
@@ -533,6 +537,10 @@ def test_post_run_evidence_failure_publishes_failed_terminal_status(
             str(confirmation_plan),
             "--proposals",
             "1",
+            "--output",
+            str(tmp_path / "output"),
+            "--run-id",
+            "test-evidence-export-failure",
         ],
     )
 
@@ -543,6 +551,112 @@ def test_post_run_evidence_failure_publishes_failed_terminal_status(
     assert status["status"] == "failed"
     assert status["error_type"] == "RuntimeError"
     assert status["error"] == "receipt export failed"
+    assert json.loads((run_dir / "campaign_status.json").read_text(encoding="utf-8")) == status
+    run_config = json.loads((run_dir / "campaign_config.json").read_text(encoding="utf-8"))
+    assert json.loads((mailbox / "campaign_config.json").read_text(encoding="utf-8")) == run_config
+    assert "resume" not in run_config
+    assert run_config["confirmation_identity"].startswith("sha256:")
+    assert run_config["confirmation_contract"]["plans"][0]["plan_commitment"].startswith("sha256:")
+
+
+def test_immutable_campaign_config_rejects_resume_drift_without_overwrite(
+    tmp_path: Path,
+    runtime_modules: tuple[Any, Any],
+) -> None:
+    _production_runtime, campaign = runtime_modules
+    path = tmp_path / "campaign_config.json"
+    original = {
+        "schema_version": "autocontext.kernel-campaign/v4",
+        "run_id": "run-1",
+        "docker_runtime": {"image": _PINNED_IMAGE},
+        "confirmation_private_plan_commitments": [f"sha256:{'a' * 64}"],
+    }
+    campaign._write_immutable_json(path, original, label="campaign config")
+
+    changed = copy.deepcopy(original)
+    changed["docker_runtime"]["image"] = f"registry.example/changed@sha256:{'b' * 64}"
+    with pytest.raises(RuntimeError, match="exact durable campaign contract"):
+        campaign._require_exact_json(path, changed, label="resumed run campaign config")
+
+    assert json.loads(path.read_text(encoding="utf-8")) == original
+
+
+def test_confirmation_plan_reservation_burns_plan_across_crash_restore(
+    tmp_path: Path,
+    runtime_modules: tuple[Any, Any],
+) -> None:
+    _production_runtime, campaign = runtime_modules
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    commitments = (f"sha256:{'a' * 64}", f"sha256:{'b' * 64}")
+    confirmation_identity = f"sha256:{'c' * 64}"
+    schedule = campaign._ConfirmationPlanSchedule(
+        run_dir,
+        run_id="run-1",
+        plan_commitments=commitments,
+        confirmation_identity=confirmation_identity,
+        proposal_limit=2,
+    )
+
+    assert schedule.reserve(proposal_index=1) == 0
+
+    # A new schedule instance models a process crash after the holdout was
+    # reserved but before any confirmation observation reached lineage.
+    restored = campaign._ConfirmationPlanSchedule(
+        run_dir,
+        run_id="run-1",
+        plan_commitments=commitments,
+        confirmation_identity=confirmation_identity,
+        proposal_limit=2,
+    )
+    assert restored.reserve(proposal_index=1) == 1
+    reservations = sorted((run_dir / "confirmation-plan-reservations").glob("*.json"))
+    assert [json.loads(path.read_text(encoding="utf-8"))["plan_commitment"] for path in reservations] == list(
+        commitments
+    )
+    with pytest.raises(RuntimeError, match="schedule is exhausted"):
+        restored.reserve(proposal_index=2)
+
+
+def test_campaign_control_prefers_outer_export_failure_over_complete_kernel(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.syspath_prepend(str(_BUNDLE))
+    campaign_control = importlib.import_module("campaign_control")
+    run_id = "run-1"
+    run_dir = tmp_path / run_id
+    run_dir.mkdir()
+    (run_dir / "campaign_status.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "status": "failed",
+                "error_type": "RuntimeError",
+                "error": "receipt export failed",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class CompleteKernelStatus:
+        def model_dump(self, *, mode: str) -> dict[str, Any]:
+            assert mode == "json"
+            return {"run_id": run_id, "status": "complete", "can_resume": False}
+
+    monkeypatch.setattr(campaign_control, "read_kernel_campaign_status", lambda *_args, **_kwargs: CompleteKernelStatus())
+
+    status = campaign_control._read_control_status(tmp_path, run_id)
+
+    assert status["status"] == "failed"
+    assert status["error"] == "receipt export failed"
+    assert status["profile_evidence_ready"] is False
+    assert status["kernel"]["status"] == "complete"
+
+    (run_dir / "campaign_status.json").unlink()
+    missing_outer = campaign_control._read_control_status(tmp_path, run_id)
+    assert missing_outer["status"] == "failed"
+    assert missing_outer["error_type"] == "OuterCampaignStatusMissing"
 
 
 def test_runtime_rejects_claimed_gpu_capacity_above_hard_limit(

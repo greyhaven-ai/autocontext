@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from autocontext.offline import require_runtime_available
 from autocontext.providers.base import LLMProvider, ProviderError
@@ -90,6 +90,9 @@ def create_provider(
     # this process does not control, so offline mode cannot vouch for them --
     # they are unavailable rather than silently trusted.
     require_runtime_available(provider_type)
+    single_dispatch_kwargs: dict[str, Any] = (
+        {"single_dispatch": True} if max_retries == 0 else {}
+    )
 
     if provider_type == "anthropic":
         from autocontext.providers.anthropic import AnthropicProvider
@@ -99,6 +102,7 @@ def create_provider(
             AnthropicProvider(
                 api_key=api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY"),
                 default_model_name=model or "claude-sonnet-5",
+                **single_dispatch_kwargs,
             ),
             max_retries=max_retries,
         )
@@ -112,6 +116,7 @@ def create_provider(
             "default_model_name": model or "gpt-5.6-terra",
             "base_url": resolve_provider_base_url(provider_type, base_url),
         }
+        kwargs.update(single_dispatch_kwargs)
         return RetryProvider(OpenAICompatibleProvider(**kwargs), max_retries=max_retries)
 
     if provider_type == "openrouter":
@@ -131,6 +136,7 @@ def create_provider(
                 ),
                 base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "anthropic/claude-sonnet-5",
+                **single_dispatch_kwargs,
             ),
             max_retries=max_retries,
         )
@@ -144,6 +150,7 @@ def create_provider(
                 api_key="ollama",
                 base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "llama3.1",
+                **single_dispatch_kwargs,
             ),
             max_retries=max_retries,
         )
@@ -157,6 +164,7 @@ def create_provider(
                 api_key=api_key or "no-key",
                 base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "default",
+                **single_dispatch_kwargs,
             ),
             max_retries=max_retries,
         )

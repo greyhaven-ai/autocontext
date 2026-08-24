@@ -18,6 +18,7 @@ from autocontext.kernel_evolution.models import (
     canonical_digest,
     content_digest,
 )
+from autocontext.kernel_evolution.sanitization import sanitize_provider_error
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
 
 _TRUNCATED_STOP_REASONS = frozenset({"max_tokens", "length", "incomplete", "content_filter"})
@@ -47,15 +48,26 @@ class KernelGenerationError(RuntimeError):
 
 class KernelGenerationCancelled(KernelGenerationError):
     """Raised when an operator stop is observed at a safe control-plane boundary."""
+    def __init__(
+        self,
+        message: str,
+        *,
+        failures: tuple[KernelGenerationFailure, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.failures = failures
 
 
 class KernelGenerationValidationError(KernelGenerationError):
     """Raised when a provider response is not an exact executable source artifact."""
 
 
+class _KernelGenerationAccountingError(KernelGenerationValidationError):
+    pass
+
+
 class KernelGenerationBudgetExceeded(KernelGenerationError):
     """Raised before GPU work when the durable generation budget is exhausted."""
-
     def __init__(
         self,
         message: str,
@@ -316,8 +328,18 @@ def build_generation_result(
     retry_failures: tuple[KernelGenerationFailure, ...] = (),
     max_source_bytes: int = 1_000_000,
     cost_calculator: CostCalculator | None = None,
+    billable: bool = True,
     completed_at: str | None = None,
 ) -> KernelGenerationResult:
+    usage = normalized_generation_usage(completion.usage)
+    usage_fields = (completion.usage or {}).keys()
+    has_directional_pair = {"input_tokens", "output_tokens"} <= usage_fields or {
+        "prompt_tokens", "completion_tokens"
+    } <= usage_fields
+    if billable and (not has_directional_pair or usage.input_tokens + usage.output_tokens == 0):
+        raise _KernelGenerationAccountingError("successful response lacks trustworthy directional token usage")
+    if not billable and (completion.cost_usd != 0.0 or any(usage.provider_usage.values())):
+        raise _KernelGenerationAccountingError("non-billable generation requires zero cost and token usage")
     source = validate_kernel_source(
         completion.text,
         source_suffix=source_suffix,
@@ -325,20 +347,20 @@ def build_generation_result(
         stop_reason=completion.stop_reason,
         max_source_bytes=max_source_bytes,
     )
-    usage = normalized_generation_usage(completion.usage)
     actual_model = (completion.model or model).strip()
     if not actual_model:
         raise KernelGenerationValidationError("provider did not identify the generation model")
-    if completion.cost_usd is None:
+    if not billable:
+        cost_usd = 0.0
+        cost_source: Literal["provider-reported", "estimated-model-pricing-v1", "not-billable"] = "not-billable"
+    elif completion.cost_usd is None:
         estimate = (cost_calculator or CostCalculator()).calculate(
             actual_model,
             usage.input_tokens,
             usage.output_tokens,
         )
         cost_usd = estimate.total_cost
-        cost_source: Literal["provider-reported", "estimated-model-pricing-v1", "not-billable"] = (
-            "estimated-model-pricing-v1"
-        )
+        cost_source = "estimated-model-pricing-v1"
     else:
         cost_usd = float(completion.cost_usd)
         cost_source = "provider-reported"
@@ -368,7 +390,7 @@ def build_generation_result(
 
 class ProviderKernelGenerator:
     """Provider-registry-compatible generator with explicit bounded retries."""
-
+    supports_durable_call_fence = True
     def __init__(
         self,
         provider: LLMProvider,
@@ -385,12 +407,16 @@ class ProviderKernelGenerator:
         ),
         temperature: float = 0.0,
         cancellation_requested: Callable[[], bool] | None = None,
+        call_observer: Callable[[int, int], None] | None = None,
+        failure_observer: Callable[[KernelGenerationFailure], None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         if not provider_id.strip():
             raise ValueError("provider_id must not be empty")
+        if provider.supports_single_dispatch is not True:
+            raise ValueError("durable kernel generation requires a single-dispatch provider")
         if not math.isfinite(temperature) or temperature < 0:
             raise ValueError("temperature must be non-negative and finite")
         self._provider = provider
@@ -407,36 +433,100 @@ class ProviderKernelGenerator:
         self.system_prompt = system_prompt
         self.temperature = temperature
         self._cancelled = cancellation_requested or (lambda: False)
+        self._call_observer = call_observer
+        self._failure_observer = failure_observer
         self._monotonic = monotonic
         self._sleep = sleep
         self._now = now or (lambda: datetime.now(UTC))
         self._history: list[KernelGenerationResult] = []
+        self._pending_proposal_index: int | None = None
+        self._pending_failures: list[KernelGenerationFailure] = []
 
     def restore(self, history: Iterable[KernelGenerationResult]) -> None:
         restored = list(history)
         if [item.proposal_index for item in restored] != list(range(1, len(restored) + 1)):
             raise ValueError("generation history must be contiguous from proposal one")
         self._history = restored
+        self._pending_proposal_index = None
+        self._pending_failures = []
+
+    def restore_pending_failures(
+        self,
+        proposal_index: int,
+        failures: Iterable[KernelGenerationFailure],
+    ) -> None:
+        """Restore durably receipted failed calls for the next incomplete proposal."""
+        restored = list(failures)
+        expected_proposal = len(self._history) + 1
+        if proposal_index != expected_proposal:
+            raise ValueError("pending failures must belong to the next incomplete proposal")
+        if [failure.call_index for failure in restored] != list(range(1, len(restored) + 1)):
+            raise ValueError("pending generation failure calls must be contiguous from call one")
+        if any(failure.proposal_index != proposal_index for failure in restored):
+            raise ValueError("pending generation failures must belong to the restored proposal")
+        if any(failure.provider != self.provider_id for failure in restored):
+            raise ValueError("pending generation failures must belong to the configured provider")
+        if len(restored) > self.budget.max_retries_per_proposal:
+            raise ValueError("pending generation failures leave no bounded retry to resume")
+        if any(not failure.retryable for failure in restored):
+            raise ValueError("a non-retryable generation failure cannot be resumed")
+        self._pending_proposal_index = proposal_index if restored else None
+        self._pending_failures = restored
+
+    def set_call_observer(self, observer: Callable[[int, int], None] | None) -> None:
+        """Bind the durable pre-dispatch claim writer."""
+        self._call_observer = observer
+
+    def set_failure_observer(
+        self,
+        observer: Callable[[KernelGenerationFailure], None] | None,
+    ) -> None:
+        """Bind the durable completed-failure receipt writer."""
+        self._failure_observer = observer
 
     @property
     def budget_state(self) -> KernelGenerationBudgetState:
-        return KernelGenerationBudgetState.from_results(self._history)
+        return KernelGenerationBudgetState.from_activity(self._history, self._pending_failures)
+
+    @property
+    def generation_budget_id(self) -> str:
+        return self.budget.budget_id
 
     def __call__(self, prompt: str, generation: int) -> KernelGenerationResult:
         proposal_index = generation + 1
+        if self._pending_proposal_index not in (None, proposal_index):
+            raise KernelGenerationBudgetExceeded(
+                "proposal index does not match the restored incomplete generation",
+                failures=tuple(self._pending_failures),
+            )
+        failures = list(self._pending_failures)
         state = self.budget_state
-        self._require_start_budget(proposal_index, state)
-        failures: list[KernelGenerationFailure] = []
-        for call_index in range(1, self.budget.max_retries_per_proposal + 2):
+        self._require_start_budget(proposal_index, state, failures=tuple(failures))
+        first_call_index = len(failures) + 1
+        for call_index in range(first_call_index, self.budget.max_retries_per_proposal + 2):
             if self._cancelled():
-                raise KernelGenerationCancelled("kernel campaign stop requested before provider dispatch")
+                raise KernelGenerationCancelled(
+                    "kernel campaign stop requested before provider dispatch",
+                    failures=tuple(failures),
+                )
             remaining_output = min(
                 self.budget.max_output_tokens_per_call,
                 self.budget.max_total_output_tokens - state.output_tokens,
                 self.budget.max_total_tokens - state.total_tokens,
             )
             if remaining_output < 1:
-                raise KernelGenerationBudgetExceeded("kernel generation token budget is exhausted")
+                raise KernelGenerationBudgetExceeded(
+                    "kernel generation token budget is exhausted",
+                    failures=tuple(failures),
+                )
+            try:
+                if self._call_observer is not None:
+                    self._call_observer(proposal_index, call_index)
+            except KernelGenerationCancelled as exc:
+                raise KernelGenerationCancelled(
+                    str(exc),
+                    failures=tuple(failures) or exc.failures,
+                ) from exc
             started = self._monotonic()
             completion: CompletionResult | None = None
             latency: float | None = None
@@ -463,6 +553,11 @@ class ProviderKernelGenerator:
                     max_source_bytes=self.budget.max_source_bytes,
                     completed_at=self._now().isoformat(),
                 )
+            except KernelGenerationCancelled as exc:
+                raise KernelGenerationCancelled(
+                    str(exc),
+                    failures=tuple(failures) or exc.failures,
+                ) from exc
             except (ProviderError, KernelGenerationValidationError, ValueError) as exc:
                 if latency is None:
                     latency = max(0.0, self._monotonic() - started)
@@ -485,14 +580,9 @@ class ProviderKernelGenerator:
                 retryable = (
                     self._is_transient(exc)
                     if isinstance(exc, ProviderError)
-                    else usage_valid
+                    else usage_valid and not isinstance(exc, _KernelGenerationAccountingError)
                 )
                 has_retry = call_index <= self.budget.max_retries_per_proposal and retryable
-                delay = (
-                    float(self.budget.retry_backoff_seconds) * (2 ** (call_index - 1))
-                    if has_retry
-                    else 0.0
-                )
                 failure = self._failure(
                     proposal_index=proposal_index,
                     call_index=call_index,
@@ -506,13 +596,24 @@ class ProviderKernelGenerator:
                 )
                 failures.append(failure)
                 state = self._state_with_failures(state, (failure,))
-                self._require_within_budget(state, failures=tuple(failures))
+                self._set_pending(proposal_index, failures)
+                try:
+                    self._require_within_budget(state, failures=tuple(failures))
+                except KernelGenerationBudgetExceeded:
+                    self._observe_failure(failure)
+                    raise
                 if not has_retry:
+                    self._observe_failure(failure)
                     raise KernelGenerationProviderError(
                         f"kernel generation failed after {call_index} bounded call(s): {failure.error}",
                         failures=tuple(failures),
                     ) from exc
+                delay = float(self.budget.retry_backoff_seconds) * (2 ** (call_index - 1))
                 if state.wall_seconds + delay > float(self.budget.max_wall_seconds):
+                    failure = failure.model_copy(update={"retryable": False})
+                    failures[-1] = failure
+                    self._set_pending(proposal_index, failures)
+                    self._observe_failure(failure)
                     raise KernelGenerationBudgetExceeded(
                         "kernel generation wall-clock budget cannot admit the next retry",
                         failures=tuple(failures),
@@ -523,23 +624,44 @@ class ProviderKernelGenerator:
                     state = state.model_copy(
                         update={"wall_seconds": float(state.wall_seconds) + delay}
                     )
-                    self._sleep(delay)
+                    self._set_pending(proposal_index, failures)
+                self._observe_failure(failure)
+                if delay:
+                    try:
+                        self._sleep(delay)
+                    except KernelGenerationCancelled as exc:
+                        raise KernelGenerationCancelled(
+                            str(exc),
+                            failures=tuple(failures),
+                        ) from exc
                 continue
 
             combined = self._state_with_result(state, result)
             self._require_within_budget(combined, result=result, failures=tuple(failures))
             self._history.append(result)
+            self._pending_proposal_index = None
+            self._pending_failures = []
             return result
         raise AssertionError("bounded provider loop did not terminate")
 
-    def _require_start_budget(self, proposal_index: int, state: KernelGenerationBudgetState) -> None:
+    def _require_start_budget(
+        self,
+        proposal_index: int,
+        state: KernelGenerationBudgetState,
+        *,
+        failures: tuple[KernelGenerationFailure, ...] = (),
+    ) -> None:
         if proposal_index != state.completed_proposals + 1:
             raise KernelGenerationBudgetExceeded(
-                "proposal index does not follow the restored generation history"
+                "proposal index does not follow the restored generation history",
+                failures=failures,
             )
         if proposal_index > self.budget.proposal_cap:
-            raise KernelGenerationBudgetExceeded("kernel generation proposal cap is exhausted")
-        self._require_within_budget(state)
+            raise KernelGenerationBudgetExceeded(
+                "kernel generation proposal cap is exhausted",
+                failures=failures,
+            )
+        self._require_within_budget(state, failures=failures)
 
     def _require_within_budget(
         self,
@@ -565,6 +687,20 @@ class ProviderKernelGenerator:
                 result=result,
                 failures=failures,
             )
+
+    def _set_pending(self, proposal_index: int, failures: list[KernelGenerationFailure]) -> None:
+        self._pending_proposal_index = proposal_index
+        self._pending_failures = list(failures)
+
+    def _observe_failure(self, failure: KernelGenerationFailure) -> None:
+        try:
+            if self._failure_observer is not None:
+                self._failure_observer(failure)
+        except KernelGenerationCancelled as exc:
+            raise KernelGenerationCancelled(
+                str(exc),
+                failures=tuple(self._pending_failures) or exc.failures,
+            ) from exc
 
     def _failure(
         self,
@@ -596,7 +732,7 @@ class ProviderKernelGenerator:
             outcome=outcome,
             retryable=retryable,
             error_type=type(exc).__name__,
-            error=str(exc)[:1_000] or type(exc).__name__,
+            error=sanitize_provider_error(exc),
             usage=usage,
             cost_usd=accounted_cost,
             cost_source=("provider-reported" if valid_reported_cost else "estimated-model-pricing-v1"),

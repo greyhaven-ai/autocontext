@@ -155,6 +155,10 @@ class RetryProvider(LLMProvider):
         return self._provider.supports_thinking_stream
 
     @property
+    def supports_single_dispatch(self) -> bool:
+        return self.max_retries == 0 and self._provider.supports_single_dispatch is True
+
+    @property
     def supports_thinking_output_schema(self) -> bool:
         # Must be forwarded, not inherited from the base default: this wrapper
         # has no thinking loop of its own, so the base would answer for the

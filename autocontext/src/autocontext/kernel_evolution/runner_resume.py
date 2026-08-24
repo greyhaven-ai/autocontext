@@ -9,6 +9,11 @@ from autocontext.execution.agent_task_evolution import (
     LessonSignal,
     accumulate_lessons,
 )
+from autocontext.kernel_evolution.adaptive_evidence import confirmation_identity_unavailable
+from autocontext.kernel_evolution.generation import (
+    KernelGenerationFailure,
+    KernelGenerationResult,
+)
 from autocontext.kernel_evolution.models import (
     KernelAttemptRecord,
     KernelCandidate,
@@ -27,25 +32,25 @@ def restore_kernel_run(
         return None
     manifest = runner._store.read_manifest()
     _validate_manifest(runner, manifest, proposals=proposals)
+    _reload_generation_activity(runner)
     runner._store.reconcile_attempt_files(
         expected_attempt_ids=runner._journal.evaluation_claim_attempt_ids()
     )
+    attempts = runner._store.read_attempts()
+    runner._journal.assert_resumable(
+        attempts_by_id={item.attempt_id for item in attempts},
+        expected_generation_identity=runner._generator_identity,
+        claim_resume_safe=bool(getattr(runner._generate_fn, "supports_claim_resume", False)),
+        call_fence_resume_safe=runner._call_fence_resume_safe,
+    )
+    _restore_generation_history(runner)
+    _reject_unavailable_confirmation(runner, manifest, attempts)
     summary = runner._store.read_summary()
     if manifest.get("status") == "complete":
         if summary is None:
             raise ValueError("complete kernel campaign is missing its summary")
-        attempts = runner._store.read_attempts()
         if attempts != summary.attempts:
             raise ValueError("complete kernel summary and append-only lineage disagree")
-        runner._journal.assert_resumable(
-            attempts_by_id={item.attempt_id for item in attempts},
-            resumable_generation_identity=(
-                runner._generator_identity
-                if getattr(runner._generate_fn, "supports_claim_resume", False)
-                else None
-            ),
-        )
-        _restore_generation_history(runner)
         for attempt in attempts:
             if attempt.role == "candidate":
                 generation = runner._journal.read_generation_result(attempt.generation)
@@ -59,21 +64,12 @@ def restore_kernel_run(
         runner._attempts = list(attempts)
         champion_record = next(item for item in attempts if item.attempt_id == summary.champion_attempt_id)
         champion = runner._store.read_candidate(champion_record)
+        runner._store.validate_champion(champion, champion_record)
         from autocontext.kernel_evolution.runner import _Champion
 
         runner._champion = _Champion(champion, champion_record.observation, champion_record)
         return champion, attempts[0], _state_from_attempts(runner, attempts), summary.precision_profile
 
-    attempts = runner._store.read_attempts()
-    runner._journal.assert_resumable(
-        attempts_by_id={item.attempt_id for item in attempts},
-        resumable_generation_identity=(
-            runner._generator_identity
-            if getattr(runner._generate_fn, "supports_claim_resume", False)
-            else None
-        ),
-    )
-    _restore_generation_history(runner)
     runner._journal.clear_stop_for_resume()
     if not attempts:
         return None
@@ -162,6 +158,74 @@ def _restore_generation_history(runner: Any) -> None:
             runner._generation_results[index]
             for index in sorted(runner._generation_results)
         )
+    proposal_index = len(runner._generation_results) + 1
+    if runner._journal.read_generation_claim(proposal_index) is None:
+        return
+    failures, unresolved = runner._journal.generation_call_state(proposal_index)
+    if unresolved:
+        return
+    restore_pending = getattr(runner._generate_fn, "restore_pending_failures", None)
+    if callable(restore_pending) and failures:
+        restore_pending(proposal_index, failures)
+
+
+def _reload_generation_activity(runner: Any) -> None:
+    results = runner._journal.generation_results(recover_orphans=True)
+    runner._generation_results = {item.proposal_index: item for item in results}
+    activity_results, incomplete_failures = runner._journal.generation_activity()
+    if activity_results != results:
+        raise ValueError("generation activity changed while restoring the execution lease")
+    validate_generation_budget_contract(runner, results, incomplete_failures)
+    runner._require_generation_budget()
+
+
+def validate_generation_budget_contract(
+    runner: Any,
+    results: tuple[KernelGenerationResult, ...] | list[KernelGenerationResult],
+    incomplete_failures: tuple[KernelGenerationFailure, ...] = (),
+) -> None:
+    """Validate per-proposal and per-call ceilings, not only aggregate totals."""
+    budget = runner._generation_budget
+    for result in results:
+        if result.retry_count > budget.max_retries_per_proposal:
+            raise ValueError("generation receipt exceeds the per-proposal retry budget")
+        if [item.call_index for item in result.failures] != list(range(1, result.retry_count + 1)):
+            raise ValueError("generation receipt failure call indexes are not contiguous")
+        if result.usage.output_tokens > budget.max_output_tokens_per_call:
+            raise ValueError("generation receipt exceeds the per-call output-token budget")
+        for failure in result.failures:
+            if failure.usage.output_tokens > budget.max_output_tokens_per_call:
+                raise ValueError("generation receipt exceeds the per-call output-token budget")
+    for failure in incomplete_failures:
+        if failure.call_index > budget.max_retries_per_proposal + 1:
+            raise ValueError("generation failure exceeds the per-proposal retry budget")
+        if failure.usage.output_tokens > budget.max_output_tokens_per_call:
+            raise ValueError("generation failure exceeds the per-call output-token budget")
+
+
+def _reject_unavailable_confirmation(
+    runner: Any,
+    manifest: dict[str, Any],
+    attempts: list[KernelAttemptRecord],
+) -> None:
+    if not any(
+        confirmation_identity_unavailable(
+            finite_sample=runner._finite_sample,
+            decision=attempt.confirmation_decision,
+            observation=attempt.confirmation_observation,
+        )
+        for attempt in attempts
+    ):
+        return
+    failed = dict(manifest)
+    failed.update(
+        status="failed",
+        error_type="KernelIntegrityError",
+        error="confirmation protocol identity is unavailable; campaign cannot resume safely",
+    )
+    runner._store.write_manifest(failed)
+    runner._journal.refresh_artifact_index()
+    raise ValueError("confirmation protocol identity is unavailable; campaign cannot resume safely")
 
 
 def _state_from_attempts(runner: Any, attempts: list[KernelAttemptRecord]) -> AgentTaskGenerationState:
@@ -211,8 +275,10 @@ def _validate_manifest(runner: Any, manifest: dict[str, Any], *, proposals: int)
         "problem_id": runner.config.problem_id,
         "baseline_artifact_digest": baseline.artifact_digest,
         "baseline_source_digest": baseline.source_digest,
+        "evolution": runner._evolution_contract(),
         "decision_policy_id": runner._decision_policy.policy_id,
         "benchmark": runner._evaluator.manifest(),
+        "confirmation": runner._confirmation_contract(),
     }
     for name, value in expected.items():
         if manifest.get(name) != value:
@@ -222,10 +288,14 @@ def _validate_manifest(runner: Any, manifest: dict[str, Any], *, proposals: int)
         raise ValueError("resumed kernel campaign has no generation contract")
     if generation.get("budget_id") != runner._generation_budget.budget_id:
         raise ValueError("resumed kernel campaign generation budget changed")
+    if generation.get("budget") != runner._generation_budget.model_dump(mode="json"):
+        raise ValueError("resumed kernel campaign generation budget payload changed")
     if generation.get("claim_resume_safe") != bool(
         getattr(runner._generate_fn, "supports_claim_resume", False)
     ):
         raise ValueError("resumed kernel campaign generation resume capability changed")
+    if generation.get("call_fence_resume_safe") != runner._call_fence_resume_safe:
+        raise ValueError("resumed kernel campaign call-fence resume capability changed")
     if generation.get("generator_identity") != runner._generator_identity:
         raise ValueError("resumed kernel campaign generator identity changed")
     target = manifest.get("proposals_requested")

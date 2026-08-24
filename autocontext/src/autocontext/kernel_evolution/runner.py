@@ -22,7 +22,6 @@ from autocontext.kernel_evolution.generation import (
     KernelGenerateFn,
     KernelGenerationBudget,
     KernelGenerationBudgetExceeded,
-    KernelGenerationBudgetState,
     KernelGenerationCancelled,
     KernelGenerationProviderError,
     KernelGenerationResult,
@@ -47,6 +46,7 @@ from autocontext.kernel_evolution.protocols import (
     KernelSequentialEvidence,
 )
 from autocontext.kernel_evolution.runner_config import KernelEvolutionConfig
+from autocontext.util.file_lock import advisory_path_lock
 
 
 class KernelBaselineError(RuntimeError):
@@ -340,6 +340,7 @@ class KernelEvolutionRunner:
         confirmation_fn: KernelConfirmationFn | None = None,
         sealed_audit_root: Path | None = None,
         generation_budget: KernelGenerationBudget | None = None,
+        confirmation_identity: str | None = None,
         resume: bool = False,
     ) -> None:
         if evaluator.config.problem_id != config.problem_id:
@@ -371,9 +372,30 @@ class KernelEvolutionRunner:
         if resume and run_id is None:
             raise ValueError("resuming a kernel campaign requires its stable run_id")
         proposal_cap = config.proposal_cap or 10_000
-        self._generation_budget = generation_budget or KernelGenerationBudget(proposal_cap=proposal_cap)
+        generator_budget = getattr(generate_fn, "budget", None)
+        self._generation_budget = generation_budget or (
+            generator_budget
+            if isinstance(generator_budget, KernelGenerationBudget)
+            else KernelGenerationBudget(proposal_cap=proposal_cap)
+        )
         if config.proposal_cap is not None and self._generation_budget.proposal_cap != config.proposal_cap:
             raise ValueError("generation and evaluation proposal caps must match")
+        if (
+            isinstance(generator_budget, KernelGenerationBudget)
+            and generator_budget.budget_id != self._generation_budget.budget_id
+        ):
+            raise ValueError("runner and generator generation budgets must match")
+        generator_budget_id = getattr(generate_fn, "generation_budget_id", None)
+        if (
+            generator_budget_id is not None
+            and generator_budget_id != self._generation_budget.budget_id
+        ):
+            raise ValueError("runner and generator generation budget identities must match")
+        if confirmation_identity is not None and not confirmation_identity.strip():
+            raise ValueError("confirmation_identity must not be empty")
+        self._confirmation_identity = confirmation_identity or (
+            self._callable_identity(confirmation_fn) if confirmation_fn is not None else None
+        )
         self._generator_identity = self._build_generator_identity()
         self._resume = resume
         self._store = KernelLineageStore(
@@ -384,8 +406,21 @@ class KernelEvolutionRunner:
             resume=resume,
         )
         self._journal = KernelCampaignJournal(self._store.run_dir, self.run_id)
+        set_call_observer = getattr(self._generate_fn, "set_call_observer", None)
+        set_failure_observer = getattr(self._generate_fn, "set_failure_observer", None)
+        self._call_fence_resume_safe = bool(
+            getattr(self._generate_fn, "supports_durable_call_fence", False) is True
+            and callable(set_call_observer)
+            and callable(set_failure_observer)
+            and callable(getattr(self._generate_fn, "restore_pending_failures", None))
+        )
+        if callable(set_call_observer):
+            set_call_observer(self._journal.claim_generation_call)
+        if callable(set_failure_observer):
+            set_failure_observer(self._journal.write_generation_failure)
         restored_generations = self._journal.generation_results() if resume else []
         self._generation_results = {item.proposal_index: item for item in restored_generations}
+        self._execution_lock_path = lineage_root / ".kernel-execution-locks" / f"{self.run_id}.lock"
         self._decision_policy = KernelDecisionPolicy(
             schema_version=(
                 "autocontext.kernel-decision-policy/v2"
@@ -537,6 +572,7 @@ class KernelEvolutionRunner:
             if existing.prompt_digest != content_digest(prompt.encode("utf-8")):
                 raise KernelIntegrityError("resumed generation prompt does not match its durable receipt")
             self._generation_results[proposal_index] = existing
+            self._require_generation_budget()
             return existing.source
         if self._journal.stop_requested():
             raise KernelGenerationCancelled("kernel campaign stop requested before provider dispatch")
@@ -546,8 +582,12 @@ class KernelEvolutionRunner:
         existing_claim = self._journal.read_generation_claim(proposal_index)
         claim_resume_safe = bool(getattr(self._generate_fn, "supports_claim_resume", False))
         if existing_claim is not None:
+            _, unresolved_calls = self._journal.generation_call_state(proposal_index)
+            resume_safe = not unresolved_calls and (
+                self._call_fence_resume_safe or claim_resume_safe
+            )
             if (
-                not claim_resume_safe
+                not resume_safe
                 or existing_claim.prompt_digest != content_digest(prompt.encode("utf-8"))
                 or existing_claim.generator_identity != self._generator_identity
             ):
@@ -563,6 +603,12 @@ class KernelEvolutionRunner:
             )
         try:
             generated = self._generate_fn(prompt, generation)
+        except KernelGenerationCancelled as exc:
+            self._journal.write_generation_cancellation(
+                proposal_index,
+                tuple(getattr(exc, "failures", ())),
+            )
+            raise
         except KernelGenerationProviderError as exc:
             self._journal.write_terminal_failures(proposal_index, exc.failures, outcome="provider_error")
             raise
@@ -620,6 +666,9 @@ class KernelEvolutionRunner:
             or result.entrypoint != self.config.entrypoint
         ):
             raise KernelIntegrityError("generated source receipt conflicts with the active proposal contract")
+        from autocontext.kernel_evolution.runner_resume import validate_generation_budget_contract
+
+        validate_generation_budget_contract(self, (result,))
         candidate = KernelCandidate(
             source=result.source,
             source_suffix=result.source_suffix,
@@ -644,9 +693,7 @@ class KernelEvolutionRunner:
         return result.source
 
     def _require_generation_budget(self) -> None:
-        state = KernelGenerationBudgetState.from_results(
-            self._generation_results[index] for index in sorted(self._generation_results)
-        )
+        state = self._journal.budget_state()
         exceeded = []
         if state.input_tokens > self._generation_budget.max_total_input_tokens:
             exceeded.append("input_tokens")
@@ -661,7 +708,11 @@ class KernelEvolutionRunner:
         if exceeded:
             raise KernelGenerationBudgetExceeded(
                 f"kernel generation budget exceeded: {', '.join(exceeded)}",
-                result=self._generation_results[max(self._generation_results)],
+                result=(
+                    self._generation_results[max(self._generation_results)]
+                    if self._generation_results
+                    else None
+                ),
             )
 
     def _build_generator_identity(self) -> str:
@@ -685,12 +736,13 @@ class KernelEvolutionRunner:
             }
         )
 
-    def _callable_identity(self) -> str:
-        module = getattr(self._generate_fn, "__module__", None)
-        qualname = getattr(self._generate_fn, "__qualname__", None)
+    def _callable_identity(self, function: Any | None = None) -> str:
+        target = self._generate_fn if function is None else function
+        module = getattr(target, "__module__", None)
+        qualname = getattr(target, "__qualname__", None)
         if isinstance(module, str) and isinstance(qualname, str):
             return f"{module}.{qualname}"
-        return f"{type(self._generate_fn).__module__}.{type(self._generate_fn).__qualname__}"
+        return f"{type(target).__module__}.{type(target).__qualname__}"
 
     def _manifest(self, *, status: str, **extra: Any) -> dict[str, Any]:
         baseline = KernelCandidate(
@@ -710,16 +762,17 @@ class KernelEvolutionRunner:
             "artifact_identity_version": ARTIFACT_IDENTITY_VERSION,
             "baseline_artifact_digest": baseline.artifact_digest,
             "baseline_source_digest": baseline.source_digest,
-            "evolution": asdict(self.config) | {"baseline_source": "stored as a content-addressed artifact"},
+            "evolution": self._evolution_contract(),
             "benchmark": self._evaluator.manifest(),
             "decision_policy": self._decision_policy.model_dump(mode="json"),
             "decision_policy_id": self._decision_policy.policy_id,
-            "confirmation": {"enabled": self._confirmation_fn is not None},
+            "confirmation": self._confirmation_contract(),
             "generation": {
                 "generator_identity": self._generator_identity,
                 "claim_resume_safe": bool(
                     getattr(self._generate_fn, "supports_claim_resume", False)
                 ),
+                "call_fence_resume_safe": self._call_fence_resume_safe,
                 "budget_id": self._generation_budget.budget_id,
                 "budget": self._generation_budget.model_dump(mode="json"),
                 "budget_state": self._journal.budget_state().model_dump(mode="json"),
@@ -727,7 +780,17 @@ class KernelEvolutionRunner:
             **extra,
         }
 
+    def _evolution_contract(self) -> dict[str, Any]:
+        return asdict(self.config) | {"baseline_source": "stored as a content-addressed artifact"}
+
+    def _confirmation_contract(self) -> dict[str, Any]:
+        return {
+            "enabled": self._confirmation_fn is not None,
+            "identity": self._confirmation_identity,
+        }
+
     def run(self, proposals: int) -> KernelEvolutionResult:
         from autocontext.kernel_evolution.runner_lifecycle import run_kernel_evolution
 
-        return run_kernel_evolution(self, proposals)
+        with advisory_path_lock(self._execution_lock_path):
+            return run_kernel_evolution(self, proposals)

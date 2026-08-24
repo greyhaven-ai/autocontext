@@ -36,6 +36,8 @@ def run_kernel_evolution(runner: Any, proposals: int) -> KernelEvolutionResult:
     if runner._has_run:
         raise RuntimeError("KernelEvolutionRunner instances are single-use")
     runner._has_run = True
+    if not runner._resume and (runner.run_dir / "manifest.json").exists():
+        raise FileExistsError(f"kernel run already started: {runner.run_dir}")
     if proposals > runner._generation_budget.proposal_cap:
         raise ValueError(
             f"proposals ({proposals}) exceed the generation proposal cap "
@@ -57,12 +59,12 @@ def run_kernel_evolution(runner: Any, proposals: int) -> KernelEvolutionResult:
             runner._manifest(status="evaluating_baseline", proposals_requested=proposals)
         )
         runner._journal.refresh_artifact_index()
-        baseline_claim = runner._journal.begin_evaluation(
+        with runner._journal.begin_evaluation(
             generation=0,
             role="baseline",
             artifact_digest=baseline.artifact_digest,
-        )
-        baseline_observation = runner._evaluator.evaluate(baseline, baseline)
+        ) as baseline_claim:
+            baseline_observation = runner._evaluator.evaluate(baseline, baseline)
         expected_sequential = runner.config.sequential_testing
         report = baseline_observation.report
         observed_sequential = report.protocol.sequential_testing if report is not None else None
@@ -160,26 +162,34 @@ def run_kernel_evolution(runner: Any, proposals: int) -> KernelEvolutionResult:
         )
         if candidate.artifact_digest != generation_result.artifact_digest:
             raise KernelIntegrityError("candidate source changed after its generation receipt was persisted")
-        evaluation_claim = runner._journal.begin_evaluation(
+        if runner._journal.stop_requested():
+            raise KernelGenerationCancelled(
+                "kernel campaign stop requested after source generation and before GPU evaluation"
+            )
+        with runner._journal.begin_evaluation(
             generation=proposal_index,
             role="candidate",
             artifact_digest=candidate.artifact_digest,
             generation_receipt_id=generation_result.receipt_id,
-        )
-        observation = runner._evaluator.evaluate(
-            candidate,
-            runner._champion.candidate,
-            expected_scope_id=baseline_observation.hardware_scope_id,
-            expected_baseline_id=baseline_observation.baseline_id,
-            expected_protocol_id=baseline_observation.protocol_id,
-        )
-        provisional_decision = runner._policy.decide(observation)
-        confirmation_observation, confirmation_decision, decision = runner._confirm(
-            candidate,
-            runner._champion.candidate,
-            observation,
-            provisional_decision,
-        )
+        ) as evaluation_claim:
+            observation = runner._evaluator.evaluate(
+                candidate,
+                runner._champion.candidate,
+                expected_scope_id=baseline_observation.hardware_scope_id,
+                expected_baseline_id=baseline_observation.baseline_id,
+                expected_protocol_id=baseline_observation.protocol_id,
+            )
+            provisional_decision = runner._policy.decide(observation)
+            if runner._confirmation_fn is not None and runner._journal.stop_requested():
+                raise KernelGenerationCancelled(
+                    "kernel campaign stop requested after primary evaluation and before confirmation"
+                )
+            confirmation_observation, confirmation_decision, decision = runner._confirm(
+                candidate,
+                runner._champion.candidate,
+                observation,
+                provisional_decision,
+            )
         aggregate_feedback = runner._evaluator.config.adaptive_feedback_policy == "aggregate-gates"
         if aggregate_feedback:
             gate_status = {gate.name: gate.status for gate in provisional_decision.gates}

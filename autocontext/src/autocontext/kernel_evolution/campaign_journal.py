@@ -4,41 +4,38 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
-from pydantic import Field, model_validator
-
+from autocontext.kernel_evolution.campaign_journal_artifacts import (
+    add_durable_failure,
+    artifact_kind,
+    champion_artifact_digest,
+)
+from autocontext.kernel_evolution.campaign_journal_models import (
+    KernelCampaignStatus,
+    KernelEvaluationClaim,
+    KernelGenerationAttemptLink,
+    KernelGenerationCallClaim,
+    KernelGenerationClaim,
+    KernelGenerationFailureReceipt,
+    KernelRunArtifact,
+    KernelRunArtifactIndex,
+)
 from autocontext.kernel_evolution.generation import (
     KernelGenerationBudget,
     KernelGenerationBudgetState,
     KernelGenerationFailure,
     KernelGenerationResult,
 )
-from autocontext.kernel_evolution.models import KernelCandidate, StrictModel, canonical_digest, content_digest
+from autocontext.kernel_evolution.models import KernelCandidate, canonical_digest, content_digest
+from autocontext.util.file_lock import advisory_path_lock
 from autocontext.util.json_io import read_json, write_json, write_text_atomic
 
 _SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-KernelArtifactKind = Literal[
-    "manifest",
-    "prompt",
-    "generation_claim",
-    "generation_receipt",
-    "generation_failure",
-    "evaluation_claim",
-    "attempt_link",
-    "source",
-    "report",
-    "attempt",
-    "lineage",
-    "champion",
-    "summary",
-    "profile_evidence",
-    "audit",
-    "other",
-]
-
 
 class KernelCampaignJournalError(RuntimeError):
     """Durable campaign journal is incomplete, conflicting, or ambiguous."""
@@ -46,97 +43,6 @@ class KernelCampaignJournalError(RuntimeError):
 
 class KernelCampaignAmbiguousExecution(KernelCampaignJournalError):
     """A dispatch may have occurred and must never be duplicated automatically."""
-
-
-class KernelGenerationClaim(StrictModel):
-    schema_version: Literal["autocontext.kernel-generation-claim/v1"] = (
-        "autocontext.kernel-generation-claim/v1"
-    )
-    run_id: str
-    proposal_index: int = Field(ge=1)
-    prompt_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    system_prompt_digest: str | None = Field(
-        default=None,
-        pattern=r"^sha256:[0-9a-f]{64}$",
-    )
-    generator_identity: str = Field(min_length=1)
-    created_at: str
-
-    @property
-    def claim_id(self) -> str:
-        return canonical_digest(self.model_dump(mode="json"))
-
-
-class KernelEvaluationClaim(StrictModel):
-    schema_version: Literal["autocontext.kernel-evaluation-claim/v1"] = (
-        "autocontext.kernel-evaluation-claim/v1"
-    )
-    run_id: str
-    generation: int = Field(ge=0)
-    role: Literal["baseline", "candidate"]
-    generation_receipt_id: str | None = Field(
-        default=None,
-        pattern=r"^sha256:[0-9a-f]{64}$",
-    )
-    artifact_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    attempt_id: str = Field(pattern=r"^attempt_[0-9a-f]{32}$")
-    created_at: str
-
-    @model_validator(mode="after")
-    def validate_role(self) -> Self:
-        if self.role == "baseline" and (self.generation != 0 or self.generation_receipt_id is not None):
-            raise ValueError("baseline evaluation claims cannot reference generation receipts")
-        if self.role == "candidate" and (self.generation < 1 or self.generation_receipt_id is None):
-            raise ValueError("candidate evaluation claims require a generation receipt")
-        return self
-
-
-class KernelGenerationAttemptLink(StrictModel):
-    schema_version: Literal["autocontext.kernel-generation-attempt-link/v1"] = (
-        "autocontext.kernel-generation-attempt-link/v1"
-    )
-    run_id: str
-    proposal_index: int = Field(ge=1)
-    generation_receipt_id: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    attempt_id: str = Field(pattern=r"^attempt_[0-9a-f]{32}$")
-    artifact_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-
-
-class KernelRunArtifact(StrictModel):
-    kind: KernelArtifactKind
-    path: str
-    digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    size_bytes: int = Field(ge=0)
-
-
-class KernelRunArtifactIndex(StrictModel):
-    schema_version: Literal["autocontext.kernel-artifact-index/v1"] = (
-        "autocontext.kernel-artifact-index/v1"
-    )
-    run_id: str
-    artifacts: tuple[KernelRunArtifact, ...]
-    generated_at: str
-
-
-class KernelCampaignStatus(StrictModel):
-    schema_version: Literal["autocontext.kernel-campaign-status/v1"] = (
-        "autocontext.kernel-campaign-status/v1"
-    )
-    run_id: str
-    status: str
-    problem_id: str | None = None
-    proposals_requested: int | None = Field(default=None, ge=0)
-    proposals_generated: int = Field(default=0, ge=0)
-    proposals_evaluated: int = Field(default=0, ge=0)
-    attempts_persisted: int = Field(default=0, ge=0)
-    champion_attempt_id: str | None = None
-    champion_artifact_digest: str | None = None
-    generation_budget_id: str | None = None
-    generation_budget_state: KernelGenerationBudgetState = Field(default_factory=KernelGenerationBudgetState)
-    stop_requested: bool = False
-    can_resume: bool
-    ambiguity: str | None = None
-    artifact_index_path: str
 
 
 class KernelCampaignJournal:
@@ -178,9 +84,57 @@ class KernelCampaignJournal:
             generator_identity=generator_identity,
             created_at=datetime.now(UTC).isoformat(),
         )
-        self._write_immutable_json(self._generation_dir(proposal_index) / "claim.json", claim.model_dump(mode="json"))
+        with advisory_path_lock(self._dispatch_lock_path()):
+            if self.stop_requested():
+                from autocontext.kernel_evolution.generation import KernelGenerationCancelled
+
+                raise KernelGenerationCancelled("kernel campaign stop requested before provider dispatch")
+            self._write_immutable_json(
+                self._generation_dir(proposal_index) / "claim.json",
+                claim.model_dump(mode="json"),
+            )
         self.refresh_artifact_index()
         return claim
+
+    def claim_generation_call(self, proposal_index: int, call_index: int) -> None:
+        """Fence one physical provider call against an operator stop."""
+        if self.read_generation_claim(proposal_index) is None:
+            raise KernelCampaignJournalError("provider call has no durable proposal claim")
+        path = self._generation_call_dir(proposal_index, call_index) / "claim.json"
+        with advisory_path_lock(self._dispatch_lock_path()):
+            if self.stop_requested():
+                from autocontext.kernel_evolution.generation import KernelGenerationCancelled
+
+                raise KernelGenerationCancelled("kernel campaign stop requested before provider dispatch")
+            if path.exists():
+                claim = KernelGenerationCallClaim.model_validate(read_json(path))
+                self._validate_call_claim(claim, proposal_index, call_index)
+                return
+            claim = KernelGenerationCallClaim(
+                run_id=self.run_id,
+                proposal_index=proposal_index,
+                call_index=call_index,
+                created_at=datetime.now(UTC).isoformat(),
+            )
+            self._write_immutable_json(path, claim.model_dump(mode="json"))
+        self.refresh_artifact_index()
+
+    def write_generation_failure(self, failure: KernelGenerationFailure) -> None:
+        claim_path = self._generation_call_dir(failure.proposal_index, failure.call_index) / "claim.json"
+        if not claim_path.is_file():
+            raise KernelCampaignJournalError("provider failure has no durable call claim")
+        claim = KernelGenerationCallClaim.model_validate(read_json(claim_path))
+        self._validate_call_claim(claim, failure.proposal_index, failure.call_index)
+        receipt = KernelGenerationFailureReceipt(
+            run_id=self.run_id,
+            proposal_index=failure.proposal_index,
+            call_index=failure.call_index,
+            failure_id=failure.failure_id,
+            failure=failure,
+        )
+        path = self._generation_call_dir(failure.proposal_index, failure.call_index) / "failure.json"
+        self._write_immutable_json(path, receipt.model_dump(mode="json"))
+        self.refresh_artifact_index()
 
     def write_generation_result(self, result: KernelGenerationResult) -> Path:
         claim = self.read_generation_claim(result.proposal_index)
@@ -197,16 +151,32 @@ class KernelCampaignJournal:
             )
         receipt_path = self.root / "receipts" / f"{result.receipt_id.removeprefix('sha256:')}.json"
         self._write_immutable_json(receipt_path, result.model_dump(mode="json"))
-        pointer = {
-            "schema_version": "autocontext.kernel-generation-pointer/v1",
-            "run_id": self.run_id,
-            "proposal_index": result.proposal_index,
-            "generation_receipt_id": result.receipt_id,
-            "receipt_path": str(receipt_path.relative_to(self.run_dir)),
-        }
+        self._validate_generation_result(result, result.proposal_index, result.receipt_id)
+        pointer = self._generation_pointer(result, receipt_path)
         self._write_immutable_json(self._generation_dir(result.proposal_index) / "result.json", pointer)
         self.refresh_artifact_index()
         return receipt_path
+
+    def write_generation_cancellation(
+        self,
+        proposal_index: int,
+        failures: tuple[KernelGenerationFailure, ...],
+    ) -> Path:
+        """Append a resumable cancellation event without sealing the proposal outcome."""
+        if any(item.proposal_index != proposal_index for item in failures):
+            raise KernelCampaignJournalError("generation cancellation contains a foreign failure")
+        payload = {
+            "schema_version": "autocontext.kernel-generation-cancellation/v1",
+            "run_id": self.run_id,
+            "proposal_index": proposal_index,
+            "cancelled_at": datetime.now(UTC).isoformat(),
+            "failures": [item.model_dump(mode="json") for item in failures],
+        }
+        event_id = canonical_digest(payload).removeprefix("sha256:")
+        path = self._generation_dir(proposal_index) / "cancellations" / f"{event_id}.json"
+        self._write_immutable_json(path, payload)
+        self.refresh_artifact_index()
+        return path
 
     def write_terminal_failures(
         self,
@@ -227,6 +197,7 @@ class KernelCampaignJournal:
         self.refresh_artifact_index()
         return path
 
+    @contextmanager
     def begin_evaluation(
         self,
         *,
@@ -234,7 +205,7 @@ class KernelCampaignJournal:
         role: Literal["baseline", "candidate"],
         artifact_digest: str,
         generation_receipt_id: str | None = None,
-    ) -> KernelEvaluationClaim:
+    ) -> Iterator[KernelEvaluationClaim]:
         attempt_id = deterministic_kernel_attempt_id(
             self.run_id,
             generation=generation,
@@ -250,9 +221,19 @@ class KernelCampaignJournal:
             attempt_id=attempt_id,
             created_at=datetime.now(UTC).isoformat(),
         )
-        self._write_immutable_json(self._evaluation_claim_path(generation), claim.model_dump(mode="json"))
-        self.refresh_artifact_index()
-        return claim
+        with advisory_path_lock(self._dispatch_lock_path()):
+            if self.stop_requested():
+                from autocontext.kernel_evolution.generation import KernelGenerationCancelled
+
+                raise KernelGenerationCancelled(
+                    "kernel campaign stop requested after source generation and before GPU evaluation"
+                )
+            self._write_immutable_json(
+                self._evaluation_claim_path(generation),
+                claim.model_dump(mode="json"),
+            )
+            self.refresh_artifact_index()
+            yield claim
 
     def link_attempt(self, result: KernelGenerationResult, *, attempt_id: str, artifact_digest: str) -> Path:
         expected = deterministic_kernel_attempt_id(
@@ -279,14 +260,42 @@ class KernelCampaignJournal:
         path = self._generation_dir(proposal_index) / "claim.json"
         if not path.exists():
             return None
-        return KernelGenerationClaim.model_validate(read_json(path))
+        claim = KernelGenerationClaim.model_validate(read_json(path))
+        if claim.run_id != self.run_id or claim.proposal_index != proposal_index:
+            raise KernelCampaignJournalError("generation claim identity is invalid")
+        self._validate_prompt_artifact(claim.prompt_digest, label="generation prompt")
+        if claim.system_prompt_digest is not None:
+            self._validate_prompt_artifact(
+                claim.system_prompt_digest,
+                label="generation system-prompt",
+            )
+        return claim
 
-    def read_generation_result(self, proposal_index: int) -> KernelGenerationResult | None:
+    def read_generation_result(
+        self,
+        proposal_index: int,
+        *,
+        recover_orphan: bool = False,
+    ) -> KernelGenerationResult | None:
         pointer_path = self._generation_dir(proposal_index) / "result.json"
         if not pointer_path.exists():
-            return None
+            if not recover_orphan:
+                return None
+            orphan = self._orphan_generation_result(proposal_index)
+            if orphan is None:
+                return None
+            receipt_path, result = orphan
+            pointer = self._generation_pointer(result, receipt_path)
+            self._write_immutable_json(pointer_path, pointer)
+            self.refresh_artifact_index()
+            return result
         pointer = read_json(pointer_path)
-        if not isinstance(pointer, dict) or pointer.get("proposal_index") != proposal_index:
+        if (
+            not isinstance(pointer, dict)
+            or pointer.get("schema_version") != "autocontext.kernel-generation-pointer/v1"
+            or pointer.get("run_id") != self.run_id
+            or pointer.get("proposal_index") != proposal_index
+        ):
             raise KernelCampaignJournalError("generation result pointer is malformed")
         receipt_id = pointer.get("generation_receipt_id")
         receipt_path_raw = pointer.get("receipt_path")
@@ -297,6 +306,15 @@ class KernelCampaignJournal:
             raise KernelCampaignJournalError("generation result pointer does not use its content-addressed path")
         receipt_path = self.run_dir / receipt_path_raw
         result = KernelGenerationResult.model_validate(read_json(receipt_path))
+        self._validate_generation_result(result, proposal_index, receipt_id)
+        return result
+
+    def _validate_generation_result(
+        self,
+        result: KernelGenerationResult,
+        proposal_index: int,
+        receipt_id: str,
+    ) -> None:
         if result.receipt_id != receipt_id or result.proposal_index != proposal_index:
             raise KernelCampaignJournalError("generation result receipt conflicts with its pointer")
         claim = self.read_generation_claim(proposal_index)
@@ -307,18 +325,6 @@ class KernelCampaignJournal:
             and claim.system_prompt_digest != result.system_prompt_digest
         ):
             raise KernelCampaignJournalError("generation result conflicts with its system-prompt claim")
-        prompt_path = self.run_dir / "prompts" / f"{result.prompt_digest.removeprefix('sha256:')}.md"
-        if not prompt_path.is_file() or content_digest(prompt_path.read_bytes()) != result.prompt_digest:
-            raise KernelCampaignJournalError("generation prompt artifact is missing or changed")
-        if claim.system_prompt_digest is not None:
-            system_prompt_path = self.run_dir / "prompts" / (
-                f"{claim.system_prompt_digest.removeprefix('sha256:')}.md"
-            )
-            if (
-                not system_prompt_path.is_file()
-                or content_digest(system_prompt_path.read_bytes()) != claim.system_prompt_digest
-            ):
-                raise KernelCampaignJournalError("generation system-prompt artifact is missing or changed")
         candidate = KernelCandidate(
             source=result.source,
             source_suffix=result.source_suffix,
@@ -329,13 +335,22 @@ class KernelCampaignJournal:
         )
         if not source_path.is_file() or source_path.read_bytes() != candidate.source_bytes:
             raise KernelCampaignJournalError("generated source artifact is missing or changed")
-        return result
+        failures, unresolved = self.generation_call_state(proposal_index)
+        if failures or unresolved:
+            expected_failures = tuple(result.failures)
+            if failures != expected_failures or unresolved != (result.retry_count + 1,):
+                raise KernelCampaignJournalError(
+                    "generation call claims do not match the successful receipt"
+                )
 
-    def generation_results(self) -> list[KernelGenerationResult]:
+    def generation_results(self, *, recover_orphans: bool = False) -> list[KernelGenerationResult]:
         results: list[KernelGenerationResult] = []
         proposal_index = 1
         while True:
-            result = self.read_generation_result(proposal_index)
+            result = self.read_generation_result(
+                proposal_index,
+                recover_orphan=recover_orphans,
+            )
             if result is None:
                 break
             results.append(result)
@@ -345,36 +360,128 @@ class KernelCampaignJournal:
             raise KernelCampaignJournalError("generation results are not contiguous from proposal one")
         return results
 
-    def budget_state(self) -> KernelGenerationBudgetState:
+    def generation_call_state(
+        self,
+        proposal_index: int,
+    ) -> tuple[tuple[KernelGenerationFailure, ...], tuple[int, ...]]:
+        calls_root = self._generation_dir(proposal_index) / "calls"
+        if not calls_root.exists():
+            return (), ()
+        directories = sorted(item for item in calls_root.iterdir() if item.is_dir())
+        expected_names = [f"{index:06d}" for index in range(1, len(directories) + 1)]
+        if [item.name for item in directories] != expected_names:
+            raise KernelCampaignJournalError("generation call claims are not contiguous from call one")
+        failures: list[KernelGenerationFailure] = []
+        unresolved: list[int] = []
+        for call_index, directory in enumerate(directories, 1):
+            claim_path = directory / "claim.json"
+            if not claim_path.is_file():
+                raise KernelCampaignJournalError("generation call directory has no durable claim")
+            claim = KernelGenerationCallClaim.model_validate(read_json(claim_path))
+            self._validate_call_claim(claim, proposal_index, call_index)
+            failure_path = directory / "failure.json"
+            if not failure_path.is_file():
+                unresolved.append(call_index)
+                continue
+            receipt = KernelGenerationFailureReceipt.model_validate(read_json(failure_path))
+            if (
+                receipt.run_id != self.run_id
+                or receipt.proposal_index != proposal_index
+                or receipt.call_index != call_index
+            ):
+                raise KernelCampaignJournalError("generation failure receipt identity is invalid")
+            failures.append(receipt.failure)
+        if unresolved and unresolved != [len(directories)]:
+            raise KernelCampaignJournalError("a later provider call follows an unresolved call claim")
+        return tuple(failures), tuple(unresolved)
+
+    def generation_activity(self) -> tuple[list[KernelGenerationResult], tuple[KernelGenerationFailure, ...]]:
         results = self.generation_results()
         completed = {result.proposal_index for result in results}
-        terminal_failures: list[KernelGenerationFailure] = []
+        durable_failures: dict[str, KernelGenerationFailure] = {}
+        for proposal_dir in sorted(self.root.glob("proposals/*")):
+            if not proposal_dir.is_dir() or not proposal_dir.name.isdigit():
+                raise KernelCampaignJournalError("generation proposal path is malformed")
+            proposal_index = int(proposal_dir.name)
+            failures, _ = self.generation_call_state(proposal_index)
+            if proposal_index not in completed:
+                for failure in failures:
+                    add_durable_failure(durable_failures, failure, proposal_index)
         for path in sorted(self.root.glob("proposals/*/failure.json")):
             payload = read_json(path)
-            if not isinstance(payload, dict) or payload.get("run_id") != self.run_id:
+            if (
+                not isinstance(payload, dict)
+                or payload.get("schema_version")
+                != "autocontext.kernel-generation-terminal-failure/v1"
+                or payload.get("run_id") != self.run_id
+            ):
                 raise KernelCampaignJournalError("generation failure journal identity is invalid")
-            proposal_index = payload.get("proposal_index")
-            failures = payload.get("failures")
-            if not isinstance(proposal_index, int) or not isinstance(failures, list):
+            failure_proposal = payload.get("proposal_index")
+            raw_failures = payload.get("failures")
+            if (
+                not isinstance(failure_proposal, int)
+                or path.parent.name != f"{failure_proposal:06d}"
+                or not isinstance(raw_failures, list)
+            ):
                 raise KernelCampaignJournalError("generation failure journal is malformed")
-            if proposal_index in completed:
-                continue
-            parsed = [KernelGenerationFailure.model_validate(item) for item in failures]
-            if any(item.proposal_index != proposal_index for item in parsed):
-                raise KernelCampaignJournalError("generation failure belongs to a different proposal")
-            terminal_failures.extend(parsed)
-        return KernelGenerationBudgetState.from_activity(results, terminal_failures)
+            parsed = [KernelGenerationFailure.model_validate(item) for item in raw_failures]
+            if failure_proposal not in completed:
+                for failure in parsed:
+                    add_durable_failure(durable_failures, failure, failure_proposal)
+        for path in sorted(self.root.glob("proposals/*/cancellations/*.json")):
+            payload = read_json(path)
+            cancel_proposal = payload.get("proposal_index") if isinstance(payload, dict) else None
+            if (
+                not isinstance(payload, dict)
+                or payload.get("schema_version") != "autocontext.kernel-generation-cancellation/v1"
+                or payload.get("run_id") != self.run_id
+                or not isinstance(cancel_proposal, int)
+                or path.parent.parent.name != f"{cancel_proposal:06d}"
+                or not isinstance(payload.get("failures"), list)
+            ):
+                raise KernelCampaignJournalError("generation cancellation journal is malformed")
+            if cancel_proposal not in completed:
+                for item in payload["failures"]:
+                    add_durable_failure(
+                        durable_failures,
+                        KernelGenerationFailure.model_validate(item),
+                        cancel_proposal,
+                    )
+        return results, tuple(durable_failures.values())
+
+    def budget_state(self) -> KernelGenerationBudgetState:
+        results, failures = self.generation_activity()
+        return KernelGenerationBudgetState.from_activity(results, failures)
 
     def assert_resumable(
         self,
         *,
         attempts_by_id: set[str],
-        resumable_generation_identity: str | None = None,
+        expected_generation_identity: str,
+        claim_resume_safe: bool = False,
+        call_fence_resume_safe: bool = False,
     ) -> None:
-        for claim_path in sorted(self.root.glob("proposals/*/claim.json")):
-            generation_claim = KernelGenerationClaim.model_validate(read_json(claim_path))
+        claim_paths = sorted(self.root.glob("proposals/*/claim.json"))
+        claim_names = [path.parent.name for path in claim_paths]
+        if claim_names != [f"{index:06d}" for index in range(1, len(claim_paths) + 1)]:
+            raise KernelCampaignJournalError("generation claims are not contiguous from proposal one")
+        if len(claim_paths) > len(self.generation_results()) + 1:
+            raise KernelCampaignJournalError("multiple incomplete generation proposals are journaled")
+        for claim_path in claim_paths:
+            if not claim_path.parent.name.isdigit():
+                raise KernelCampaignJournalError("generation claim path is malformed")
+            proposal_index = int(claim_path.parent.name)
+            if claim_path.parent.name != f"{proposal_index:06d}":
+                raise KernelCampaignJournalError("generation claim path is not canonical")
+            generation_claim = self.read_generation_claim(proposal_index)
+            if generation_claim is None:
+                raise KernelCampaignJournalError("generation claim disappeared during validation")
+            if generation_claim.generator_identity != expected_generation_identity:
+                raise KernelCampaignJournalError("generation claim generator identity changed")
             if self.read_generation_result(generation_claim.proposal_index) is None:
-                if generation_claim.generator_identity == resumable_generation_identity:
+                _, unresolved = self.generation_call_state(generation_claim.proposal_index)
+                resume_safe = not unresolved and (call_fence_resume_safe or claim_resume_safe)
+                if resume_safe:
                     continue
                 raise KernelCampaignAmbiguousExecution(
                     f"proposal {generation_claim.proposal_index} has a pre-dispatch claim without a result; "
@@ -382,7 +489,7 @@ class KernelCampaignJournal:
                 )
         claimed_attempts: set[str] = set()
         for claim_path in sorted(self.root.glob("evaluations/*.json")):
-            evaluation_claim = KernelEvaluationClaim.model_validate(read_json(claim_path))
+            evaluation_claim = self._read_evaluation_claim(claim_path)
             claimed_attempts.add(evaluation_claim.attempt_id)
             if evaluation_claim.attempt_id not in attempts_by_id:
                 raise KernelCampaignAmbiguousExecution(
@@ -393,12 +500,31 @@ class KernelCampaignJournal:
             raise KernelCampaignJournalError(
                 "persisted kernel attempts do not match their durable evaluation claims"
             )
+        for path in sorted(self.root.glob("proposals/*/attempt-link.json")):
+            proposal_name = path.parent.name
+            if not proposal_name.isdigit() or proposal_name != f"{int(proposal_name):06d}":
+                raise KernelCampaignJournalError("generation attempt-link path is malformed")
+            proposal_index = int(proposal_name)
+            link = KernelGenerationAttemptLink.model_validate(read_json(path))
+            result = self.read_generation_result(proposal_index)
+            expected_attempt = deterministic_kernel_attempt_id(
+                self.run_id,
+                generation=proposal_index,
+                artifact_digest=link.artifact_digest,
+                generation_receipt_id=link.generation_receipt_id,
+            )
+            if (
+                link.run_id != self.run_id
+                or link.proposal_index != proposal_index
+                or result is None
+                or link.generation_receipt_id != result.receipt_id
+                or link.attempt_id != expected_attempt
+                or link.attempt_id not in attempts_by_id
+            ):
+                raise KernelCampaignJournalError("generation attempt-link identity is invalid")
 
     def evaluation_claim_attempt_ids(self) -> set[str]:
-        return {
-            KernelEvaluationClaim.model_validate(read_json(path)).attempt_id
-            for path in sorted(self.root.glob("evaluations/*.json"))
-        }
+        return {self._read_evaluation_claim(path).attempt_id for path in sorted(self.root.glob("evaluations/*.json"))}
 
     def request_stop(self, *, requested_by: str = "operator") -> Path:
         if not requested_by.strip():
@@ -410,8 +536,9 @@ class KernelCampaignJournal:
             "requested_by": requested_by.strip(),
             "requested_at": datetime.now(UTC).isoformat(),
         }
-        if not path.exists():
-            write_json(path, payload)
+        with advisory_path_lock(self._dispatch_lock_path()):
+            if not path.exists():
+                write_json(path, payload)
         return path
 
     def stop_requested(self) -> bool:
@@ -419,10 +546,11 @@ class KernelCampaignJournal:
 
     def clear_stop_for_resume(self) -> None:
         path = self.run_dir / "control" / "stop.json"
-        if path.exists():
-            consumed = self.run_dir / "control" / "consumed"
-            consumed.mkdir(parents=True, exist_ok=True)
-            path.replace(consumed / f"stop-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}.json")
+        with advisory_path_lock(self._dispatch_lock_path()):
+            if path.exists():
+                consumed = self.run_dir / "control" / "consumed"
+                consumed.mkdir(parents=True, exist_ok=True)
+                path.replace(consumed / f"stop-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}.json")
 
     def refresh_artifact_index(self) -> KernelRunArtifactIndex:
         entries: list[KernelRunArtifact] = []
@@ -435,7 +563,7 @@ class KernelCampaignJournal:
                 content = path.read_bytes()
                 entries.append(
                     KernelRunArtifact(
-                        kind=_artifact_kind(relative),
+                        kind=artifact_kind(relative),
                         path=relative,
                         digest=content_digest(content),
                         size_bytes=len(content),
@@ -460,18 +588,18 @@ class KernelCampaignJournal:
         attempts = tuple((self.run_dir / "attempts").glob("*.json")) if (self.run_dir / "attempts").exists() else ()
         links = tuple(self.root.glob("proposals/*/attempt-link.json"))
         generation_contract = manifest.get("generation")
-        resumable_generation_identity = (
-            generation_contract.get("generator_identity")
-            if isinstance(generation_contract, dict)
-            and generation_contract.get("claim_resume_safe") is True
-            and isinstance(generation_contract.get("generator_identity"), str)
-            else None
-        )
+        if not isinstance(generation_contract, dict):
+            raise KernelCampaignJournalError("kernel campaign manifest has no generation contract")
+        generator_identity = generation_contract.get("generator_identity")
+        if not isinstance(generator_identity, str):
+            raise KernelCampaignJournalError("kernel campaign manifest has no generator identity")
         ambiguity: str | None = None
         try:
             self.assert_resumable(
                 attempts_by_id={path.stem for path in attempts},
-                resumable_generation_identity=resumable_generation_identity,
+                expected_generation_identity=generator_identity,
+                claim_resume_safe=generation_contract.get("claim_resume_safe") is True,
+                call_fence_resume_safe=generation_contract.get("call_fence_resume_safe") is True,
             )
         except KernelCampaignAmbiguousExecution as exc:
             ambiguity = str(exc)
@@ -508,7 +636,7 @@ class KernelCampaignJournal:
                 if isinstance(manifest.get("champion_attempt_id"), str)
                 else None
             ),
-            champion_artifact_digest=_champion_artifact_digest(self.run_dir),
+            champion_artifact_digest=champion_artifact_digest(self.run_dir),
             generation_budget_id=(
                 generation_budget.budget_id
                 if generation_budget is not None
@@ -526,10 +654,82 @@ class KernelCampaignJournal:
             raise ValueError("proposal_index must be positive")
         return self.root / "proposals" / f"{proposal_index:06d}"
 
+    def _generation_call_dir(self, proposal_index: int, call_index: int) -> Path:
+        if call_index < 1:
+            raise ValueError("call_index must be positive")
+        return self._generation_dir(proposal_index) / "calls" / f"{call_index:06d}"
+
+    def _dispatch_lock_path(self) -> Path:
+        return self.run_dir / "control" / "dispatch.lock"
+
     def _evaluation_claim_path(self, generation: int) -> Path:
         if generation < 0:
             raise ValueError("generation must be non-negative")
         return self.root / "evaluations" / f"{generation:06d}.json"
+
+    def _read_evaluation_claim(self, path: Path) -> KernelEvaluationClaim:
+        if not path.stem.isdigit():
+            raise KernelCampaignJournalError("evaluation claim path is malformed")
+        generation = int(path.stem)
+        if path.name != f"{generation:06d}.json":
+            raise KernelCampaignJournalError("evaluation claim path is not canonical")
+        claim = KernelEvaluationClaim.model_validate(read_json(path))
+        expected_attempt_id = deterministic_kernel_attempt_id(
+            self.run_id,
+            generation=generation,
+            artifact_digest=claim.artifact_digest,
+            generation_receipt_id=claim.generation_receipt_id,
+        )
+        if (
+            claim.run_id != self.run_id
+            or claim.generation != generation
+            or claim.attempt_id != expected_attempt_id
+        ):
+            raise KernelCampaignJournalError("evaluation claim identity is invalid")
+        return claim
+
+    def _validate_call_claim(
+        self,
+        claim: KernelGenerationCallClaim,
+        proposal_index: int,
+        call_index: int,
+    ) -> None:
+        if (
+            claim.run_id != self.run_id
+            or claim.proposal_index != proposal_index
+            or claim.call_index != call_index
+        ):
+            raise KernelCampaignJournalError("generation call claim identity is invalid")
+
+    def _validate_prompt_artifact(self, digest: str, *, label: str) -> None:
+        path = self.run_dir / "prompts" / f"{digest.removeprefix('sha256:')}.md"
+        if not path.is_file() or content_digest(path.read_bytes()) != digest:
+            raise KernelCampaignJournalError(f"{label} artifact is missing or changed")
+
+    def _generation_pointer(self, result: KernelGenerationResult, receipt_path: Path) -> dict[str, Any]:
+        return {
+            "schema_version": "autocontext.kernel-generation-pointer/v1",
+            "run_id": self.run_id,
+            "proposal_index": result.proposal_index,
+            "generation_receipt_id": result.receipt_id,
+            "receipt_path": receipt_path.relative_to(self.run_dir).as_posix(),
+        }
+
+    def _orphan_generation_result(
+        self,
+        proposal_index: int,
+    ) -> tuple[Path, KernelGenerationResult] | None:
+        matches: list[tuple[Path, KernelGenerationResult]] = []
+        for path in sorted((self.root / "receipts").glob("*.json")):
+            result = KernelGenerationResult.model_validate(read_json(path))
+            if path.name != f"{result.receipt_id.removeprefix('sha256:')}.json":
+                raise KernelCampaignJournalError("generation receipt path does not match its content")
+            if result.proposal_index == proposal_index:
+                self._validate_generation_result(result, proposal_index, result.receipt_id)
+                matches.append((path, result))
+        if len(matches) > 1:
+            raise KernelCampaignJournalError("multiple generation receipts claim the same proposal")
+        return matches[0] if matches else None
 
     @staticmethod
     def _write_exact_text(path: Path, content: str) -> None:
@@ -582,49 +782,6 @@ def request_kernel_campaign_stop(lineage_root: Path, run_id: str, *, requested_b
     if not run_dir.is_dir():
         raise FileNotFoundError(f"kernel campaign not found: {run_id}")
     return KernelCampaignJournal(run_dir, run_id).request_stop(requested_by=requested_by)
-
-
-def _artifact_kind(relative: str) -> KernelArtifactKind:
-    if relative == "manifest.json":
-        return "manifest"
-    if relative.startswith("prompts/"):
-        return "prompt"
-    if relative.endswith("/claim.json") and relative.startswith("generation/proposals/"):
-        return "generation_claim"
-    if relative.startswith("generation/receipts/"):
-        return "generation_receipt"
-    if relative.endswith("/failure.json"):
-        return "generation_failure"
-    if relative.startswith("generation/evaluations/"):
-        return "evaluation_claim"
-    if relative.endswith("/attempt-link.json"):
-        return "attempt_link"
-    if relative.startswith("artifacts/"):
-        return "source"
-    if relative.startswith("reports/"):
-        return "report"
-    if relative.startswith("attempts/"):
-        return "attempt"
-    if relative == "lineage.jsonl":
-        return "lineage"
-    if relative.startswith("champion"):
-        return "champion"
-    if relative == "summary.json":
-        return "summary"
-    if relative == "profile_evidence.json":
-        return "profile_evidence"
-    if relative.startswith("audit/"):
-        return "audit"
-    return "other"
-
-
-def _champion_artifact_digest(run_dir: Path) -> str | None:
-    path = run_dir / "champion.json"
-    if not path.is_file():
-        return None
-    payload = read_json(path)
-    value = payload.get("artifact_digest") if isinstance(payload, dict) else None
-    return value if isinstance(value, str) else None
 
 
 __all__ = [

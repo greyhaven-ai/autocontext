@@ -1682,3 +1682,63 @@ def test_v4_controlled_protocol_baseline_failure_is_audited_and_typed(tmp_path: 
     )
     assert not audited.observation.eligible
     assert audited.observation.derived_statistics_receipt is None
+
+
+def test_resume_rejects_public_v4_projection_changed_from_sealed_attempt(tmp_path: Path) -> None:
+    public_root = tmp_path / "public"
+    sealed_root = tmp_path / "sealed"
+    primary = _evaluator(V4BenchmarkRunner(seed="public-projection-primary"))
+    confirmation = _evaluator(V4BenchmarkRunner(seed="public-projection-confirmation"))
+
+    def generate(_prompt: str, _generation: int) -> str:
+        return _candidate(0.8).source
+
+    def confirm(candidate: KernelCandidate, incumbent: KernelCandidate) -> KernelBenchmarkObservation:
+        return _confirmation_observation(confirmation, candidate, incumbent)
+
+    config = KernelEvolutionConfig(
+        problem_id="finite-sample-kernel",
+        task_prompt="Optimize the test kernel.",
+        baseline_source=_candidate(1.0).source,
+        min_relative_improvement=0.05,
+        proposal_cap=10,
+        familywise_alpha=0.05,
+    )
+    initial = KernelEvolutionRunner(
+        config,
+        generate,
+        primary,
+        public_root,
+        run_id="public-projection",
+        confirmation_fn=confirm,
+        confirmation_identity="test-confirmation-contract/v1",
+        sealed_audit_root=sealed_root,
+    )
+    result = initial.run(proposals=1)
+    attempt_id = result.attempts[1].attempt_id
+    attempt_path = initial.run_dir / "attempts" / f"{attempt_id}.json"
+    public = json.loads(attempt_path.read_text(encoding="utf-8"))
+    assert public["schema_version"] == "autocontext.kernel-lineage-public/v4"
+    public["reason"] = "forged-public-reason"
+    attempt_path.write_text(json.dumps(public, indent=2), encoding="utf-8")
+    lineage_path = initial.run_dir / "lineage.jsonl"
+    lines = [json.loads(line) for line in lineage_path.read_text(encoding="utf-8").splitlines()]
+    next(item for item in lines if item["attempt_id"] == attempt_id)["reason"] = public["reason"]
+    lineage_path.write_text(
+        "".join(f"{json.dumps(item, separators=(',', ':'))}\n" for item in lines),
+        encoding="utf-8",
+    )
+
+    replay = KernelEvolutionRunner(
+        config,
+        generate,
+        primary,
+        public_root,
+        run_id="public-projection",
+        confirmation_fn=confirm,
+        confirmation_identity="test-confirmation-contract/v1",
+        sealed_audit_root=sealed_root,
+        resume=True,
+    )
+    with pytest.raises(ValueError, match="public kernel attempt projection changed"):
+        replay.run(proposals=1)

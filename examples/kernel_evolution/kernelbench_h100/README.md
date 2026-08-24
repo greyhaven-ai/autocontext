@@ -291,6 +291,7 @@ uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign.py
   --generation-max-tokens-total 300000 \
   --generation-max-cost-usd 100 \
   --generation-max-wall-seconds 86400 \
+  --mailbox runs/kernel-evolution-h100-mailbox/strict-campaign-001 \
   --proposals 10 \
   --run-id strict-campaign-001
 ```
@@ -301,9 +302,10 @@ Secrets are not passed to either worker and are not written to
 index. Registry transport retries are disabled; the campaign's durable retry
 loop accounts for every failed, rejected, or successful provider call.
 
-Use `--generator mailbox` (the compatibility default) plus `--mailbox` for
-manual generation. It now produces the same typed receipt and source
-validation as provider mode. To resume, supply the identical arguments,
+`--mailbox` is required in both modes as the operator status and evidence-export
+channel. With `--generator mailbox` (the compatibility default), it also accepts
+manual `candidate_N.py` submissions and produces the same typed receipt and
+source validation as provider mode. To resume, supply the identical arguments,
 proposal target, run ID, generation budget, plans, and runtime identities, then
 add `--resume`. The runner verifies all durable identities and continues from
 the first safe unfinished proposal. It never repeats a provider or GPU dispatch
@@ -323,6 +325,11 @@ uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign_co
   --output runs/kernel-evolution-h100 \
   --requested-by release-operator
 ```
+
+The control command's top-level `status` covers the full H100 lifecycle,
+including signed profile-evidence export. Kernel-runner progress, budget, stop,
+and resumability details are nested under `kernel`; a post-run export error is
+reported as top-level `failed`, never `complete`.
 
 An operator stop is observed before a new provider call, after a returned source
 has been durably receipted but before GPU evaluation, or between proposals. A

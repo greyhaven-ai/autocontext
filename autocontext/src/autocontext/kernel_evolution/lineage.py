@@ -22,6 +22,8 @@ from autocontext.kernel_evolution.models import (
 from autocontext.util.file_lock import append_bytes_locked
 from autocontext.util.json_io import write_json, write_text_atomic
 
+_SAFE_ATTEMPT_ID = re.compile(r"attempt_[0-9a-f]{32}")
+
 
 def _write_bytes_atomic(path: Path, content: bytes) -> None:
     """Persist exact bytes without platform newline translation."""
@@ -104,6 +106,7 @@ class KernelLineageStore:
         return digest
 
     def _public_attempt_payload(self, record: KernelAttemptRecord) -> dict[str, Any]:
+        self._validate_attempt_id(record.attempt_id)
         payload = record.model_dump(mode="json")
         should_seal = record.schema_version == "autocontext.kernel-lineage/v4" and (
             self._quarantine_primary_evidence
@@ -142,6 +145,12 @@ class KernelLineageStore:
             write_text_atomic(sealed_path, sealed_content)
             if os.name != "nt":
                 sealed_path.chmod(0o600)
+        return self._public_projection(record, audit_digest)
+
+    @staticmethod
+    def _public_projection(record: KernelAttemptRecord, audit_digest: str) -> dict[str, Any]:
+        if record.primary_decision is None:
+            raise ValueError("v4 adaptive evidence requires a primary decision")
         return {
             "schema_version": "autocontext.kernel-lineage-public/v4",
             "run_id": record.run_id,
@@ -176,6 +185,7 @@ class KernelLineageStore:
         }
 
     def append_attempt(self, record: KernelAttemptRecord) -> Path:
+        self._validate_attempt_id(record.attempt_id)
         attempt_path = self.run_dir / "attempts" / f"{record.attempt_id}.json"
         if attempt_path.exists():
             raise RuntimeError(f"attempt already exists: {record.attempt_id}")
@@ -218,6 +228,7 @@ class KernelLineageStore:
             attempt_id = public.get("attempt_id")
             if not isinstance(attempt_id, str):
                 raise ValueError(f"kernel lineage line {line_number} has no attempt identity")
+            self._validate_attempt_id(attempt_id)
             attempt_path = self.run_dir / "attempts" / f"{attempt_id}.json"
             if not attempt_path.is_file():
                 raise ValueError(f"kernel lineage attempt file is missing: {attempt_id}")
@@ -245,6 +256,7 @@ class KernelLineageStore:
             attempt_id = public.get("attempt_id") if isinstance(public, dict) else None
             if not isinstance(attempt_id, str) or attempt_id in lineage_ids:
                 raise ValueError("kernel lineage contains an invalid or duplicate attempt identity")
+            self._validate_attempt_id(attempt_id)
             lineage_ids.add(attempt_id)
 
         orphans: list[tuple[int, dict[str, Any]]] = []
@@ -269,7 +281,9 @@ class KernelLineageStore:
             append_bytes_locked(self._lineage_path, encoded_line)
 
     def _validated_attempt(self, public: dict[str, Any], attempt_id: str) -> KernelAttemptRecord:
+        self._validate_attempt_id(attempt_id)
         payload: Any = public
+        expected_digest: str | None = None
         if public.get("schema_version") == "autocontext.kernel-lineage-public/v4":
             sealed = self._read_sealed_attempt(attempt_id)
             expected_digest = public.get("confirmation_audit_digest")
@@ -281,6 +295,13 @@ class KernelLineageStore:
         attempt = KernelAttemptRecord.model_validate(payload)
         if attempt.run_id != self.run_id or attempt.attempt_id != attempt_id:
             raise ValueError(f"kernel attempt identity changed: {attempt_id}")
+        expected_public = (
+            self._public_projection(attempt, expected_digest)
+            if expected_digest is not None
+            else attempt.model_dump(mode="json")
+        )
+        if public != expected_public:
+            raise ValueError(f"public kernel attempt projection changed: {attempt_id}")
         return attempt
 
     def _validate_attempt_artifacts(self, attempt: KernelAttemptRecord) -> None:
@@ -297,6 +318,7 @@ class KernelLineageStore:
             raise ValueError(f"kernel report artifact is missing: {attempt.report_digest}")
 
     def read_candidate(self, record: KernelAttemptRecord) -> KernelCandidate:
+        self._validate_attempt_id(record.attempt_id)
         path = self.run_dir / "artifacts" / f"{record.artifact_digest.removeprefix('sha256:')}{record.source_suffix}"
         if not path.is_file():
             raise ValueError(f"kernel candidate artifact is missing: {record.artifact_digest}")
@@ -309,6 +331,26 @@ class KernelLineageStore:
             raise ValueError(f"kernel candidate artifact changed: {record.artifact_digest}")
         return candidate
 
+    def validate_champion(self, candidate: KernelCandidate, record: KernelAttemptRecord) -> None:
+        """Verify the mutable named champion agrees with its sealed lineage record."""
+        expected_source = self.run_dir / f"champion{candidate.source_suffix}"
+        named_sources = {
+            path for path in self.run_dir.glob("champion*") if path.name != "champion.json"
+        }
+        if named_sources != {expected_source} or expected_source.read_bytes() != candidate.source_bytes:
+            raise ValueError("named champion source artifact is missing, changed, or ambiguous")
+        champion_path = self.run_dir / "champion.json"
+        if not champion_path.is_file():
+            raise ValueError("named champion record is missing")
+        public = json.loads(champion_path.read_text(encoding="utf-8"))
+        if not isinstance(public, dict) or public.get("attempt_id") != record.attempt_id:
+            raise ValueError("named champion record identity is invalid")
+        persisted = json.loads(
+            (self.run_dir / "attempts" / f"{record.attempt_id}.json").read_text(encoding="utf-8")
+        )
+        if public != persisted:
+            raise ValueError("named champion record disagrees with its append-only attempt")
+
     def read_summary(self) -> KernelEvolutionResult | None:
         path = self.run_dir / "summary.json"
         if not path.is_file():
@@ -316,6 +358,7 @@ class KernelLineageStore:
         return KernelEvolutionResult.model_validate_json(path.read_text(encoding="utf-8"))
 
     def _read_sealed_attempt(self, attempt_id: str) -> dict[str, Any]:
+        self._validate_attempt_id(attempt_id)
         candidates = []
         if self._sealed_audit_dir is not None:
             candidates.append(self._sealed_audit_dir / f"{attempt_id}.json")
@@ -326,6 +369,11 @@ class KernelLineageStore:
                 if isinstance(payload, dict):
                     return payload
         raise ValueError(f"sealed adaptive evidence is unavailable: {attempt_id}")
+
+    @staticmethod
+    def _validate_attempt_id(attempt_id: str) -> None:
+        if not _SAFE_ATTEMPT_ID.fullmatch(attempt_id):
+            raise ValueError("kernel attempt id must be a safe deterministic path segment")
 
     def release_sealed_audit(self) -> Path | None:
         """Publish confirmation audit material only after adaptive generation ends."""
