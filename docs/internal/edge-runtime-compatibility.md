@@ -135,11 +135,11 @@ manifest as standalone JSON for external/provider hosts, while
 `agentAppFetchHostCapabilityManifestSchema` and
 `renderAgentAppFetchHostCapabilityManifestSchema()` expose the matching
 provider-neutral validation schema. See
-[`fetch-api-reference.md`](fetch-api-reference.md) for the exported Fetch API
-surface, [`fetch-host-capability-manifest.md`](fetch-host-capability-manifest.md)
+[`fetch-api-reference.md`](../fetch-api-reference.md) for the exported Fetch API
+surface, [`fetch-host-capability-manifest.md`](../fetch-host-capability-manifest.md)
 for manifest validation examples,
-[`generated-fetch-packaging.md`](generated-fetch-packaging.md) for a generic
-Fetch/ESM packaging walkthrough, and [`fetch-conformance.md`](fetch-conformance.md)
+[`generated-fetch-packaging.md`](../generated-fetch-packaging.md) for a generic
+Fetch/ESM packaging walkthrough, and [`fetch-conformance.md`](../fetch-conformance.md)
 for runner-agnostic checks host wrappers can use before exposing generated
 handlers. Provider wrappers remain external to that generated source.
 
@@ -243,7 +243,7 @@ The suite covers read-your-writes behavior, byte cloning, deterministic
 workspace listings, recursive root removal, fail-closed shell execution,
 session append idempotency by `eventId`, replay ordering by per-session
 `sequence`, metadata/payload cloning, and child-session linkage visibility. See
-[`fetch-conformance.md`](fetch-conformance.md) for runner-agnostic case and
+[`fetch-conformance.md`](../fetch-conformance.md) for runner-agnostic case and
 one-shot runner examples.
 
 ### Fetch Invocation Conformance
@@ -256,7 +256,7 @@ limits, no handler loading during manifest reads, explicit env/workspace /
 runtime capability wiring, and runtime factory precedence/laziness. The helper
 is runner-agnostic and does not add any provider deployment or storage binding.
 See
-[`fetch-conformance.md`](fetch-conformance.md) for wrapper setup guidance and
+[`fetch-conformance.md`](../fetch-conformance.md) for wrapper setup guidance and
 common failure modes.
 
 ## Reference Runtime Findings

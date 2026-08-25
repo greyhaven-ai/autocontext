@@ -22,13 +22,14 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 
 - [External agent integration guide](../autocontext/docs/agent-integration.md)
 - [Running the loop on your own hardware](../autocontext/docs/self-hosted-models.md)
-- [Hermes Curator + autocontext positioning](hermes-positioning.md)
+- [Hermes Curator + autocontext positioning](internal/hermes-positioning.md)
 - [Python and TypeScript extension hooks](../autocontext/docs/extensions.md)
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
 - [Capability-scoped research workspaces](research-workspaces.md)
 - [Provider-neutral remote execution sessions](remote-execution-sessions.md)
   — including capability-validated Prime accelerator requests, resolved
-  hardware provenance, and fail-closed no-CPU-downgrade semantics.
+  hardware provenance, durable paid-result accounting, and fail-closed
+  no-CPU-downgrade semantics.
 - [Persistent host worker](../autocontext/docs/persistent-host.md)
 - [Correctness-first external kernel evolution](../autocontext/docs/kernel-evolution.md)
   — including typed provider generation, durable budgets, status/stop, and
@@ -54,21 +55,21 @@ earlier same-run evidence rules, exact durable replay, and finite retention.
 Python intentionally does not advertise it until equivalent durable transcript
 metadata is available.
 
-- [Core/control package split](core-control-package-split.md)
+- [Core/control package split](internal/core-control-package-split.md)
 - [Runtime component lifecycle](internal/runtime-component-lifecycle.md)
 - [Runtime effect policy](internal/runtime-effect-policy.md)
 - [Runtime component graph](internal/runtime-component-graph.md)
 - [Transactional runtime activation](internal/runtime-transactional-activation.md)
 - [Runtime composition confluence harness](internal/runtime-composition-confluence.md)
 - [Strategy package import side-effect contract](strategy-package-import-contract.json)
-- [Generic edge runtime compatibility spike](edge-runtime-compatibility.md)
+- [Generic edge runtime compatibility spike](internal/edge-runtime-compatibility.md)
 - [Fetch adapter API reference](fetch-api-reference.md)
 - [Fetch host capability manifest examples](fetch-host-capability-manifest.md)
 - [Generated Fetch packaging guide](generated-fetch-packaging.md)
 - [Fetch conformance guide](fetch-conformance.md)
 - [Fetch adapter troubleshooting guide](fetch-troubleshooting.md)
-- [Flue-inspired runtime decisions](flue-influences.md)
-- [Scenario parity matrix — Python & TypeScript](scenario-parity-matrix.md)
+- [Flue-inspired runtime decisions](internal/flue-influences.md)
+- [Scenario parity matrix — Python & TypeScript](internal/scenario-parity-matrix.md)
 - [Scenario environment contract](scenario-environment-contract.md)
 - [Role routing contract](role-routing-contract.json)
 - [Typed rubric contract](rubric-spec.md)
@@ -82,12 +83,12 @@ metadata is available.
 - [Playbook approval gate](playbook-approval-gate.md)
 - [Immutable context bundles and outcome-gated promotion](context-bundles.md)
 - [Campaign false-promotion calibration](false-promotion-calibration.md)
-- [Derived lesson curation](derived-lesson-curation.md)
+- [Derived lesson curation](internal/derived-lesson-curation.md)
 - [Soft structural hints](soft-structural-hints.md)
 - [Span-level credit attribution](span-credit-attribution.md)
 - [Ablation-backed context attribution](context-attribution.md)
 - [Trainer-local statistical confirmation](training-statistical-confirmation.md)
-- [OPD/GKD + GRPO mixture experiment protocol](opd-grpo-mixture-experiment.md)
+- [OPD/GKD + GRPO mixture experiment protocol](internal/opd-grpo-mixture-experiment.md)
 - [Exploration collapse guard](exploration-collapse-guard.md)
 - [Browser exploration contract](browser-exploration-contract.md)
 - [OpenTelemetry bridge](opentelemetry-bridge.md)

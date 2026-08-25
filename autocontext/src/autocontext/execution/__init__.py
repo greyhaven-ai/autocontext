@@ -18,6 +18,12 @@ from .campaign_scheduler import (
     WorkerDescriptor,
 )
 from .docker_research_sandbox import DockerResearchSandboxBackend, SecretGrantResolver
+from .external_eval_outbox import (
+    ExternalEvalLedgerOutbox,
+    ExternalEvalOutboxConflictError,
+    ExternalEvalOutboxPendingError,
+    ExternalEvalOutboxStatus,
+)
 from .phased_execution import (
     PhaseBudget,
     PhasedExecutionPlan,
@@ -87,6 +93,10 @@ __all__ = [
     "ExecutionSupervisor",
     "ExecutionInput",
     "ExecutionOutput",
+    "ExternalEvalLedgerOutbox",
+    "ExternalEvalOutboxConflictError",
+    "ExternalEvalOutboxPendingError",
+    "ExternalEvalOutboxStatus",
     "DockerResearchSandboxBackend",
     "SANDBOX_CAPABILITY_NAMES",
     "SandboxBootMode",

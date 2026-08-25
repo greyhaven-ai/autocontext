@@ -14,6 +14,7 @@ from typing import Any
 from autocontext.config.production_execution import parse_csv_values
 from autocontext.config.settings import AppSettings
 from autocontext.execution.executors import LocalExecutor
+from autocontext.execution.external_eval_outbox import ExternalEvalLedgerOutbox, ExternalEvalOutboxStatus
 from autocontext.execution.remote_execution import (
     RemoteAcceleratorRequest,
     RemoteExecutionRequirements,
@@ -29,17 +30,24 @@ from autocontext.offline import require_online
 class ExecutionRuntime:
     supervisor: ExecutionSupervisor
     remote_adapter: Any | None = None
+    remote_ledger_outbox: ExternalEvalLedgerOutbox | None = None
 
     def take_remote_result(self, task_id: str) -> RemoteExecutionResult | None:
         take = getattr(self.supervisor.executor, "take_remote_result", None)
         result = take(task_id) if callable(take) else None
         return result if isinstance(result, RemoteExecutionResult) else None
 
+    def unresolved_remote_evaluations(self) -> tuple[ExternalEvalOutboxStatus, ...]:
+        if self.remote_ledger_outbox is None:
+            return ()
+        return self.remote_ledger_outbox.statuses(unresolved_only=True)
+
 
 def build_execution_runtime(
     settings: AppSettings,
     *,
     logger: logging.Logger | None = None,
+    remote_ledger_outbox: ExternalEvalLedgerOutbox | None = None,
 ) -> ExecutionRuntime:
     """Build the configured execution supervisor and optional remote adapter."""
 
@@ -51,6 +59,17 @@ def build_execution_runtime(
 
         if not settings.primeintellect_api_key:
             raise ValueError("AUTOCONTEXT_PRIMEINTELLECT_API_KEY is required for primeintellect executor mode")
+        ledger_outbox = remote_ledger_outbox or ExternalEvalLedgerOutbox(
+            settings.runs_root / "external-evaluations" / "prime-ledger.sqlite3"
+        )
+        unresolved = ledger_outbox.statuses(unresolved_only=True)
+        if unresolved:
+            runtime_logger.error(
+                "Prime external-evaluation accounting requires reconciliation for %d durable outbox entr%s at %s",
+                len(unresolved),
+                "y" if len(unresolved) == 1 else "ies",
+                ledger_outbox.path,
+            )
         remote = PrimeIntellectClient(
             api_key=settings.primeintellect_api_key,
             docker_image=settings.primeintellect_docker_image,
@@ -62,6 +81,7 @@ def build_execution_runtime(
             allow_fallback=settings.allow_primeintellect_fallback,
             default_requirements=prime_default_requirements(settings),
             resource_capabilities=prime_resource_capabilities(settings),
+            ledger_outbox=ledger_outbox,
         )
         return ExecutionRuntime(
             supervisor=ExecutionSupervisor(
@@ -72,6 +92,7 @@ def build_execution_runtime(
                 )
             ),
             remote_adapter=remote,
+            remote_ledger_outbox=ledger_outbox,
         )
     if settings.executor_mode == "monty":
         from autocontext.execution.executors.monty import MontyExecutor

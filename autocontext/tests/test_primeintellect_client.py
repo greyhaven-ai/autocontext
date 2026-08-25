@@ -394,6 +394,10 @@ def test_pre_command_provisioning_failures_remain_retryable(monkeypatch: pytest.
     assert result.retryable is True
     assert ledger == [result.to_ledger_entry()]
     assert ledger[0].retryable is True
+    attempt_events = [event for event in result.events if "provider_attempt_id" in event.fields]
+    assert [event.fields["provider_attempt"] for event in attempt_events] == [1, 2, 3]
+    assert len({event.fields["provider_attempt_id"] for event in attempt_events}) == 3
+    assert [event.event_type for event in attempt_events[:2]] == ["provider_retry", "provider_retry"]
 
 
 def test_untyped_provider_exception_is_terminal_with_unknown_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:

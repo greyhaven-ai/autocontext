@@ -13,6 +13,9 @@ remote execution. It describes a task without naming a provider:
   `warm_snapshot` lifecycle.
 
 ```python
+from pathlib import Path
+
+from autocontext.execution import ExternalEvalLedgerOutbox
 from autocontext.execution.remote_execution import (
     RemoteExecutionRequest,
     RemoteInputArtifact,
@@ -30,7 +33,10 @@ request = RemoteExecutionRequest(
     input_artifacts=(RemoteInputArtifact("analyze.py", b"print('{}')"),),
 )
 
-result = PrimeIntellectClient(api_key="...").execute_request(request)
+result = PrimeIntellectClient(
+    api_key="...",
+    ledger_outbox=ExternalEvalLedgerOutbox(Path("runs/external-evaluations/prime-ledger.sqlite3")),
+).execute_request(request)
 ```
 
 `RemoteExecutionResult` returns structured stdout/stderr events, exit status,
@@ -51,6 +57,29 @@ capability drift, cleanup failure, timeout, an unknown post-dispatch outcome,
 and malformed completed output are terminal. Campaign adapters preserve this
 disposition so a scheduler retry cannot allocate a second paid sandbox under a
 new task identity.
+
+### Durable paid-result accounting
+
+The shipped generation and campaign composition always wires Prime through a
+SQLite-backed `ExternalEvalLedgerOutbox` at
+`<runs_root>/external-evaluations/prime-ledger.sqlite3`. The client commits a
+stable request/attempt identity before provider dispatch, then atomically
+persists the complete typed result and its `ExternalEvalLedgerEntry` projection
+before exposing completion. Provider retry events retain deterministic attempt
+identities, cleanup outcomes, and backoff lineage.
+
+After restart, an already committed request returns its recorded result without
+creating another sandbox. A claim abandoned before result commit is treated as
+possibly billable and fails closed until an operator reconciles it; it is never
+authorization to repeat the request. A failed optional `ledger_sink` delivery
+is retained for retry after restart, again without provider re-execution.
+`ExecutionRuntime.unresolved_remote_evaluations()` returns claimed or
+undelivered records, and runtime construction logs their count and database
+path so operators can locate the accounting state.
+
+Direct `PrimeIntellectClient` embeddings should supply their own durable
+`ExternalEvalLedgerOutbox`, as in the example above. Omitting it preserves the
+low-level adapter API but does not provide restart-safe paid-result accounting.
 
 ## Prime Intellect adapter
 

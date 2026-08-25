@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autocontext"
-version = "0.16.1"
+version = "0.17.0"
 description = "autocontext control plane for iterative strategy evolution."
 readme = "README.md"
 license = "Apache-2.0"
@@ -62,6 +62,7 @@ dev = [
   "datamodel-code-generator>=0.56.0,<0.57.0",
   "httpx>=0.28.1",
   "hypothesis>=6.151.12",
+  "markdown-it-py>=4.0.0",
   "mypy>=1.16.0",
   "openai>=1.0.0,<2.0",
   "prime-sandboxes>=0.2.27",

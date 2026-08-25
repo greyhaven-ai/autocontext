@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from autocontext.execution.remote_execution import (
     ExternalEvalLedgerSink,
@@ -28,6 +28,7 @@ from autocontext.execution.remote_execution import (
 )
 from autocontext.execution.scenario_remote_package import DEFAULT_REMOTE_RUNTIME_IMAGE, require_pinned_runtime_image
 from autocontext.execution.scenario_remote_task import build_builtin_scenario_remote_request
+from autocontext.integrations.primeintellect import _execution as _execution_helpers
 from autocontext.integrations.primeintellect import _lifecycle
 from autocontext.integrations.primeintellect import _request as _request_helpers
 from autocontext.integrations.primeintellect.accelerators import (
@@ -47,6 +48,9 @@ from autocontext.scenarios.base import ExecutionLimits
 
 logger = logging.getLogger(__name__)
 _CLEANUP_TIMEOUT_SECONDS = 30.0
+
+if TYPE_CHECKING:
+    from autocontext.execution.external_eval_outbox import ExternalEvalLedgerOutbox
 
 AsyncSandboxClient: Any | None = None
 CreateSandboxRequest: Any | None = None
@@ -110,6 +114,7 @@ class PrimeIntellectClient:
     # Keep new public fields after the pre-existing positional API.
     default_requirements: RemoteExecutionRequirements | None = None
     resource_capabilities: RemoteProviderCapabilities = field(default_factory=RemoteProviderCapabilities)
+    ledger_outbox: ExternalEvalLedgerOutbox | None = None
     _active_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
     _active_sandboxes: dict[str, _lifecycle.ActiveSandbox] = field(default_factory=dict, init=False, repr=False)
     _inflight_tasks: set[str] = field(default_factory=set, init=False, repr=False)
@@ -176,99 +181,18 @@ class PrimeIntellectClient:
         require_online("use the PrimeIntellect executor")
         if max_retries < 0 or not math.isfinite(backoff_seconds) or backoff_seconds < 0:
             raise ValueError("Prime Intellect retry count and backoff must be non-negative and finite")
+        # Missing optional dependencies are a configuration error, not an
+        # ambiguous provider dispatch, so detect them before creating a claim.
+        _prime_sandboxes_sdk()
         self._begin_task(request.task_id)
         try:
-            attempt = 0
-            provider_wall_seconds = 0.0
-            while True:
-                if self._is_cancellation_requested(request.task_id):
-                    result = self._canceled_result(request)
-                    return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
-                # Grants can expire while a failed attempt is backing off. Recheck
-                # policy immediately before every provider attempt; policy errors
-                # are deliberately outside the provider-fallback exception path.
-                self.validate_request(request)
-                attempt_started = time.perf_counter()
-                try:
-                    result = asyncio.run(self._execute_request_once(request))
-                except MissingPrimeIntellectExtraError:
-                    raise
-                except _lifecycle.SandboxCreationOutcomeUnknown as exc:
-                    provider_wall_seconds += max(0.0, time.perf_counter() - attempt_started)
-                    result = _lifecycle.ambiguous_creation_result(request, exc)
-                    if self._is_cancellation_requested(request.task_id):
-                        result = self._canceled_result(request, str(exc), completed=result)
-                        return self._commit_and_emit(
-                            request,
-                            result,
-                            provider_wall_seconds=provider_wall_seconds,
-                        )
-                    result = self._commit_and_emit(
-                        request,
-                        result,
-                        provider_wall_seconds=provider_wall_seconds,
-                    )
-                    return result
-                except _lifecycle.RetryableProvisioningError as exc:
-                    provider_wall_seconds += max(0.0, time.perf_counter() - attempt_started)
-                    if self._is_cancellation_requested(request.task_id):
-                        completed = _lifecycle.provider_error_result(
-                            request,
-                            detail=str(exc),
-                            cleanup=exc.cleanup,
-                            usage=exc.usage,
-                            session_id=exc.session_id,
-                            attempts=attempt + 1,
-                            lifecycle_event=exc.lifecycle_event,
-                        )
-                        result = self._canceled_result(request, str(exc), completed=completed)
-                        return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
-                    attempt += 1
-                    if attempt <= max_retries:
-                        time.sleep(backoff_seconds * attempt)
-                        continue
-                    result = _lifecycle.provider_error_result(
-                        request,
-                        detail=str(exc),
-                        cleanup=exc.cleanup,
-                        usage=exc.usage,
-                        session_id=exc.session_id,
-                        attempts=attempt,
-                        lifecycle_event=exc.lifecycle_event,
-                    )
-                    return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
-                except Exception as exc:
-                    provider_wall_seconds += max(0.0, time.perf_counter() - attempt_started)
-                    logger.debug("integrations.primeintellect.client: provider failure", exc_info=True)
-                    if self._is_cancellation_requested(request.task_id):
-                        result = self._canceled_result(request, str(exc))
-                        return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
-                    result = RemoteExecutionResult(
-                        task_id=request.task_id,
-                        provider="primeintellect",
-                        status="cleanup_error",
-                        cleanup=RemoteCleanupOutcome(
-                            attempted=False,
-                            succeeded=False,
-                            detail="provider phase and cleanup outcome are unknown",
-                        ),
-                        error=f"{exc}; provider phase and cleanup outcome are unknown",
-                        provenance=remote_request_provenance(request),
-                        events=(
-                            RemoteExecutionEvent(
-                                sequence=1,
-                                event_type="provider_error",
-                                message=str(exc),
-                                fields={"phase": "unknown", "attempts": attempt + 1},
-                            ),
-                        ),
-                    )
-                    return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
-                provider_wall_seconds += max(0.0, time.perf_counter() - attempt_started)
-                # Ledger persistence is deliberately outside the provider retry
-                # exception boundary. A sink failure must never execute a paid
-                # remote task a second time.
-                return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
+            return _execution_helpers.execute_with_retries(
+                self,
+                request,
+                max_retries=max_retries,
+                backoff_seconds=backoff_seconds,
+                passthrough_error=MissingPrimeIntellectExtraError,
+            )
         finally:
             self._end_task(request.task_id)
 
@@ -359,7 +283,12 @@ class PrimeIntellectClient:
         async with sandbox_client_cls(api_key=self.api_key) as client:
             await client.list(per_page=1, exclude_terminated=True)
 
-    async def _execute_request_once(self, request: RemoteExecutionRequest) -> RemoteExecutionResult:
+    async def _execute_request_once(
+        self,
+        request: RemoteExecutionRequest,
+        *,
+        attempt_number: int,
+    ) -> RemoteExecutionResult:
         sandbox_client_cls, create_sandbox_request = _prime_sandboxes_sdk()
         sandbox_id = ""
         active: _lifecycle.ActiveSandbox | None = None
@@ -456,6 +385,8 @@ class PrimeIntellectClient:
                 "resolved_accelerator_kind": resolved.accelerator_kind,
                 "resolved_accelerator_count": resolved.accelerator_count,
                 "runtime": resolved.runtime,
+                "provider_attempt": attempt_number,
+                "provider_attempt_id": _execution_helpers.provider_attempt_id(request, attempt_number),
             },
         )
 
@@ -726,9 +657,18 @@ class PrimeIntellectClient:
         result: RemoteExecutionResult,
         *,
         provider_wall_seconds: float,
+        retry_events: Sequence[RemoteExecutionEvent] = (),
     ) -> RemoteExecutionResult:
         """Linearize terminal result publication against cancellation."""
 
+        if retry_events:
+            result = replace(
+                result,
+                events=tuple(
+                    replace(event, sequence=index)
+                    for index, event in enumerate((*retry_events, *result.events), start=1)
+                ),
+            )
         if provider_wall_seconds > result.usage.wall_seconds:
             result = replace(
                 result,
@@ -739,8 +679,31 @@ class PrimeIntellectClient:
             self._result_committed.add(request.task_id)
         if cancellation_won and not any(event.event_type == "canceled" for event in result.events):
             result = self._canceled_result(request, completed=result)
-        self._emit_ledger(result)
+        attempt_id = None
+        if self.ledger_outbox is not None:
+            attempt_id = self.ledger_outbox.commit("primeintellect", request, result)
+        if attempt_id is None:
+            self._emit_ledger(result)
+        else:
+            self._deliver_committed_ledger(attempt_id, result, already_delivered=False)
         return result
+
+    def _deliver_committed_ledger(
+        self,
+        attempt_id: str,
+        result: RemoteExecutionResult,
+        *,
+        already_delivered: bool,
+    ) -> None:
+        assert self.ledger_outbox is not None
+        if already_delivered:
+            return
+        try:
+            self._emit_ledger(result)
+        except Exception as exc:
+            self.ledger_outbox.record_sink_failure(attempt_id, exc)
+            raise
+        self.ledger_outbox.mark_sink_delivered(attempt_id)
 
     def validate_request(self, request: RemoteExecutionRequest) -> None:
         expired_grants = [grant.name for grant in request.secret_grants if grant.expires_at <= time.time()]

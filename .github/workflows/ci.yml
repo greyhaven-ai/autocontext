@@ -41,6 +41,8 @@ jobs:
         run: uv run mypy src
       - name: Protocol parity check
         run: uv run python ../scripts/generate_protocol.py --check
+      - name: Markdown link integrity
+        run: uv run python ../scripts/check_markdown_links.py
 
   test:
     runs-on: ubuntu-latest
