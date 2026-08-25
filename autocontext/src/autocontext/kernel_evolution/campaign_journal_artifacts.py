@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from autocontext.kernel_evolution._generation_replay import validate_generation_replay
 from autocontext.kernel_evolution.campaign_journal_models import KernelArtifactKind
-from autocontext.kernel_evolution.generation import KernelGenerationFailure
+from autocontext.kernel_evolution.generation import (
+    KernelGenerationBudget,
+    KernelGenerationFailure,
+    KernelGenerationResult,
+)
 from autocontext.util.json_io import read_json
 
 
@@ -27,7 +32,7 @@ def artifact_kind(relative: str) -> KernelArtifactKind:
             return kind
     if relative.endswith("/claim.json") and relative.startswith("generation/proposals/"):
         return "generation_claim"
-    if relative.endswith("/failure.json") or "/cancellations/" in relative:
+    if relative.endswith(("/failure.json", "/retry.json")) or "/cancellations/" in relative:
         return "generation_failure"
     if relative.endswith("/attempt-link.json"):
         return "attempt_link"
@@ -59,3 +64,21 @@ def add_durable_failure(
     if existing is not None and existing != failure:
         raise ValueError("generation failure id has conflicting payloads")
     failures[failure.failure_id] = failure
+
+
+def generation_activity_can_resume(
+    results: list[KernelGenerationResult],
+    failures: tuple[KernelGenerationFailure, ...],
+    budget: KernelGenerationBudget,
+) -> bool:
+    """Return whether durable activity admits one unambiguous next paid call."""
+    try:
+        validate_generation_replay(
+            results,
+            failures,
+            budget,
+            resumable_proposal=len(results) + 1,
+        )
+    except ValueError:
+        return False
+    return True

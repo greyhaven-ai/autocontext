@@ -32,7 +32,7 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [Persistent host worker](../autocontext/docs/persistent-host.md)
 - [Correctness-first external kernel evolution](../autocontext/docs/kernel-evolution.md)
   — including typed provider generation, durable budgets, status/stop, and
-  crash-safe resume.
+  crash-safe resume plus multi-workload transfer/specialist evidence.
 - [MLX host training notes](../autocontext/docs/mlx-training.md)
 - [Case study: recursive loop closed on local MLX](../autocontext/docs/case-study-recursive-loop.md)
 

@@ -23,6 +23,8 @@ These are copy-paste starting points for people evaluating the repo, integrating
   Start with the settings and lifecycle requirements in
   [research workspaces](../docs/research-workspaces.md).
 - Want correctness-first recursive GPU-kernel search? Start with the kernel evolution MVP.
+- Want to compare transfer and specialist behavior across kernel families? Run
+  the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the
   [capability-validated Prime plan](../docs/campaign-scheduler.md#prime-accelerator-plans);
   accelerator type/count, image, region, and telemetry must be declared and
@@ -58,6 +60,11 @@ The production H100 campaign
 remains fail-closed until role-separated telemetry, trusted mutation
 observation, comparable reference timing, and crash-safe container creation are
 implemented and the exact path passes the opt-in real MIG adversarial gate.
+The companion multi-workload study uses the same runner/report lineage across
+variable-shape matmul, fused elementwise/reduction, and causal attention. It
+keeps every family's primary and fresh-confirmation result visible, records
+cross-hardware and cross-family trials, and cannot label a champion portable
+when any required correctness slice or case floor fails.
 
 ## Python CLI From Source
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -238,10 +238,21 @@ class FakeBenchmarkRunner:
 
 
 class _AuthoritySigningFakeRunner(FakeBenchmarkRunner):
-    def __init__(self, *, signing_secret: bytes, reference_comparable: bool) -> None:
+    def __init__(
+        self,
+        *,
+        signing_secret: bytes,
+        reference_comparable: bool,
+        include_timing_evidence: bool = True,
+        include_authority_receipt: bool = True,
+        reported_problem_id: str | None = None,
+    ) -> None:
         super().__init__()
         self.signing_secret = signing_secret
         self.reference_comparable = reference_comparable
+        self.include_timing_evidence = include_timing_evidence
+        self.include_authority_receipt = include_authority_receipt
+        self.reported_problem_id = reported_problem_id
         self.evaluator_build_digest = canonical_authority_digest("host-evaluator-build")
         self.boundary_manifest_digest = canonical_authority_digest("host-boundary")
 
@@ -254,6 +265,8 @@ class _AuthoritySigningFakeRunner(FakeBenchmarkRunner):
     ) -> KernelBenchmarkExecution:
         del timeout_seconds
         payload = self._report(candidate, incumbent, correct=True).model_dump(mode="json")
+        if self.reported_problem_id is not None:
+            payload["problem_id"] = self.reported_problem_id
         attestation = AcceleratorAttestation(
             backend=self.hardware.backend,
             vendor="test-vendor",
@@ -272,12 +285,14 @@ class _AuthoritySigningFakeRunner(FakeBenchmarkRunner):
             "accelerator_attestation_digest": attestation.digest,
             "device_total_memory_bytes": attestation.enforced_memory_bytes,
         }
-        payload["metadata"]["timing_comparability"] = {
-            "promotion_comparison": ["candidate_ms", "incumbent_ms"],
-            "candidate_incumbent_comparable": True,
-            "reference_comparable": self.reference_comparable,
-        }
+        if self.include_timing_evidence:
+            payload["metadata"]["timing_comparability"] = {
+                "promotion_comparison": ["candidate_ms", "incumbent_ms"],
+                "candidate_incumbent_comparable": True,
+                "reference_comparable": self.reference_comparable,
+            }
         payload = KernelBenchmarkReport.model_validate(payload).model_dump(mode="json")
+        roles: tuple[Literal["candidate", "incumbent"], ...] = ("candidate", "incumbent")
         measurements = tuple(
             AuthorityMeasurement(
                 sequence=index,
@@ -290,7 +305,7 @@ class _AuthoritySigningFakeRunner(FakeBenchmarkRunner):
                 observed_peak_memory_bytes=100 + index,
                 outcome="complete",
             )
-            for index, role in enumerate(("candidate", "incumbent"))
+            for index, role in enumerate(roles)
         )
         receipt = build_authority_receipt(
             evaluator_build_digest=self.evaluator_build_digest,
@@ -304,7 +319,8 @@ class _AuthoritySigningFakeRunner(FakeBenchmarkRunner):
             signing_key_id="operator-key-v1",
             signing_secret=self.signing_secret,
         )
-        payload["evaluator_authority_receipt"] = receipt.model_dump(mode="json")
+        if self.include_authority_receipt:
+            payload["evaluator_authority_receipt"] = receipt.model_dump(mode="json")
         return KernelBenchmarkExecution(returncode=0, report_payload=payload)
 
 
@@ -358,12 +374,52 @@ def test_authority_eligibility_rejects_self_issued_receipts_and_incomparable_tim
     assert not self_issued.eligible
     assert self_issued.rejection_reason == "invalid_authority_receipt"
     assert "authentication tag is invalid" in self_issued.feedback
+    assert self_issued.report is None
+
+    missing = evaluator(
+        _AuthoritySigningFakeRunner(
+            signing_secret=host_secret,
+            reference_comparable=True,
+            include_authority_receipt=False,
+            reported_problem_id="attacker-problem",
+        )
+    ).evaluate(candidate, incumbent)
+    assert not missing.eligible
+    assert missing.rejection_reason == "missing_authority_receipt"
+    assert missing.report is None
 
     incomparable = evaluator(
         _AuthoritySigningFakeRunner(signing_secret=host_secret, reference_comparable=False)
     ).evaluate(candidate, incumbent)
     assert not incomparable.eligible
     assert incomparable.rejection_reason == "timing_boundary_mismatch"
+
+    omitted = evaluator(
+        _AuthoritySigningFakeRunner(
+            signing_secret=host_secret,
+            reference_comparable=True,
+            include_timing_evidence=False,
+        )
+    ).evaluate(candidate, incumbent)
+    assert not omitted.eligible
+    assert omitted.rejection_reason == "timing_boundary_mismatch"
+    from autocontext.kernel_evolution.evidence_replay import _report_visible_rejection_reason
+    from autocontext.kernel_evolution.runner_config import decision_policy_from_config
+
+    config = KernelEvolutionConfig(
+        problem_id="kernelbench-level1-problem1",
+        task_prompt="improve",
+        baseline_source="baseline",
+        min_relative_improvement=0.05,
+        target_reference_speedup=3.0,
+    )
+    assert omitted.statistics_policy is not None
+    policy = decision_policy_from_config(
+        config,
+        omitted.statistics_policy,
+        require_confirmation=False,
+    )
+    assert _report_visible_rejection_reason(omitted, policy) == "timing_boundary_mismatch"
 
 
 def _runner(

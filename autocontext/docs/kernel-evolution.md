@@ -204,6 +204,112 @@ Each new proposal's parent is the current champion, not the most recent
 rejected attempt, and the final summary reports the champion rather than the
 last trial.
 
+## Multi-workload studies
+
+`KernelWorkloadStudyReport` composes ordinary kernel runs without replacing
+their trusted evaluator or inventing a cross-workload scalar score. Each
+`KernelWorkloadSpec` pins the exact reference source/artifact and ABI, family,
+family-independent public shape profile, execution environment, campaign
+protocol, fresh ordered adaptive-confirmation protocols, distinct final protocols,
+and one fresh primary/confirmation reservation for every transfer route. It also
+pins required slices, exact benchmark-case identities, per-case floor, task
+prompt, exact generation budget, and end-to-end workload wall/cost ceilings.
+Transfer dimensions use canonical sorted order, so permuting a dimension set
+cannot create a second reservation for the same logical route.
+
+`KernelWorkloadRunEvidence` embeds the complete evolution result, final primary
+and confirmation observations, generation receipts and terminal failures,
+replayable budget state, and reported runner/final wall and cost usage. A study
+therefore retains promotion lineage and raw evidence rather than only copying
+digests. Each run binds its generation activity to the study execution, exact
+workload spec, runner ID, and generation budget; final evaluator reports carry
+that context commitment. A measured run requires at least one signed final report
+so the commitment cannot be rewritten during assembly. Outcomes are `promoted`, `plateau`, or `incomplete`;
+interrupted or failed generation cannot masquerade as proposal exhaustion.
+
+Promoted champions can be re-evaluated with
+`build_kernel_transfer_evidence()` on another shape profile, execution
+environment, or workload family. A study classifies the result as:
+
+- `portable` only when the champion passes every workload and covers the
+  required shape, hardware, and workload-family dimensions;
+- `cross-workload` when it transfers beyond its source but not everywhere;
+- `specialist` when target correctness or per-case floors fail; or
+- `unconfirmed` when required target evidence is missing.
+
+Plateaus and incomplete runs remain explicit per-workload outcomes. Derived
+transfer lessons and regressions replay from the embedded observations;
+callers cannot edit the summary independently. Reused protocols/private plans,
+route, reference, shape, family, environment, required-slice, floor,
+provenance, or budget mismatches fail validation. Outgoing transfer wall and
+cost are charged to the source workload's end-to-end ceilings. Consequently,
+`portable_champion_artifact_digests` cannot contain a candidate with a failed
+or untested target.
+
+The runnable conformance study needs no GPU:
+
+```bash
+cd autocontext
+uv run --frozen python ../examples/kernel_evolution/multi_workload/run.py
+```
+
+It runs variable-shape matrix multiplication, fused bias/GELU/reduction, and
+causal attention through the same runner/report/confirmation/lineage path,
+then performs target-family and second-hardware-identity evaluations with new
+plans. Every invocation generates a high-entropy execution identity before any
+plan is reserved, preventing reports, burns, or execution IDs from being replayed
+across fresh studies. The report and every embedded benchmark report carry the
+execution identity, exact workload-spec digest, manifest/contract digests, and
+conspicuous synthetic provenance; its timings prove orchestration, not accelerator
+effectiveness. A content-addressed evidence index preserves
+every raw observation/report; its digest is bound into report provenance, and
+`study_artifacts.json` is the sole success commit marker. The private `0700`
+study directory is created exclusively through a retained no-follow output
+descriptor, which remains open through terminal success or failure. Host-local
+kernel run diagnostics execute from descriptor-bound working directories and
+fail closed if their public names change. Benchmark children inherit the
+retained study-root descriptor and change into it before opening adapter and
+problem bytes that were checked against their in-memory precommit, so a
+transient public-path replacement cannot redirect execution. The marker seals every portable
+file—including unused reserved contracts, exact reference sources, and a
+relocatable snapshot of the example, full first-party source tree, package/lock
+files, and Python runtime identity. The report and marker are built from exact
+bytes and published marker-last through one retained,
+no-follow study-root descriptor. The complete portable inventory is read and
+replayed through that same descriptor, and both output names, inodes, and exact
+bytes are checked through the final commit. Platforms without the required
+directory-relative operations fail closed. Handled setup, workload, finalization,
+and pre-commit interruption failures produce a manifest-bound, descriptor-anchored
+`study_failure.json` and remove partial success files. An interruption after the
+exact marker commit cannot create a conflicting failure state. After an
+unrecoverable process kill, the absence of
+`study_artifacts.json` still makes any orphaned report uncommitted.
+`--study-id` accepts a single safe path component, so it cannot escape
+`--output`.
+
+For a production study, keep the exact case material and confirmation order in
+worker-private plans while publishing their commitments. Pin every trusted
+reference, evaluator build, runtime image, and resolved accelerator identity;
+reserve fresh profiles for every adaptive confirmation, final look, and
+transfer phase; require protected OS/process authority and resource telemetry;
+and place generation plus end-to-end cost/wall ceilings in the immutable study
+manifest. Publish the artifact manifest and raw evidence index alongside the
+report so specialists, regressions, incomplete runs, and infrastructure failures
+remain inspectable. Treat raw `runs/` manifests as host-local diagnostics because
+they may contain absolute paths. Validation of measured studies must receive an
+external trusted evaluator key, pinned evaluator build/boundary digests, and the
+externally trusted exact evidence-index bytes plus digest. Validation replays
+index membership, binds every execution ID to its stream sequence, candidate,
+incumbent, protocol, and private-plan commitment, and permits exactly one direct
+evaluation or one raw/derived deadline pair per physical execution. Report-backed
+looks cannot be relabeled as derived failures. Finite non-negative index wall/cost
+usage is charged back to its campaign or phase, so report accounting cannot
+understate the externally pinned history; authenticated transcript time remains
+an additional wall-time lower bound. An embedded receipt or mutable artifact
+manifest is integrity evidence, not its own trust root. Provider billing still
+needs a separately trusted provider receipt when it is not part of that external
+index trust boundary.
+
 ## Durable autonomous campaigns
 
 Production generators should return `KernelGenerationResult`, normally through
@@ -242,6 +348,13 @@ generator = ProviderKernelGenerator(
     entrypoint="ModelNew",
 )
 ```
+
+Retries require one complete, internally consistent directional provider-counter
+family and positive remaining token, cost, and wall capacity. Partial, total-only,
+mixed-family, contradictory, or unsupported nonzero counters stop before another
+paid dispatch. Estimated receipts use the immutable
+`estimated-model-pricing-v1` rate table and conservatively price total tokens that
+the provider did not allocate to a direction at the output-token rate.
 
 Credentials are resolved and held by the provider in the control process.
 They are never passed to the benchmark worker or serialized in campaign
@@ -423,7 +536,11 @@ configured immutable harness tree before launch and again after execution,
 rejects symlinks and special files in those trees, re-hashes the candidate and
 incumbent, and tears down the worker process group after every invocation,
 including a nominal exit. Include the resolved executable in `immutable_paths`
-when its bytes must also be content-pinned.
+when its bytes must also be content-pinned. `expected_immutable_files` can
+require regular-file roots to equal caller-held precommitted bytes before the
+runner adopts their fingerprint. On POSIX, `inherited_fds` can retain an
+already-verified directory for a trusted descriptor-relative launcher; those
+descriptors are passed directly to the child and are unavailable on Windows.
 
 Lifecycle containment is implemented once for every terminal outcome: success,
 command failure, timeout, stdout/stderr overflow, and report overflow. On POSIX,
@@ -721,11 +838,13 @@ the structured contract and keep all evaluator-controlled inputs outside
 candidate control. The synthetic adapter in the example is a reference for the
 I/O boundary, not for CUDA measurement methodology.
 
-This MVP is intentionally Python-first and library-only: it adds no public CLI,
-island/concurrent GPU search, cross-hardware champion transfer, or TypeScript
-surface. Its lineage root is a standalone artifact directory and is not yet
-indexed by `autoctx status`, mirrored through `ArtifactStore`, or discoverable
-through the run API.
+This surface is intentionally Python-first and library-only: it adds no public
+CLI, island/concurrent GPU search, or TypeScript execution surface. The study
+layer can record cross-hardware transfer evidence, but the bundled example is
+synthetic and the protected production H100 path remains fail-closed. Its
+lineage root is a standalone artifact directory and is not yet indexed by
+`autoctx status`, mirrored through `ArtifactStore`, or discoverable through the
+run API.
 
 Bounded searches set `proposal_cap` and `familywise_alpha`. AutoContext rejects
 requests above the cap before benchmarking, uses the actual Bonferroni-adjusted

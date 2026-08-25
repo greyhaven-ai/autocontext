@@ -145,7 +145,12 @@ class PaidReceiptGenerator:
             source=VALID_SOURCE,
             source_suffix=".py",
             entrypoint="ModelNew",
-            usage=KernelGenerationUsage(input_tokens=2, output_tokens=3, total_tokens=5),
+            usage=KernelGenerationUsage(
+                input_tokens=2,
+                output_tokens=3,
+                total_tokens=5,
+                provider_usage={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+            ),
             cost_usd=0.25,
             cost_source="provider-reported",
             latency_seconds=0.1,
@@ -224,7 +229,7 @@ def test_provider_generator_persists_exact_provenance_and_retry_accounting() -> 
             ),
         ]
     )
-    clock = iter((0.0, 0.25, 1.0, 1.5))
+    clock = iter((0.0, 0.25, 1.0, 1.5, 2.0, 2.5))
     sleeps: list[float] = []
     generator = ProviderKernelGenerator(
         provider,
@@ -314,6 +319,176 @@ def test_success_without_directional_usage_fails_closed(cost_usd: float | None) 
     assert "lacks trustworthy directional token usage" in raised.value.failures[0].error
 
 
+def test_total_only_failed_usage_is_conservatively_priced_without_retry() -> None:
+    provider = MockProvider([ProviderError("timeout", usage={"total_tokens": 100_000})])
+    generator = ProviderKernelGenerator(
+        provider,
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=KernelGenerationBudget(
+            proposal_cap=1,
+            max_retries_per_proposal=1,
+            retry_backoff_seconds=0,
+            max_total_tokens=300_000,
+            max_cost_usd=0.000001,
+        ),
+        entrypoint="ModelNew",
+    )
+
+    with pytest.raises(KernelGenerationBudgetExceeded) as raised:
+        generator("exact prompt", 0)
+
+    assert len(provider.calls) == 1
+    assert raised.value.failures[0].usage.total_tokens == 100_000
+    assert raised.value.failures[0].cost_usd > 0.0
+    assert not raised.value.failures[0].retryable
+    assert generator.budget_state.cost_usd > generator.budget.max_cost_usd
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        {"input_tokens": 1},
+        {"output_tokens": 1},
+        {"prompt_tokens": 1},
+        {"completion_tokens": 1},
+        {"input_tokens": 1, "completion_tokens": 1},
+        {"cached_tokens": 100_000},
+    ],
+)
+def test_incomplete_failed_usage_never_authorizes_a_paid_retry(usage: dict[str, int]) -> None:
+    provider = MockProvider(
+        [
+            ProviderError("503 overloaded", usage=usage),
+            CompletionResult(
+                text=VALID_SOURCE,
+                model="gpt-5.6-sol",
+                usage={"input_tokens": 1, "output_tokens": 1},
+            ),
+        ]
+    )
+    generator = ProviderKernelGenerator(
+        provider,
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=KernelGenerationBudget(proposal_cap=1, max_retries_per_proposal=1, retry_backoff_seconds=0),
+        entrypoint="ModelNew",
+    )
+
+    with pytest.raises(KernelGenerationProviderError) as raised:
+        generator("exact prompt", 0)
+
+    assert len(provider.calls) == 1
+    assert not raised.value.failures[0].retryable
+
+
+def test_unknown_nonzero_success_usage_fails_closed_without_retry() -> None:
+    provider = MockProvider(
+        [
+            CompletionResult(
+                text=VALID_SOURCE,
+                model="gpt-5.6-sol",
+                usage={"input_tokens": 1, "output_tokens": 1, "cached_tokens": 100_000},
+            )
+        ]
+    )
+    generator = ProviderKernelGenerator(
+        provider,
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=KernelGenerationBudget(proposal_cap=1, max_retries_per_proposal=1),
+        entrypoint="ModelNew",
+    )
+
+    with pytest.raises(KernelGenerationProviderError, match="unsupported nonzero provider counter") as raised:
+        generator("exact prompt", 0)
+
+    assert len(provider.calls) == 1
+    assert not raised.value.failures[0].retryable
+
+
+def test_retry_backoff_charges_actual_elapsed_before_redispatch() -> None:
+    provider = MockProvider(
+        [ProviderError("503 overloaded", usage={"input_tokens": 2, "output_tokens": 0})]
+    )
+    clock = iter((0.0, 0.0, 1.0, 1.02))
+    generator = ProviderKernelGenerator(
+        provider,
+        provider_id="paid",
+        model="paid-model",
+        budget=KernelGenerationBudget(
+            proposal_cap=1,
+            max_retries_per_proposal=1,
+            retry_backoff_seconds=0.001,
+            max_wall_seconds=0.005,
+        ),
+        entrypoint="ModelNew",
+        monotonic=lambda: next(clock),
+        sleep=lambda _delay: None,
+    )
+
+    with pytest.raises(KernelGenerationBudgetExceeded) as raised:
+        generator("exact prompt", 0)
+
+    assert len(provider.calls) == 1
+    assert raised.value.failures[0].retry_delay_seconds == pytest.approx(0.02)
+    assert not raised.value.failures[0].retryable
+    assert generator.budget_state.wall_seconds == pytest.approx(0.02)
+
+
+def test_retry_backoff_cannot_consume_the_exact_remaining_wall_budget() -> None:
+    provider = MockProvider(
+        [ProviderError("503 overloaded", usage={"input_tokens": 1, "output_tokens": 1})]
+    )
+    clock = iter((0.0, 0.0, 0.0, 0.005))
+    generator = ProviderKernelGenerator(
+        provider,
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=KernelGenerationBudget(
+            proposal_cap=1,
+            max_retries_per_proposal=1,
+            retry_backoff_seconds=0.001,
+            max_wall_seconds=0.005,
+        ),
+        entrypoint="ModelNew",
+        monotonic=lambda: next(clock),
+        sleep=lambda _delay: None,
+    )
+
+    with pytest.raises(KernelGenerationBudgetExceeded) as raised:
+        generator("exact prompt", 0)
+
+    assert len(provider.calls) == 1
+    assert raised.value.failures[0].retry_delay_seconds == pytest.approx(0.005)
+    assert not raised.value.failures[0].retryable
+
+
+def test_failure_cannot_consume_the_exact_remaining_cost_budget_then_retry() -> None:
+    provider = MockProvider(
+        [ProviderError("503 overloaded", usage={"input_tokens": 1, "output_tokens": 1})]
+    )
+    generator = ProviderKernelGenerator(
+        provider,
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=KernelGenerationBudget(
+            proposal_cap=1,
+            max_retries_per_proposal=1,
+            retry_backoff_seconds=0,
+            max_cost_usd=0.000035,
+        ),
+        entrypoint="ModelNew",
+    )
+
+    with pytest.raises(KernelGenerationBudgetExceeded) as raised:
+        generator("exact prompt", 0)
+
+    assert len(provider.calls) == 1
+    assert raised.value.failures[0].cost_usd == pytest.approx(generator.budget.max_cost_usd)
+    assert not raised.value.failures[0].retryable
+
+
 def test_invalid_source_without_usage_cannot_consume_an_unaccounted_retry() -> None:
     provider = MockProvider(
         [
@@ -380,8 +555,10 @@ def test_failure_is_observed_before_backoff_and_survives_cancellation() -> None:
         events.append(("sleep", delay))
         cancelled = True
 
-    provider = MockProvider([ProviderError("503 overloaded", usage={"input_tokens": 2})])
-    clock = iter((0.0, 0.1))
+    provider = MockProvider(
+        [ProviderError("503 overloaded", usage={"input_tokens": 2, "output_tokens": 0})]
+    )
+    clock = iter((0.0, 0.1, 0.1, 0.35))
     generator = ProviderKernelGenerator(
         provider,
         provider_id="paid",
@@ -409,14 +586,16 @@ def test_failure_is_observed_before_backoff_and_survives_cancellation() -> None:
     assert generator.budget_state.wall_seconds == pytest.approx(0.35)
 
 
-def test_pending_failure_restore_resumes_at_next_physical_call() -> None:
+def test_pending_failure_restore_rejects_an_unfinished_backoff() -> None:
     receipts: list[KernelGenerationFailure] = []
 
     def crash_after_receipt(failure: KernelGenerationFailure) -> None:
         receipts.append(failure)
         raise RuntimeError("simulated crash after durable failure receipt")
 
-    first_provider = MockProvider([ProviderError("503 overloaded", usage={"input_tokens": 2})])
+    first_provider = MockProvider(
+        [ProviderError("503 overloaded", usage={"input_tokens": 2, "output_tokens": 0})]
+    )
     first = ProviderKernelGenerator(
         first_provider,
         provider_id="paid",
@@ -435,6 +614,46 @@ def test_pending_failure_restore_resumes_at_next_physical_call() -> None:
     assert len(first_provider.calls) == 1
     assert receipts[0].retry_delay_seconds == pytest.approx(0.25)
 
+    resumed_provider = MockProvider([])
+    resumed = ProviderKernelGenerator(
+        resumed_provider,
+        provider_id="paid",
+        model="paid-model",
+        budget=first.budget,
+        entrypoint="ModelNew",
+    )
+
+    with pytest.raises(ValueError, match="completed-backoff receipt"):
+        resumed.restore_pending_failures(1, receipts)
+
+    assert resumed_provider.calls == []
+
+
+def test_completed_backoff_restore_resumes_at_next_physical_call() -> None:
+    receipts: list[KernelGenerationFailure] = []
+
+    def crash_after_backoff(failure: KernelGenerationFailure) -> None:
+        receipts.append(failure)
+        raise RuntimeError("simulated crash after completed backoff receipt")
+
+    budget = KernelGenerationBudget(
+        proposal_cap=1,
+        max_retries_per_proposal=1,
+        retry_backoff_seconds=0.25,
+    )
+    first = ProviderKernelGenerator(
+        MockProvider([ProviderError("503 overloaded", usage={"input_tokens": 2, "output_tokens": 0})]),
+        provider_id="paid",
+        model="paid-model",
+        budget=budget,
+        entrypoint="ModelNew",
+        retry_observer=crash_after_backoff,
+        sleep=lambda _delay: None,
+    )
+
+    with pytest.raises(RuntimeError, match="completed backoff"):
+        first("exact prompt", 0)
+
     claims: list[tuple[int, int]] = []
     resumed_provider = MockProvider(
         [
@@ -450,11 +669,11 @@ def test_pending_failure_restore_resumes_at_next_physical_call() -> None:
         resumed_provider,
         provider_id="paid",
         model="paid-model",
-        budget=first.budget,
+        budget=budget,
         entrypoint="ModelNew",
         call_observer=lambda proposal, call: claims.append((proposal, call)),
     )
-    resumed.restore_pending_failures(1, receipts)
+    resumed.restore_completed_pending_failures(1, receipts)
 
     result = resumed("exact prompt", 0)
 
@@ -464,8 +683,261 @@ def test_pending_failure_restore_resumes_at_next_physical_call() -> None:
     assert resumed.budget_state.input_tokens == 5
 
 
+@pytest.mark.parametrize(
+    ("forgery", "message"),
+    [
+        ("zero-estimated-cost", "estimated cost does not replay"),
+        ("incomplete-counters", "directional provider counters"),
+        ("unknown-counter", "unsupported nonzero provider counter"),
+        ("fenced-source", "Markdown fences"),
+        ("truncated-source", "response was truncated"),
+    ],
+)
+def test_provider_restore_rejects_forged_paid_accounting_before_dispatch(
+    forgery: str,
+    message: str,
+) -> None:
+    original = ProviderKernelGenerator(
+        MockProvider(
+            [
+                CompletionResult(
+                    text=VALID_SOURCE,
+                    model="gpt-5.6-sol",
+                    usage={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+                )
+            ]
+        ),
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=KernelGenerationBudget(proposal_cap=2),
+        entrypoint="ModelNew",
+    )("exact prompt", 0)
+    if forgery == "zero-estimated-cost":
+        forged = original.model_copy(update={"cost_usd": 0.0})
+    elif forgery == "incomplete-counters":
+        usage = KernelGenerationUsage(
+            input_tokens=2,
+            total_tokens=2,
+            provider_usage={"input_tokens": 2, "total_tokens": 2},
+        )
+        forged = original.model_copy(update={"usage": usage})
+    elif forgery == "unknown-counter":
+        usage = original.usage.model_copy(
+            update={"provider_usage": {**original.usage.provider_usage, "cached_tokens": 10_000}}
+        )
+        forged = original.model_copy(update={"usage": usage})
+    elif forgery == "fenced-source":
+        source = f"```python\n{VALID_SOURCE}\n```"
+        candidate = KernelCandidate(source=source, source_suffix=".py", entrypoint="ModelNew")
+        forged = original.model_copy(
+            update={
+                "source": source,
+                "response_digest": content_digest(source),
+                "source_digest": candidate.source_digest,
+                "artifact_digest": candidate.artifact_digest,
+            }
+        )
+    else:
+        forged = original.model_copy(update={"stop_reason": "max_tokens"})
+    resumed_provider = MockProvider([])
+    resumed = ProviderKernelGenerator(
+        resumed_provider,
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=KernelGenerationBudget(proposal_cap=2),
+        entrypoint="ModelNew",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        resumed.restore((forged,))
+
+    assert resumed_provider.calls == []
+
+
+@pytest.mark.parametrize(
+    ("forgery", "message"),
+    [
+        ("zero-estimated-cost", "estimated cost does not replay"),
+        ("incomplete-counters", "directional provider counters"),
+        ("unknown-counter", "unsupported nonzero provider counter"),
+    ],
+)
+def test_pending_restore_rejects_forged_paid_accounting_before_dispatch(
+    forgery: str,
+    message: str,
+) -> None:
+    receipts: list[KernelGenerationFailure] = []
+
+    def capture_then_crash(failure: KernelGenerationFailure) -> None:
+        receipts.append(failure)
+        raise RuntimeError("stop after failure receipt")
+
+    budget = KernelGenerationBudget(proposal_cap=1, max_retries_per_proposal=1, retry_backoff_seconds=0)
+    first = ProviderKernelGenerator(
+        MockProvider([ProviderError("503 overloaded", usage={"input_tokens": 2, "output_tokens": 1})]),
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=budget,
+        entrypoint="ModelNew",
+        failure_observer=capture_then_crash,
+    )
+    with pytest.raises(RuntimeError, match="stop after failure receipt"):
+        first("exact prompt", 0)
+    original = receipts[0]
+    if forgery == "zero-estimated-cost":
+        forged = original.model_copy(update={"cost_usd": 0.0})
+    elif forgery == "incomplete-counters":
+        usage = KernelGenerationUsage(
+            input_tokens=2,
+            total_tokens=2,
+            provider_usage={"input_tokens": 2, "total_tokens": 2},
+        )
+        forged = original.model_copy(update={"usage": usage})
+    else:
+        usage = original.usage.model_copy(
+            update={"provider_usage": {**original.usage.provider_usage, "cached_tokens": 10_000}}
+        )
+        forged = original.model_copy(update={"usage": usage})
+    resumed_provider = MockProvider([])
+    resumed = ProviderKernelGenerator(
+        resumed_provider,
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=budget,
+        entrypoint="ModelNew",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        resumed.restore_pending_failures(1, (forged,))
+
+    assert resumed_provider.calls == []
+
+
+def test_completed_backoff_is_an_append_only_retry_receipt(tmp_path: Path) -> None:
+    run_dir = tmp_path / "append-only-backoff"
+    journal = KernelCampaignJournal(run_dir, "append-only-backoff")
+    journal.claim_generation(proposal_index=1, prompt="exact prompt", generator_identity="test-generator")
+    journal.claim_generation_call(1, 1)
+    initial = KernelGenerationFailure(
+        proposal_index=1,
+        call_index=1,
+        provider="paid",
+        model="paid-model",
+        outcome="provider_error",
+        retryable=True,
+        error_type="ProviderError",
+        error="503 overloaded",
+        usage=KernelGenerationUsage(
+            input_tokens=2,
+            total_tokens=2,
+            provider_usage={"input_tokens": 2, "output_tokens": 0},
+        ),
+        retry_delay_seconds=0.001,
+        occurred_at=datetime.now(UTC).isoformat(),
+    )
+    journal.write_generation_failure(initial)
+    assert journal.generation_call_state(1) == ((initial,), (1,))
+
+    completed = initial.model_copy(update={"retryable": False, "retry_delay_seconds": 0.02})
+    journal.write_generation_retry(completed)
+
+    failures, unresolved = journal.generation_call_state(1)
+    persisted_initial = json.loads(
+        (run_dir / "generation" / "proposals" / "000001" / "calls" / "000001" / "failure.json").read_text()
+    )
+    assert failures == (completed,)
+    assert unresolved == ()
+    assert persisted_initial["failure"]["retry_delay_seconds"] == pytest.approx(0.001)
+    assert (run_dir / "generation" / "proposals" / "000001" / "calls" / "000001" / "retry.json").is_file()
+
+
+def test_resume_rejects_coerced_retry_accounting_before_redispatch(tmp_path: Path) -> None:
+    root = tmp_path / "runs"
+    run_id = "coerced-retry-accounting"
+    budget = KernelGenerationBudget(
+        proposal_cap=1,
+        max_retries_per_proposal=1,
+        retry_backoff_seconds=0,
+    )
+    initial_generator = ProviderKernelGenerator(
+        MockProvider([ProviderError("503 overloaded", usage={"input_tokens": 1, "output_tokens": 0})]),
+        provider_id="paid",
+        model="paid-model",
+        budget=budget,
+        entrypoint="ModelNew",
+    )
+    initial = _runner(root, initial_generator, FakeBenchmarkRunner(), run_id=run_id, budget=budget)
+    persist_failure = initial._journal.write_generation_failure
+
+    def persist_then_crash(failure: KernelGenerationFailure) -> None:
+        persist_failure(failure)
+        raise KeyboardInterrupt
+
+    initial_generator.set_failure_observer(persist_then_crash)
+    with pytest.raises(KeyboardInterrupt):
+        initial.run(proposals=1)
+
+    failure_path = (
+        initial.run_dir
+        / "generation"
+        / "proposals"
+        / "000001"
+        / "calls"
+        / "000001"
+        / "failure.json"
+    )
+    payload = json.loads(failure_path.read_text(encoding="utf-8"))
+    payload["failure"]["retryable"] = "true"
+    payload["failure"]["usage"] = {
+        "input_tokens": False,
+        "output_tokens": False,
+        "total_tokens": False,
+        "provider_usage": {
+            "input_tokens": False,
+            "output_tokens": False,
+            "total_tokens": False,
+        },
+    }
+    payload["failure"]["cost_usd"] = "0.0"
+    failure_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    resumed_provider = MockProvider(
+        [
+            CompletionResult(
+                text=VALID_SOURCE,
+                model="paid-model",
+                usage={"input_tokens": 1, "output_tokens": 1},
+                cost_usd=0.01,
+            )
+        ]
+    )
+    resumed_benchmark = FakeBenchmarkRunner()
+    resumed = _runner(
+        root,
+        ProviderKernelGenerator(
+            resumed_provider,
+            provider_id="paid",
+            model="paid-model",
+            budget=budget,
+            entrypoint="ModelNew",
+        ),
+        resumed_benchmark,
+        run_id=run_id,
+        resume=True,
+        budget=budget,
+    )
+
+    with pytest.raises(ValueError, match="valid boolean|valid integer|exact numbers"):
+        resumed.run(proposals=1)
+
+    assert resumed_provider.calls == []
+    assert resumed_benchmark.calls == []
+
+
 def test_token_budget_exit_retains_accumulated_failures() -> None:
-    provider = MockProvider([ProviderError("503 overloaded", usage={"output_tokens": 1})])
+    provider = MockProvider(
+        [ProviderError("503 overloaded", usage={"input_tokens": 0, "output_tokens": 1})]
+    )
     generator = ProviderKernelGenerator(
         provider,
         provider_id="paid",
@@ -563,6 +1035,84 @@ def test_paid_result_over_budget_is_durable_but_not_evaluated(tmp_path: Path) ->
     journal = KernelCampaignJournal(runner.run_dir, runner.run_id)
     assert journal.read_generation_result(1) is not None
     assert read_kernel_campaign_status(tmp_path, runner.run_id).generation_budget_state.cost_usd == 0.25
+
+
+def test_typed_paid_generation_does_not_dispatch_at_exact_budget_capacity(tmp_path: Path) -> None:
+    budget = KernelGenerationBudget(
+        proposal_cap=2,
+        max_total_input_tokens=2,
+        max_total_output_tokens=3,
+        max_total_tokens=5,
+        max_cost_usd=0.25,
+        max_wall_seconds=0.1,
+    )
+    generator = PaidReceiptGenerator()
+    runner = _runner(
+        tmp_path,
+        generator,
+        FakeBenchmarkRunner(),
+        run_id="typed-paid-exact-budget",
+        budget=budget,
+    )
+
+    with pytest.raises(KernelGenerationBudgetExceeded, match="generation budget exceeded"):
+        runner.run(proposals=2)
+
+    assert generator.calls == [0]
+    assert not (runner.run_dir / "generation" / "proposals" / "000002" / "claim.json").exists()
+
+
+def test_typed_nonbillable_receipt_cannot_mask_exact_capacity(tmp_path: Path) -> None:
+    budget = KernelGenerationBudget(proposal_cap=2, max_wall_seconds=0.1)
+    calls: list[int] = []
+
+    def generate(prompt: str, generation: int) -> KernelGenerationResult:
+        calls.append(generation)
+        candidate = KernelCandidate(source=VALID_SOURCE, source_suffix=".py", entrypoint="ModelNew")
+        paid = generation > 0
+        usage = KernelGenerationUsage(
+            input_tokens=1 if paid else 0,
+            output_tokens=1 if paid else 0,
+            total_tokens=2 if paid else 0,
+            provider_usage=(
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
+                if paid
+                else {}
+            ),
+        )
+        return KernelGenerationResult(
+            proposal_index=generation + 1,
+            provider="mixed-billing-test",
+            model="mixed-billing-test",
+            system_prompt_digest=content_digest("mixed-billing-system"),
+            prompt_digest=content_digest(prompt),
+            response_digest=content_digest(VALID_SOURCE),
+            source_digest=candidate.source_digest,
+            artifact_digest=candidate.artifact_digest,
+            source=VALID_SOURCE,
+            source_suffix=".py",
+            entrypoint="ModelNew",
+            usage=usage,
+            cost_usd=0.01 if paid else 0.0,
+            cost_source="provider-reported" if paid else "not-billable",
+            latency_seconds=0.0 if paid else budget.max_wall_seconds,
+            retry_count=0,
+            completed_at=datetime.now(UTC).isoformat(),
+        )
+
+    runner = _runner(
+        tmp_path,
+        generate,
+        FakeBenchmarkRunner(),
+        run_id="typed-mixed-exact-budget",
+        budget=budget,
+    )
+
+    with pytest.raises(KernelGenerationBudgetExceeded, match="generation budget exceeded"):
+        runner.run(proposals=2)
+
+    assert calls == [0]
+    assert not (runner.run_dir / "generation" / "proposals" / "000002" / "claim.json").exists()
 
 
 def test_provider_credential_never_enters_campaign_artifacts(tmp_path: Path) -> None:
@@ -1210,7 +1760,9 @@ def test_resume_restores_durable_failed_call_before_retry(tmp_path: Path) -> Non
         max_retries_per_proposal=1,
         retry_backoff_seconds=0,
     )
-    provider = MockProvider([ProviderError("503 overloaded", usage={"input_tokens": 2})])
+    provider = MockProvider(
+        [ProviderError("503 overloaded", usage={"input_tokens": 2, "output_tokens": 0})]
+    )
     generator = ProviderKernelGenerator(
         provider,
         provider_id="mock",
@@ -1262,6 +1814,61 @@ def test_resume_restores_durable_failed_call_before_retry(tmp_path: Path) -> Non
     assert receipt.source == VALID_SOURCE
 
 
+def test_status_does_not_offer_resume_after_exhausted_resolved_provider_call(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "runs"
+    run_id = "resolved-terminal-provider-call"
+    budget = KernelGenerationBudget(proposal_cap=1, max_retries_per_proposal=0)
+    initial_generator = ProviderKernelGenerator(
+        MockProvider(
+            [
+                CompletionResult(
+                    text="not executable",
+                    model="gpt-5.6-sol",
+                    usage={"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+                )
+            ]
+        ),
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=budget,
+        entrypoint="ModelNew",
+    )
+    initial = _runner(root, initial_generator, FakeBenchmarkRunner(), run_id=run_id, budget=budget)
+
+    def interrupt_before_terminal_journal(*_args, **_kwargs) -> None:
+        raise KeyboardInterrupt
+
+    initial._journal.write_terminal_failures = interrupt_before_terminal_journal
+    with pytest.raises(KeyboardInterrupt):
+        initial.run(proposals=1)
+
+    status = read_kernel_campaign_status(root, run_id)
+    assert status.status == "interrupted"
+    assert not status.can_resume
+    resumed_provider = MockProvider([])
+    resumed = _runner(
+        root,
+        ProviderKernelGenerator(
+            resumed_provider,
+            provider_id="paid",
+            model="gpt-5.6-sol",
+            budget=budget,
+            entrypoint="ModelNew",
+        ),
+        FakeBenchmarkRunner(),
+        run_id=run_id,
+        resume=True,
+        budget=budget,
+    )
+
+    with pytest.raises(ValueError, match="retry budget"):
+        resumed.run(proposals=1)
+
+    assert resumed_provider.calls == []
+
+
 def test_resume_budget_gates_paid_receipt_after_pointer_write_crash(tmp_path: Path) -> None:
     root = tmp_path / "runs"
     run_id = "paid-orphan-budget"
@@ -1295,6 +1902,122 @@ def test_resume_budget_gates_paid_receipt_after_pointer_write_crash(tmp_path: Pa
         resumed.run(proposals=1)
 
     assert resumed_generator.calls == []
+    assert resumed_benchmark.calls == []
+
+
+@pytest.mark.parametrize(
+    ("forgery", "message"),
+    [
+        ("zero-estimated-cost", "estimated cost does not replay"),
+        ("incomplete-counters", "directional provider counters"),
+        ("unknown-counter", "unsupported nonzero provider counter"),
+        ("fenced-source", "Markdown fences"),
+        ("truncated-source", "response was truncated"),
+    ],
+)
+def test_resume_rejects_forged_paid_generation_accounting_before_dispatch(
+    tmp_path: Path,
+    forgery: str,
+    message: str,
+) -> None:
+    root = tmp_path / "runs"
+    run_id = f"forged-paid-{forgery}"
+    budget = KernelGenerationBudget(proposal_cap=2)
+    initial_generator = ProviderKernelGenerator(
+        MockProvider(
+            [
+                CompletionResult(
+                    text=VALID_SOURCE,
+                    model="gpt-5.6-sol",
+                    usage={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+                )
+            ]
+        ),
+        provider_id="paid",
+        model="gpt-5.6-sol",
+        budget=budget,
+        entrypoint="ModelNew",
+    )
+    initial = _runner(root, initial_generator, FakeBenchmarkRunner(), run_id=run_id, budget=budget)
+    persist_result = initial._journal.write_generation_result
+
+    def persist_then_crash(result: KernelGenerationResult) -> None:
+        persist_result(result)
+        raise KeyboardInterrupt
+
+    initial._journal.write_generation_result = persist_then_crash
+    with pytest.raises(KeyboardInterrupt):
+        initial.run(proposals=2)
+
+    pointer_path = initial.run_dir / "generation" / "proposals" / "000001" / "result.json"
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    receipt_path = initial.run_dir / pointer["receipt_path"]
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if forgery == "zero-estimated-cost":
+        payload["cost_usd"] = 0.0
+    elif forgery == "incomplete-counters":
+        payload["usage"] = {
+            "input_tokens": 2,
+            "output_tokens": 0,
+            "total_tokens": 2,
+            "provider_usage": {"input_tokens": 2, "total_tokens": 2},
+        }
+    elif forgery == "unknown-counter":
+        payload["usage"]["provider_usage"]["cached_tokens"] = 10_000
+    elif forgery == "fenced-source":
+        source = f"```python\n{VALID_SOURCE}\n```"
+        candidate = KernelCandidate(source=source, source_suffix=".py", entrypoint="ModelNew")
+        payload.update(
+            source=source,
+            response_digest=content_digest(source),
+            source_digest=candidate.source_digest,
+            artifact_digest=candidate.artifact_digest,
+        )
+    else:
+        payload["stop_reason"] = "max_tokens"
+    forged = KernelGenerationResult.model_validate(payload)
+    forged_relative = f"generation/receipts/{forged.receipt_id.removeprefix('sha256:')}.json"
+    (initial.run_dir / forged_relative).write_text(
+        json.dumps(forged.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    if forgery == "fenced-source":
+        forged_source = initial.run_dir / "artifacts" / (
+            f"{forged.artifact_digest.removeprefix('sha256:')}{forged.source_suffix}"
+        )
+        forged_source.write_bytes(forged.source.encode("utf-8"))
+    pointer.update(generation_receipt_id=forged.receipt_id, receipt_path=forged_relative)
+    pointer_path.write_text(json.dumps(pointer, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    resumed_provider = MockProvider(
+        [
+            CompletionResult(
+                text=VALID_SOURCE_TWO,
+                model="gpt-5.6-sol",
+                usage={"input_tokens": 3, "output_tokens": 4, "total_tokens": 7},
+            )
+        ]
+    )
+    resumed_benchmark = FakeBenchmarkRunner()
+    resumed = _runner(
+        root,
+        ProviderKernelGenerator(
+            resumed_provider,
+            provider_id="paid",
+            model="gpt-5.6-sol",
+            budget=budget,
+            entrypoint="ModelNew",
+        ),
+        resumed_benchmark,
+        run_id=run_id,
+        resume=True,
+        budget=budget,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        resumed.run(proposals=2)
+
+    assert resumed_provider.calls == []
     assert resumed_benchmark.calls == []
 
 

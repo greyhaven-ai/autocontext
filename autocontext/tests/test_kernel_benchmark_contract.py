@@ -467,6 +467,20 @@ def test_external_runner_rejects_unpinned_harness(tmp_path: Path) -> None:
         ExternalKernelBenchmarkRunner([sys.executable, str(adapter), "{candidate}", "{incumbent}", "{report}"])
 
 
+def test_external_runner_rejects_harness_that_disagrees_with_precommitted_bytes(
+    tmp_path: Path,
+) -> None:
+    adapter = tmp_path / "adapter.py"
+    adapter.write_bytes(b"attacker replacement")
+
+    with pytest.raises(ValueError, match="precommitted content"):
+        ExternalKernelBenchmarkRunner(
+            [sys.executable, str(adapter), "{candidate}", "{incumbent}", "{report}"],
+            immutable_paths=[adapter],
+            expected_immutable_files={adapter: b"trusted adapter"},
+        )
+
+
 def test_external_runner_rejects_symlinked_harness(tmp_path: Path) -> None:
     adapter = tmp_path / "adapter.py"
     adapter.write_text("pass", encoding="utf-8")
