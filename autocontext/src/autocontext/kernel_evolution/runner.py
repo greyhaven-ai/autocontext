@@ -45,7 +45,7 @@ from autocontext.kernel_evolution.protocols import (
     KernelDecisionPolicy,
     KernelSequentialEvidence,
 )
-from autocontext.kernel_evolution.runner_config import KernelEvolutionConfig
+from autocontext.kernel_evolution.runner_config import KernelEvolutionConfig, decision_policy_from_config
 from autocontext.util.file_lock import advisory_path_lock
 
 
@@ -408,35 +408,27 @@ class KernelEvolutionRunner:
         self._journal = KernelCampaignJournal(self._store.run_dir, self.run_id)
         set_call_observer = getattr(self._generate_fn, "set_call_observer", None)
         set_failure_observer = getattr(self._generate_fn, "set_failure_observer", None)
+        set_retry_observer = getattr(self._generate_fn, "set_retry_observer", None)
         self._call_fence_resume_safe = bool(
             getattr(self._generate_fn, "supports_durable_call_fence", False) is True
             and callable(set_call_observer)
             and callable(set_failure_observer)
+            and callable(set_retry_observer)
             and callable(getattr(self._generate_fn, "restore_pending_failures", None))
         )
         if callable(set_call_observer):
             set_call_observer(self._journal.claim_generation_call)
         if callable(set_failure_observer):
             set_failure_observer(self._journal.write_generation_failure)
+        if callable(set_retry_observer):
+            set_retry_observer(self._journal.write_generation_retry)
         restored_generations = self._journal.generation_results() if resume else []
         self._generation_results = {item.proposal_index: item for item in restored_generations}
         self._execution_lock_path = lineage_root / ".kernel-execution-locks" / f"{self.run_id}.lock"
-        self._decision_policy = KernelDecisionPolicy(
-            schema_version=(
-                "autocontext.kernel-decision-policy/v2"
-                if finite_sample
-                else "autocontext.kernel-decision-policy/v1"
-            ),
-            evidence_family_version="autocontext.kernel-evidence-family/v4" if finite_sample else None,
-            statistics=statistics_policy,
+        self._decision_policy = decision_policy_from_config(
+            config,
+            statistics_policy,
             require_confirmation=confirmation_fn is not None,
-            min_relative_improvement=config.min_relative_improvement,
-            require_confidence=config.require_confidence,
-            max_p95_regression=config.max_p95_regression,
-            max_environment_drift=config.max_environment_drift,
-            max_peak_memory_fraction=config.max_peak_memory_fraction,
-            target_reference_speedup=config.target_reference_speedup,
-            sequential_testing=config.sequential_testing,
         )
         self._policy = KernelPromotionPolicy(self._decision_policy)
         self._attempts: list[KernelAttemptRecord] = []
@@ -578,6 +570,7 @@ class KernelEvolutionRunner:
             raise KernelGenerationCancelled("kernel campaign stop requested before provider dispatch")
         if proposal_index > self._generation_budget.proposal_cap:
             raise KernelGenerationBudgetExceeded("kernel generation proposal cap is exhausted")
+        self._require_generation_budget(before_dispatch=True)
         system_prompt = getattr(self._generate_fn, "system_prompt", None)
         existing_claim = self._journal.read_generation_claim(proposal_index)
         claim_resume_safe = bool(getattr(self._generate_fn, "supports_claim_resume", False))
@@ -668,7 +661,10 @@ class KernelEvolutionRunner:
             raise KernelIntegrityError("generated source receipt conflicts with the active proposal contract")
         from autocontext.kernel_evolution.runner_resume import validate_generation_budget_contract
 
-        validate_generation_budget_contract(self, (result,))
+        validate_generation_budget_contract(
+            self,
+            (*[self._generation_results[index] for index in sorted(self._generation_results)], result),
+        )
         candidate = KernelCandidate(
             source=result.source,
             source_suffix=result.source_suffix,
@@ -692,27 +688,20 @@ class KernelEvolutionRunner:
             )
         return result.source
 
-    def _require_generation_budget(self) -> None:
+    def _require_generation_budget(self, *, before_dispatch: bool = False) -> None:
         state = self._journal.budget_state()
-        exceeded = []
-        if state.input_tokens > self._generation_budget.max_total_input_tokens:
-            exceeded.append("input_tokens")
-        if state.output_tokens > self._generation_budget.max_total_output_tokens:
-            exceeded.append("output_tokens")
-        if state.total_tokens > self._generation_budget.max_total_tokens:
-            exceeded.append("total_tokens")
-        if float(state.cost_usd) > float(self._generation_budget.max_cost_usd):
-            exceeded.append("cost_usd")
-        if float(state.wall_seconds) > float(self._generation_budget.max_wall_seconds):
-            exceeded.append("wall_seconds")
+        limits = (
+            (state.input_tokens, self._generation_budget.max_total_input_tokens, "input_tokens"),
+            (state.output_tokens, self._generation_budget.max_total_output_tokens, "output_tokens"),
+            (state.total_tokens, self._generation_budget.max_total_tokens, "total_tokens"),
+            (float(state.cost_usd), float(self._generation_budget.max_cost_usd), "cost_usd"),
+            (float(state.wall_seconds), float(self._generation_budget.max_wall_seconds), "wall_seconds"),
+        )
+        exceeded = [name for used, limit, name in limits if used > limit or before_dispatch and used >= limit]
         if exceeded:
             raise KernelGenerationBudgetExceeded(
                 f"kernel generation budget exceeded: {', '.join(exceeded)}",
-                result=(
-                    self._generation_results[max(self._generation_results)]
-                    if self._generation_results
-                    else None
-                ),
+                result=self._generation_results[max(self._generation_results)] if self._generation_results else None,
             )
 
     def _build_generator_identity(self) -> str:

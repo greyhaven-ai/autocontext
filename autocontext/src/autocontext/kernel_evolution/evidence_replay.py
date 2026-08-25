@@ -13,7 +13,11 @@ if TYPE_CHECKING:
         KernelEvolutionResult,
         KernelPromotionDecision,
     )
-    from autocontext.kernel_evolution.protocols import KernelDecisionPolicy
+    from autocontext.kernel_evolution.protocols import (
+        KernelDecisionPolicy,
+        KernelSequentialTestingPolicy,
+        KernelStatisticsPolicy,
+    )
 
 
 def _close(actual: float | None, expected: float, *, name: str, exact: bool = False) -> None:
@@ -24,9 +28,11 @@ def _close(actual: float | None, expected: float, *, name: str, exact: bool = Fa
         raise ValueError(f"eligible observation {name} does not replay from its raw report")
 
 
-def _validate_eligible_observation(
+def _validate_eligible_observation_metrics(
     observation: KernelBenchmarkObservation,
-    policy: KernelDecisionPolicy,
+    *,
+    statistics_policy: KernelStatisticsPolicy,
+    sequential_testing: KernelSequentialTestingPolicy | None,
 ) -> None:
     """Recompute every promotion-affecting metric from authoritative raw blocks."""
     from autocontext.kernel_evolution.promotion_statistics import bootstrap_lcb, geometric_mean_ratio, percentile
@@ -34,27 +40,34 @@ def _validate_eligible_observation(
     report = observation.report
     if report is None or report.performance is None or report.correctness is None:
         raise ValueError("accepted observations require a complete raw benchmark report")
+    from autocontext.kernel_evolution.workload_study_rules import timing_boundaries_comparable
+
+    requires_timing_evidence = (
+        report.evaluator_authority_receipt is not None or report.metadata.get("evidence_origin") == "measured"
+    )
+    if not timing_boundaries_comparable(report, require_evidence=requires_timing_evidence):
+        raise ValueError("accepted observation has incomparable timing boundaries")
     from autocontext.kernel_evolution.resource_policy import evaluate_kernel_resource_policy
 
-    finite_sample = policy.statistics.schema_version == "autocontext.kernel-statistics-policy/v2"
+    finite_sample = statistics_policy.schema_version == "autocontext.kernel-statistics-policy/v2"
     resource_result = evaluate_kernel_resource_policy(
         report,
-        require_telemetry=policy.statistics.require_resource_telemetry,
-        max_gpu_memory_bytes=policy.statistics.max_gpu_memory_bytes,
+        require_telemetry=statistics_policy.require_resource_telemetry,
+        max_gpu_memory_bytes=statistics_policy.max_gpu_memory_bytes,
     )
     if resource_result.reason is not None:
         raise ValueError(f"accepted observation violates its embedded resource policy: {resource_result.reason}")
-    if report.protocol.sequential_testing != policy.sequential_testing:
+    if report.protocol.sequential_testing != sequential_testing:
         raise ValueError("accepted observation sequential policy disagrees with its decision policy")
     blocks = report.performance.blocks
-    if len(blocks) < policy.statistics.min_timing_blocks:
+    if len(blocks) < statistics_policy.min_timing_blocks:
         raise ValueError("accepted observation has fewer timing blocks than its statistics policy")
     candidate = [float(block.candidate_ms) for block in blocks]
     incumbent = [float(block.incumbent_ms) for block in blocks]
     reference = [float(block.reference_ms) for block in blocks]
     speedup_incumbent = geometric_mean_ratio(incumbent, candidate)
     speedup_reference = geometric_mean_ratio(reference, candidate)
-    alpha = policy.sequential_testing.per_proposal_alpha if policy.sequential_testing is not None else 0.05
+    alpha = sequential_testing.per_proposal_alpha if sequential_testing is not None else 0.05
     seed_material = f"{report.baseline_id}:{report.hardware_scope_id}:{report.protocol.seed_commitment}"
     _close(
         observation.candidate_median_ms,
@@ -99,7 +112,7 @@ def _validate_eligible_observation(
             raise ValueError("v4 eligible observations require a finite-sample derivation receipt")
         replayed = derive_finite_sample_receipt(
             blocks=list(zip(candidate, incumbent, reference, strict=True)),
-            statistics_policy=policy.statistics,
+            statistics_policy=statistics_policy,
             raw_report_digest=kernel_benchmark_report_digest(report),
             schedule_seed_material=report.protocol.seed_commitment,
             per_look_alpha=alpha,
@@ -110,13 +123,13 @@ def _validate_eligible_observation(
         if observation.speedup_lcb95 is not None or observation.speedup_lcb is not None:
             raise ValueError("v4 observations cannot contain empirical bootstrap confidence claims")
     else:
-        if policy.statistics.bootstrap_samples is None:
+        if statistics_policy.bootstrap_samples is None:
             raise ValueError("v1 statistics policy is missing its bootstrap sample count")
         _close(
             observation.speedup_lcb95,
             bootstrap_lcb(
                 list(zip(candidate, incumbent, strict=True)),
-                samples=policy.statistics.bootstrap_samples,
+                samples=statistics_policy.bootstrap_samples,
                 seed_material=seed_material,
                 alpha=0.05,
             ),
@@ -126,12 +139,24 @@ def _validate_eligible_observation(
             observation.speedup_lcb,
             bootstrap_lcb(
                 list(zip(candidate, incumbent, strict=True)),
-                samples=policy.statistics.bootstrap_samples,
+                samples=statistics_policy.bootstrap_samples,
                 seed_material=seed_material,
                 alpha=alpha,
             ),
             name="sequential bootstrap lower bound",
         )
+
+
+def validate_eligible_observation(observation: KernelBenchmarkObservation) -> None:
+    """Replay an eligible observation solely from its embedded raw report and policy."""
+    report = observation.report
+    if not observation.eligible or report is None or observation.statistics_policy is None:
+        raise ValueError("eligible observation replay requires its raw report and statistics policy")
+    _validate_eligible_observation_metrics(
+        observation,
+        statistics_policy=observation.statistics_policy,
+        sequential_testing=report.protocol.sequential_testing,
+    )
 
 
 def _report_visible_rejection_reason(
@@ -179,12 +204,12 @@ def _report_visible_rejection_reason(
         return "correctness_failed"
     if report.evaluation_status != "complete" or report.performance is None:
         return "contract_error"
-    timing = report.metadata.get("timing_comparability")
-    if isinstance(timing, dict) and (
-        timing.get("candidate_incumbent_comparable") is not True
-        or timing.get("reference_comparable") is not True
-        or timing.get("promotion_comparison") != ["candidate_ms", "incumbent_ms"]
-    ):
+    from autocontext.kernel_evolution.workload_study_rules import timing_boundaries_comparable
+
+    requires_timing_evidence = (
+        report.evaluator_authority_receipt is not None or report.metadata.get("evidence_origin") == "measured"
+    )
+    if not timing_boundaries_comparable(report, require_evidence=requires_timing_evidence):
         return "timing_boundary_mismatch"
     resource_result = evaluate_kernel_resource_policy(
         report,
@@ -354,7 +379,11 @@ def _validate_policy_binding(
     if attempt.observation.statistics_policy != attempt.decision_policy.statistics:
         raise ValueError("attempt observation statistics policy disagrees with its decision policy")
     if attempt.observation.eligible:
-        _validate_eligible_observation(attempt.observation, attempt.decision_policy)
+        _validate_eligible_observation_metrics(
+            attempt.observation,
+            statistics_policy=attempt.decision_policy.statistics,
+            sequential_testing=attempt.decision_policy.sequential_testing,
+        )
     elif complete_result and attempt.schema_version == "autocontext.kernel-lineage/v4":
         _validate_ineligible_v4_report(
             attempt.observation,
@@ -368,7 +397,11 @@ def _validate_policy_binding(
     if confirmation is not None and confirmation.eligible:
         if confirmation.statistics_policy != attempt.decision_policy.statistics:
             raise ValueError("confirmation statistics policy disagrees with the decision policy")
-        _validate_eligible_observation(confirmation, attempt.decision_policy)
+        _validate_eligible_observation_metrics(
+            confirmation,
+            statistics_policy=attempt.decision_policy.statistics,
+            sequential_testing=attempt.decision_policy.sequential_testing,
+        )
     elif (
         complete_result
         and confirmation is not None

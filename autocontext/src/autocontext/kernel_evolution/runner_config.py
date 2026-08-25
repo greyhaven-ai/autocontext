@@ -7,7 +7,9 @@ from dataclasses import dataclass
 
 from autocontext.kernel_evolution.models import KernelCandidate
 from autocontext.kernel_evolution.protocols import (
+    KernelDecisionPolicy,
     KernelSequentialTestingPolicy,
+    KernelStatisticsPolicy,
     PrecisionProfileName,
 )
 
@@ -58,4 +60,26 @@ class KernelEvolutionConfig:
         )
 
 
-__all__ = ["KernelEvolutionConfig"]
+def decision_policy_from_config(
+    config: KernelEvolutionConfig,
+    statistics: KernelStatisticsPolicy,
+    *,
+    require_confirmation: bool,
+) -> KernelDecisionPolicy:
+    finite_sample = statistics.schema_version == "autocontext.kernel-statistics-policy/v2"
+    return KernelDecisionPolicy(
+        schema_version="autocontext.kernel-decision-policy/v2" if finite_sample else "autocontext.kernel-decision-policy/v1",
+        evidence_family_version="autocontext.kernel-evidence-family/v4" if finite_sample else None,
+        statistics=statistics,
+        require_confirmation=require_confirmation,
+        min_relative_improvement=config.min_relative_improvement,
+        require_confidence=config.require_confidence,
+        max_p95_regression=config.max_p95_regression,
+        max_environment_drift=config.max_environment_drift,
+        max_peak_memory_fraction=config.max_peak_memory_fraction,
+        target_reference_speedup=config.target_reference_speedup,
+        sequential_testing=config.sequential_testing,
+    )
+
+
+__all__ = ["KernelEvolutionConfig", "decision_policy_from_config"]

@@ -79,6 +79,43 @@ class KernelGenerationFailureReceipt(StrictModel):
         return self
 
 
+class KernelGenerationRetryReceipt(StrictModel):
+    schema_version: Literal["autocontext.kernel-generation-retry-receipt/v1"] = (
+        "autocontext.kernel-generation-retry-receipt/v1"
+    )
+    run_id: str
+    proposal_index: int = Field(ge=1)
+    call_index: int = Field(ge=1)
+    initial_failure_id: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    failure: KernelGenerationFailure
+    completed_at: str
+
+    @model_validator(mode="after")
+    def validate_failure(self) -> Self:
+        if self.failure.proposal_index != self.proposal_index or self.failure.call_index != self.call_index:
+            raise ValueError("generation retry receipt identity is inconsistent")
+        return self
+
+
+def validate_generation_retry_update(
+    initial: KernelGenerationFailure,
+    updated: KernelGenerationFailure,
+) -> None:
+    before = initial.model_dump(mode="json")
+    after = updated.model_dump(mode="json")
+    for field in ("retryable", "retry_delay_seconds"):
+        before.pop(field)
+        after.pop(field)
+    if (
+        before != after
+        or not initial.retryable
+        or float(initial.retry_delay_seconds) <= 0.0
+        or float(updated.retry_delay_seconds) < float(initial.retry_delay_seconds)
+        or (not initial.retryable and updated.retryable)
+    ):
+        raise ValueError("generation retry accounting changed incompatibly")
+
+
 class KernelEvaluationClaim(StrictModel):
     schema_version: Literal["autocontext.kernel-evaluation-claim/v1"] = (
         "autocontext.kernel-evaluation-claim/v1"
@@ -148,6 +185,25 @@ class KernelCampaignStatus(StrictModel):
     artifact_index_path: str
 
 
+def deterministic_kernel_attempt_id(
+    run_id: str,
+    *,
+    generation: int,
+    artifact_digest: str,
+    generation_receipt_id: str | None,
+) -> str:
+    digest = canonical_digest(
+        {
+            "kind": "kernel-attempt-id/v1",
+            "run_id": run_id,
+            "generation": generation,
+            "artifact_digest": artifact_digest,
+            "generation_receipt_id": generation_receipt_id,
+        }
+    ).removeprefix("sha256:")
+    return f"attempt_{digest[:32]}"
+
+
 __all__ = [
     "KernelArtifactKind",
     "KernelCampaignStatus",
@@ -156,6 +212,9 @@ __all__ = [
     "KernelGenerationCallClaim",
     "KernelGenerationClaim",
     "KernelGenerationFailureReceipt",
+    "KernelGenerationRetryReceipt",
     "KernelRunArtifact",
     "KernelRunArtifactIndex",
+    "deterministic_kernel_attempt_id",
+    "validate_generation_retry_update",
 ]

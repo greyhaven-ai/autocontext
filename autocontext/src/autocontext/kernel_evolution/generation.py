@@ -1,17 +1,34 @@
 """Typed, budgeted control-plane generation for kernel campaigns."""
-
 from __future__ import annotations
 
-import ast
 import math
 import time
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from typing import Literal, Self
 
-from pydantic import Field, FiniteFloat, model_validator
+from pydantic import Field, StrictBool, StrictInt, model_validator
 
 from autocontext.harness.cost.calculator import CostCalculator
+from autocontext.kernel_evolution._generation_errors import (
+    KernelGenerationError,
+    KernelGenerationValidationError,
+    is_transient_provider_error,
+)
+from autocontext.kernel_evolution._generation_restore import (
+    restored_generation_history,
+    restored_pending_failures,
+)
+from autocontext.kernel_evolution._generation_source import validate_kernel_source
+from autocontext.kernel_evolution._generation_usage import (
+    ExactFiniteFloat,
+    estimated_generation_cost,
+    exhausted_generation_budgets,
+    generation_usage_allows_retry,
+    measured_retry_sleep,
+    validate_directional_token_aliases,
+    validate_generation_usage_receipt,
+)
 from autocontext.kernel_evolution.models import (
     KernelCandidate,
     StrictModel,
@@ -20,30 +37,6 @@ from autocontext.kernel_evolution.models import (
 )
 from autocontext.kernel_evolution.sanitization import sanitize_provider_error
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
-
-_TRUNCATED_STOP_REASONS = frozenset({"max_tokens", "length", "incomplete", "content_filter"})
-_TRANSIENT_ERROR_MARKERS = frozenset(
-    {
-        "rate limit",
-        "rate_limit",
-        "429",
-        "timeout",
-        "timed out",
-        "server error",
-        "500",
-        "502",
-        "503",
-        "504",
-        "overloaded",
-        "capacity",
-        "connection",
-        "temporarily unavailable",
-    }
-)
-
-
-class KernelGenerationError(RuntimeError):
-    """Base class for generation failures that must not reach the evaluator."""
 
 
 class KernelGenerationCancelled(KernelGenerationError):
@@ -56,10 +49,6 @@ class KernelGenerationCancelled(KernelGenerationError):
     ) -> None:
         super().__init__(message)
         self.failures = failures
-
-
-class KernelGenerationValidationError(KernelGenerationError):
-    """Raised when a provider response is not an exact executable source artifact."""
 
 
 class _KernelGenerationAccountingError(KernelGenerationValidationError):
@@ -91,10 +80,10 @@ class KernelGenerationProviderError(KernelGenerationError):
 class KernelGenerationUsage(StrictModel):
     """Normalized usage plus the provider's integer counters."""
 
-    input_tokens: int = Field(default=0, ge=0)
-    output_tokens: int = Field(default=0, ge=0)
-    total_tokens: int = Field(default=0, ge=0)
-    provider_usage: dict[str, int] = Field(default_factory=dict)
+    input_tokens: StrictInt = Field(default=0, ge=0)
+    output_tokens: StrictInt = Field(default=0, ge=0)
+    total_tokens: StrictInt = Field(default=0, ge=0)
+    provider_usage: dict[str, StrictInt] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_totals(self) -> Self:
@@ -109,24 +98,20 @@ class KernelGenerationUsage(StrictModel):
 class KernelGenerationFailure(StrictModel):
     """One failed provider call or rejected response in a bounded retry sequence."""
 
-    schema_version: Literal["autocontext.kernel-generation-failure/v1"] = (
-        "autocontext.kernel-generation-failure/v1"
-    )
-    proposal_index: int = Field(ge=1)
-    call_index: int = Field(ge=1)
+    schema_version: Literal["autocontext.kernel-generation-failure/v1"] = "autocontext.kernel-generation-failure/v1"
+    proposal_index: StrictInt = Field(ge=1)
+    call_index: StrictInt = Field(ge=1)
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
     outcome: Literal["provider_error", "invalid_response", "budget_exceeded", "cancelled"]
-    retryable: bool
+    retryable: StrictBool
     error_type: str = Field(min_length=1)
     error: str = Field(min_length=1, max_length=1_000)
     usage: KernelGenerationUsage = Field(default_factory=KernelGenerationUsage)
-    cost_usd: FiniteFloat = Field(default=0.0, ge=0.0)
-    cost_source: Literal["provider-reported", "estimated-model-pricing-v1"] = (
-        "estimated-model-pricing-v1"
-    )
-    latency_seconds: FiniteFloat = Field(default=0.0, ge=0.0)
-    retry_delay_seconds: FiniteFloat = Field(default=0.0, ge=0.0)
+    cost_usd: ExactFiniteFloat = Field(default=0.0, ge=0.0)
+    cost_source: Literal["provider-reported", "estimated-model-pricing-v1"] = "estimated-model-pricing-v1"
+    latency_seconds: ExactFiniteFloat = Field(default=0.0, ge=0.0)
+    retry_delay_seconds: ExactFiniteFloat = Field(default=0.0, ge=0.0)
     occurred_at: str
 
     @property
@@ -138,7 +123,7 @@ class KernelGenerationResult(StrictModel):
     """Exact generated source and complete non-secret generation provenance."""
 
     schema_version: Literal["autocontext.kernel-generation/v1"] = "autocontext.kernel-generation/v1"
-    proposal_index: int = Field(ge=1)
+    proposal_index: StrictInt = Field(ge=1)
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
     system_prompt_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
@@ -150,11 +135,11 @@ class KernelGenerationResult(StrictModel):
     source_suffix: str
     entrypoint: str
     usage: KernelGenerationUsage
-    cost_usd: FiniteFloat = Field(ge=0.0)
+    cost_usd: ExactFiniteFloat = Field(ge=0.0)
     cost_source: Literal["provider-reported", "estimated-model-pricing-v1", "not-billable"]
-    latency_seconds: FiniteFloat = Field(ge=0.0)
+    latency_seconds: ExactFiniteFloat = Field(ge=0.0)
     stop_reason: str | None = None
-    retry_count: int = Field(ge=0)
+    retry_count: StrictInt = Field(ge=0)
     failures: tuple[KernelGenerationFailure, ...] = ()
     completed_at: str
 
@@ -186,19 +171,17 @@ KernelGenerateFn = Callable[[str, int], str | KernelGenerationResult]
 class KernelGenerationBudget(StrictModel):
     """Deterministic campaign-wide provider budget owned by the control plane."""
 
-    schema_version: Literal["autocontext.kernel-generation-budget/v1"] = (
-        "autocontext.kernel-generation-budget/v1"
-    )
-    proposal_cap: int = Field(default=10, ge=1)
-    max_retries_per_proposal: int = Field(default=2, ge=0)
-    max_output_tokens_per_call: int = Field(default=8_192, ge=1)
-    max_total_input_tokens: int = Field(default=200_000, ge=1)
-    max_total_output_tokens: int = Field(default=100_000, ge=1)
-    max_total_tokens: int = Field(default=300_000, ge=1)
-    max_cost_usd: FiniteFloat = Field(default=100.0, gt=0.0)
-    max_wall_seconds: FiniteFloat = Field(default=86_400.0, gt=0.0)
-    retry_backoff_seconds: FiniteFloat = Field(default=1.0, ge=0.0)
-    max_source_bytes: int = Field(default=1_000_000, ge=1)
+    schema_version: Literal["autocontext.kernel-generation-budget/v1"] = "autocontext.kernel-generation-budget/v1"
+    proposal_cap: StrictInt = Field(default=10, ge=1)
+    max_retries_per_proposal: StrictInt = Field(default=2, ge=0)
+    max_output_tokens_per_call: StrictInt = Field(default=8_192, ge=1)
+    max_total_input_tokens: StrictInt = Field(default=200_000, ge=1)
+    max_total_output_tokens: StrictInt = Field(default=100_000, ge=1)
+    max_total_tokens: StrictInt = Field(default=300_000, ge=1)
+    max_cost_usd: ExactFiniteFloat = Field(default=100.0, gt=0.0)
+    max_wall_seconds: ExactFiniteFloat = Field(default=86_400.0, gt=0.0)
+    retry_backoff_seconds: ExactFiniteFloat = Field(default=1.0, ge=0.0)
+    max_source_bytes: StrictInt = Field(default=1_000_000, ge=1)
 
     @model_validator(mode="after")
     def validate_token_ceiling(self) -> Self:
@@ -212,13 +195,17 @@ class KernelGenerationBudget(StrictModel):
 
 
 class KernelGenerationBudgetState(StrictModel):
-    completed_proposals: int = Field(default=0, ge=0)
-    input_tokens: int = Field(default=0, ge=0)
-    output_tokens: int = Field(default=0, ge=0)
-    total_tokens: int = Field(default=0, ge=0)
-    cost_usd: FiniteFloat = Field(default=0.0, ge=0.0)
-    wall_seconds: FiniteFloat = Field(default=0.0, ge=0.0)
-
+    completed_proposals: StrictInt = Field(default=0, ge=0)
+    input_tokens: StrictInt = Field(default=0, ge=0)
+    output_tokens: StrictInt = Field(default=0, ge=0)
+    total_tokens: StrictInt = Field(default=0, ge=0)
+    cost_usd: ExactFiniteFloat = Field(default=0.0, ge=0.0)
+    wall_seconds: ExactFiniteFloat = Field(default=0.0, ge=0.0)
+    @model_validator(mode="after")
+    def validate_token_totals(self) -> Self:
+        if self.total_tokens < self.input_tokens + self.output_tokens:
+            raise ValueError("total_tokens cannot be smaller than input_tokens + output_tokens")
+        return self
     @classmethod
     def from_results(cls, results: Iterable[KernelGenerationResult]) -> KernelGenerationBudgetState:
         return cls.from_activity(results)
@@ -264,6 +251,7 @@ def normalized_generation_usage(usage: dict[str, int] | None) -> KernelGeneratio
     for key, value in raw.items():
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"provider usage field {key!r} must be a non-negative integer")
+    validate_directional_token_aliases(raw)
     input_tokens = int(raw.get("input_tokens", raw.get("prompt_tokens", 0)))
     output_tokens = int(raw.get("output_tokens", raw.get("completion_tokens", 0)))
     total_tokens = int(raw.get("total_tokens", input_tokens + output_tokens))
@@ -273,45 +261,6 @@ def normalized_generation_usage(usage: dict[str, int] | None) -> KernelGeneratio
         total_tokens=total_tokens,
         provider_usage=raw,
     )
-
-
-def validate_kernel_source(
-    source: str,
-    *,
-    source_suffix: str,
-    entrypoint: str,
-    stop_reason: str | None,
-    max_source_bytes: int,
-) -> str:
-    """Return exact bytes only when the response is a complete source artifact."""
-    if stop_reason is not None and stop_reason.lower().strip() in _TRUNCATED_STOP_REASONS:
-        raise KernelGenerationValidationError(f"provider response was truncated (stop_reason={stop_reason})")
-    if not source.strip():
-        raise KernelGenerationValidationError("provider returned empty kernel source")
-    if "```" in source:
-        raise KernelGenerationValidationError("provider returned Markdown fences instead of exact source")
-    encoded = source.encode("utf-8")
-    if len(encoded) > max_source_bytes:
-        raise KernelGenerationValidationError(
-            f"provider response exceeds the {max_source_bytes}-byte source limit"
-        )
-    if source_suffix == ".py":
-        try:
-            tree = ast.parse(source, filename="<generated-kernel>", mode="exec")
-        except SyntaxError as exc:
-            raise KernelGenerationValidationError(
-                f"provider returned malformed Python source: {exc.msg} at line {exc.lineno}"
-            ) from exc
-        definitions = {
-            node.name
-            for node in tree.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        }
-        if entrypoint not in definitions:
-            raise KernelGenerationValidationError(
-                f"provider response does not define required top-level entrypoint {entrypoint!r}"
-            )
-    return source
 
 
 def build_generation_result(
@@ -338,6 +287,7 @@ def build_generation_result(
     } <= usage_fields
     if billable and (not has_directional_pair or usage.input_tokens + usage.output_tokens == 0):
         raise _KernelGenerationAccountingError("successful response lacks trustworthy directional token usage")
+    validate_generation_usage_receipt(usage, require_directional=billable)
     if not billable and (completion.cost_usd != 0.0 or any(usage.provider_usage.values())):
         raise _KernelGenerationAccountingError("non-billable generation requires zero cost and token usage")
     source = validate_kernel_source(
@@ -354,12 +304,14 @@ def build_generation_result(
         cost_usd = 0.0
         cost_source: Literal["provider-reported", "estimated-model-pricing-v1", "not-billable"] = "not-billable"
     elif completion.cost_usd is None:
-        estimate = (cost_calculator or CostCalculator()).calculate(
+        if cost_calculator is not None:
+            raise _KernelGenerationAccountingError("custom pricing cannot be labeled estimated-model-pricing-v1")
+        cost_usd = estimated_generation_cost(
             actual_model,
-            usage.input_tokens,
-            usage.output_tokens,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            total_tokens=usage.total_tokens,
         )
-        cost_usd = estimate.total_cost
         cost_source = "estimated-model-pricing-v1"
     else:
         cost_usd = float(completion.cost_usd)
@@ -409,6 +361,7 @@ class ProviderKernelGenerator:
         cancellation_requested: Callable[[], bool] | None = None,
         call_observer: Callable[[int, int], None] | None = None,
         failure_observer: Callable[[KernelGenerationFailure], None] | None = None,
+        retry_observer: Callable[[KernelGenerationFailure], None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         now: Callable[[], datetime] | None = None,
@@ -435,6 +388,7 @@ class ProviderKernelGenerator:
         self._cancelled = cancellation_requested or (lambda: False)
         self._call_observer = call_observer
         self._failure_observer = failure_observer
+        self._retry_observer = retry_observer
         self._monotonic = monotonic
         self._sleep = sleep
         self._now = now or (lambda: datetime.now(UTC))
@@ -443,10 +397,7 @@ class ProviderKernelGenerator:
         self._pending_failures: list[KernelGenerationFailure] = []
 
     def restore(self, history: Iterable[KernelGenerationResult]) -> None:
-        restored = list(history)
-        if [item.proposal_index for item in restored] != list(range(1, len(restored) + 1)):
-            raise ValueError("generation history must be contiguous from proposal one")
-        self._history = restored
+        self._history = restored_generation_history(self, history)
         self._pending_proposal_index = None
         self._pending_failures = []
 
@@ -455,21 +406,18 @@ class ProviderKernelGenerator:
         proposal_index: int,
         failures: Iterable[KernelGenerationFailure],
     ) -> None:
-        """Restore durably receipted failed calls for the next incomplete proposal."""
-        restored = list(failures)
-        expected_proposal = len(self._history) + 1
-        if proposal_index != expected_proposal:
-            raise ValueError("pending failures must belong to the next incomplete proposal")
-        if [failure.call_index for failure in restored] != list(range(1, len(restored) + 1)):
-            raise ValueError("pending generation failure calls must be contiguous from call one")
-        if any(failure.proposal_index != proposal_index for failure in restored):
-            raise ValueError("pending generation failures must belong to the restored proposal")
-        if any(failure.provider != self.provider_id for failure in restored):
-            raise ValueError("pending generation failures must belong to the configured provider")
-        if len(restored) > self.budget.max_retries_per_proposal:
-            raise ValueError("pending generation failures leave no bounded retry to resume")
-        if any(not failure.retryable for failure in restored):
-            raise ValueError("a non-retryable generation failure cannot be resumed")
+        """Restore zero-delay failures; delayed retries need an explicit completed-backoff receipt."""
+        restored = restored_pending_failures(self, proposal_index, failures, backoff_completed=False)
+        self._pending_proposal_index = proposal_index if restored else None
+        self._pending_failures = restored
+
+    def restore_completed_pending_failures(
+        self,
+        proposal_index: int,
+        failures: Iterable[KernelGenerationFailure],
+    ) -> None:
+        """Restore failures whose durable control plane confirms the final backoff completed."""
+        restored = restored_pending_failures(self, proposal_index, failures, backoff_completed=True)
         self._pending_proposal_index = proposal_index if restored else None
         self._pending_failures = restored
 
@@ -483,6 +431,10 @@ class ProviderKernelGenerator:
     ) -> None:
         """Bind the durable completed-failure receipt writer."""
         self._failure_observer = observer
+
+    def set_retry_observer(self, observer: Callable[[KernelGenerationFailure], None] | None) -> None:
+        """Bind the append-only completed-backoff receipt writer."""
+        self._retry_observer = observer
 
     @property
     def budget_state(self) -> KernelGenerationBudgetState:
@@ -500,10 +452,21 @@ class ProviderKernelGenerator:
                 failures=tuple(self._pending_failures),
             )
         failures = list(self._pending_failures)
+        if any(not failure.retryable for failure in failures):
+            raise KernelGenerationProviderError(
+                "kernel generation cannot resume after a terminal provider failure",
+                failures=tuple(failures),
+            )
         state = self.budget_state
         self._require_start_budget(proposal_index, state, failures=tuple(failures))
         first_call_index = len(failures) + 1
         for call_index in range(first_call_index, self.budget.max_retries_per_proposal + 2):
+            exhausted = exhausted_generation_budgets(state, self.budget)
+            if exhausted:
+                raise KernelGenerationBudgetExceeded(
+                    f"kernel generation budget has no capacity for another dispatch: {', '.join(exhausted)}",
+                    failures=tuple(failures),
+                )
             if self._cancelled():
                 raise KernelGenerationCancelled(
                     "kernel campaign stop requested before provider dispatch",
@@ -578,10 +541,11 @@ class ProviderKernelGenerator:
                         f"provider returned invalid usage metadata: {usage_exc}"
                     )
                 retryable = (
-                    self._is_transient(exc)
+                    is_transient_provider_error(exc)
                     if isinstance(exc, ProviderError)
                     else usage_valid and not isinstance(exc, _KernelGenerationAccountingError)
                 )
+                retryable = retryable and usage_valid and generation_usage_allows_retry(usage)
                 has_retry = call_index <= self.budget.max_retries_per_proposal and retryable
                 failure = self._failure(
                     proposal_index=proposal_index,
@@ -602,6 +566,16 @@ class ProviderKernelGenerator:
                 except KernelGenerationBudgetExceeded:
                     self._observe_failure(failure)
                     raise
+                exhausted = exhausted_generation_budgets(state, self.budget)
+                if has_retry and exhausted:
+                    failure = failure.model_copy(update={"retryable": False})
+                    failures[-1] = failure
+                    self._set_pending(proposal_index, failures)
+                    self._observe_failure(failure)
+                    raise KernelGenerationBudgetExceeded(
+                        f"kernel generation budget has no capacity for another dispatch: {', '.join(exhausted)}",
+                        failures=tuple(failures),
+                    ) from exc
                 if not has_retry:
                     self._observe_failure(failure)
                     raise KernelGenerationProviderError(
@@ -609,7 +583,7 @@ class ProviderKernelGenerator:
                         failures=tuple(failures),
                     ) from exc
                 delay = float(self.budget.retry_backoff_seconds) * (2 ** (call_index - 1))
-                if state.wall_seconds + delay > float(self.budget.max_wall_seconds):
+                if state.wall_seconds + delay >= float(self.budget.max_wall_seconds):
                     failure = failure.model_copy(update={"retryable": False})
                     failures[-1] = failure
                     self._set_pending(proposal_index, failures)
@@ -621,17 +595,32 @@ class ProviderKernelGenerator:
                 if delay:
                     failure = failure.model_copy(update={"retry_delay_seconds": delay})
                     failures[-1] = failure
-                    state = state.model_copy(
-                        update={"wall_seconds": float(state.wall_seconds) + delay}
-                    )
                     self._set_pending(proposal_index, failures)
                 self._observe_failure(failure)
                 if delay:
-                    try:
-                        self._sleep(delay)
-                    except KernelGenerationCancelled as exc:
+                    actual_delay, sleep_error = measured_retry_sleep(self._sleep, self._monotonic, delay)
+                    retry_admitted = (
+                        sleep_error is None
+                        and float(state.wall_seconds) + actual_delay < float(self.budget.max_wall_seconds)
+                    )
+                    updated = failure.model_copy(
+                        update={"retry_delay_seconds": actual_delay, "retryable": retry_admitted}
+                    )
+                    failures[-1] = updated
+                    state = state.model_copy(update={"wall_seconds": float(state.wall_seconds) + actual_delay})
+                    self._set_pending(proposal_index, failures)
+                    if self._retry_observer is not None:
+                        self._retry_observer(updated)
+                    if isinstance(sleep_error, KernelGenerationCancelled):
                         raise KernelGenerationCancelled(
-                            str(exc),
+                            str(sleep_error),
+                            failures=tuple(failures),
+                        ) from sleep_error
+                    if sleep_error is not None:
+                        raise sleep_error from exc
+                    if not retry_admitted:
+                        raise KernelGenerationBudgetExceeded(
+                            "kernel generation wall-clock budget expired during retry backoff",
                             failures=tuple(failures),
                         ) from exc
                 continue
@@ -716,14 +705,19 @@ class ProviderKernelGenerator:
         reported_cost_usd: float | None,
     ) -> KernelGenerationFailure:
         actual_model = model.strip() or self.model
-        estimated = CostCalculator().calculate(actual_model, usage.input_tokens, usage.output_tokens)
+        estimated_cost = estimated_generation_cost(
+            actual_model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            total_tokens=usage.total_tokens,
+        )
         reported_cost = float(reported_cost_usd) if reported_cost_usd is not None else None
         valid_reported_cost = (
             reported_cost is not None
             and math.isfinite(reported_cost)
             and reported_cost >= 0.0
         )
-        accounted_cost = reported_cost if valid_reported_cost and reported_cost is not None else estimated.total_cost
+        accounted_cost = reported_cost if valid_reported_cost and reported_cost is not None else estimated_cost
         return KernelGenerationFailure(
             proposal_index=proposal_index,
             call_index=call_index,
@@ -739,11 +733,6 @@ class ProviderKernelGenerator:
             latency_seconds=latency,
             occurred_at=self._now().isoformat(),
         )
-
-    @staticmethod
-    def _is_transient(exc: Exception) -> bool:
-        message = str(exc).lower()
-        return any(marker in message for marker in _TRANSIENT_ERROR_MARKERS)
 
     @staticmethod
     def _state_with_failures(

@@ -1,6 +1,7 @@
 {
   "schema_version": "autocontext.synthetic-kernel-study-manifest/v1",
   "study_name": "recursive-kernel-transfer-contract",
+  "evidence_origin": "synthetic",
   "warning": "Synthetic orchestration evidence only; latencies are not accelerator measurements.",
   "workloads": [
     {
@@ -13,10 +14,20 @@
       "required_transfer_dimensions": ["shape", "hardware", "workload-family"],
       "strategy_tags": ["shape-polymorphic-tiling", "coalesced-loads"],
       "budget": {
-        "proposal_cap": 2,
-        "max_cost_usd": 1.0,
-        "max_wall_seconds": 300.0,
-        "max_total_tokens": 10000
+        "generation": {
+          "proposal_cap": 2,
+          "max_retries_per_proposal": 0,
+          "max_output_tokens_per_call": 4096,
+          "max_total_input_tokens": 10000,
+          "max_total_output_tokens": 10000,
+          "max_cost_usd": 1.0,
+          "max_wall_seconds": 300.0,
+          "max_total_tokens": 10000,
+          "retry_backoff_seconds": 1.0,
+          "max_source_bytes": 1000000
+        },
+        "max_workload_cost_usd": 1.0,
+        "max_workload_wall_seconds": 300.0
       },
       "protocol": {
         "warmup_runs": 3,
@@ -57,10 +68,20 @@
       "required_transfer_dimensions": ["shape", "hardware", "workload-family"],
       "strategy_tags": ["epilogue-fusion", "warp-reduction"],
       "budget": {
-        "proposal_cap": 2,
-        "max_cost_usd": 1.0,
-        "max_wall_seconds": 300.0,
-        "max_total_tokens": 10000
+        "generation": {
+          "proposal_cap": 2,
+          "max_retries_per_proposal": 0,
+          "max_output_tokens_per_call": 4096,
+          "max_total_input_tokens": 10000,
+          "max_total_output_tokens": 10000,
+          "max_cost_usd": 1.0,
+          "max_wall_seconds": 300.0,
+          "max_total_tokens": 10000,
+          "retry_backoff_seconds": 1.0,
+          "max_source_bytes": 1000000
+        },
+        "max_workload_cost_usd": 1.0,
+        "max_workload_wall_seconds": 300.0
       },
       "protocol": {
         "warmup_runs": 3,
@@ -101,10 +122,20 @@
       "required_transfer_dimensions": ["shape", "hardware", "workload-family"],
       "strategy_tags": [],
       "budget": {
-        "proposal_cap": 2,
-        "max_cost_usd": 1.0,
-        "max_wall_seconds": 300.0,
-        "max_total_tokens": 10000
+        "generation": {
+          "proposal_cap": 2,
+          "max_retries_per_proposal": 0,
+          "max_output_tokens_per_call": 4096,
+          "max_total_input_tokens": 10000,
+          "max_total_output_tokens": 10000,
+          "max_cost_usd": 1.0,
+          "max_wall_seconds": 300.0,
+          "max_total_tokens": 10000,
+          "retry_backoff_seconds": 1.0,
+          "max_source_bytes": 1000000
+        },
+        "max_workload_cost_usd": 1.0,
+        "max_workload_wall_seconds": 300.0
       },
       "protocol": {
         "warmup_runs": 3,

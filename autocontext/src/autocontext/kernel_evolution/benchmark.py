@@ -179,6 +179,26 @@ def _fingerprint_paths(paths: Sequence[Path]) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _expected_files_fingerprint(paths: Sequence[Path], expected: Mapping[Path, bytes]) -> str:
+    normalized = {_lexical_absolute_path(Path(path)): content for path, content in expected.items()}
+    if len(normalized) != len(expected) or set(normalized) != set(paths):
+        raise ValueError("expected immutable files must exactly cover immutable_paths")
+    digest = hashlib.sha256()
+    _update_fingerprint_frame(digest, b"format", b"autocontext-immutable-tree-v2")
+    roots = sorted(normalized, key=lambda path: os.fsencode(os.fspath(path)))
+    _update_fingerprint_frame(digest, b"root-count", len(roots).to_bytes(8, "big"))
+    for root_index, path in enumerate(roots):
+        content = normalized[path]
+        if type(content) is not bytes:
+            raise TypeError("expected immutable file content must be exact bytes")
+        index = root_index.to_bytes(8, "big")
+        _update_fingerprint_frame(digest, b"root", index, os.fsencode(os.fspath(path)), b"file")
+        _update_fingerprint_frame(
+            digest, b"file", index, _relative_label(()), len(content).to_bytes(16, "big"), hashlib.sha256(content).digest()
+        )
+    return f"sha256:{digest.hexdigest()}"
+
+
 def _reject_json_constant(value: str) -> NoReturn:
     raise ValueError(f"invalid JSON constant {value}")
 
@@ -198,6 +218,8 @@ class ExternalKernelBenchmarkRunner:
         cwd: Path | None = None,
         source_suffix: str = ".py",
         immutable_paths: Sequence[Path] = (),
+        expected_immutable_files: Mapping[Path, bytes] | None = None,
+        inherited_fds: Sequence[int] = (),
         environment: Mapping[str, str] | None = None,
         max_output_bytes: int = 64_000,
         max_report_bytes: int = 2_000_000,
@@ -235,7 +257,19 @@ class ExternalKernelBenchmarkRunner:
         self._cwd = cwd.resolve() if cwd is not None else None
         self._source_suffix = source_suffix
         self._immutable_paths = tuple(_lexical_absolute_path(Path(path)) for path in immutable_paths)
-        self._harness_digest = _fingerprint_paths(self._immutable_paths)
+        observed_harness_digest = _fingerprint_paths(self._immutable_paths)
+        self._harness_digest = (
+            _expected_files_fingerprint(self._immutable_paths, expected_immutable_files)
+            if expected_immutable_files is not None
+            else observed_harness_digest
+        )
+        if observed_harness_digest != self._harness_digest:
+            raise ValueError("immutable benchmark harness disagrees with precommitted content")
+        if inherited_fds and sys.platform == "win32":
+            raise ValueError("inherited benchmark descriptors are unavailable on Windows")
+        self._inherited_fds = tuple(dict.fromkeys(inherited_fds))
+        for descriptor in self._inherited_fds:
+            os.fstat(descriptor)
         if sys.platform == "win32":
             launcher_path = Path(__file__).with_name("_windows_job_launcher.py").resolve(strict=True)
             self._windows_launcher_path: Path | None = launcher_path
@@ -263,6 +297,7 @@ class ExternalKernelBenchmarkRunner:
             "source_suffix": self._source_suffix,
             "immutable_harness_digest": self._harness_digest,
             "immutable_paths": [str(path) for path in self._immutable_paths],
+            "inherited_fds": list(self._inherited_fds),
             "windows_launcher_path": str(self._windows_launcher_path) if self._windows_launcher_path is not None else None,
             "windows_launcher_digest": self._windows_launcher_digest,
             "max_output_bytes": self._max_output_bytes,
@@ -393,6 +428,7 @@ class ExternalKernelBenchmarkRunner:
                     ]
                 else:
                     popen_kwargs["start_new_session"] = True
+                    popen_kwargs["pass_fds"] = self._inherited_fds
                     launch_argv = argv
                 proc = subprocess.Popen(launch_argv, **popen_kwargs)  # noqa: S603
                 controller = _process_control.ProcessTreeController(proc, windows_job)
@@ -656,6 +692,12 @@ class KernelBenchmarkEvaluator:
             report = KernelBenchmarkReport.model_validate(execution.report_payload)
         except ValidationError as exc:
             return reject("contract_error", f"Benchmark report failed schema validation: {exc}")
+        authority_rejection = self._authority.verify_receipt(report)
+        if authority_rejection is not None:
+            # An unauthenticated payload is diagnostic input, not evidence. Keep
+            # the candidate-bound rejection and policy, but do not persist the
+            # report where later replay could mistake it for trusted evidence.
+            return reject(authority_rejection[0], authority_rejection[1])
         if report.schema_version != expected_report_schema:
             return reject(
                 "contract_error",
@@ -686,9 +728,6 @@ class KernelBenchmarkEvaluator:
                 "Report source digest, suffix, entrypoint, or ABI-bound artifact identity does not match the evaluated pair.",
                 report,
             )
-        authority_rejection = self._authority.verify_receipt(report)
-        if authority_rejection is not None:
-            return reject(authority_rejection[0], authority_rejection[1], report)
         if expected_scope_id is not None and report.hardware_scope_id != expected_scope_id:
             return reject("scope_mismatch", "Hardware, toolchain, or workload fingerprint changed during the run.", report)
         if expected_baseline_id is not None and report.baseline_id != expected_baseline_id:

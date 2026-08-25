@@ -15,11 +15,13 @@ from pathlib import Path
 from typing import Any
 
 from contract import (
+    EVIDENCE_ORIGIN,
     PROBLEM_SCHEMA,
+    SYNTHETIC_BACKEND_IDENTITY,
     canonical_digest,
     digest,
+    hardware_payload,
     protocol_payload,
-    workload_family_id,
 )
 
 SCHEMA_VERSION = "autocontext.kernelbench-eval/v3"
@@ -48,32 +50,6 @@ def _candidate_contract(source: str) -> tuple[set[str], dict[str, float]]:
     return correct, normalized
 
 
-def _hardware(problem: dict[str, Any]) -> dict[str, Any]:
-    environment = problem["environment"]
-    environments = {
-        "synthetic-sm90": ("sm90-demo", "Synthetic H100", "demo-580"),
-        "synthetic-sm100": ("sm100-demo", "Synthetic B200", "demo-590"),
-    }
-    if environment not in environments:
-        raise ValueError("synthetic problem selected an unknown environment")
-    architecture, device_name, driver = environments[environment]
-    fingerprint_payload = {key: value for key, value in problem.items() if key != "environment"}
-    return {
-        "backend": "synthetic-cuda",
-        "architecture": architecture,
-        "device_name": device_name,
-        "runtime": "cuda-demo-12.8",
-        "driver": driver,
-        "toolchain": "multi-workload-marker-adapter-v1",
-        "workload_family_id": workload_family_id(problem),
-        "workload_fingerprint": canonical_digest(fingerprint_payload),
-        "metadata": {
-            "environment": environment,
-            "warning": "synthetic orchestration evidence; not a GPU measurement",
-        },
-    }
-
-
 def _base_report(args: argparse.Namespace, problem: dict[str, Any]) -> dict[str, Any]:
     candidate_bytes = args.candidate.read_bytes()
     incumbent_bytes = args.incumbent.read_bytes()
@@ -81,7 +57,7 @@ def _base_report(args: argparse.Namespace, problem: dict[str, Any]) -> dict[str,
         raise ValueError("candidate source digest does not match staged bytes")
     if digest(incumbent_bytes) != args.incumbent_source_digest:
         raise ValueError("incumbent source digest does not match staged bytes")
-    hardware = _hardware(problem)
+    hardware = hardware_payload(problem)
     return {
         "schema_version": SCHEMA_VERSION,
         "evaluation_status": "candidate_error",
@@ -116,10 +92,22 @@ def _base_report(args: argparse.Namespace, problem: dict[str, Any]) -> dict[str,
             "device_total_memory_bytes": 80_000_000_000,
         },
         "metadata": {
-            "adapter": "synthetic-multi-workload/v1",
+            "adapter": SYNTHETIC_BACKEND_IDENTITY,
             "workload_id": problem["workload_id"],
             "workload_family": problem["workload_family"],
             "profile_role": problem["role"],
+            "evidence_origin": problem["evidence_origin"],
+            "evidence_purpose": problem["evidence_purpose"],
+            "source_workload_id": problem["source_workload_id"],
+            "target_workload_id": problem["target_workload_id"],
+            "study_execution_id": problem["study_execution_id"],
+            "workload_specs_digest": problem["workload_specs_digest"],
+            "generation_receipt_context_digest": problem.get("generation_receipt_context_digest"),
+            "study_manifest_digest": problem["study_manifest_digest"],
+            "study_contract_digest": problem["study_contract_digest"],
+            "study_backend_identity": problem["study_backend_identity"],
+            "evidence_warning": problem["evidence_warning"],
+            "shape_profile_id": problem["shape_profile_id"],
             "case_manifest": [
                 {
                     "name": case["name"],
@@ -128,7 +116,6 @@ def _base_report(args: argparse.Namespace, problem: dict[str, Any]) -> dict[str,
                 }
                 for case in problem["cases"]
             ],
-            "warning": "synthetic orchestration evidence; not a GPU measurement",
         },
     }
 
@@ -172,7 +159,7 @@ def _performance(
     cases = problem["cases"]
     candidate_values = [candidate_latency * float(case["latency_scale"]) for case in cases]
     incumbent_values = [incumbent_latency * float(case["latency_scale"]) for case in cases]
-    reference_values = [value * 1.25 for value in incumbent_values]
+    reference_values = [float(problem["baseline_latency_ms"]) * float(case["latency_scale"]) for case in cases]
     blocks = [
         {
             "block": block,
@@ -225,6 +212,12 @@ def main() -> None:
     problem = json.loads(args.problem.read_text(encoding="utf-8"))
     if not isinstance(problem, dict) or problem.get("schema_version") != PROBLEM_SCHEMA:
         raise SystemExit("synthetic problem has an unsupported schema")
+    if problem.get("evidence_origin") != EVIDENCE_ORIGIN:
+        raise SystemExit("synthetic problem omitted its evidence origin")
+    if problem.get("study_backend_identity") != SYNTHETIC_BACKEND_IDENTITY:
+        raise SystemExit("synthetic problem selected an unknown backend identity")
+    if not isinstance(problem.get("evidence_warning"), str) or not problem["evidence_warning"].strip():
+        raise SystemExit("synthetic problem omitted its evidence warning")
     report = _base_report(args, problem)
     try:
         candidate_source = args.candidate.read_text(encoding="utf-8")
@@ -260,7 +253,7 @@ def main() -> None:
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.report.with_suffix(".tmp")
-    temporary.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    temporary.write_bytes(json.dumps(report, indent=2, sort_keys=True).encode("utf-8"))
     temporary.replace(args.report)
 
 

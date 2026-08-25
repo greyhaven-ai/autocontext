@@ -14,6 +14,7 @@ from autocontext.kernel_evolution.campaign_journal_artifacts import (
     add_durable_failure,
     artifact_kind,
     champion_artifact_digest,
+    generation_activity_can_resume,
 )
 from autocontext.kernel_evolution.campaign_journal_models import (
     KernelCampaignStatus,
@@ -22,8 +23,11 @@ from autocontext.kernel_evolution.campaign_journal_models import (
     KernelGenerationCallClaim,
     KernelGenerationClaim,
     KernelGenerationFailureReceipt,
+    KernelGenerationRetryReceipt,
     KernelRunArtifact,
     KernelRunArtifactIndex,
+    deterministic_kernel_attempt_id,
+    validate_generation_retry_update,
 )
 from autocontext.kernel_evolution.generation import (
     KernelGenerationBudget,
@@ -43,7 +47,6 @@ class KernelCampaignJournalError(RuntimeError):
 
 class KernelCampaignAmbiguousExecution(KernelCampaignJournalError):
     """A dispatch may have occurred and must never be duplicated automatically."""
-
 
 class KernelCampaignJournal:
     """Append-safe control-plane journal stored beside kernel lineage."""
@@ -95,7 +98,6 @@ class KernelCampaignJournal:
             )
         self.refresh_artifact_index()
         return claim
-
     def claim_generation_call(self, proposal_index: int, call_index: int) -> None:
         """Fence one physical provider call against an operator stop."""
         if self.read_generation_claim(proposal_index) is None:
@@ -118,7 +120,6 @@ class KernelCampaignJournal:
             )
             self._write_immutable_json(path, claim.model_dump(mode="json"))
         self.refresh_artifact_index()
-
     def write_generation_failure(self, failure: KernelGenerationFailure) -> None:
         claim_path = self._generation_call_dir(failure.proposal_index, failure.call_index) / "claim.json"
         if not claim_path.is_file():
@@ -135,7 +136,23 @@ class KernelCampaignJournal:
         path = self._generation_call_dir(failure.proposal_index, failure.call_index) / "failure.json"
         self._write_immutable_json(path, receipt.model_dump(mode="json"))
         self.refresh_artifact_index()
-
+    def write_generation_retry(self, failure: KernelGenerationFailure) -> None:
+        call_dir = self._generation_call_dir(failure.proposal_index, failure.call_index)
+        initial = KernelGenerationFailureReceipt.model_validate(read_json(call_dir / "failure.json"))
+        try:
+            validate_generation_retry_update(initial.failure, failure)
+        except ValueError as exc:
+            raise KernelCampaignJournalError(str(exc)) from exc
+        receipt = KernelGenerationRetryReceipt(
+            run_id=self.run_id,
+            proposal_index=failure.proposal_index,
+            call_index=failure.call_index,
+            initial_failure_id=initial.failure_id,
+            failure=failure,
+            completed_at=datetime.now(UTC).isoformat(),
+        )
+        self._write_immutable_json(call_dir / "retry.json", receipt.model_dump(mode="json"))
+        self.refresh_artifact_index()
     def write_generation_result(self, result: KernelGenerationResult) -> Path:
         claim = self.read_generation_claim(result.proposal_index)
         if claim is None:
@@ -156,7 +173,6 @@ class KernelCampaignJournal:
         self._write_immutable_json(self._generation_dir(result.proposal_index) / "result.json", pointer)
         self.refresh_artifact_index()
         return receipt_path
-
     def write_generation_cancellation(
         self,
         proposal_index: int,
@@ -177,7 +193,6 @@ class KernelCampaignJournal:
         self._write_immutable_json(path, payload)
         self.refresh_artifact_index()
         return path
-
     def write_terminal_failures(
         self,
         proposal_index: int,
@@ -196,7 +211,6 @@ class KernelCampaignJournal:
         self._write_immutable_json(path, payload)
         self.refresh_artifact_index()
         return path
-
     @contextmanager
     def begin_evaluation(
         self,
@@ -234,7 +248,6 @@ class KernelCampaignJournal:
             )
             self.refresh_artifact_index()
             yield claim
-
     def link_attempt(self, result: KernelGenerationResult, *, attempt_id: str, artifact_digest: str) -> Path:
         expected = deterministic_kernel_attempt_id(
             self.run_id,
@@ -255,7 +268,6 @@ class KernelCampaignJournal:
         self._write_immutable_json(path, link.model_dump(mode="json"))
         self.refresh_artifact_index()
         return path
-
     def read_generation_claim(self, proposal_index: int) -> KernelGenerationClaim | None:
         path = self._generation_dir(proposal_index) / "claim.json"
         if not path.exists():
@@ -270,7 +282,6 @@ class KernelCampaignJournal:
                 label="generation system-prompt",
             )
         return claim
-
     def read_generation_result(
         self,
         proposal_index: int,
@@ -308,7 +319,6 @@ class KernelCampaignJournal:
         result = KernelGenerationResult.model_validate(read_json(receipt_path))
         self._validate_generation_result(result, proposal_index, receipt_id)
         return result
-
     def _validate_generation_result(
         self,
         result: KernelGenerationResult,
@@ -342,7 +352,6 @@ class KernelCampaignJournal:
                 raise KernelCampaignJournalError(
                     "generation call claims do not match the successful receipt"
                 )
-
     def generation_results(self, *, recover_orphans: bool = False) -> list[KernelGenerationResult]:
         results: list[KernelGenerationResult] = []
         proposal_index = 1
@@ -359,7 +368,6 @@ class KernelCampaignJournal:
         if len(extra) != len(results):
             raise KernelCampaignJournalError("generation results are not contiguous from proposal one")
         return results
-
     def generation_call_state(
         self,
         proposal_index: int,
@@ -390,11 +398,23 @@ class KernelCampaignJournal:
                 or receipt.call_index != call_index
             ):
                 raise KernelCampaignJournalError("generation failure receipt identity is invalid")
-            failures.append(receipt.failure)
+            failure = receipt.failure
+            retry_path = directory / "retry.json"
+            if retry_path.is_file():
+                retry = KernelGenerationRetryReceipt.model_validate(read_json(retry_path))
+                if retry.run_id != self.run_id or retry.initial_failure_id != receipt.failure_id:
+                    raise KernelCampaignJournalError("generation retry receipt identity is invalid")
+                try:
+                    validate_generation_retry_update(failure, retry.failure)
+                except ValueError as exc:
+                    raise KernelCampaignJournalError(str(exc)) from exc
+                failure = retry.failure
+            elif float(failure.retry_delay_seconds) > 0.0:
+                unresolved.append(call_index)
+            failures.append(failure)
         if unresolved and unresolved != [len(directories)]:
             raise KernelCampaignJournalError("a later provider call follows an unresolved call claim")
         return tuple(failures), tuple(unresolved)
-
     def generation_activity(self) -> tuple[list[KernelGenerationResult], tuple[KernelGenerationFailure, ...]]:
         results = self.generation_results()
         completed = {result.proposal_index for result in results}
@@ -584,7 +604,7 @@ class KernelCampaignJournal:
         manifest = read_json(manifest_path)
         if not isinstance(manifest, dict) or manifest.get("run_id") != self.run_id:
             raise KernelCampaignJournalError("kernel campaign manifest identity is invalid")
-        results = self.generation_results()
+        results, failures = self.generation_activity()
         attempts = tuple((self.run_dir / "attempts").glob("*.json")) if (self.run_dir / "attempts").exists() else ()
         links = tuple(self.root.glob("proposals/*/attempt-link.json"))
         generation_contract = manifest.get("generation")
@@ -593,6 +613,7 @@ class KernelCampaignJournal:
         generator_identity = generation_contract.get("generator_identity")
         if not isinstance(generator_identity, str):
             raise KernelCampaignJournalError("kernel campaign manifest has no generator identity")
+        persisted_budget = KernelGenerationBudget.model_validate(generation_contract.get("budget"))
         ambiguity: str | None = None
         try:
             self.assert_resumable(
@@ -604,20 +625,14 @@ class KernelCampaignJournal:
         except KernelCampaignAmbiguousExecution as exc:
             ambiguity = str(exc)
         self.refresh_artifact_index()
-        budget_state = self.budget_state()
+        budget_state = KernelGenerationBudgetState.from_activity(results, failures)
         status = str(manifest.get("status", "unknown"))
         terminal = status in {"complete", "baseline_failed", "failed"}
-        manifest_budget_id = (
-            generation_contract.get("budget_id")
-            if isinstance(generation_contract, dict)
-            and isinstance(generation_contract.get("budget_id"), str)
-            else None
-        )
-        if (
-            generation_budget is not None
-            and manifest_budget_id is not None
-            and generation_budget.budget_id != manifest_budget_id
-        ):
+        manifest_budget_id = generation_contract.get("budget_id")
+        if not isinstance(manifest_budget_id, str):
+            manifest_budget_id = None
+        status_budget = generation_budget or persisted_budget
+        if manifest_budget_id is None or status_budget.budget_id != manifest_budget_id:
             raise KernelCampaignJournalError("status budget conflicts with the persisted campaign budget")
         return KernelCampaignStatus(
             run_id=self.run_id,
@@ -637,14 +652,14 @@ class KernelCampaignJournal:
                 else None
             ),
             champion_artifact_digest=champion_artifact_digest(self.run_dir),
-            generation_budget_id=(
-                generation_budget.budget_id
-                if generation_budget is not None
-                else manifest_budget_id
-            ),
+            generation_budget_id=status_budget.budget_id,
             generation_budget_state=budget_state,
             stop_requested=self.stop_requested(),
-            can_resume=not terminal and ambiguity is None,
+            can_resume=(
+                not terminal
+                and ambiguity is None
+                and generation_activity_can_resume(results, failures, status_budget)
+            ),
             ambiguity=ambiguity,
             artifact_index_path=str((self.run_dir / "artifact-index.json").resolve()),
         )
@@ -747,25 +762,6 @@ class KernelCampaignJournal:
                 raise KernelCampaignJournalError(f"immutable campaign journal entry changed at {path}")
             return
         write_text_atomic(path, serialized)
-
-
-def deterministic_kernel_attempt_id(
-    run_id: str,
-    *,
-    generation: int,
-    artifact_digest: str,
-    generation_receipt_id: str | None,
-) -> str:
-    digest = canonical_digest(
-        {
-            "kind": "kernel-attempt-id/v1",
-            "run_id": run_id,
-            "generation": generation,
-            "artifact_digest": artifact_digest,
-            "generation_receipt_id": generation_receipt_id,
-        }
-    ).removeprefix("sha256:")
-    return f"attempt_{digest[:32]}"
 
 
 def read_kernel_campaign_status(

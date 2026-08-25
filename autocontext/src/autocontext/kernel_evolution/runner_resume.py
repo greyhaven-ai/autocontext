@@ -9,6 +9,10 @@ from autocontext.execution.agent_task_evolution import (
     LessonSignal,
     accumulate_lessons,
 )
+from autocontext.kernel_evolution._generation_replay import (
+    revalidated_generation_record,
+    validate_generation_replay,
+)
 from autocontext.kernel_evolution.adaptive_evidence import confirmation_identity_unavailable
 from autocontext.kernel_evolution.generation import (
     KernelGenerationFailure,
@@ -18,6 +22,7 @@ from autocontext.kernel_evolution.models import (
     KernelAttemptRecord,
     KernelCandidate,
     KernelPromotionDecision,
+    content_digest,
 )
 from autocontext.scenarios.agent_task import AgentTaskResult
 
@@ -164,8 +169,11 @@ def _restore_generation_history(runner: Any) -> None:
     failures, unresolved = runner._journal.generation_call_state(proposal_index)
     if unresolved:
         return
+    restore_completed = getattr(runner._generate_fn, "restore_completed_pending_failures", None)
     restore_pending = getattr(runner._generate_fn, "restore_pending_failures", None)
-    if callable(restore_pending) and failures:
+    if callable(restore_completed) and failures:
+        restore_completed(proposal_index, failures)
+    elif callable(restore_pending) and failures:
         restore_pending(proposal_index, failures)
 
 
@@ -185,22 +193,21 @@ def validate_generation_budget_contract(
     incomplete_failures: tuple[KernelGenerationFailure, ...] = (),
 ) -> None:
     """Validate per-proposal and per-call ceilings, not only aggregate totals."""
-    budget = runner._generation_budget
-    for result in results:
-        if result.retry_count > budget.max_retries_per_proposal:
-            raise ValueError("generation receipt exceeds the per-proposal retry budget")
-        if [item.call_index for item in result.failures] != list(range(1, result.retry_count + 1)):
-            raise ValueError("generation receipt failure call indexes are not contiguous")
-        if result.usage.output_tokens > budget.max_output_tokens_per_call:
-            raise ValueError("generation receipt exceeds the per-call output-token budget")
-        for failure in result.failures:
-            if failure.usage.output_tokens > budget.max_output_tokens_per_call:
-                raise ValueError("generation receipt exceeds the per-call output-token budget")
-    for failure in incomplete_failures:
-        if failure.call_index > budget.max_retries_per_proposal + 1:
-            raise ValueError("generation failure exceeds the per-proposal retry budget")
-        if failure.usage.output_tokens > budget.max_output_tokens_per_call:
-            raise ValueError("generation failure exceeds the per-call output-token budget")
+    checked_results = tuple(revalidated_generation_record(item) for item in results)
+    checked_failures = tuple(revalidated_generation_record(item) for item in incomplete_failures)
+    system_prompt = getattr(runner._generate_fn, "system_prompt", None)
+    validate_generation_replay(
+        checked_results,
+        checked_failures,
+        runner._generation_budget,
+        expected_provider=getattr(runner._generate_fn, "provider_id", None),
+        expected_system_prompt_digest=(
+            content_digest(system_prompt.encode("utf-8")) if isinstance(system_prompt, str) else None
+        ),
+        expected_source_suffix=runner.config.source_suffix,
+        expected_entrypoint=runner.config.entrypoint,
+        enforce_aggregate_budget=False,
+    )
 
 
 def _reject_unavailable_confirmation(
