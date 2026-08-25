@@ -12,7 +12,10 @@ from autocontext.agents.types import AgentOutputs
 from autocontext.context_bundles import CandidateRecord, evaluator_epoch_for, routing_snapshot
 from autocontext.harness.evaluation.failure_report import FailureReport, MatchDiagnosis
 from autocontext.harness.evaluation.runner import EvaluationRunner
-from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
+from autocontext.harness.evaluation.scenario_evaluator import (
+    ScenarioEvaluator,
+    generation_evaluation_namespace,
+)
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from autocontext.harness.mutations.parser import parse_mutations
 from autocontext.knowledge.rapid_gate import rapid_gate
@@ -145,6 +148,11 @@ def stage_tree_search(
             challenger_uncertainty=ctx.challenger_uncertainty,
             scoring_backend=settings.scoring_backend,
             hook_bus=ctx.hook_bus,
+            task_namespace=generation_evaluation_namespace(
+                ctx.run_id,
+                ctx.generation,
+                f"tree-seed:{seed_idx}",
+            ),
         )
         tree.update(
             node.id,
@@ -244,6 +252,11 @@ def stage_tree_search(
             challenger_uncertainty=ctx.challenger_uncertainty,
             scoring_backend=settings.scoring_backend,
             hook_bus=ctx.hook_bus,
+            task_namespace=generation_evaluation_namespace(
+                ctx.run_id,
+                ctx.generation,
+                f"tree-refinement:{round_idx}",
+            ),
         )
         tree.update(
             refined_node.id,
@@ -267,7 +280,12 @@ def stage_tree_search(
     best_node = tree.best()
     best_strategy = best_node.strategy
 
-    evaluator = ScenarioEvaluator(scenario, supervisor, hook_bus=ctx.hook_bus)
+    evaluator = ScenarioEvaluator(
+        scenario,
+        supervisor,
+        hook_bus=ctx.hook_bus,
+        task_namespace=generation_evaluation_namespace(ctx.run_id, ctx.generation, "tree-final"),
+    )
     runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
 
     def _on_match(match_index: int, result: Any) -> None:
@@ -522,9 +540,15 @@ def _run_mini_tournament(
     challenger_uncertainty: float | None,
     scoring_backend: str,
     hook_bus: Any | None = None,
+    task_namespace: str | None = None,
 ) -> Any:
     """Run a small tournament for a single hypothesis."""
-    evaluator = ScenarioEvaluator(scenario, supervisor, hook_bus=hook_bus)
+    evaluator = ScenarioEvaluator(
+        scenario,
+        supervisor,
+        hook_bus=hook_bus,
+        task_namespace=task_namespace,
+    )
     runner = EvaluationRunner(evaluator, scoring_backend=scoring_backend)
     return runner.run(
         candidate=strategy,

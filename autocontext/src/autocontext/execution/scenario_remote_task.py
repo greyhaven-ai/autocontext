@@ -42,6 +42,7 @@ def build_scenario_remote_request(
     initial_state: Mapping[str, Any] | None = None,
     initial_observation: Mapping[str, Any] | None = None,
     fixture_digest: str | None = None,
+    strict_task_identity: bool = False,
 ) -> RemoteExecutionRequest:
     return _build_request(
         scenario=scenario,
@@ -59,6 +60,7 @@ def build_scenario_remote_request(
         initial_state=initial_state,
         initial_observation=initial_observation,
         fixture_digest=fixture_digest,
+        strict_task_identity=strict_task_identity,
     )
 
 
@@ -79,6 +81,7 @@ def build_builtin_scenario_remote_request(
     initial_state: Mapping[str, Any] | None = None,
     initial_observation: Mapping[str, Any] | None = None,
     fixture_digest: str | None = None,
+    strict_task_identity: bool = False,
 ) -> RemoteExecutionRequest:
     try:
         scenario_module, scenario_class = _BUILTIN_SCENARIOS[scenario_name]
@@ -102,6 +105,7 @@ def build_builtin_scenario_remote_request(
         initial_state=initial_state,
         initial_observation=initial_observation,
         fixture_digest=fixture_digest,
+        strict_task_identity=strict_task_identity,
     )
 
 
@@ -122,6 +126,7 @@ def _build_request(
     initial_state: Mapping[str, Any] | None,
     initial_observation: Mapping[str, Any] | None,
     fixture_digest: str | None,
+    strict_task_identity: bool,
 ) -> RemoteExecutionRequest:
     require_pinned_runtime_image(image)
     package = build_remote_scenario_package(
@@ -181,6 +186,7 @@ def _build_request(
             ),
         ),
         metadata=metadata,
+        strict_task_identity=strict_task_identity,
     )
 
 

@@ -2,34 +2,23 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
-import hashlib
-import json
-import os
+import math
+import secrets
 import sqlite3
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
 
+import autocontext.execution._external_eval_outbox_codec as _codec
+import autocontext.execution._external_eval_outbox_identity as _identity
+import autocontext.execution._external_eval_outbox_store as _store
+from autocontext.execution._external_eval_outbox_identity import external_eval_attempt_id
 from autocontext.execution.remote_execution import (
     ExternalEvalLedgerEntry,
-    RemoteCleanupOutcome,
-    RemoteExecutionEvent,
-    RemoteExecutionProvenance,
     RemoteExecutionRequest,
     RemoteExecutionResult,
-    RemoteExecutionStatus,
-    RemoteInputProvenance,
-    RemoteOutputArtifact,
-    RemoteResolvedEnvironment,
-    RemoteResourceUsage,
-    remote_request_provenance,
     remote_request_sha256,
 )
-
-_SCHEMA_VERSION = 1
 
 
 class ExternalEvalOutboxConflictError(RuntimeError):
@@ -40,11 +29,30 @@ class ExternalEvalOutboxPendingError(RuntimeError):
     """Raised when a prior process may already have dispatched the paid request."""
 
 
+class ExternalEvalSinkDeliveryPendingError(RuntimeError):
+    """Raised when another process owns the durable ledger-delivery lease."""
+
+
 @dataclass(frozen=True, slots=True)
 class ExternalEvalOutboxClaim:
     attempt_id: str
     result: RemoteExecutionResult | None = None
     sink_delivered: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalEvalSinkDeliveryReservation:
+    """Exclusive, expiring permission to deliver one committed ledger entry.
+
+    ``attempt_id`` is the stable idempotency key for the external sink, while
+    ``lease_token`` is unique to this delivery worker and is used only for
+    compare-and-swap acknowledgement in the SQLite outbox.
+    """
+
+    attempt_id: str
+    lease_token: str
+    lease_expires_at: float
+    entry: ExternalEvalLedgerEntry
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,69 +85,97 @@ class ExternalEvalLedgerOutbox:
     """
 
     def __init__(self, path: str | Path) -> None:
-        self.path = Path(path)
+        self.path = Path(path).expanduser().resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        self._instance_id: str = _store.initialize_database(self.path)
+
+    @property
+    def instance_id(self) -> str:
+        return self._instance_id
+
+    def _connect(self) -> sqlite3.Connection:
+        return _store.connect_database(self.path, expected_instance_id=self._instance_id)
+
+    def replay(self, provider: str, request: RemoteExecutionRequest) -> ExternalEvalOutboxClaim | None:
+        """Return a committed result without creating a new durable claim.
+
+        A missing row returns ``None`` so mutable dispatch-only preflight can
+        run before ``claim`` atomically inserts the paid-work identity. An
+        existing unresolved claim still fails closed.
+        """
+
+        attempt_id = external_eval_attempt_id(provider, request)
+        request_digest = remote_request_sha256(request)
+        request_json = _codec.canonical_json(_codec.request_payload(provider, request))
+        connection = self._connect()
+        try:
+            resolved = self._resolve_existing_claim_row(
+                connection,
+                provider=provider,
+                request=request,
+                attempt_id=attempt_id,
+                request_sha256=request_digest,
+                request_json=request_json,
+            )
+            if resolved is None:
+                return None
+            row, attempt_id, request_digest = resolved
+            return self._claim_from_existing_row(
+                row,
+                provider=provider,
+                request=request,
+                attempt_id=attempt_id,
+                request_sha256=request_digest,
+            )
+        finally:
+            connection.close()
 
     def claim(self, provider: str, request: RemoteExecutionRequest) -> ExternalEvalOutboxClaim:
         attempt_id = external_eval_attempt_id(provider, request)
         request_digest = remote_request_sha256(request)
-        request_json = _canonical_json(_request_payload(provider, request))
+        request_json = _codec.canonical_json(_codec.request_payload(provider, request))
+        request_json_digest = _codec.sha256(request_json)
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                """
-                SELECT provider, task_id, request_sha256, request_json, state,
-                       result_json, result_sha256, sink_delivered
-                  FROM remote_eval_outbox
-                 WHERE attempt_id = ?
-                """,
-                (attempt_id,),
-            ).fetchone()
-            if row is None:
+            resolved = self._resolve_existing_claim_row(
+                connection,
+                provider=provider,
+                request=request,
+                attempt_id=attempt_id,
+                request_sha256=request_digest,
+                request_json=request_json,
+            )
+            if resolved is None:
                 connection.execute(
                     """
                     INSERT INTO remote_eval_outbox (
                         attempt_id, provider, task_id, request_sha256,
-                        request_json, state, sink_delivered, created_at
-                    ) VALUES (?, ?, ?, ?, ?, 'claimed', 0, ?)
+                        request_json, request_json_sha256, state, sink_delivered, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'claimed', 0, ?)
                     """,
-                    (attempt_id, provider, request.task_id, request_digest, request_json, time.time()),
+                    (
+                        attempt_id,
+                        provider,
+                        request.task_id,
+                        request_digest,
+                        request_json,
+                        request_json_digest,
+                        time.time(),
+                    ),
                 )
                 connection.commit()
                 return ExternalEvalOutboxClaim(attempt_id=attempt_id)
-            self._validate_identity(
+            row, attempt_id, request_digest = resolved
+            claim = self._claim_from_existing_row(
                 row,
-                attempt_id=attempt_id,
                 provider=provider,
-                task_id=request.task_id,
-                request_sha256=request_digest,
-                request_json=request_json,
-            )
-            if str(row["state"]) == "claimed":
-                connection.commit()
-                raise ExternalEvalOutboxPendingError(
-                    f"remote evaluation {attempt_id} has an unresolved durable claim; "
-                    "reconcile provider accounting before retrying"
-                )
-            if str(row["state"]) != "completed":
-                raise ExternalEvalOutboxConflictError(
-                    f"remote evaluation {attempt_id} has unsupported outbox state {row['state']!r}"
-                )
-            result_json = _checked_payload(
-                row["result_json"],
-                row["result_sha256"],
-                label=f"remote evaluation {attempt_id} result",
-            )
-            result = _result_from_payload(json.loads(result_json))
-            self._validate_result(provider, request, result)
-            connection.commit()
-            return ExternalEvalOutboxClaim(
+                request=request,
                 attempt_id=attempt_id,
-                result=result,
-                sink_delivered=bool(row["sink_delivered"]),
+                request_sha256=request_digest,
             )
+            connection.commit()
+            return claim
         except Exception:
             if connection.in_transaction:
                 connection.rollback()
@@ -152,46 +188,59 @@ class ExternalEvalLedgerOutbox:
         provider: str,
         request: RemoteExecutionRequest,
         result: RemoteExecutionResult,
+        *,
+        sink_required: bool = True,
     ) -> str:
-        """Durably commit one result before it is returned to the caller."""
+        """Durably commit one result before it is returned to the caller.
 
-        self._validate_result(provider, request, result)
+        A caller with no external sink settles that absence atomically by
+        passing ``sink_required=False``. A later sinkless replay must not infer
+        that an existing undelivered row had no delivery obligation.
+        """
+
+        if not isinstance(sink_required, bool):
+            raise TypeError("external-evaluation sink_required must be boolean")
+        if type(result) is not RemoteExecutionResult:
+            raise TypeError("external-evaluation result must be a RemoteExecutionResult")
+
         attempt_id = external_eval_attempt_id(provider, request)
-        result_json = _canonical_json(_result_payload(result))
-        result_digest = _sha256(result_json)
-        ledger_json = _canonical_json(_ledger_payload(result.to_ledger_entry()))
-        ledger_digest = _sha256(ledger_json)
+        request_digest = remote_request_sha256(request)
+        request_json = _codec.canonical_json(_codec.request_payload(provider, request))
+        result_json = _codec.canonical_json(_codec.result_payload(result))
+        decoded_result = _codec.result_from_payload(_codec.load_json(result_json, label="external-evaluation result"))
+        if decoded_result != result:
+            raise ValueError("external-evaluation result does not round-trip through the versioned codec")
+        result_digest = _codec.sha256(result_json)
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                """
-                SELECT provider, task_id, request_sha256, request_json, state,
-                       result_json, result_sha256, ledger_json, ledger_sha256
-                  FROM remote_eval_outbox
-                 WHERE attempt_id = ?
-                """,
-                (attempt_id,),
-            ).fetchone()
-            if row is None:
+            resolved = self._resolve_existing_claim_row(
+                connection,
+                provider=provider,
+                request=request,
+                attempt_id=attempt_id,
+                request_sha256=request_digest,
+                request_json=request_json,
+            )
+            if resolved is None:
                 raise ExternalEvalOutboxConflictError(
                     f"remote evaluation {attempt_id} completed without a durable pre-dispatch claim"
                 )
-            self._validate_identity(
-                row,
-                attempt_id=attempt_id,
-                provider=provider,
-                task_id=request.task_id,
-                request_sha256=remote_request_sha256(request),
-                request_json=_canonical_json(_request_payload(provider, request)),
-            )
-            if str(row["state"]) == "completed":
-                existing_result = _checked_payload(
+            row, attempt_id, request_digest = resolved
+            self._validate_result(provider, request, decoded_result, request_sha256=request_digest)
+            ledger_entry = result.to_ledger_entry(attempt_id=attempt_id)
+            ledger_json = _codec.canonical_json(_codec.ledger_payload(ledger_entry))
+            if _codec.ledger_from_payload(_codec.load_json(ledger_json, label="external-evaluation ledger")) != ledger_entry:
+                raise ValueError("external-evaluation ledger does not round-trip through the versioned codec")
+            ledger_digest = _codec.sha256(ledger_json)
+            state = _codec.expect_str(row["state"], "outbox state")
+            if state == "completed":
+                existing_result = _codec.checked_payload(
                     row["result_json"],
                     row["result_sha256"],
                     label=f"remote evaluation {attempt_id} result",
                 )
-                existing_ledger = _checked_payload(
+                existing_ledger = _codec.checked_payload(
                     row["ledger_json"],
                     row["ledger_sha256"],
                     label=f"remote evaluation {attempt_id} ledger",
@@ -202,7 +251,7 @@ class ExternalEvalLedgerOutbox:
                     )
                 connection.commit()
                 return attempt_id
-            if str(row["state"]) != "claimed":
+            if state != "claimed":
                 raise ExternalEvalOutboxConflictError(
                     f"remote evaluation {attempt_id} has unsupported outbox state {row['state']!r}"
                 )
@@ -210,10 +259,19 @@ class ExternalEvalLedgerOutbox:
                 """
                 UPDATE remote_eval_outbox
                    SET state = 'completed', result_json = ?, result_sha256 = ?,
-                       ledger_json = ?, ledger_sha256 = ?, completed_at = ?
+                       ledger_json = ?, ledger_sha256 = ?, sink_delivered = ?,
+                       completed_at = ?
                  WHERE attempt_id = ? AND state = 'claimed'
                 """,
-                (result_json, result_digest, ledger_json, ledger_digest, time.time(), attempt_id),
+                (
+                    result_json,
+                    result_digest,
+                    ledger_json,
+                    ledger_digest,
+                    int(not sink_required),
+                    time.time(),
+                    attempt_id,
+                ),
             )
             connection.commit()
             return attempt_id
@@ -224,41 +282,172 @@ class ExternalEvalLedgerOutbox:
         finally:
             connection.close()
 
-    def mark_sink_delivered(self, attempt_id: str) -> None:
+    def reserve_sink_delivery(
+        self,
+        attempt_id: str,
+        *,
+        lease_seconds: float = 300.0,
+    ) -> ExternalEvalSinkDeliveryReservation | None:
+        """Reserve exclusive delivery of a committed ledger entry.
+
+        ``None`` means the entry was already acknowledged. An unexpired lease
+        fails closed; after expiry another worker may reserve the same stable
+        attempt ID and rely on sink-side idempotency to recover a crash between
+        the external side effect and its local acknowledgement.
+        """
+
+        if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, (int, float)):
+            raise TypeError("ledger-delivery lease_seconds must be a number")
+        if not math.isfinite(lease_seconds) or lease_seconds <= 0:
+            raise ValueError("ledger-delivery lease_seconds must be positive and finite")
         connection = self._connect()
         try:
+            connection.execute("BEGIN IMMEDIATE")
+            # Start the lease only after SQLite grants the write lock.  A
+            # contended BEGIN may wait for the busy timeout; measuring before
+            # it can return a reservation that is already expired.
+            now = time.time()
+            lease_expires_at = now + float(lease_seconds)
+            lease_token = secrets.token_urlsafe(32)
+            row = connection.execute(
+                """
+                SELECT state, sink_delivered, delivery_lease_token,
+                       delivery_lease_expires_at, result_json, result_sha256,
+                       ledger_json, ledger_sha256
+                  FROM remote_eval_outbox
+                 WHERE attempt_id = ?
+                """,
+                (attempt_id,),
+            ).fetchone()
+            if row is None or _codec.expect_str(row["state"], "outbox state") != "completed":
+                raise ExternalEvalOutboxConflictError(
+                    f"remote evaluation {attempt_id} cannot reserve ledger delivery before result commit"
+                )
+            if _codec.sqlite_bool(row["sink_delivered"], label="outbox sink_delivered"):
+                connection.commit()
+                return None
+            current_token = row["delivery_lease_token"]
+            current_expiry = row["delivery_lease_expires_at"]
+            if (current_token is None) != (current_expiry is None):
+                raise ValueError(f"remote evaluation {attempt_id} has an invalid ledger-delivery lease")
+            if current_token is not None:
+                _codec.expect_str(current_token, "ledger-delivery lease token", nonempty=True)
+                expiry = _codec.expect_number(current_expiry, "ledger-delivery lease expiry")
+                if expiry > now:
+                    raise ExternalEvalSinkDeliveryPendingError(
+                        f"remote evaluation {attempt_id} ledger delivery is leased by another process"
+                    )
+            ledger_json = _codec.checked_payload(
+                row["ledger_json"],
+                row["ledger_sha256"],
+                label=f"remote evaluation {attempt_id} ledger",
+            )
+            entry = _codec.ledger_from_payload(_codec.load_json(ledger_json, label=f"remote evaluation {attempt_id} ledger"))
+            result_json = _codec.checked_payload(
+                row["result_json"],
+                row["result_sha256"],
+                label=f"remote evaluation {attempt_id} result",
+            )
+            result = _codec.result_from_payload(_codec.load_json(result_json, label=f"remote evaluation {attempt_id} result"))
+            if entry != result.to_ledger_entry(attempt_id=attempt_id):
+                raise ValueError(f"remote evaluation {attempt_id} ledger does not match its committed result")
             cursor = connection.execute(
                 """
                 UPDATE remote_eval_outbox
-                   SET sink_delivered = 1, delivery_error = ''
-                 WHERE attempt_id = ? AND state = 'completed'
+                   SET delivery_lease_token = ?, delivery_lease_expires_at = ?
+                 WHERE attempt_id = ? AND state = 'completed' AND sink_delivered = 0
+                   AND (
+                       delivery_lease_token IS NULL
+                       OR delivery_lease_expires_at <= ?
+                   )
                 """,
-                (attempt_id,),
+                (lease_token, lease_expires_at, attempt_id, now),
             )
             if cursor.rowcount != 1:
-                raise ExternalEvalOutboxConflictError(
-                    f"remote evaluation {attempt_id} cannot acknowledge ledger delivery before result commit"
+                raise ExternalEvalSinkDeliveryPendingError(
+                    f"remote evaluation {attempt_id} ledger delivery could not be reserved"
                 )
             connection.commit()
+            return ExternalEvalSinkDeliveryReservation(
+                attempt_id=attempt_id,
+                lease_token=lease_token,
+                lease_expires_at=lease_expires_at,
+                entry=entry,
+            )
+        except Exception:
+            if connection.in_transaction:
+                connection.rollback()
+            raise
         finally:
             connection.close()
 
-    def record_sink_failure(self, attempt_id: str, error: BaseException) -> None:
+    def mark_sink_delivered(self, reservation: ExternalEvalSinkDeliveryReservation) -> None:
+        """Acknowledge delivery if ``reservation`` still owns the lease."""
+
         connection = self._connect()
         try:
+            connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 """
                 UPDATE remote_eval_outbox
-                   SET delivery_error = ?
-                 WHERE attempt_id = ? AND state = 'completed'
+                   SET sink_delivered = 1, delivery_error = '',
+                       delivery_lease_token = NULL, delivery_lease_expires_at = NULL
+                 WHERE attempt_id = ? AND state = 'completed' AND sink_delivered = 0
+                   AND delivery_lease_token = ?
                 """,
-                (f"{type(error).__name__}: {error}", attempt_id),
+                (reservation.attempt_id, reservation.lease_token),
             )
             if cursor.rowcount != 1:
+                if _store.delivery_was_already_acknowledged(connection, reservation.attempt_id):
+                    connection.commit()
+                    return
                 raise ExternalEvalOutboxConflictError(
-                    f"remote evaluation {attempt_id} cannot record ledger delivery failure before result commit"
+                    f"remote evaluation {reservation.attempt_id} ledger-delivery lease was lost before acknowledgement"
                 )
             connection.commit()
+        except Exception:
+            if connection.in_transaction:
+                connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def record_sink_failure(
+        self,
+        reservation: ExternalEvalSinkDeliveryReservation,
+        error: BaseException,
+    ) -> None:
+        """Release a failed delivery lease without overwriting later success."""
+
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                """
+                UPDATE remote_eval_outbox
+                   SET delivery_error = ?, delivery_lease_token = NULL,
+                       delivery_lease_expires_at = NULL
+                 WHERE attempt_id = ? AND state = 'completed' AND sink_delivered = 0
+                   AND delivery_lease_token = ?
+                """,
+                (
+                    f"{type(error).__name__}: {error}",
+                    reservation.attempt_id,
+                    reservation.lease_token,
+                ),
+            )
+            if cursor.rowcount != 1:
+                if _store.delivery_was_already_acknowledged(connection, reservation.attempt_id):
+                    connection.commit()
+                    return
+                raise ExternalEvalOutboxConflictError(
+                    f"remote evaluation {reservation.attempt_id} ledger-delivery lease was lost before failure recording"
+                )
+            connection.commit()
+        except Exception:
+            if connection.in_transaction:
+                connection.rollback()
+            raise
         finally:
             connection.close()
 
@@ -268,7 +457,8 @@ class ExternalEvalLedgerOutbox:
         try:
             rows = connection.execute(
                 f"""
-                SELECT attempt_id, provider, task_id, request_sha256, request_json, state,
+                SELECT attempt_id, provider, task_id, request_sha256, request_json,
+                       request_json_sha256, state,
                        sink_delivered, created_at, completed_at, delivery_error
                   FROM remote_eval_outbox
                   {where}
@@ -279,27 +469,49 @@ class ExternalEvalLedgerOutbox:
             connection.close()
         statuses = []
         for row in rows:
-            request_payload = json.loads(str(row["request_json"]))
-            resources = dict(request_payload["resources"])
-            accelerator = resources.get("accelerator")
-            accelerator_payload = dict(accelerator) if isinstance(accelerator, dict) else {}
+            attempt_id = _codec.expect_str(row["attempt_id"], "outbox attempt_id", nonempty=True)
+            request_json = _codec.checked_payload(
+                row["request_json"],
+                row["request_json_sha256"],
+                label=f"remote evaluation {attempt_id} request",
+            )
+            request_payload = _codec.request_status_payload(
+                _codec.load_json(request_json, label=f"remote evaluation {attempt_id} request")
+            )
+            provider = _codec.expect_str(row["provider"], "outbox provider", nonempty=True)
+            task_id = _codec.expect_str(row["task_id"], "outbox task_id", nonempty=True)
+            request_digest = _codec.expect_sha256(row["request_sha256"], "outbox request_sha256")
+            if (
+                request_payload["provider"] != provider
+                or request_payload["task_id"] != task_id
+                or request_payload["request_sha256"] != request_digest
+            ):
+                raise ValueError(f"remote evaluation {attempt_id} request identity mismatch")
+            state = _codec.expect_str(row["state"], "outbox state")
+            if state not in {"claimed", "completed"}:
+                raise ValueError(f"remote evaluation {attempt_id} has unsupported outbox state {state!r}")
+            completed_at = row["completed_at"]
             statuses.append(
                 ExternalEvalOutboxStatus(
-                    attempt_id=str(row["attempt_id"]),
-                    provider=str(row["provider"]),
-                    task_id=str(row["task_id"]),
-                    request_sha256=str(row["request_sha256"]),
-                    state=str(row["state"]),
-                    sink_delivered=bool(row["sink_delivered"]),
-                    created_at=float(row["created_at"]),
-                    completed_at=float(row["completed_at"]) if row["completed_at"] is not None else None,
-                    delivery_error=str(row["delivery_error"]),
-                    timeout_seconds=float(request_payload["timeout_seconds"]),
-                    requested_cpu_cores=float(resources["cpu_cores"]),
-                    requested_memory_gb=float(resources["memory_gb"]),
-                    requested_disk_gb=float(resources["disk_gb"]),
-                    requested_accelerator_kind=str(accelerator_payload.get("kind", "")),
-                    requested_accelerator_count=int(accelerator_payload.get("count", 0)),
+                    attempt_id=attempt_id,
+                    provider=provider,
+                    task_id=task_id,
+                    request_sha256=request_digest,
+                    state=state,
+                    sink_delivered=_codec.sqlite_bool(row["sink_delivered"], label="outbox sink_delivered"),
+                    created_at=_codec.expect_number(row["created_at"], "outbox created_at"),
+                    completed_at=(
+                        _codec.expect_number(completed_at, "outbox completed_at")
+                        if completed_at is not None
+                        else None
+                    ),
+                    delivery_error=_codec.expect_str(row["delivery_error"], "outbox delivery_error"),
+                    timeout_seconds=request_payload["timeout_seconds"],
+                    requested_cpu_cores=request_payload["cpu_cores"],
+                    requested_memory_gb=request_payload["memory_gb"],
+                    requested_disk_gb=request_payload["disk_gb"],
+                    requested_accelerator_kind=request_payload["accelerator_kind"],
+                    requested_accelerator_count=request_payload["accelerator_count"],
                 )
             )
         return tuple(statuses)
@@ -309,7 +521,7 @@ class ExternalEvalLedgerOutbox:
         try:
             rows = connection.execute(
                 """
-                SELECT attempt_id, ledger_json, ledger_sha256
+                SELECT attempt_id, result_json, result_sha256, ledger_json, ledger_sha256
                   FROM remote_eval_outbox
                  WHERE state = 'completed'
                  ORDER BY completed_at, attempt_id
@@ -317,18 +529,25 @@ class ExternalEvalLedgerOutbox:
             ).fetchall()
         finally:
             connection.close()
-        return tuple(
-            _ledger_from_payload(
-                json.loads(
-                    _checked_payload(
-                        row["ledger_json"],
-                        row["ledger_sha256"],
-                        label=f"remote evaluation {row['attempt_id']} ledger",
-                    )
-                )
+        entries = []
+        for row in rows:
+            attempt_id = _codec.expect_str(row["attempt_id"], "outbox attempt_id", nonempty=True)
+            raw = _codec.checked_payload(
+                row["ledger_json"],
+                row["ledger_sha256"],
+                label=f"remote evaluation {attempt_id} ledger",
             )
-            for row in rows
-        )
+            entry = _codec.ledger_from_payload(_codec.load_json(raw, label=f"remote evaluation {attempt_id} ledger"))
+            result_json = _codec.checked_payload(
+                row["result_json"],
+                row["result_sha256"],
+                label=f"remote evaluation {attempt_id} result",
+            )
+            result = _codec.result_from_payload(_codec.load_json(result_json, label=f"remote evaluation {attempt_id} result"))
+            if entry != result.to_ledger_entry(attempt_id=attempt_id):
+                raise ValueError(f"remote evaluation {attempt_id} ledger does not match its committed result")
+            entries.append(entry)
+        return tuple(entries)
 
     def committed_results(self) -> tuple[RemoteExecutionResult, ...]:
         """Return checksum-verified results, including retry and cleanup lineage."""
@@ -346,77 +565,156 @@ class ExternalEvalLedgerOutbox:
         finally:
             connection.close()
         return tuple(
-            _result_from_payload(
-                json.loads(
-                    _checked_payload(
+            _codec.result_from_payload(
+                _codec.load_json(
+                    _codec.checked_payload(
                         row["result_json"],
                         row["result_sha256"],
                         label=f"remote evaluation {row['attempt_id']} result",
-                    )
+                    ),
+                    label=f"remote evaluation {row['attempt_id']} result",
                 )
             )
             for row in rows
         )
 
-    def _initialize(self) -> None:
-        connection = sqlite3.connect(self.path, timeout=30.0)
-        try:
-            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if version > _SCHEMA_VERSION:
-                raise RuntimeError(
-                    f"external-evaluation outbox schema {version} is newer than supported schema {_SCHEMA_VERSION}"
-                )
-            connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute("PRAGMA synchronous=FULL")
-            connection.execute("PRAGMA busy_timeout=30000")
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS remote_eval_outbox (
-                    attempt_id TEXT PRIMARY KEY,
-                    provider TEXT NOT NULL,
-                    task_id TEXT NOT NULL,
-                    request_sha256 TEXT NOT NULL,
-                    request_json TEXT NOT NULL,
-                    state TEXT NOT NULL CHECK (state IN ('claimed', 'completed')),
-                    result_json TEXT,
-                    result_sha256 TEXT,
-                    ledger_json TEXT,
-                    ledger_sha256 TEXT,
-                    sink_delivered INTEGER NOT NULL DEFAULT 0 CHECK (sink_delivered IN (0, 1)),
-                    delivery_error TEXT NOT NULL DEFAULT '',
-                    created_at REAL NOT NULL,
-                    completed_at REAL,
-                    CHECK (
-                        (state = 'claimed' AND result_json IS NULL AND result_sha256 IS NULL
-                         AND ledger_json IS NULL AND ledger_sha256 IS NULL AND completed_at IS NULL)
-                        OR
-                        (state = 'completed' AND result_json IS NOT NULL AND result_sha256 IS NOT NULL
-                         AND ledger_json IS NOT NULL AND ledger_sha256 IS NOT NULL AND completed_at IS NOT NULL)
-                    )
-                )
-                """
-            )
-            connection.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS remote_eval_outbox_request
-                    ON remote_eval_outbox(provider, task_id, request_sha256)
-                """
-            )
-            connection.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
-            connection.commit()
-        finally:
-            connection.close()
-        try:
-            os.chmod(self.path, 0o600)
-        except OSError:
-            pass
+    def _resolve_existing_claim_row(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        provider: str,
+        request: RemoteExecutionRequest,
+        attempt_id: str,
+        request_sha256: str,
+        request_json: str,
+    ) -> tuple[sqlite3.Row, str, str] | None:
+        """Resolve one exact or prerelease numeric identity, failing on aliases."""
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=30.0)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA synchronous=FULL")
-        connection.execute("PRAGMA busy_timeout=30000")
-        return connection
+        exact = _store.select_claim_row(connection, attempt_id)
+        if exact is not None:
+            self._validate_identity(
+                exact,
+                attempt_id=attempt_id,
+                provider=provider,
+                task_id=request.task_id,
+                request_sha256=request_sha256,
+                request_json=request_json,
+            )
+        legacy = self._select_legacy_numeric_claim_row(
+            connection,
+            provider=provider,
+            request=request,
+            exclude_attempt_id=attempt_id,
+        )
+        if exact is not None and legacy is not None:
+            raise ExternalEvalOutboxConflictError(
+                f"multiple numeric identities match remote evaluation task {request.task_id!r}"
+            )
+        if exact is not None:
+            return exact, attempt_id, request_sha256
+        return legacy
+
+    @staticmethod
+    def _select_legacy_numeric_claim_row(
+        connection: sqlite3.Connection,
+        *,
+        provider: str,
+        request: RemoteExecutionRequest,
+        exclude_attempt_id: str,
+    ) -> tuple[sqlite3.Row, str, str] | None:
+        """Find an exact prerelease identity that differs only by JSON number spelling."""
+
+        rows = connection.execute(
+            """
+            SELECT attempt_id, provider, task_id, request_sha256, request_json,
+                   request_json_sha256, state, result_json, result_sha256,
+                   ledger_json, ledger_sha256, sink_delivered
+              FROM remote_eval_outbox
+             WHERE provider = ? AND task_id = ?
+            """,
+            (provider, request.task_id),
+        ).fetchall()
+        matches: list[tuple[sqlite3.Row, str, str]] = []
+        for row in rows:
+            attempt_id = _codec.expect_sha256(row["attempt_id"], "outbox attempt_id")
+            if attempt_id == exclude_attempt_id:
+                continue
+            stored_request_json = _codec.checked_payload(
+                row["request_json"],
+                row["request_json_sha256"],
+                label=f"remote evaluation {attempt_id} request",
+            )
+            raw_payload = _codec.load_json(stored_request_json, label=f"remote evaluation {attempt_id} request")
+            status_payload = _codec.request_status_payload(raw_payload)
+            request_digest = _codec.expect_sha256(row["request_sha256"], "outbox request_sha256")
+            if (
+                _codec.expect_str(row["provider"], "outbox provider", nonempty=True) != provider
+                or _codec.expect_str(row["task_id"], "outbox task_id", nonempty=True) != request.task_id
+                or status_payload["provider"] != provider
+                or status_payload["task_id"] != request.task_id
+                or status_payload["request_sha256"] != request_digest
+            ):
+                raise ExternalEvalOutboxConflictError(
+                    f"remote evaluation {attempt_id} has conflicting legacy request identity"
+                )
+            expected_attempt_id = _identity.attempt_id_from_digest(provider, request.task_id, request_digest)
+            if attempt_id != expected_attempt_id:
+                raise ExternalEvalOutboxConflictError(
+                    f"remote evaluation {attempt_id} has a conflicting legacy attempt identity"
+                )
+            try:
+                candidates = _identity.legacy_numeric_request_sha256_candidates(request, raw_payload)
+            except _identity.LegacyNumericIdentityConflictError as exc:
+                raise ExternalEvalOutboxConflictError(str(exc)) from exc
+            if request_digest not in candidates:
+                if request.strict_task_identity:
+                    raise ExternalEvalOutboxConflictError(
+                        f"remote evaluation task {request.task_id!r} is already bound to a different durable request identity"
+                    )
+                continue
+            matches.append((row, attempt_id, request_digest))
+        if len(matches) > 1:
+            raise ExternalEvalOutboxConflictError(
+                f"multiple legacy numeric identities match remote evaluation task {request.task_id!r}"
+            )
+        return matches[0] if matches else None
+
+    def _claim_from_existing_row(
+        self,
+        row: sqlite3.Row,
+        *,
+        provider: str,
+        request: RemoteExecutionRequest,
+        attempt_id: str,
+        request_sha256: str,
+    ) -> ExternalEvalOutboxClaim:
+        state = _codec.expect_str(row["state"], "outbox state")
+        if state == "claimed":
+            raise ExternalEvalOutboxPendingError(
+                f"remote evaluation {attempt_id} has an unresolved durable claim; reconcile provider accounting before retrying"
+            )
+        if state != "completed":
+            raise ExternalEvalOutboxConflictError(f"remote evaluation {attempt_id} has unsupported outbox state {state!r}")
+        result_json = _codec.checked_payload(
+            row["result_json"],
+            row["result_sha256"],
+            label=f"remote evaluation {attempt_id} result",
+        )
+        result = _codec.result_from_payload(_codec.load_json(result_json, label=f"remote evaluation {attempt_id} result"))
+        self._validate_result(provider, request, result, request_sha256=request_sha256)
+        ledger_json = _codec.checked_payload(
+            row["ledger_json"],
+            row["ledger_sha256"],
+            label=f"remote evaluation {attempt_id} ledger",
+        )
+        ledger = _codec.ledger_from_payload(_codec.load_json(ledger_json, label=f"remote evaluation {attempt_id} ledger"))
+        if ledger != result.to_ledger_entry(attempt_id=attempt_id):
+            raise ValueError(f"remote evaluation {attempt_id} ledger does not match its committed result")
+        return ExternalEvalOutboxClaim(
+            attempt_id=attempt_id,
+            result=result,
+            sink_delivered=_codec.sqlite_bool(row["sink_delivered"], label="outbox sink_delivered"),
+        )
 
     @staticmethod
     def _validate_identity(
@@ -428,9 +726,14 @@ class ExternalEvalLedgerOutbox:
         request_sha256: str,
         request_json: str,
     ) -> None:
-        actual = (str(row["provider"]), str(row["task_id"]), str(row["request_sha256"]), str(row["request_json"]))
-        expected = (provider, task_id, request_sha256, request_json)
-        if actual != expected:
+        if not _store.claim_identity_matches(
+            row,
+            attempt_id=attempt_id,
+            provider=provider,
+            task_id=task_id,
+            request_sha256=request_sha256,
+            request_json=request_json,
+        ):
             raise ExternalEvalOutboxConflictError(f"remote evaluation {attempt_id} was reused with conflicting request identity")
 
     @staticmethod
@@ -438,157 +741,13 @@ class ExternalEvalLedgerOutbox:
         provider: str,
         request: RemoteExecutionRequest,
         result: RemoteExecutionResult,
+        *,
+        request_sha256: str | None = None,
     ) -> None:
-        if result.provider != provider or result.task_id != request.task_id:
-            raise ExternalEvalOutboxConflictError("remote result provider/task identity does not match its durable claim")
-        expected_request_digest = remote_request_sha256(request)
-        if result.provenance.request_sha256 != expected_request_digest:
+        if not _identity.result_matches_request(provider, request, result, request_sha256=request_sha256):
             raise ExternalEvalOutboxConflictError("remote result provenance does not match its durable request claim")
 
 
-def external_eval_attempt_id(provider: str, request: RemoteExecutionRequest) -> str:
-    if not provider.strip():
-        raise ValueError("external evaluation provider must be non-empty")
-    return _sha256(
-        _canonical_json(
-            {
-                "provider": provider,
-                "task_id": request.task_id,
-                "request_sha256": remote_request_sha256(request),
-            }
-        )
-    )
-
-
-def _request_payload(provider: str, request: RemoteExecutionRequest) -> dict[str, Any]:
-    return {
-        "schema_version": 1,
-        "provider": provider,
-        "task_id": request.task_id,
-        "request_sha256": remote_request_sha256(request),
-        "provenance": asdict(remote_request_provenance(request)),
-        "lifecycle": request.lifecycle,
-        "timeout_seconds": request.timeout_seconds,
-        "resources": asdict(request.resources),
-        "region": request.region,
-        "required_telemetry": sorted(request.required_telemetry),
-        "network_policy": request.network_policy,
-        "expected_outputs": list(request.expected_outputs),
-        "metadata": dict(request.metadata),
-    }
-
-
-def _result_payload(result: RemoteExecutionResult) -> dict[str, Any]:
-    return {
-        "schema_version": 1,
-        "task_id": result.task_id,
-        "provider": result.provider,
-        "status": result.status,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "exit_code": result.exit_code,
-        "artifacts": [
-            {
-                "name": artifact.name,
-                "content_base64": base64.b64encode(artifact.content).decode("ascii"),
-                "media_type": artifact.media_type,
-            }
-            for artifact in result.artifacts
-        ],
-        "events": [asdict(event) for event in result.events],
-        "usage": asdict(result.usage),
-        "cleanup": asdict(result.cleanup),
-        "error": result.error,
-        "session_id": result.session_id,
-        "provenance": asdict(result.provenance),
-        "retryable": result.retryable,
-    }
-
-
-def _result_from_payload(payload: Any) -> RemoteExecutionResult:
-    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
-        raise ValueError("unsupported external-evaluation result payload")
-    try:
-        artifacts = tuple(
-            RemoteOutputArtifact(
-                name=str(item["name"]),
-                content=base64.b64decode(str(item["content_base64"]), validate=True),
-                media_type=str(item["media_type"]),
-            )
-            for item in payload["artifacts"]
-        )
-    except (KeyError, TypeError, ValueError, binascii.Error) as exc:
-        raise ValueError("invalid external-evaluation result artifacts") from exc
-    return RemoteExecutionResult(
-        task_id=str(payload["task_id"]),
-        provider=str(payload["provider"]),
-        status=cast(RemoteExecutionStatus, str(payload["status"])),
-        stdout=str(payload["stdout"]),
-        stderr=str(payload["stderr"]),
-        exit_code=int(payload["exit_code"]) if payload["exit_code"] is not None else None,
-        artifacts=artifacts,
-        events=tuple(
-            RemoteExecutionEvent(
-                sequence=int(event["sequence"]),
-                event_type=str(event["event_type"]),
-                message=str(event["message"]),
-                fields=dict(event["fields"]),
-            )
-            for event in payload["events"]
-        ),
-        usage=RemoteResourceUsage(**dict(payload["usage"])),
-        cleanup=RemoteCleanupOutcome(**dict(payload["cleanup"])),
-        error=str(payload["error"]),
-        session_id=str(payload["session_id"]),
-        provenance=_provenance_from_payload(payload["provenance"]),
-        retryable=bool(payload["retryable"]),
-    )
-
-
-def _ledger_payload(entry: ExternalEvalLedgerEntry) -> dict[str, Any]:
-    return {"schema_version": 1, **asdict(entry)}
-
-
-def _ledger_from_payload(payload: Any) -> ExternalEvalLedgerEntry:
-    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
-        raise ValueError("unsupported external-evaluation ledger payload")
-    return ExternalEvalLedgerEntry(
-        task_id=str(payload["task_id"]),
-        provider=str(payload["provider"]),
-        status=cast(RemoteExecutionStatus, str(payload["status"])),
-        candidate_succeeded=bool(payload["candidate_succeeded"]),
-        infrastructure_succeeded=bool(payload["infrastructure_succeeded"]),
-        exit_code=int(payload["exit_code"]) if payload["exit_code"] is not None else None,
-        usage=RemoteResourceUsage(**dict(payload["usage"])),
-        cleanup=RemoteCleanupOutcome(**dict(payload["cleanup"])),
-        detail=str(payload["detail"]),
-        provenance=_provenance_from_payload(payload["provenance"]),
-        retryable=bool(payload["retryable"]),
-    )
-
-
-def _provenance_from_payload(payload: Any) -> RemoteExecutionProvenance:
-    if not isinstance(payload, dict):
-        raise ValueError("invalid external-evaluation provenance payload")
-    values = dict(payload)
-    values["inputs"] = tuple(RemoteInputProvenance(**dict(item)) for item in values.get("inputs", ()))
-    values["resolved"] = RemoteResolvedEnvironment(**dict(values.get("resolved", {})))
-    values["required_telemetry"] = tuple(str(item) for item in values.get("required_telemetry", ()))
-    return RemoteExecutionProvenance(**values)
-
-
-def _checked_payload(raw: Any, expected_sha256: Any, *, label: str) -> str:
-    if not isinstance(raw, str) or not isinstance(expected_sha256, str) or _sha256(raw) != expected_sha256:
-        raise ValueError(f"{label} checksum mismatch")
-    return raw
-
-
-def _canonical_json(payload: Any) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-
-
-def _sha256(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 __all__ = [
@@ -596,6 +755,8 @@ __all__ = [
     "ExternalEvalOutboxClaim",
     "ExternalEvalOutboxConflictError",
     "ExternalEvalOutboxPendingError",
+    "ExternalEvalSinkDeliveryPendingError",
+    "ExternalEvalSinkDeliveryReservation",
     "ExternalEvalOutboxStatus",
     "external_eval_attempt_id",
 ]

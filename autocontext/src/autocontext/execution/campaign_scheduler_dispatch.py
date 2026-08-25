@@ -5,18 +5,52 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
+from typing import Protocol
 
 from autocontext.execution.campaign_scheduler_models import (
     CampaignAssignment,
     CampaignJobResult,
+    CampaignLease,
     CampaignWorker,
     SchedulerBudget,
+    _JobState,
+    _WorkerState,
 )
 
 Heartbeat = Callable[[tuple[CampaignAssignment, ...], threading.Event], None]
 ClaimWave = Callable[[], tuple[tuple[CampaignAssignment, ...], tuple[CampaignWorker, ...]]]
 ExecuteWave = Callable[[tuple[CampaignAssignment, ...], tuple[CampaignWorker, ...]], None]
+
+
+class _RestartLeaseScheduler(Protocol):
+    _restart_orphan_lease_ids: set[str]
+    _restart_durable_replay_lease_ids: set[str]
+    _workers: dict[str, _WorkerState]
+    _executors: dict[str, CampaignWorker]
+    _jobs: dict[str, _JobState]
+    _leases: dict[str, str]
+    clock: Callable[[], float]
+
+    def heartbeat(self, worker_id: str, lease_ids: Sequence[str] = ()) -> None: ...
+
+
+def restart_orphan_lease_sets(
+    jobs: dict[str, _JobState],
+    durable_replay_lease_ids: set[str],
+) -> tuple[set[str], set[str]]:
+    """Recover orphan identities and the leases promised durable replay."""
+
+    orphan_ids: set[str] = set()
+    durable_ids: set[str] = set()
+    for state in jobs.values():
+        lease = state.lease
+        if state.status != "leased" or lease is None:
+            continue
+        orphan_ids.add(lease.lease_id)
+        if lease.lease_id in durable_replay_lease_ids:
+            durable_ids.add(lease.lease_id)
+    return orphan_ids, durable_ids
 
 
 def run_scheduler_service(
@@ -106,11 +140,11 @@ def run_scheduler_until_idle(
                 return dispatched
             assignments: tuple[CampaignAssignment, ...]
             executors: tuple[CampaignWorker, ...]
-            if queued and waves >= max_waves:
+            if (queued or running) and waves >= max_waves:
                 if running == 0 and not active_waves:
                     raise RuntimeError("campaign scheduler exceeded max_waves before becoming idle")
                 assignments, executors = (), ()
-            elif queued:
+            elif queued or running:
                 assignments, executors = claim_wave()
             else:
                 assignments, executors = (), ()
@@ -144,6 +178,49 @@ def _reap_waves(active_waves: set[threading.Thread]) -> set[threading.Thread]:
         else:
             wave.join()
     return remaining
+
+
+def restart_lease_has_durable_replay(scheduler: _RestartLeaseScheduler, lease: CampaignLease) -> bool:
+    """Whether a reconstructed lease can safely re-enter its original worker."""
+
+    worker = scheduler._workers.get(lease.worker_id)
+    return (
+        lease.lease_id in scheduler._restart_orphan_lease_ids
+        and lease.lease_id in scheduler._restart_durable_replay_lease_ids
+        and scheduler._executors.get(lease.worker_id) is not None
+        and worker is not None
+        and worker.descriptor.locality == "remote"
+        and worker.descriptor.environment_fingerprint == lease.environment_fingerprint
+        and "durable_result_replay" in worker.descriptor.sandbox_features
+    )
+
+
+def claim_expired_restart_leases(
+    scheduler: _RestartLeaseScheduler,
+    assignments: list[CampaignAssignment],
+    executors: list[CampaignWorker],
+) -> None:
+    """Resume expired durable leases without minting a new paid-task identity."""
+
+    for lease_id in sorted(tuple(scheduler._restart_orphan_lease_ids)):
+        job_id = scheduler._leases.get(lease_id)
+        state = scheduler._jobs.get(job_id) if job_id is not None else None
+        if state is None or state.status != "leased" or state.lease is None:
+            scheduler._restart_orphan_lease_ids.discard(lease_id)
+            continue
+        lease = state.lease
+        executor = scheduler._executors.get(lease.worker_id)
+        if (
+            lease.expires_at > scheduler.clock()
+            or executor is None
+            or not restart_lease_has_durable_replay(scheduler, lease)
+        ):
+            continue
+        scheduler.heartbeat(lease.worker_id, (lease_id,))
+        assert state.lease is not None
+        assignments.append(CampaignAssignment(state.request, state.lease))
+        executors.append(executor)
+        scheduler._restart_orphan_lease_ids.discard(lease_id)
 
 
 def execute_assignment_groups(

@@ -638,6 +638,7 @@ def _campaign_worker_bindings(
     worker: ScenarioCampaignWorker,
     requirements_by_job: Mapping[str, RemoteExecutionRequirements | None],
 ) -> tuple[CampaignWorkerBinding, ...]:
+    outbox_instance_id = runtime.validated_remote_outbox_instance_id()
     profiles: dict[str, RemoteExecutionRequirements | None] = {}
     for requirements in requirements_by_job.values():
         digest = (
@@ -647,6 +648,8 @@ def _campaign_worker_bindings(
     bindings: list[CampaignWorkerBinding] = []
     for digest, requirements in sorted(profiles.items()):
         labels = {"executor_mode": settings.executor_mode, "requirements_digest": digest}
+        if outbox_instance_id is not None:
+            labels["external_eval_outbox_instance_id"] = outbox_instance_id
         if requirements is not None:
             labels.update(
                 {
@@ -664,7 +667,7 @@ def _campaign_worker_bindings(
                     runtime=settings.executor_mode,
                     resources=_campaign_remote.worker_resources(requirements, plan.max_concurrency),
                     capabilities=_campaign_remote.job_capabilities(requirements),
-                    sandbox_features=frozenset(_sandbox_features(settings)),
+                    sandbox_features=frozenset(_sandbox_features(settings, outbox_instance_id)),
                     locality="remote" if runtime.remote_adapter is not None else "local",
                     concurrency=plan.max_concurrency,
                     environment_labels=labels,
@@ -692,9 +695,10 @@ def _campaign_drain_timeout(plan: CampaignPlan, settings: AppSettings | None = N
     return max(1.0, timeout)
 
 
-def _sandbox_features(settings: AppSettings) -> tuple[str, ...]:
+def _sandbox_features(settings: AppSettings, outbox_instance_id: str | None) -> tuple[str, ...]:
     if settings.executor_mode == "primeintellect":
-        return ("cold_ephemeral",)
+        durable = ("durable_result_replay",) if outbox_instance_id is not None else ()
+        return ("cold_ephemeral", *durable)
     if settings.executor_mode == "monty":
         return ("in_process_sandbox",)
     return ()

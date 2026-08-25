@@ -180,10 +180,12 @@ def test_remote_request_uses_pinned_image_package_digest_and_denied_network() ->
         image=DEFAULT_REMOTE_RUNTIME_IMAGE,
         cpu_cores=1,
         disk_gb=1,
+        strict_task_identity=True,
     )
 
     assert "@sha256:" in request.image
     assert request.network_policy == "deny"
+    assert request.strict_task_identity is True
     assert request.input_artifacts[0].name == "autocontext-scenario.pyz"
     assert request.metadata["package_sha256"] == hashlib.sha256(request.input_artifacts[0].content).hexdigest()
     assert "scenario package digest mismatch" in request.command

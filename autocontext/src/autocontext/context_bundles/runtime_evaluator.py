@@ -116,6 +116,7 @@ class RuntimeContextBundleEvaluator:
     scenario_factory: Callable[[], ScenarioInterface] | None = None
     store: ContextBundleStore | None = None
     expected_evaluator_epoch: str | None = None
+    task_namespace: str | None = None
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
     def evaluate(
@@ -281,10 +282,13 @@ class RuntimeContextBundleEvaluator:
                 ).check(strategy, state=dict(fixture.state))
                 if not validity.passed:
                     return ContextBundleEvaluationOutcome(score=0.0, valid=False)
+            task_namespace = self._task_namespace(bundle, unit)
             evaluator = ScenarioEvaluator(
                 execution_scenario,
                 self.supervisor,
                 hook_bus=self.hook_bus,
+                task_namespace=task_namespace,
+                strict_task_identity=task_namespace is not None,
             )
             remaining_seconds = arm_deadline - time.monotonic()
             if remaining_seconds <= 0:
@@ -460,6 +464,27 @@ class RuntimeContextBundleEvaluator:
             "hook_bus": source_identity(type(self.hook_bus)) if self.hook_bus is not None else None,
         }
 
+    def _task_namespace(
+        self,
+        bundle: ContextBundle,
+        unit: ContextBundleEvaluationUnit,
+    ) -> str | None:
+        if self.task_namespace is None:
+            return None
+        task_aware_execution = getattr(
+            self.supervisor.executor,
+            "execute_prepared_fixture_with_task_id",
+            None,
+        )
+        if not callable(task_aware_execution) or not bool(
+            getattr(self.supervisor.executor, "strict_task_identity_supported", False)
+        ):
+            return None
+        return (
+            f"{self.task_namespace}:arm:{bundle.digest}:lane:{unit.lane.value}:"
+            f"fixture:{unit.fixture_digest}"
+        )
+
     def _fresh_scenario(self) -> ScenarioInterface:
         """Create an arm-local scenario or fail before evaluating either arm."""
 
@@ -485,6 +510,7 @@ def build_runtime_context_bundle_evaluator(
     limits: EvaluationLimits | None = None,
     hook_bus: HookBus | None = None,
     generation_index: int = 0,
+    task_namespace: str | None = None,
     scenario_factory: Callable[[], ScenarioInterface] | None = None,
     store: ContextBundleStore | None = None,
     expected_evaluator_epoch: str | None = None,
@@ -500,6 +526,7 @@ def build_runtime_context_bundle_evaluator(
         limits=limits or EvaluationLimits(),
         hook_bus=hook_bus,
         generation_index=generation_index,
+        task_namespace=task_namespace,
         scenario_factory=scenario_factory,
         store=store,
         expected_evaluator_epoch=expected_evaluator_epoch,

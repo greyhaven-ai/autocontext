@@ -25,10 +25,15 @@ class ExecutionInput:
     fixture_observation: Observation | None = None
     fixture_digest: str | None = None
     remote_requirements: RemoteExecutionRequirements | None = None
+    strict_task_identity: bool = False
 
     def __post_init__(self) -> None:
         if self.task_id is not None and not self.task_id.strip():
             raise ValueError("execution task_id must be non-empty when supplied")
+        if not isinstance(self.strict_task_identity, bool):
+            raise TypeError("execution strict_task_identity must be boolean")
+        if self.strict_task_identity and self.task_id is None:
+            raise ValueError("strict task identity requires an execution task_id")
         fixture_fields = (
             self.fixture_state is not None,
             self.fixture_observation is not None,
@@ -63,12 +68,17 @@ class ExecutionSupervisor:
             raise RuntimeError("explicit remote requirements require a task-identified prepared fixture")
         execute_with_task_id = getattr(self.executor, "execute_with_task_id", None)
         if payload.task_id is not None and callable(execute_with_task_id):
+            task_kwargs: dict[str, Any] = {
+                "scenario": scenario,
+                "strategy": payload.strategy,
+                "seed": payload.seed,
+                "limits": payload.limits,
+                "task_id": payload.task_id,
+            }
+            if payload.strict_task_identity:
+                task_kwargs["strict_task_identity"] = True
             result, replay = execute_with_task_id(
-                scenario=scenario,
-                strategy=payload.strategy,
-                seed=payload.seed,
-                limits=payload.limits,
-                task_id=payload.task_id,
+                **task_kwargs,
             )
         else:
             result, replay = self.executor.execute(
@@ -111,6 +121,8 @@ class ExecutionSupervisor:
                 "fixture_digest": payload.fixture_digest,
                 "task_id": payload.task_id,
             }
+            if payload.strict_task_identity:
+                kwargs["strict_task_identity"] = True
             if payload.remote_requirements is not None:
                 kwargs["remote_requirements"] = payload.remote_requirements
             result, replay = execute(

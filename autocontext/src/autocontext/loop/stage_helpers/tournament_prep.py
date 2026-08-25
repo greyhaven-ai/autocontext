@@ -8,9 +8,13 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Literal
 
+from autocontext.execution.remote_failure import RemoteExecutionError
 from autocontext.harness.evaluation.failure_report import FailureReport
 from autocontext.harness.evaluation.runner import EvaluationRunner
-from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
+from autocontext.harness.evaluation.scenario_evaluator import (
+    ScenarioEvaluator,
+    generation_evaluation_namespace,
+)
 from autocontext.harness.evaluation.self_play import (
     SelfPlayConfig,
     build_opponent_pool,
@@ -136,13 +140,23 @@ def _run_holdout_verification(
     strategy: dict[str, Any],
     in_sample_score: float,
     limits: HarnessLimits,
+    attempt: int,
 ) -> HoldoutResult | None:
     """Verify an advancing candidate on holdout seeds when enabled."""
     policy = _resolve_holdout_policy(ctx)
     if not policy.enabled:
         return None
 
-    evaluator = ScenarioEvaluator(ctx.scenario, supervisor, hook_bus=ctx.hook_bus)
+    evaluator = ScenarioEvaluator(
+        ctx.scenario,
+        supervisor,
+        hook_bus=ctx.hook_bus,
+        task_namespace=generation_evaluation_namespace(
+            ctx.run_id,
+            ctx.generation,
+            f"holdout:attempt:{attempt}",
+        ),
+    )
 
     def _evaluate(candidate: dict[str, Any], seed: int) -> float:
         return evaluator.evaluate(candidate, seed, limits).score
@@ -263,7 +277,15 @@ def _execute_tournament_with_retry(
     current_strategy: dict[str, Any],
     attempt: int,
 ) -> _TournamentAttemptOutcome:
-    """Run one round of tournament matches, retrying on transient exceptions."""
+    """Run one round of tournament matches, retrying authorized failures.
+
+    Ordinary transient exceptions and typed *retryable* remote outcomes consume
+    ``max_retries``. Each retry is intentionally a fresh whole-tournament
+    attempt with a new namespace and seed range; the configured retry budget is
+    therefore explicit authorization to repeat successful matches from a
+    partially completed attempt. A non-retryable paid outcome always escapes
+    immediately so orchestration cannot change its identity and rebill it.
+    """
     self_play_pool, opponent_pool, planned_self_play_matches = _build_live_opponent_pool(
         ctx,
         sqlite=sqlite,
@@ -293,7 +315,16 @@ def _execute_tournament_with_retry(
         )
 
     try:
-        evaluator = ScenarioEvaluator(scenario, supervisor, hook_bus=ctx.hook_bus)
+        evaluator = ScenarioEvaluator(
+            scenario,
+            supervisor,
+            hook_bus=ctx.hook_bus,
+            task_namespace=generation_evaluation_namespace(
+                ctx.run_id,
+                ctx.generation,
+                f"tournament:attempt:{attempt}",
+            ),
+        )
         harness_limits = HarnessLimits()
 
         def _on_result(idx: int, result: EvaluationResult) -> None:
@@ -310,6 +341,15 @@ def _execute_tournament_with_retry(
             opponent_pool=opponent_pool,
             on_result=_on_result,
         )
+    except RemoteExecutionError as exc:
+        if not exc.retryable:
+            raise
+        logger.debug("loop.stages: retryable remote execution failure", exc_info=True)
+        attempt += 1
+        if attempt > settings.max_retries:
+            raise
+        time.sleep(settings.retry_backoff_seconds * attempt)
+        return _TournamentAttemptOutcome(should_retry=True, tournament=None, attempt=attempt, harness_limits=None)
     except Exception:
         logger.debug("loop.stages: caught Exception", exc_info=True)
         attempt += 1

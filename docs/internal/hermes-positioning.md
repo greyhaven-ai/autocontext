@@ -38,7 +38,7 @@ training pipelines can consume.
    ```
 
    Detailed flag and output reference: see
-   [agent-integration.md → autoctx hermes](../../autocontext/docs/agent-integration.md#autoctx-hermes-inspect-hermes-and-export-the-hermes-skill).
+   [agent-integration.md → autoctx hermes](../../autocontext/docs/agent-integration.md#autoctx-hermes--inspect-hermes-and-export-the-hermes-skill).
 
 2. **Install the autocontext skill into Hermes** so Hermes agents know
    when to use autocontext at all:

@@ -22,6 +22,7 @@ from autocontext.context_bundles.runtime_evaluator import (
     materialize_runtime_fixture,
 )
 from autocontext.context_bundles.store import ContextBundleStore
+from autocontext.harness.evaluation.scenario_evaluator import generation_evaluation_namespace
 from autocontext.harness.evaluation.types import EvaluationLimits
 
 
@@ -110,6 +111,11 @@ def build_live_context_promotion(
         ),
         hook_bus=hook_bus,
         generation_index=generation_index,
+        task_namespace=generation_evaluation_namespace(
+            run_id,
+            generation_index,
+            "context-promotion",
+        ),
         store=store,
         expected_evaluator_epoch=evaluator_epoch,
     )

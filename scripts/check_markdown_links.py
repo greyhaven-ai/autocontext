@@ -14,8 +14,8 @@ import html
 import re
 import sys
 import unicodedata
-from collections import defaultdict
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -41,9 +41,7 @@ _IGNORED_DIRECTORY_NAMES = frozenset(
         "vendor",
     }
 )
-_HTML_ANCHOR_RE = re.compile(r"<(?:a|[A-Za-z][A-Za-z0-9:-]*)\b[^>]*\b(?:id|name)=[\"']([^\"']+)[\"']", re.I)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
-_WHITESPACE_RE = re.compile(r"\s+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +57,33 @@ class LinkFailure:
     line: int
     target: str
     detail: str
+
+
+class _ExplicitAnchorParser(HTMLParser):
+    """Collect fragment targets from actual HTML tags, not comments or raw text."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.anchors: set[str] = set()
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        for name, value in attrs:
+            if value is None:
+                continue
+            normalized_name = name.lower()
+            if normalized_name == "id" or (tag.lower() == "a" and normalized_name == "name"):
+                self.anchors.add(value)
+
+    def handle_startendtag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        self.handle_starttag(tag, attrs)
 
 
 def main() -> int:
@@ -161,10 +186,10 @@ def _validate_link(
         source, tokens = parsed.get(candidate, (candidate.read_text(encoding="utf-8"), []))
         if not tokens:
             tokens = parser_instance.parse(source)
-        anchors = _document_anchors(source, tokens)
+        anchors = _document_anchors(tokens)
         anchor_cache[candidate] = anchors
     normalized_fragment = unquote(fragment).removeprefix("user-content-")
-    if normalized_fragment not in anchors and normalized_fragment.lower() not in anchors:
+    if normalized_fragment not in anchors:
         return LinkFailure(link.source, link.line, link.target, "Markdown heading anchor does not exist")
     return None
 
@@ -176,9 +201,9 @@ def _is_local_target(target: str) -> bool:
     return not split.scheme and not split.netloc
 
 
-def _document_anchors(source: str, tokens: list[Token]) -> frozenset[str]:
-    anchors = set(_HTML_ANCHOR_RE.findall(source))
-    counts: defaultdict[str, int] = defaultdict(int)
+def _document_anchors(tokens: list[Token]) -> frozenset[str]:
+    anchors = _explicit_html_anchors(tokens)
+    heading_slugs: set[str] = set()
     for index, token in enumerate(tokens):
         if token.type != "heading_open" or index + 1 >= len(tokens):
             continue
@@ -186,10 +211,35 @@ def _document_anchors(source: str, tokens: list[Token]) -> frozenset[str]:
         if inline.type != "inline":
             continue
         base = _github_heading_slug(_inline_text(inline))
-        occurrence = counts[base]
-        counts[base] += 1
-        anchors.add(base if occurrence == 0 else f"{base}-{occurrence}")
+        slug = base
+        suffix = 0
+        while slug in heading_slugs:
+            suffix += 1
+            slug = f"{base}-{suffix}"
+        heading_slugs.add(slug)
+        anchors.add(slug)
     return frozenset(anchors)
+
+
+def _explicit_html_anchors(tokens: list[Token]) -> set[str]:
+    anchors: set[str] = set()
+    for token in tokens:
+        if token.type == "html_block":
+            anchors.update(_anchors_from_html(token.content))
+            continue
+        if token.type != "inline" or not token.children:
+            continue
+        for child in token.children:
+            if child.type == "html_inline":
+                anchors.update(_anchors_from_html(child.content))
+    return anchors
+
+
+def _anchors_from_html(value: str) -> set[str]:
+    parser = _ExplicitAnchorParser()
+    parser.feed(value)
+    parser.close()
+    return parser.anchors
 
 
 def _inline_text(token: Token) -> str:
@@ -207,13 +257,16 @@ def _inline_text(token: Token) -> str:
 
 
 def _github_heading_slug(value: str) -> str:
-    value = html.unescape(_HTML_TAG_RE.sub("", value)).strip().lower()
+    value = value.lower()
     value = "".join(
         character
         for character in value
-        if character in {"-", "_"} or not unicodedata.category(character).startswith("P")
+        if character in {"-", "_"}
+        or character == " "
+        or unicodedata.category(character)[0] in {"L", "M"}
+        or unicodedata.category(character) in {"Nd", "Nl"}
     )
-    return _WHITESPACE_RE.sub("-", value)
+    return value.replace(" ", "-")
 
 
 if __name__ == "__main__":

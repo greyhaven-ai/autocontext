@@ -17,14 +17,17 @@ from autocontext.execution.campaign_remote import campaign_result_with_reservati
 from autocontext.execution.campaign_runtime import (
     CampaignPlan,
     ScenarioCampaignWorker,
+    _assignment_task_id,
     _campaign_drain_timeout,
     _campaign_mode_report,
+    _campaign_worker_bindings,
     _job_request,
     derive_campaign_evaluation_identity,
     load_campaign_plan,
     run_campaign_plan,
 )
 from autocontext.execution.campaign_scheduler import CampaignScheduler, CampaignSchedulerEventStore
+from autocontext.execution.campaign_scheduler_adapters import CallableCampaignWorker
 from autocontext.execution.campaign_scheduler_models import (
     CampaignAssignment,
     CampaignJobRequest,
@@ -34,17 +37,22 @@ from autocontext.execution.campaign_scheduler_models import (
     SchedulerBudget,
     WorkerDescriptor,
 )
+from autocontext.execution.executors.primeintellect import PrimeIntellectExecutor
+from autocontext.execution.external_eval_outbox import ExternalEvalLedgerOutbox
 from autocontext.execution.remote_execution import (
     RemoteAcceleratorRequest,
     RemoteCleanupOutcome,
     RemoteExecutionProvenance,
+    RemoteExecutionRequest,
     RemoteExecutionRequirements,
     RemoteExecutionResult,
     RemoteResourceRequest,
     RemoteResourceUsage,
+    remote_request_provenance,
 )
 from autocontext.execution.runtime_factory import ExecutionRuntime
 from autocontext.execution.supervisor import ExecutionInput, ExecutionSupervisor
+from autocontext.integrations.primeintellect.client import PrimeIntellectClient
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
 from autocontext.scenarios.base import ExecutionLimits, ReplayEnvelope, Result
 from autocontext.scenarios.othello import OthelloScenario
@@ -557,6 +565,300 @@ def test_campaign_worker_uses_same_lease_unique_remote_id_for_run_and_cancel(tmp
     assert len(executor.task_ids) == 2
     assert remote.canceled == executor.task_ids
     assert "same-seed-job" not in executor.task_ids[0]
+
+
+def test_prime_campaign_restart_replays_committed_result_under_original_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider_calls: list[tuple[str, int]] = []
+
+    async def execute_provider_once(
+        _client: PrimeIntellectClient,
+        request: RemoteExecutionRequest,
+        *,
+        attempt_number: int,
+    ) -> RemoteExecutionResult:
+        provider_calls.append((request.task_id, attempt_number))
+        fixture_digest = request.metadata["fixture_digest"]
+        stdout = json.dumps(
+            {
+                "result": Result(score=1.0, summary="paid result", validation_errors=[]).model_dump(mode="json"),
+                "replay": ReplayEnvelope(
+                    scenario="othello",
+                    seed=11,
+                    timeline=[],
+                    narrative="paid result",
+                ).model_dump(mode="json"),
+                "fixture_digest": fixture_digest,
+            }
+        )
+        return RemoteExecutionResult(
+            task_id=request.task_id,
+            provider="primeintellect",
+            status="success",
+            stdout=stdout,
+            exit_code=0,
+            usage=RemoteResourceUsage(wall_seconds=0.5, cpu_seconds=0.25),
+            cleanup=RemoteCleanupOutcome(attempted=True, succeeded=True, detail="sandbox deleted"),
+            session_id="sandbox-paid-once",
+            provenance=remote_request_provenance(request),
+        )
+
+    monkeypatch.setattr(PrimeIntellectClient, "_prepare_dispatch", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(PrimeIntellectClient, "_execute_request_once", execute_provider_once)
+
+    settings = AppSettings(executor_mode="primeintellect", knowledge_root=tmp_path / "knowledge")
+    plan = _plan(settings)
+    item = plan.jobs[0].model_copy(update={"timeout_seconds": 5.0, "max_memory_mb": 1024, "max_attempts": 1})
+    requirements = RemoteExecutionRequirements(
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resources=RemoteResourceRequest(cpu_cores=1.0, memory_gb=1.0, disk_gb=5.0),
+    )
+    request = _job_request(
+        plan,
+        item,
+        remote_requirements=requirements,
+        settings=settings,
+    )
+    descriptor = WorkerDescriptor(
+        worker_id="prime-replay",
+        runtime="primeintellect",
+        resources=request.resources,
+        capabilities=request.required_capabilities,
+        sandbox_features=frozenset({"cold_ephemeral", "durable_result_replay"}),
+        locality="remote",
+    )
+    event_store = CampaignSchedulerEventStore(tmp_path / "scheduler-events.jsonl")
+    outbox_path = tmp_path / "prime-ledger.sqlite3"
+    now = [100.0]
+
+    first_outbox = ExternalEvalLedgerOutbox(outbox_path)
+    descriptor = replace(
+        descriptor,
+        environment_labels={"external_eval_outbox_instance_id": first_outbox.instance_id},
+    )
+    first_client = PrimeIntellectClient(api_key="provider-key", ledger_outbox=first_outbox)
+    first_runtime = ExecutionRuntime(
+        ExecutionSupervisor(PrimeIntellectExecutor(first_client, max_retries=0, backoff_seconds=0)),
+        first_client,
+        first_outbox,
+    )
+    first_worker = ScenarioCampaignWorker(
+        settings=settings,
+        runtime=first_runtime,
+        scenario_name="othello",
+        results_root=tmp_path / "results",
+    )
+    first_scheduler = CampaignScheduler(event_store, lease_seconds=5.0, max_concurrency=1, clock=lambda: now[0])
+    first_scheduler.register_worker(
+        descriptor,
+        CallableCampaignWorker(first_worker.execute, first_worker.cancel),
+    )
+    first_scheduler.enqueue(request)
+    assignment = first_scheduler.claim(descriptor.worker_id)[0]
+    task_id = _assignment_task_id(assignment)
+
+    paid_result = first_worker.execute(assignment)
+
+    assert paid_result.outcome == "candidate_success"
+    assert first_scheduler.job_status(request.job_id) == "leased"
+    assert tuple(result.task_id for result in first_outbox.committed_results()) == (task_id,)
+    assert provider_calls == [(task_id, 1)]
+
+    def reject_new_dispatch(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("a committed campaign result must replay before provider preflight")
+
+    monkeypatch.setattr(PrimeIntellectClient, "_prepare_dispatch", reject_new_dispatch)
+
+    # Simulate a process loss after the paid result was committed to the outbox,
+    # but before CampaignScheduler.complete recorded the terminal job event.
+    now[0] = assignment.lease.expires_at + 1.0
+    restarted_outbox = ExternalEvalLedgerOutbox(outbox_path)
+    restarted_client = PrimeIntellectClient(api_key="", ledger_outbox=restarted_outbox)
+    restarted_runtime = ExecutionRuntime(
+        ExecutionSupervisor(PrimeIntellectExecutor(restarted_client, max_retries=0, backoff_seconds=0)),
+        restarted_client,
+        restarted_outbox,
+    )
+    restarted_worker = ScenarioCampaignWorker(
+        settings=settings,
+        runtime=restarted_runtime,
+        scenario_name="othello",
+        results_root=tmp_path / "results",
+    )
+    replayed_leases: list[CampaignLease] = []
+
+    def execute_replayed_assignment(replayed_assignment: CampaignAssignment) -> CampaignJobResult:
+        replayed_leases.append(replayed_assignment.lease)
+        return restarted_worker.execute(replayed_assignment)
+
+    restarted_scheduler = CampaignScheduler(
+        event_store,
+        lease_seconds=5.0,
+        max_concurrency=1,
+        clock=lambda: now[0],
+    )
+    restarted_scheduler.register_worker(
+        descriptor,
+        CallableCampaignWorker(execute_replayed_assignment, restarted_worker.cancel),
+    )
+    assert restarted_scheduler.reconcile() == ()
+    assert restarted_scheduler.job_status(request.job_id) == "leased"
+
+    assert restarted_scheduler.run_until_idle(max_waves=1, poll_interval=0.001, timeout_seconds=1.0) == 1
+
+    assert provider_calls == [(task_id, 1)]
+    assert len(replayed_leases) == 1
+    renewed_lease = replayed_leases[0]
+    assert renewed_lease.lease_id == assignment.lease.lease_id
+    assert renewed_lease.attempt == assignment.lease.attempt
+    assert renewed_lease.environment_fingerprint == assignment.lease.environment_fingerprint
+    assert renewed_lease.lifecycle == assignment.lease.lifecycle
+    assert renewed_lease.reuse_key == assignment.lease.reuse_key
+    assert renewed_lease.expires_at > now[0]
+    assert restarted_scheduler.job_status(request.job_id) == "succeeded"
+    assert restarted_scheduler.job_result(request.job_id) == paid_result
+    events = event_store.read()
+    assert [event.event_type for event in events].count("job_leased") == 1
+    finished = next(event for event in events if event.event_type == "job_finished")
+    assert finished.payload["lease_id"] == assignment.lease.lease_id
+    heartbeat = next(event for event in events if event.event_type == "worker_heartbeat")
+    assert heartbeat.payload["lease_ids"] == [assignment.lease.lease_id]
+    artifact = json.loads(Path(paid_result.output_ref).read_text(encoding="utf-8"))
+    assert artifact["remote_execution"]["task_id"] == task_id
+    assert tuple(result.task_id for result in restarted_outbox.committed_results()) == (task_id,)
+
+
+def test_prime_campaign_restart_with_new_ledger_terminalizes_without_provider_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider_calls: list[str] = []
+
+    async def execute_provider(
+        _client: PrimeIntellectClient,
+        request: RemoteExecutionRequest,
+        *,
+        attempt_number: int,
+    ) -> RemoteExecutionResult:
+        provider_calls.append(f"{request.task_id}:{attempt_number}")
+        raise AssertionError("a replacement ledger must not receive the durable orphan")
+
+    monkeypatch.setattr(PrimeIntellectClient, "_execute_request_once", execute_provider)
+    settings = AppSettings(
+        executor_mode="primeintellect",
+        knowledge_root=tmp_path / "knowledge",
+        runs_root=tmp_path / "runs-a",
+    )
+    plan = _plan(settings)
+    item = plan.jobs[0].model_copy(update={"max_attempts": 2})
+    requirements = RemoteExecutionRequirements(
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resources=RemoteResourceRequest(cpu_cores=1.0, memory_gb=1.0, disk_gb=5.0),
+    )
+    request = _job_request(plan, item, remote_requirements=requirements, settings=settings)
+
+    def binding_for(outbox: ExternalEvalLedgerOutbox, results_root: Path):
+        client = PrimeIntellectClient(api_key="provider-key", ledger_outbox=outbox)
+        runtime = ExecutionRuntime(
+            ExecutionSupervisor(PrimeIntellectExecutor(client, max_retries=0, backoff_seconds=0)),
+            client,
+            outbox,
+        )
+        worker = ScenarioCampaignWorker(
+            settings=settings,
+            runtime=runtime,
+            scenario_name="othello",
+            results_root=results_root,
+        )
+        return _campaign_worker_bindings(
+            settings,
+            runtime,
+            plan,
+            worker,
+            {request.job_id: requirements},
+        )[0]
+
+    first_outbox = ExternalEvalLedgerOutbox(settings.runs_root / "external-evaluations" / "prime-ledger.sqlite3")
+    first_binding = binding_for(first_outbox, tmp_path / "first-results")
+    event_store = CampaignSchedulerEventStore(tmp_path / "scheduler-events.jsonl")
+    now = [100.0]
+    first_scheduler = CampaignScheduler(event_store, lease_seconds=5.0, max_concurrency=1, clock=lambda: now[0])
+    first_scheduler.register_worker(first_binding.descriptor, first_binding.executor)
+    first_scheduler.enqueue(request)
+    original = first_scheduler.claim(first_binding.descriptor.worker_id)[0]
+
+    second_outbox = ExternalEvalLedgerOutbox(tmp_path / "runs-b" / "external-evaluations" / "prime-ledger.sqlite3")
+    second_binding = binding_for(second_outbox, tmp_path / "second-results")
+    assert first_outbox.instance_id != second_outbox.instance_id
+    assert first_binding.descriptor.worker_id == second_binding.descriptor.worker_id
+    assert first_binding.descriptor.environment_fingerprint != second_binding.descriptor.environment_fingerprint
+    assert first_binding.descriptor.environment_labels["external_eval_outbox_instance_id"] == first_outbox.instance_id
+    assert "durable_result_replay" in first_binding.descriptor.sandbox_features
+
+    now[0] = original.lease.expires_at + 1.0
+    restarted = CampaignScheduler(event_store, lease_seconds=5.0, max_concurrency=1, clock=lambda: now[0])
+    restarted.register_worker(second_binding.descriptor, second_binding.executor)
+
+    assert restarted.reconcile() == (request.job_id,)
+    assert restarted.job_status(request.job_id) == "infrastructure_failed"
+    result = restarted.job_result(request.job_id)
+    assert result is not None
+    assert result.retryable is False
+    assert restarted.run_until_idle(max_waves=1, poll_interval=0.001, timeout_seconds=1.0) == 0
+    assert provider_calls == []
+    events = event_store.read()
+    assert [event.event_type for event in events].count("job_leased") == 1
+    assert [event.event_type for event in events].count("job_lease_failed") == 1
+    assert [event.event_type for event in events].count("job_requeued") == 0
+
+
+def test_prime_campaign_binding_requires_one_shared_outbox_and_downgrades_without_one(tmp_path: Path) -> None:
+    settings = AppSettings(executor_mode="primeintellect", knowledge_root=tmp_path / "knowledge")
+    plan = _plan(settings)
+    requirements = RemoteExecutionRequirements(
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resources=RemoteResourceRequest(cpu_cores=1.0, memory_gb=1.0, disk_gb=5.0),
+    )
+    request = _job_request(plan, plan.jobs[0], remote_requirements=requirements, settings=settings)
+    first_outbox = ExternalEvalLedgerOutbox(tmp_path / "first.sqlite3")
+    second_outbox = ExternalEvalLedgerOutbox(tmp_path / "second.sqlite3")
+    client = PrimeIntellectClient(api_key="provider-key", ledger_outbox=first_outbox)
+    mismatched_runtime = ExecutionRuntime(
+        ExecutionSupervisor(PrimeIntellectExecutor(client)),
+        client,
+        second_outbox,
+    )
+    worker = ScenarioCampaignWorker(
+        settings=settings,
+        runtime=mismatched_runtime,
+        scenario_name="othello",
+        results_root=tmp_path / "results",
+    )
+    with pytest.raises(ValueError, match="share one external-evaluation outbox"):
+        _campaign_worker_bindings(settings, mismatched_runtime, plan, worker, {request.job_id: requirements})
+
+    unbound_client = PrimeIntellectClient(api_key="provider-key")
+    unbound_runtime = ExecutionRuntime(
+        ExecutionSupervisor(PrimeIntellectExecutor(unbound_client)),
+        unbound_client,
+    )
+    unbound_worker = ScenarioCampaignWorker(
+        settings=settings,
+        runtime=unbound_runtime,
+        scenario_name="othello",
+        results_root=tmp_path / "unbound-results",
+    )
+    descriptor = _campaign_worker_bindings(
+        settings,
+        unbound_runtime,
+        plan,
+        unbound_worker,
+        {request.job_id: requirements},
+    )[0].descriptor
+    assert "durable_result_replay" not in descriptor.sandbox_features
+    assert "external_eval_outbox_instance_id" not in descriptor.environment_labels
 
 
 def test_supervisor_rejects_prepared_remote_requirements_without_task_identity() -> None:

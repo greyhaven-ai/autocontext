@@ -17,7 +17,19 @@ from autocontext.execution.remote_execution import (
 )
 
 _PRIME_SUPPORTED_TELEMETRY = frozenset({"hardware_identity"})
-_PRIME_ACCELERATOR_CREATE_FIELDS = frozenset({"gpu_type", "gpu_count", "vm", "region", "idempotency_key"})
+_PRIME_BASE_CREATE_FIELDS = frozenset(
+    {
+        "name",
+        "docker_image",
+        "cpu_cores",
+        "memory_gb",
+        "disk_size_gb",
+        "timeout_minutes",
+        "network_access",
+        "idempotency_key",
+    }
+)
+_PRIME_ACCELERATOR_CREATE_FIELDS = frozenset({"gpu_type", "gpu_count", "vm"})
 
 
 class UnsupportedRemoteCapabilityError(RuntimeError):
@@ -65,25 +77,40 @@ def validate_request_capabilities(
         raise UnsupportedRemoteCapabilityError("Prime Intellect network access is disabled by adapter policy")
 
 
-def validate_accelerator_request_model(
+def validate_create_request_model(
     request_cls: Any,
     *,
+    create_values: Mapping[str, Any],
     transparent_fallback: type[Any] | None = None,
-) -> None:
-    """Fail closed if an installed SDK would discard paid-placement fields."""
+) -> Any:
+    """Build a local SDK carrier and fail closed if it discards critical fields."""
 
-    if request_cls is transparent_fallback:
-        # Unit tests that replace the async client use this transparent carrier.
-        # Production always reaches the imported Pydantic SDK model.
-        return
-    model_fields = getattr(request_cls, "model_fields", None)
-    if not isinstance(model_fields, Mapping):
-        raise UnsupportedRemoteCapabilityError("Prime Intellect SDK request model does not expose a verifiable field contract")
-    missing = _PRIME_ACCELERATOR_CREATE_FIELDS - model_fields.keys()
+    required = set(create_values)
+    if request_cls is not transparent_fallback:
+        model_fields = getattr(request_cls, "model_fields", None)
+        if not isinstance(model_fields, Mapping):
+            raise UnsupportedRemoteCapabilityError(
+                "Prime Intellect SDK request model does not expose a verifiable field contract"
+            )
+        missing = required - model_fields.keys()
+        if missing:
+            raise UnsupportedRemoteCapabilityError(
+                "Prime Intellect SDK request model is missing dispatch fields: " + ", ".join(sorted(missing))
+            )
+    try:
+        carrier = request_cls(**dict(create_values))
+    except Exception as exc:
+        raise UnsupportedRemoteCapabilityError(
+            f"Prime Intellect SDK request model rejected validated dispatch fields: {type(exc).__name__}: {exc}"
+        ) from exc
+    missing = {
+        name for name, expected in create_values.items() if not hasattr(carrier, name) or getattr(carrier, name) != expected
+    }
     if missing:
         raise UnsupportedRemoteCapabilityError(
-            "Prime Intellect SDK request model is missing accelerator placement fields: " + ", ".join(sorted(missing))
+            "Prime Intellect SDK request model did not retain dispatch fields: " + ", ".join(sorted(missing))
         )
+    return carrier
 
 
 def resolved_environment(sandbox: Any) -> RemoteResolvedEnvironment:
@@ -164,6 +191,7 @@ def create_kwargs(
     *,
     timeout_minutes: int,
     network_access: bool,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     resources = request.resources
     kwargs: dict[str, Any] = {
@@ -174,7 +202,7 @@ def create_kwargs(
         "disk_size_gb": resources.disk_gb,
         "timeout_minutes": max(timeout_minutes, max(1, int(request.timeout_seconds // 60) + 1)),
         "network_access": request.network_policy == "allow" and network_access,
-        "idempotency_key": remote_request_sha256(request),
+        "idempotency_key": idempotency_key or remote_request_sha256(request),
     }
     if resources.accelerator is not None:
         kwargs.update(
@@ -219,7 +247,7 @@ __all__ = [
     "create_kwargs",
     "resolved_environment",
     "resource_usage",
-    "validate_accelerator_request_model",
+    "validate_create_request_model",
     "validate_prime_requirements",
     "validate_request_capabilities",
     "validate_required_telemetry",

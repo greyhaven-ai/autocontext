@@ -23,6 +23,8 @@ from .external_eval_outbox import (
     ExternalEvalOutboxConflictError,
     ExternalEvalOutboxPendingError,
     ExternalEvalOutboxStatus,
+    ExternalEvalSinkDeliveryPendingError,
+    ExternalEvalSinkDeliveryReservation,
 )
 from .phased_execution import (
     PhaseBudget,
@@ -41,6 +43,7 @@ from .remote_execution import (
     RemoteResolvedEnvironment,
     RemoteResourceRequest,
 )
+from .remote_failure import RemoteExecutionAccountingError, RemoteExecutionError, RemoteExecutionFailure
 from .research_workspace import (
     ResearchWorkspace,
     ResearchWorkspaceBenchmark,
@@ -97,6 +100,8 @@ __all__ = [
     "ExternalEvalOutboxConflictError",
     "ExternalEvalOutboxPendingError",
     "ExternalEvalOutboxStatus",
+    "ExternalEvalSinkDeliveryPendingError",
+    "ExternalEvalSinkDeliveryReservation",
     "DockerResearchSandboxBackend",
     "SANDBOX_CAPABILITY_NAMES",
     "SandboxBootMode",
@@ -124,7 +129,10 @@ __all__ = [
     "ResearchSandboxExecutionResult",
     "RemoteAcceleratorRequest",
     "RemoteCampaignWorker",
+    "RemoteExecutionAccountingError",
+    "RemoteExecutionError",
     "RemoteExecutionRequirements",
+    "RemoteExecutionFailure",
     "RemoteExecutionRequest",
     "RemoteExecutionResult",
     "RemoteProviderCapabilities",

@@ -105,13 +105,16 @@ def apply_scheduler_event(scheduler: Any, event: SchedulerEvent) -> None:
     if event.event_type == "job_leased":
         lease = lease_from(payload["lease"])
         state = scheduler._jobs[lease.job_id]
+        worker = scheduler._workers[lease.worker_id]
         state.status = "leased"
         state.attempts = lease.attempt
         state.lease = lease
         scheduler._leases[lease.lease_id] = lease.job_id
         scheduler._lease_history[lease.lease_id] = lease.job_id
         scheduler._lease_records[lease.lease_id] = lease
-        scheduler._workers[lease.worker_id].active_leases.add(lease.lease_id)
+        if worker.descriptor.locality == "remote" and "durable_result_replay" in worker.descriptor.sandbox_features:
+            scheduler._durable_replay_lease_ids.add(lease.lease_id)
+        worker.active_leases.add(lease.lease_id)
         scheduler._reserve(state.request)
         if state.request.cohort_id:
             scheduler._cohort_environments[(state.request.campaign_id, state.request.cohort_id)] = lease.environment_fingerprint

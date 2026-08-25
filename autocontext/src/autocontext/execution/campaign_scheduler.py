@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any, Literal
 
 from autocontext.execution import campaign_scheduler_cancellation as cancellation
@@ -102,9 +102,12 @@ class CampaignScheduler:
         self._late_completion_leases: set[str] = set()
         self._result_completion_leases: set[str] = set()
         self._provisional_results: dict[str, CampaignJobResult] = {}
+        self._durable_replay_lease_ids: set[str] = set()
         self._lock = threading.RLock()
         for event in self.store.read():
             self._apply(event)
+        restart_sets = dispatch.restart_orphan_lease_sets(self._jobs, self._durable_replay_lease_ids)
+        self._restart_orphan_lease_ids, self._restart_durable_replay_lease_ids = restart_sets
 
     def configure_campaign(
         self,
@@ -347,9 +350,16 @@ class CampaignScheduler:
                     )
                     reconciled.append(state.request.job_id)
                     continue
-                retry_expired = state.request.retry_expired_lease and state.attempts < state.request.max_attempts
+                if dispatch.restart_lease_has_durable_replay(self, lease):
+                    continue
+                durable_restart = lease.lease_id in self._restart_durable_replay_lease_ids
+                retry_expired = not durable_restart and (
+                    state.request.retry_expired_lease and state.attempts < state.request.max_attempts
+                )
                 event_type = "job_requeued" if retry_expired else "job_lease_failed"
                 provisional = cancellation.provisional_expired_lease_result(state.request, lease)
+                if durable_restart:
+                    provisional = replace(provisional, retryable=False)
                 self._record(
                     event_type,
                     {
@@ -383,6 +393,7 @@ class CampaignScheduler:
         assignments: list[CampaignAssignment] = []
         executors: list[CampaignWorker] = []
         with self._lock:
+            dispatch.claim_expired_restart_leases(self, assignments, executors)
             global_available = self.max_concurrency - sum(len(worker.active_leases) for worker in self._workers.values())
             for worker_id in sorted(self._workers):
                 executor = self._executors.get(worker_id)

@@ -26,6 +26,7 @@ from autocontext.execution.remote_execution import (
     remote_request_provenance,
     remote_request_sha256,
 )
+from autocontext.execution.remote_failure import RemoteExecutionAccountingError
 from autocontext.execution.scenario_remote_package import DEFAULT_REMOTE_RUNTIME_IMAGE, require_pinned_runtime_image
 from autocontext.execution.scenario_remote_task import build_builtin_scenario_remote_request
 from autocontext.integrations.primeintellect import _execution as _execution_helpers
@@ -37,7 +38,7 @@ from autocontext.integrations.primeintellect.accelerators import (
     create_kwargs,
     resolved_environment,
     resource_usage,
-    validate_accelerator_request_model,
+    validate_create_request_model,
     validate_prime_requirements,
     validate_request_capabilities,
     validate_required_telemetry,
@@ -115,6 +116,7 @@ class PrimeIntellectClient:
     default_requirements: RemoteExecutionRequirements | None = None
     resource_capabilities: RemoteProviderCapabilities = field(default_factory=RemoteProviderCapabilities)
     ledger_outbox: ExternalEvalLedgerOutbox | None = None
+    offline: bool | None = None
     _active_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
     _active_sandboxes: dict[str, _lifecycle.ActiveSandbox] = field(default_factory=dict, init=False, repr=False)
     _inflight_tasks: set[str] = field(default_factory=set, init=False, repr=False)
@@ -122,8 +124,12 @@ class PrimeIntellectClient:
     _result_committed: set[str] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if not self.api_key.strip():
+        if not isinstance(self.api_key, str):
+            raise TypeError("Prime Intellect API key must be a string")
+        if not self.api_key.strip() and self.ledger_outbox is None:
             raise ValueError("Prime Intellect API key must be non-empty")
+        if self.offline is not None and not isinstance(self.offline, bool):
+            raise TypeError("Prime Intellect offline mode must be boolean when supplied")
         require_pinned_runtime_image(self.docker_image)
         resources = (self.cpu_cores, self.memory_gb, self.disk_size_gb)
         if any(not math.isfinite(value) or value <= 0 for value in resources):
@@ -137,7 +143,12 @@ class PrimeIntellectClient:
             )
         elif self.default_requirements.image != self.docker_image:
             raise ValueError("Prime default requirements image must match docker_image")
-        self.validate_requirements(self.default_requirements)
+        # Provider capabilities are mutable dispatch policy. An outbox-backed
+        # client must remain constructible after that policy changes so a
+        # previously committed paid result can be replayed. New work rechecks
+        # the same requirements in validate_request() before claim/dispatch.
+        if self.ledger_outbox is None:
+            self.validate_requirements(self.default_requirements)
 
     def capabilities(self) -> dict[str, bool]:
         return {
@@ -163,7 +174,7 @@ class PrimeIntellectClient:
 
     def warm_provision(self, environment_name: str, max_retries: int = 2, backoff_seconds: float = 0.75) -> dict[str, Any]:
         del max_retries, backoff_seconds
-        require_online("use the PrimeIntellect executor")
+        self._require_dispatch_authority()
         try:
             asyncio.run(self._probe())
             return {"environment": environment_name, "status": "ready"}
@@ -178,12 +189,8 @@ class PrimeIntellectClient:
         max_retries: int = 2,
         backoff_seconds: float = 0.75,
     ) -> RemoteExecutionResult:
-        require_online("use the PrimeIntellect executor")
         if max_retries < 0 or not math.isfinite(backoff_seconds) or backoff_seconds < 0:
             raise ValueError("Prime Intellect retry count and backoff must be non-negative and finite")
-        # Missing optional dependencies are a configuration error, not an
-        # ambiguous provider dispatch, so detect them before creating a claim.
-        _prime_sandboxes_sdk()
         self._begin_task(request.task_id)
         try:
             return _execution_helpers.execute_with_retries(
@@ -191,10 +198,29 @@ class PrimeIntellectClient:
                 request,
                 max_retries=max_retries,
                 backoff_seconds=backoff_seconds,
-                passthrough_error=MissingPrimeIntellectExtraError,
+                passthrough_error=(MissingPrimeIntellectExtraError, UnsupportedRemoteCapabilityError),
             )
         finally:
             self._end_task(request.task_id)
+
+    def _prepare_dispatch(self, request: RemoteExecutionRequest) -> None:
+        """Apply mutable preflight gates only when provider work is needed."""
+
+        self._require_dispatch_authority()
+        # Missing optional dependencies and invalid requests are configuration
+        # failures, so detect them before creating a durable paid-work claim.
+        _prime_sandboxes_sdk()
+        self.validate_request(request)
+
+    def _require_dispatch_authority(self) -> None:
+        # Explicit runtime offline mode and a later process-wide environment
+        # toggle both fail closed; offline=False must not override the latter.
+        require_online(
+            "use the PrimeIntellect executor",
+            settings=self if self.offline is True else None,
+        )
+        if not self.api_key.strip():
+            raise ValueError("AUTOCONTEXT_PRIMEINTELLECT_API_KEY is required before Prime Intellect provider dispatch")
 
     def execute_requests(
         self,
@@ -202,7 +228,7 @@ class PrimeIntellectClient:
     ) -> tuple[RemoteExecutionResult, ...]:
         """Reject session reuse until Prime exposes a verified reset primitive."""
 
-        require_online("use the PrimeIntellect executor")
+        self._require_dispatch_authority()
         del requests
         raise UnsupportedRemoteCapabilityError(
             "Prime Intellect session_reuse is disabled until the provider exposes a verified reset primitive"
@@ -290,6 +316,20 @@ class PrimeIntellectClient:
         attempt_number: int,
     ) -> RemoteExecutionResult:
         sandbox_client_cls, create_sandbox_request = _prime_sandboxes_sdk()
+        create_values = create_kwargs(
+            request,
+            timeout_minutes=self.timeout_minutes,
+            network_access=self.network_access,
+            idempotency_key=_execution_helpers.provider_attempt_id(request, attempt_number),
+        )
+        # Rebuild and verify the exact carrier used for this attempt. The SDK
+        # model could change after the pre-claim check, and Pydantic may accept
+        # unknown field names while silently discarding their values.
+        create_request = validate_create_request_model(
+            create_sandbox_request,
+            create_values=create_values,
+            transparent_fallback=_CreateSandboxRequestFallback,
+        )
         sandbox_id = ""
         active: _lifecycle.ActiveSandbox | None = None
         started = time.perf_counter()
@@ -303,17 +343,8 @@ class PrimeIntellectClient:
         resolved = RemoteResolvedEnvironment()
         try:
             async with sandbox_client_cls(api_key=self.api_key) as client:
-                self.validate_request(request)
                 try:
-                    sandbox = await client.create(
-                        create_sandbox_request(
-                            **create_kwargs(
-                                request,
-                                timeout_minutes=self.timeout_minutes,
-                                network_access=self.network_access,
-                            )
-                        )
-                    )
+                    sandbox = await client.create(create_request)
                     raw_sandbox_id = getattr(sandbox, "id", None)
                     if raw_sandbox_id is None or not str(raw_sandbox_id).strip():
                         raise ValueError("provider returned a sandbox without a resource id")
@@ -545,7 +576,7 @@ class PrimeIntellectClient:
     def _begin_task(self, task_id: str) -> None:
         with self._active_lock:
             if task_id in self._inflight_tasks:
-                raise RuntimeError(f"Prime Intellect task is already in flight: {task_id}")
+                raise RemoteExecutionAccountingError(f"Prime Intellect task is already in flight: {task_id}")
             self._inflight_tasks.add(task_id)
 
     def _end_task(self, task_id: str) -> None:
@@ -665,8 +696,7 @@ class PrimeIntellectClient:
             result = replace(
                 result,
                 events=tuple(
-                    replace(event, sequence=index)
-                    for index, event in enumerate((*retry_events, *result.events), start=1)
+                    replace(event, sequence=index) for index, event in enumerate((*retry_events, *result.events), start=1)
                 ),
             )
         if provider_wall_seconds > result.usage.wall_seconds:
@@ -679,31 +709,40 @@ class PrimeIntellectClient:
             self._result_committed.add(request.task_id)
         if cancellation_won and not any(event.event_type == "canceled" for event in result.events):
             result = self._canceled_result(request, completed=result)
-        attempt_id = None
-        if self.ledger_outbox is not None:
-            attempt_id = self.ledger_outbox.commit("primeintellect", request, result)
-        if attempt_id is None:
-            self._emit_ledger(result)
-        else:
-            self._deliver_committed_ledger(attempt_id, result, already_delivered=False)
+        try:
+            attempt_id = None
+            if self.ledger_outbox is not None:
+                attempt_id = self.ledger_outbox.commit(
+                    "primeintellect", request, result, sink_required=self.ledger_sink is not None
+                )
+            if attempt_id is None:
+                self._emit_ledger(result)
+            else:
+                self._deliver_committed_ledger(attempt_id, already_delivered=False)
+        except RemoteExecutionAccountingError:
+            raise
+        except Exception as exc:
+            raise RemoteExecutionAccountingError(f"Prime remote result accounting failed: {type(exc).__name__}: {exc}") from exc
         return result
 
     def _deliver_committed_ledger(
         self,
         attempt_id: str,
-        result: RemoteExecutionResult,
         *,
         already_delivered: bool,
     ) -> None:
         assert self.ledger_outbox is not None
-        if already_delivered:
+        if already_delivered or self.ledger_sink is None:
+            return
+        reservation = self.ledger_outbox.reserve_sink_delivery(attempt_id)
+        if reservation is None:
             return
         try:
-            self._emit_ledger(result)
+            self.ledger_sink(reservation.entry)
         except Exception as exc:
-            self.ledger_outbox.record_sink_failure(attempt_id, exc)
+            self.ledger_outbox.record_sink_failure(reservation, exc)
             raise
-        self.ledger_outbox.mark_sink_delivered(attempt_id)
+        self.ledger_outbox.mark_sink_delivered(reservation)
 
     def validate_request(self, request: RemoteExecutionRequest) -> None:
         expired_grants = [grant.name for grant in request.secret_grants if grant.expires_at <= time.time()]
@@ -715,12 +754,17 @@ class PrimeIntellectClient:
             resources=self.resource_capabilities,
             network_access=self.network_access,
         )
-        if request.resources.accelerator is not None:
-            _, request_cls = _prime_sandboxes_sdk()
-            validate_accelerator_request_model(
-                request_cls,
-                transparent_fallback=_CreateSandboxRequestFallback,
-            )
+        _, request_cls = _prime_sandboxes_sdk()
+        validate_create_request_model(
+            request_cls,
+            create_values=create_kwargs(
+                request,
+                timeout_minutes=self.timeout_minutes,
+                network_access=self.network_access,
+                idempotency_key=_execution_helpers.provider_attempt_id(request, 1),
+            ),
+            transparent_fallback=_CreateSandboxRequestFallback,
+        )
 
     def _emit_ledger(self, result: RemoteExecutionResult) -> None:
         if self.ledger_sink is not None:
