@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from autocontext.kernel_evolution.workload_study_validation import assess_champion, protocol_burns
 
@@ -24,7 +24,7 @@ def workload_study_report_payload(
     runs: tuple[KernelWorkloadRunEvidence, ...],
     transfers: tuple[KernelTransferEvidence, ...],
     created_at: str | None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Replay every aggregate field into an unvalidated report payload."""
     workload_ids = tuple(spec.workload_id for spec in specs)
     spec_by_id = {spec.workload_id: spec for spec in specs}

@@ -1527,7 +1527,10 @@ def test_success_bundle_rejects_output_replacement_after_marker_write(
     output = tmp_path / "output"
     monkeypatch.setattr(runtime_module, "_write_exact_bytes_at", replace_after_marker)
     monkeypatch.setattr(sys, "argv", ["run.py", "--output", str(output), "--study-id", "output-swap"])
-    with pytest.raises(RuntimeError, match="identity changed|was replaced"):
+    with pytest.raises(
+        RuntimeError,
+        match="identity changed|published study artifact changed|was replaced",
+    ):
         example_module.main()
 
     study_root = output / "output-swap"

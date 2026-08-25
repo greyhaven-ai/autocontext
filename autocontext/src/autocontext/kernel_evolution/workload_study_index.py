@@ -102,7 +102,7 @@ def _observation_key(expected: _ExpectedEvidence) -> tuple[object, ...]:
     )
 
 
-def _record_key(record: dict[str, object]) -> tuple[object, ...]:
+def _record_key(record: dict[str, Any]) -> tuple[object, ...]:
     return (
         record.get("stream_id"),
         record.get("sequence"),
@@ -113,14 +113,14 @@ def _record_key(record: dict[str, object]) -> tuple[object, ...]:
     )
 
 
-def _accounting_value(record: dict[str, object], name: str) -> float:
+def _accounting_value(record: dict[str, Any], name: str) -> float:
     value = record.get(name)
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
         raise ValueError(f"evidence index {name} must be finite and non-negative")
     return float(value)
 
 
-def _raw_link_key(record: dict[str, object], *, derived: bool) -> tuple[object, ...]:
+def _raw_link_key(record: dict[str, Any], *, derived: bool) -> tuple[object, ...]:
     digest_name = "derived_from_observation_digest" if derived else "observation_digest"
     return (
         record.get(digest_name),
@@ -134,7 +134,7 @@ def _raw_link_key(record: dict[str, object], *, derived: bool) -> tuple[object, 
     )
 
 
-def _expected_execution_id(payload: dict[str, object], expected: _ExpectedEvidence) -> str:
+def _expected_execution_id(payload: dict[str, Any], expected: _ExpectedEvidence) -> str:
     observation = expected.observation
     kind = (
         "autocontext.synthetic-kernel-evaluation/v1"
@@ -158,7 +158,7 @@ def _expected_execution_id(payload: dict[str, object], expected: _ExpectedEviden
 
 def validate_measured_evidence_index(
     report: KernelWorkloadStudyReport,
-    trust: dict[str, object],
+    trust: dict[str, Any],
 ) -> None:
     raw = trust.get("evidence_index_bytes")
     if not isinstance(raw, bytes):
@@ -192,12 +192,12 @@ def validate_measured_evidence_index(
     }
     if any(payload.get(name) != value for name, value in expected_header.items()):
         raise ValueError("measured study evidence index disagrees with report provenance")
-    records: list[dict[str, object]] = payload["records"]
+    records: list[dict[str, Any]] = payload["records"]
     if any(not isinstance(record, dict) for record in records):
         raise ValueError("measured study evidence index records must be objects")
     raw_rows: Counter[tuple[object, ...]] = Counter()
     derived_rows: Counter[tuple[object, ...]] = Counter()
-    raw_by_link: dict[tuple[object, ...], dict[str, object]] = {}
+    raw_by_link: dict[tuple[object, ...], dict[str, Any]] = {}
     accounting: dict[int, tuple[float, float]] = {}
     execution_pairs: dict[str, set[tuple[object, object]]] = defaultdict(set)
     execution_kinds: dict[str, Counter[object]] = defaultdict(Counter)
@@ -265,7 +265,7 @@ def validate_measured_evidence_index(
     )
     if indexed != expected:
         raise ValueError("measured study evidence index omits, duplicates, or adds a study observation")
-    indexed_by_key: dict[tuple[object, ...], list[dict[str, object]]] = defaultdict(list)
+    indexed_by_key: dict[tuple[object, ...], list[dict[str, Any]]] = defaultdict(list)
     for record in records:
         if record.get("record_kind") != "raw-evaluation":
             indexed_by_key[_record_key(record)].append(record)
