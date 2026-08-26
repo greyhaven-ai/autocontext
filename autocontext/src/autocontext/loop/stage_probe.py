@@ -10,7 +10,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from autocontext.harness.evaluation.runner import EvaluationRunner
-from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
+from autocontext.harness.evaluation.scenario_evaluator import (
+    ScenarioEvaluator,
+    generation_evaluation_namespace,
+)
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from autocontext.loop.stage_types import GenerationContext
 
@@ -41,7 +44,12 @@ def stage_probe(
     })
 
     # Run probe matches
-    evaluator = ScenarioEvaluator(ctx.scenario, supervisor, hook_bus=ctx.hook_bus)
+    evaluator = ScenarioEvaluator(
+        ctx.scenario,
+        supervisor,
+        hook_bus=ctx.hook_bus,
+        task_namespace=generation_evaluation_namespace(ctx.run_id, ctx.generation, "probe"),
+    )
     runner = EvaluationRunner(evaluator, scoring_backend=ctx.settings.scoring_backend)
     probe_result = runner.run(
         candidate=ctx.current_strategy,

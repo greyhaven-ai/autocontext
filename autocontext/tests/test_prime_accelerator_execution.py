@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from prime_sandboxes import CommandResponse, CreateSandboxRequest
+from pydantic import BaseModel, ConfigDict, Field
 
 from autocontext.config.settings import AppSettings
 from autocontext.context_bundles.runtime_evaluator import materialize_runtime_fixture
@@ -23,10 +24,12 @@ from autocontext.execution.remote_execution import (
     RemoteExecutionRequest,
     RemoteProviderCapabilities,
     RemoteResourceRequest,
+    RemoteSecretGrant,
     remote_request_sha256,
 )
 from autocontext.execution.runtime_factory import prime_default_requirements, prime_resource_capabilities
-from autocontext.integrations.primeintellect.accelerators import create_kwargs
+from autocontext.integrations.primeintellect._execution import provider_attempt_id
+from autocontext.integrations.primeintellect.accelerators import create_kwargs, validate_create_request_model
 from autocontext.integrations.primeintellect.client import (
     PrimeIntellectClient,
     UnsupportedRemoteCapabilityError,
@@ -162,7 +165,7 @@ def test_accelerator_request_reaches_prime_unchanged_and_records_resolved_proven
     assert created.gpu_count == 2
     assert created.vm is True
     assert created.region == "us-central-1"
-    assert created.idempotency_key == remote_request_sha256(request)
+    assert created.idempotency_key == provider_attempt_id(request, 1)
     assert result.provenance.request_sha256 == remote_request_sha256(request)
     assert result.provenance.requested_accelerator_kind == "H100"
     assert result.provenance.requested_accelerator_count == 2
@@ -217,10 +220,151 @@ def test_incompatible_prime_sdk_model_fails_before_provider_creation(monkeypatch
         resource_capabilities=_capabilities(),
     )
 
-    with pytest.raises(UnsupportedRemoteCapabilityError, match="missing accelerator placement fields"):
+    with pytest.raises(UnsupportedRemoteCapabilityError, match="missing dispatch fields"):
         client.execute_request(_request(), max_retries=3)
 
     assert _AcceleratorAsyncClient.created_requests == []
+
+
+def test_cpu_sdk_model_without_idempotency_key_fails_before_provider_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _LegacyCPURequest:
+        model_fields = {
+            name: object()
+            for name in (
+                "name",
+                "docker_image",
+                "cpu_cores",
+                "memory_gb",
+                "disk_size_gb",
+                "timeout_minutes",
+                "network_access",
+            )
+        }
+
+    _reset_fake_client()
+    monkeypatch.setattr(
+        "autocontext.integrations.primeintellect.client.AsyncSandboxClient",
+        _AcceleratorAsyncClient,
+    )
+    monkeypatch.setattr(
+        "autocontext.integrations.primeintellect.client.CreateSandboxRequest",
+        _LegacyCPURequest,
+    )
+    client = PrimeIntellectClient(
+        api_key="test-key",
+        docker_image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resource_capabilities=_capabilities(),
+    )
+    request = RemoteExecutionRequest(
+        task_id="cpu-task",
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
+        command="python benchmark.py",
+    )
+
+    with pytest.raises(UnsupportedRemoteCapabilityError, match="idempotency_key"):
+        client.execute_request(request, max_retries=3)
+
+    assert _AcceleratorAsyncClient.created_requests == []
+
+
+@pytest.mark.parametrize(
+    ("remote_request", "missing_field"),
+    [
+        (
+            RemoteExecutionRequest(
+                task_id="region-task",
+                image=PINNED_PYTHON_RUNTIME_IMAGE,
+                command="true",
+                region="us-central-1",
+            ),
+            "region",
+        ),
+        (
+            RemoteExecutionRequest(
+                task_id="snapshot-task",
+                image=PINNED_PYTHON_RUNTIME_IMAGE,
+                command="true",
+                lifecycle="warm_snapshot",
+                snapshot_id="snapshot-1",
+            ),
+            "snapshot_id",
+        ),
+        (
+            RemoteExecutionRequest(
+                task_id="secret-task",
+                image=PINNED_PYTHON_RUNTIME_IMAGE,
+                command="true",
+                secrets_policy="scoped_grants",
+                secret_grants=(RemoteSecretGrant("dataset", "grant-1", 4_000_000_000.0),),
+            ),
+            "secret_grants",
+        ),
+    ],
+)
+def test_sdk_model_must_retain_each_conditional_dispatch_field(
+    remote_request: RemoteExecutionRequest,
+    missing_field: str,
+) -> None:
+    base_fields = {
+        "name",
+        "docker_image",
+        "cpu_cores",
+        "memory_gb",
+        "disk_size_gb",
+        "timeout_minutes",
+        "network_access",
+        "idempotency_key",
+        "region",
+        "snapshot_id",
+        "secret_grants",
+    }
+
+    class _IncompleteRequestModel:
+        model_fields = {name: object() for name in base_fields - {missing_field}}
+
+    with pytest.raises(UnsupportedRemoteCapabilityError, match=missing_field):
+        validate_create_request_model(
+            _IncompleteRequestModel,
+            create_values=create_kwargs(
+                remote_request,
+                timeout_minutes=30,
+                network_access=True,
+                idempotency_key="stable-attempt",
+            ),
+        )
+
+
+def test_sdk_model_must_actually_retain_named_idempotency_field() -> None:
+    class _AliasedCPURequest(BaseModel):
+        model_config = ConfigDict(extra="ignore")
+
+        name: str
+        docker_image: str
+        cpu_cores: float
+        memory_gb: float
+        disk_size_gb: float
+        timeout_minutes: int
+        network_access: bool
+        idempotency_key: str | None = Field(None, alias="idempotencyKey")
+
+    request = RemoteExecutionRequest(
+        task_id="aliased-idempotency",
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
+        command="true",
+    )
+
+    with pytest.raises(UnsupportedRemoteCapabilityError, match="did not retain.*idempotency_key"):
+        validate_create_request_model(
+            _AliasedCPURequest,
+            create_values=create_kwargs(
+                request,
+                timeout_minutes=30,
+                network_access=True,
+                idempotency_key="stable-attempt",
+            ),
+        )
 
 
 @pytest.mark.parametrize(

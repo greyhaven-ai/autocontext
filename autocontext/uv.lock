@@ -290,7 +290,7 @@ wheels = [
 
 [[package]]
 name = "autocontext"
-version = "0.16.1"
+version = "0.17.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -357,6 +357,7 @@ dev = [
     { name = "datamodel-code-generator" },
     { name = "httpx" },
     { name = "hypothesis" },
+    { name = "markdown-it-py" },
     { name = "mypy" },
     { name = "openai" },
     { name = "prime-sandboxes" },
@@ -406,6 +407,7 @@ dev = [
     { name = "datamodel-code-generator", specifier = ">=0.56.0,<0.57.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "hypothesis", specifier = ">=6.151.12" },
+    { name = "markdown-it-py", specifier = ">=4.0.0" },
     { name = "mypy", specifier = ">=1.16.0" },
     { name = "openai", specifier = ">=1.0.0,<2.0" },
     { name = "prime-sandboxes", specifier = ">=0.2.27" },

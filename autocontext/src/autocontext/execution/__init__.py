@@ -18,6 +18,14 @@ from .campaign_scheduler import (
     WorkerDescriptor,
 )
 from .docker_research_sandbox import DockerResearchSandboxBackend, SecretGrantResolver
+from .external_eval_outbox import (
+    ExternalEvalLedgerOutbox,
+    ExternalEvalOutboxConflictError,
+    ExternalEvalOutboxPendingError,
+    ExternalEvalOutboxStatus,
+    ExternalEvalSinkDeliveryPendingError,
+    ExternalEvalSinkDeliveryReservation,
+)
 from .phased_execution import (
     PhaseBudget,
     PhasedExecutionPlan,
@@ -35,6 +43,7 @@ from .remote_execution import (
     RemoteResolvedEnvironment,
     RemoteResourceRequest,
 )
+from .remote_failure import RemoteExecutionAccountingError, RemoteExecutionError, RemoteExecutionFailure
 from .research_workspace import (
     ResearchWorkspace,
     ResearchWorkspaceBenchmark,
@@ -87,6 +96,12 @@ __all__ = [
     "ExecutionSupervisor",
     "ExecutionInput",
     "ExecutionOutput",
+    "ExternalEvalLedgerOutbox",
+    "ExternalEvalOutboxConflictError",
+    "ExternalEvalOutboxPendingError",
+    "ExternalEvalOutboxStatus",
+    "ExternalEvalSinkDeliveryPendingError",
+    "ExternalEvalSinkDeliveryReservation",
     "DockerResearchSandboxBackend",
     "SANDBOX_CAPABILITY_NAMES",
     "SandboxBootMode",
@@ -114,7 +129,10 @@ __all__ = [
     "ResearchSandboxExecutionResult",
     "RemoteAcceleratorRequest",
     "RemoteCampaignWorker",
+    "RemoteExecutionAccountingError",
+    "RemoteExecutionError",
     "RemoteExecutionRequirements",
+    "RemoteExecutionFailure",
     "RemoteExecutionRequest",
     "RemoteExecutionResult",
     "RemoteProviderCapabilities",

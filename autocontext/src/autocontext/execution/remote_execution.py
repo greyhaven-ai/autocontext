@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import base64
 import binascii
-import hashlib
 import json
-import math
 import re
-import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal, Protocol, TypeAlias
+from typing import Any, Literal, Protocol, TypeAlias
 
+import autocontext.execution._immutable_json as _immutable
+import autocontext.execution._remote_execution_identity as _request_identity
+import autocontext.execution._remote_execution_validation as _validation
 from autocontext.execution.scenario_remote_validation import malformed_scenario_output
 from autocontext.runtime_images import require_pinned_runtime_image
 
@@ -40,6 +40,11 @@ RemoteTelemetryKind: TypeAlias = Literal[
 _REMOTE_TELEMETRY_KINDS = frozenset({"hardware_identity", "accelerator_usage", "accelerator_peak_memory"})
 
 
+def _normalized_request_float(value: object, *, label: str) -> float:
+    """Return one canonical finite float for a request-identity number."""
+    return _validation.normalized_exact_float(value, label=label, allow_subclasses=True)
+
+
 @dataclass(frozen=True, slots=True)
 class RemoteAcceleratorRequest:
     kind: str
@@ -47,12 +52,17 @@ class RemoteAcceleratorRequest:
     memory_gb: float | None = None
 
     def __post_init__(self) -> None:
-        if isinstance(self.count, bool) or not isinstance(self.count, int):
+        if type(self.kind) is not str:
+            raise TypeError("accelerator kind must be a string")
+        if type(self.count) is not int:
             raise TypeError("accelerator count must be an integer")
         if not self.kind.strip() or self.count < 1:
             raise ValueError("accelerator kind must be non-empty and count must be positive")
-        if self.memory_gb is not None and (not math.isfinite(self.memory_gb) or self.memory_gb <= 0):
-            raise ValueError("accelerator memory must be positive and finite when supplied")
+        if self.memory_gb is not None:
+            memory_gb = _normalized_request_float(self.memory_gb, label="accelerator memory")
+            if memory_gb <= 0:
+                raise ValueError("accelerator memory must be positive and finite when supplied")
+            object.__setattr__(self, "memory_gb", memory_gb)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,9 +73,16 @@ class RemoteResourceRequest:
     accelerator: RemoteAcceleratorRequest | None = None
 
     def __post_init__(self) -> None:
-        values = (self.cpu_cores, self.memory_gb, self.disk_gb)
-        if any(not math.isfinite(value) or value <= 0 for value in values):
+        if self.accelerator is not None and type(self.accelerator) is not RemoteAcceleratorRequest:
+            raise TypeError("remote accelerator request must be a RemoteAcceleratorRequest")
+        cpu_cores = _normalized_request_float(self.cpu_cores, label="remote CPU request")
+        memory_gb = _normalized_request_float(self.memory_gb, label="remote memory request")
+        disk_gb = _normalized_request_float(self.disk_gb, label="remote disk request")
+        if any(value <= 0 for value in (cpu_cores, memory_gb, disk_gb)):
             raise ValueError("remote CPU, memory, and disk requests must be positive and finite")
+        object.__setattr__(self, "cpu_cores", cpu_cores)
+        object.__setattr__(self, "memory_gb", memory_gb)
+        object.__setattr__(self, "disk_gb", disk_gb)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,13 +95,22 @@ class RemoteExecutionRequirements:
     required_telemetry: frozenset[RemoteTelemetryKind] = frozenset()
 
     def __post_init__(self) -> None:
+        if type(self.image) is not str:
+            raise TypeError("remote execution image must be a string")
+        if type(self.resources) is not RemoteResourceRequest:
+            raise TypeError("remote execution resources must be a RemoteResourceRequest")
         if not self.image.strip():
             raise ValueError("remote execution image must be non-empty")
         if self.resources.accelerator is not None:
             require_pinned_runtime_image(self.image)
-        if self.region is not None and not self.region.strip():
-            raise ValueError("remote execution region must be non-empty when supplied")
+        if self.region is not None:
+            if type(self.region) is not str:
+                raise TypeError("remote execution region must be a string when supplied")
+            if not self.region.strip():
+                raise ValueError("remote execution region must be non-empty when supplied")
         telemetry = frozenset(self.required_telemetry)
+        if any(type(value) is not str for value in telemetry):
+            raise TypeError("remote telemetry requirements must be strings")
         unknown = telemetry - _REMOTE_TELEMETRY_KINDS
         if unknown:
             raise ValueError(f"unknown remote telemetry requirements: {', '.join(sorted(unknown))}")
@@ -152,9 +178,9 @@ class RemoteInputArtifact:
 
     def __post_init__(self) -> None:
         _validate_artifact_name(self.name)
-        if not isinstance(self.content, bytes):
+        if type(self.content) is not bytes:
             raise TypeError("remote input artifact content must be bytes")
-        if not isinstance(self.media_type, str) or not self.media_type.strip():
+        if type(self.media_type) is not str or not self.media_type.strip():
             raise ValueError("remote input artifact media_type must be non-empty")
 
 
@@ -166,9 +192,9 @@ class RemoteOutputArtifact:
 
     def __post_init__(self) -> None:
         _validate_artifact_name(self.name)
-        if not isinstance(self.content, bytes):
+        if type(self.content) is not bytes:
             raise TypeError("remote output artifact content must be bytes")
-        if not isinstance(self.media_type, str) or not self.media_type.strip():
+        if type(self.media_type) is not str or not self.media_type.strip():
             raise ValueError("remote output artifact media_type must be non-empty")
 
 
@@ -181,10 +207,12 @@ class RemoteSecretGrant:
     expires_at: float
 
     def __post_init__(self) -> None:
+        if type(self.name) is not str or type(self.grant_id) is not str:
+            raise TypeError("secret grant name and id must be strings")
         if not self.name.strip() or not self.grant_id.strip():
             raise ValueError("secret grant name and id must be non-empty")
-        if not math.isfinite(self.expires_at):
-            raise ValueError("secret grant expiry must be finite")
+        expires_at = _normalized_request_float(self.expires_at, label="secret grant expiry")
+        object.__setattr__(self, "expires_at", expires_at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,10 +234,35 @@ class RemoteExecutionRequest:
     metadata: Mapping[str, str] = field(default_factory=dict)
     region: str | None = None
     required_telemetry: frozenset[RemoteTelemetryKind] = frozenset()
+    strict_task_identity: bool = False
 
     def __post_init__(self) -> None:
+        if type(self) is not RemoteExecutionRequest:
+            raise TypeError("remote request must be a RemoteExecutionRequest")
+        if not all(type(value) is str for value in (self.task_id, self.image, self.command)):
+            raise TypeError("remote task_id, image, and command must be strings")
         if not self.task_id.strip() or not self.image.strip() or not self.command.strip():
             raise ValueError("remote task_id, image, and command must be non-empty")
+        if type(self.resources) is not RemoteResourceRequest:
+            raise TypeError("remote resources must be a RemoteResourceRequest")
+        if not isinstance(self.environment, Mapping) or not isinstance(self.metadata, Mapping):
+            raise TypeError("remote environment and metadata must be mappings")
+        # Snapshot caller-controlled mappings once, before validation.  Using
+        # ``items()`` for validation and ``dict(...)`` later would permit a
+        # mutable or adversarial Mapping to substitute unvalidated identity
+        # content between the two traversals.
+        environment = dict(self.environment)
+        metadata = dict(self.metadata)
+        secret_grants = _immutable.validated_tuple(self.secret_grants, label="remote secret_grants", item_type=RemoteSecretGrant)
+        input_artifacts = _immutable.validated_tuple(
+            self.input_artifacts, label="remote input_artifacts", item_type=RemoteInputArtifact
+        )
+        expected_outputs = _immutable.validated_tuple(self.expected_outputs, label="remote expected_outputs", item_type=str)
+        # A frozen dataclass is not immutable if it retains caller-owned lists.
+        # Snapshot identity-bearing sequences before any validation or hashing.
+        object.__setattr__(self, "secret_grants", secret_grants)
+        object.__setattr__(self, "input_artifacts", input_artifacts)
+        object.__setattr__(self, "expected_outputs", expected_outputs)
         requirements = RemoteExecutionRequirements(
             image=self.image,
             resources=self.resources,
@@ -218,19 +271,32 @@ class RemoteExecutionRequest:
         )
         object.__setattr__(self, "region", requirements.region)
         object.__setattr__(self, "required_telemetry", requirements.required_telemetry)
-        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0 or self.max_reuse_tasks < 1:
+        timeout_seconds = _normalized_request_float(self.timeout_seconds, label="remote timeout")
+        if type(self.max_reuse_tasks) is not int:
+            raise TypeError("remote reuse bound must be an integer")
+        if type(self.strict_task_identity) is not bool:
+            raise TypeError("remote strict_task_identity must be boolean")
+        if timeout_seconds <= 0 or self.max_reuse_tasks < 1:
             raise ValueError("remote timeout must be positive and finite and reuse bound must be positive")
+        object.__setattr__(self, "timeout_seconds", timeout_seconds)
+        if type(self.network_policy) is not str:
+            raise TypeError("remote network policy must be a string")
         if self.network_policy not in {"deny", "allow"}:
             raise ValueError(f"unknown remote network policy: {self.network_policy}")
+        if type(self.secrets_policy) is not str:
+            raise TypeError("remote secrets policy must be a string")
         if self.secrets_policy not in {"deny", "scoped_grants"}:
             raise ValueError(f"unknown remote secrets policy: {self.secrets_policy}")
+        if type(self.lifecycle) is not str:
+            raise TypeError("remote lifecycle policy must be a string")
         if self.lifecycle not in {"ephemeral_per_eval", "reuse_matched_trials", "warm_snapshot"}:
             raise ValueError(f"unknown remote lifecycle policy: {self.lifecycle}")
         if self.secrets_policy == "deny" and self.secret_grants:
             raise ValueError("secret grants require secrets_policy='scoped_grants'")
-        for grant in self.secret_grants:
-            if grant.expires_at <= time.time():
-                raise ValueError(f"secret grant is expired: {grant.name}")
+        # Grant expiry is mutable dispatch policy, not immutable request shape.
+        # Keeping expired opaque references reconstructible is required to
+        # replay a previously committed paid result after process restart.
+        # Provider adapters must reject them immediately before new dispatch.
         input_names = [artifact.name for artifact in self.input_artifacts]
         if len(input_names) != len(set(input_names)):
             raise ValueError("remote input artifact names must be unique")
@@ -238,21 +304,25 @@ class RemoteExecutionRequest:
             raise ValueError("remote expected output artifact names must be unique")
         for name in self.expected_outputs:
             _validate_artifact_name(name)
+        if self.snapshot_id is not None and type(self.snapshot_id) is not str:
+            raise TypeError("remote snapshot_id must be a string when supplied")
+        if type(self.snapshot_id) is str and not self.snapshot_id.strip():
+            raise ValueError("remote snapshot_id must be non-empty when supplied")
         if self.lifecycle == "warm_snapshot" and not self.snapshot_id:
             raise ValueError("warm_snapshot lifecycle requires snapshot_id")
         if any(
-            not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None or not isinstance(value, str)
-            for name, value in self.environment.items()
+            type(name) is not str or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None or type(value) is not str
+            for name, value in environment.items()
         ):
             raise ValueError("remote environment names must be POSIX identifiers and values must be strings")
-        if any(not isinstance(name, str) or not isinstance(value, str) or not name for name, value in self.metadata.items()):
+        if any(type(name) is not str or type(value) is not str or not name for name, value in metadata.items()):
             raise ValueError("remote metadata names and values must be strings with non-empty names")
-        _prepared_fixture_provenance(self.metadata)
+        _prepared_fixture_provenance(metadata)
         # The request is replay provenance. Retaining caller-owned dictionaries
         # would let another thread mutate the provider command or attestation
         # after validation but before dispatch.
-        object.__setattr__(self, "environment", MappingProxyType(dict(self.environment)))
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        object.__setattr__(self, "environment", MappingProxyType(environment))
+        object.__setattr__(self, "metadata", MappingProxyType(metadata))
 
     @property
     def requirements(self) -> RemoteExecutionRequirements:
@@ -269,7 +339,18 @@ class RemoteExecutionEvent:
     sequence: int
     event_type: str
     message: str = ""
-    fields: Mapping[str, object] = field(default_factory=dict)
+    fields: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if type(self.sequence) is not int:
+            raise TypeError("remote event sequence must be an integer")
+        if self.sequence < 0:
+            raise ValueError("remote event sequence must be non-negative")
+        if type(self.event_type) is not str or type(self.message) is not str:
+            raise TypeError("remote event type and message must be strings")
+        if not self.event_type.strip():
+            raise ValueError("remote event type must be non-empty")
+        object.__setattr__(self, "fields", _immutable.freeze_json_object(self.fields, label="remote event fields"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,15 +362,7 @@ class RemoteResourceUsage:
     accelerator_peak_memory_mb: float | None = None
 
     def __post_init__(self) -> None:
-        values = (
-            self.wall_seconds,
-            self.cpu_seconds,
-            self.peak_memory_mb,
-            self.accelerator_seconds,
-            self.accelerator_peak_memory_mb,
-        )
-        if any(value is not None and (not math.isfinite(value) or value < 0) for value in values):
-            raise ValueError("remote resource usage must be non-negative and finite")
+        _validation.normalize_resource_usage(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,6 +372,9 @@ class RemoteInputProvenance:
     size_bytes: int
     media_type: str
 
+    def __post_init__(self) -> None:
+        _validation.validate_input_provenance(self)
+
 
 @dataclass(frozen=True, slots=True)
 class RemoteResolvedEnvironment:
@@ -307,6 +383,9 @@ class RemoteResolvedEnvironment:
     accelerator_kind: str = ""
     accelerator_count: int = 0
     runtime: str = ""
+
+    def __post_init__(self) -> None:
+        _validation.validate_resolved_environment(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,6 +406,19 @@ class RemoteExecutionProvenance:
     required_telemetry: tuple[str, ...] = ()
     resolved: RemoteResolvedEnvironment = field(default_factory=RemoteResolvedEnvironment)
 
+    def __post_init__(self) -> None:
+        inputs = _immutable.validated_tuple(self.inputs, label="remote provenance inputs", item_type=RemoteInputProvenance)
+        telemetry = _immutable.validated_tuple(
+            self.required_telemetry,
+            label="remote provenance required_telemetry",
+            item_type=str,
+        )
+        if type(self.resolved) is not RemoteResolvedEnvironment:
+            raise TypeError("remote provenance resolved must be a RemoteResolvedEnvironment")
+        object.__setattr__(self, "inputs", inputs)
+        object.__setattr__(self, "required_telemetry", telemetry)
+        _validation.validate_execution_provenance(self)
+
 
 @dataclass(frozen=True, slots=True)
 class RemoteCleanupOutcome:
@@ -334,6 +426,9 @@ class RemoteCleanupOutcome:
     succeeded: bool
     resource_id: str = ""
     detail: str = ""
+
+    def __post_init__(self) -> None:
+        _validation.validate_cleanup_outcome(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,6 +444,18 @@ class ExternalEvalLedgerEntry:
     detail: str = ""
     provenance: RemoteExecutionProvenance = field(default_factory=RemoteExecutionProvenance)
     retryable: bool = False
+    attempt_id: str = ""
+
+    def __post_init__(self) -> None:
+        if type(self) is not ExternalEvalLedgerEntry:
+            raise TypeError("external evaluation ledger must be an ExternalEvalLedgerEntry")
+        if type(self.usage) is not RemoteResourceUsage:
+            raise TypeError("external evaluation ledger usage must be RemoteResourceUsage")
+        if type(self.cleanup) is not RemoteCleanupOutcome:
+            raise TypeError("external evaluation ledger cleanup must be RemoteCleanupOutcome")
+        if type(self.provenance) is not RemoteExecutionProvenance:
+            raise TypeError("external evaluation ledger provenance must be RemoteExecutionProvenance")
+        _validation.validate_ledger_entry(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,12 +476,27 @@ class RemoteExecutionResult:
     retryable: bool = False
 
     def __post_init__(self) -> None:
-        if not isinstance(self.retryable, bool):
-            raise TypeError("remote result retryable must be boolean")
-        if self.retryable and self.status != "provider_error":
-            raise ValueError("only provider errors may be retryable")
-        if self.retryable and not (self.cleanup.attempted and self.cleanup.succeeded):
-            raise ValueError("retryable remote errors require verified cleanup")
+        if type(self) is not RemoteExecutionResult:
+            raise TypeError("remote result must be a RemoteExecutionResult")
+        artifacts = _immutable.validated_tuple(
+            self.artifacts,
+            label="remote result artifacts",
+            item_type=RemoteOutputArtifact,
+        )
+        events = _immutable.validated_tuple(
+            self.events,
+            label="remote result events",
+            item_type=RemoteExecutionEvent,
+        )
+        object.__setattr__(self, "artifacts", artifacts)
+        object.__setattr__(self, "events", events)
+        if type(self.usage) is not RemoteResourceUsage:
+            raise TypeError("remote result usage must be RemoteResourceUsage")
+        if type(self.cleanup) is not RemoteCleanupOutcome:
+            raise TypeError("remote result cleanup must be RemoteCleanupOutcome")
+        if type(self.provenance) is not RemoteExecutionProvenance:
+            raise TypeError("remote result provenance must be RemoteExecutionProvenance")
+        _validation.validate_execution_result(self)
 
     @property
     def succeeded(self) -> bool:
@@ -383,7 +505,7 @@ class RemoteExecutionResult:
     def artifact(self, name: str) -> RemoteOutputArtifact | None:
         return next((artifact for artifact in self.artifacts if artifact.name == name), None)
 
-    def to_ledger_entry(self) -> ExternalEvalLedgerEntry:
+    def to_ledger_entry(self, *, attempt_id: str = "") -> ExternalEvalLedgerEntry:
         infrastructure_succeeded = self.status not in {
             "provider_error",
             "timeout",
@@ -402,6 +524,7 @@ class RemoteExecutionResult:
             detail=self.error,
             provenance=self.provenance,
             retryable=self.retryable,
+            attempt_id=attempt_id,
         )
 
 
@@ -438,10 +561,11 @@ def parse_remote_stdout(
         if not isinstance(parsed, Mapping):
             continue
         if parsed.get("type") == "event":
+            event_type = str(parsed.get("event", "message")).strip() or "message"
             events.append(
                 RemoteExecutionEvent(
                     sequence=len(events) + 1,
-                    event_type=str(parsed.get("event", "message")),
+                    event_type=event_type,
                     message=str(parsed.get("message", "")),
                     fields={str(key): value for key, value in parsed.items() if key not in {"type", "event", "message"}},
                 )
@@ -544,116 +668,28 @@ def remote_request_provenance(
     *,
     resolved: RemoteResolvedEnvironment | None = None,
 ) -> RemoteExecutionProvenance:
-    """Derive immutable replay provenance from request contents, not provider output."""
+    _require_exact_remote_request(request)
+    return _request_identity.build_request_provenance(request, resolved=resolved)
 
-    inputs = tuple(
-        RemoteInputProvenance(
-            name=artifact.name,
-            sha256=hashlib.sha256(artifact.content).hexdigest(),
-            size_bytes=len(artifact.content),
-            media_type=artifact.media_type,
-        )
-        for artifact in request.input_artifacts
-    )
-    packaged = next((item.sha256 for item in inputs if item.name == "autocontext-scenario.pyz"), "")
-    package_sha256 = packaged or str(request.metadata.get("package_sha256", ""))
-    seed_value = request.metadata.get("seed")
-    try:
-        seed = int(seed_value) if seed_value is not None else None
-    except (TypeError, ValueError):
-        seed = None
-    image_digest = request.image.rsplit("@sha256:", 1)[-1] if "@sha256:" in request.image else ""
-    fixture_digest, fixture_state_sha256, fixture_observation_sha256 = _prepared_fixture_provenance(request.metadata)
-    accelerator = request.resources.accelerator
-    return RemoteExecutionProvenance(
-        request_sha256=remote_request_sha256(request),
-        image=request.image,
-        image_digest=image_digest,
-        package_sha256=package_sha256,
-        inputs=inputs,
-        seed=seed,
-        fixture_digest=fixture_digest,
-        fixture_state_sha256=fixture_state_sha256,
-        fixture_observation_sha256=fixture_observation_sha256,
-        requested_region=request.region or "",
-        requested_accelerator_kind=accelerator.kind if accelerator is not None else "",
-        requested_accelerator_count=accelerator.count if accelerator is not None else 0,
-        requested_accelerator_memory_gb=(accelerator.memory_gb if accelerator is not None else None),
-        required_telemetry=tuple(sorted(request.required_telemetry)),
-        resolved=resolved or RemoteResolvedEnvironment(),
-    )
+
+def _remote_request_identity_payload(request: RemoteExecutionRequest) -> dict[str, Any]:
+    _require_exact_remote_request(request)
+    return _request_identity.request_identity_payload(request)
+
+
+def _remote_request_identity_payload_sha256(payload: Mapping[str, object]) -> str:
+    return _request_identity.request_identity_payload_sha256(payload)
 
 
 def remote_request_sha256(request: RemoteExecutionRequest) -> str:
     """Hash the exact non-secret provider request and content-addressed inputs."""
 
-    accelerator = request.resources.accelerator
-    payload = {
-        "task_id": request.task_id,
-        "image": request.image,
-        "command_sha256": hashlib.sha256(request.command.encode("utf-8")).hexdigest(),
-        "resources": {
-            "cpu_cores": request.resources.cpu_cores,
-            "memory_gb": request.resources.memory_gb,
-            "disk_gb": request.resources.disk_gb,
-            "accelerator": (
-                {
-                    "kind": accelerator.kind,
-                    "count": accelerator.count,
-                    "memory_gb": accelerator.memory_gb,
-                }
-                if accelerator is not None
-                else None
-            ),
-        },
-        "region": request.region,
-        "required_telemetry": sorted(request.required_telemetry),
-        "timeout_seconds": request.timeout_seconds,
-        "network_policy": request.network_policy,
-        "secrets_policy": request.secrets_policy,
-        "secret_grants": [
-            {"name": grant.name, "grant_id": grant.grant_id, "expires_at": grant.expires_at} for grant in request.secret_grants
-        ],
-        "inputs": [
-            {
-                "name": artifact.name,
-                "sha256": hashlib.sha256(artifact.content).hexdigest(),
-                "media_type": artifact.media_type,
-            }
-            for artifact in request.input_artifacts
-        ],
-        "expected_outputs": list(request.expected_outputs),
-        "lifecycle": request.lifecycle,
-        "environment": dict(sorted(request.environment.items())),
-        "snapshot_id": request.snapshot_id,
-        "max_reuse_tasks": request.max_reuse_tasks,
-        "metadata": dict(sorted(request.metadata.items())),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    _require_exact_remote_request(request)
+    return _request_identity.request_sha256(request)
 
 
 def _prepared_fixture_provenance(metadata: Mapping[str, str]) -> tuple[str, str, str]:
-    """Return a complete prepared-fixture attestation or reject partial metadata."""
-
-    keys = ("fixture_digest", "fixture_state_sha256", "fixture_observation_sha256")
-    raw_values = tuple(metadata.get(key) for key in keys)
-    present = tuple(value is not None for value in raw_values)
-    if any(present) and not all(present):
-        missing = ", ".join(key for key, supplied in zip(keys, present, strict=True) if not supplied)
-        raise ValueError(f"prepared fixture provenance is incomplete; missing: {missing}")
-    if not any(present):
-        return "", "", ""
-    values: list[str] = []
-    for key, raw_value in zip(keys, raw_values, strict=True):
-        if (
-            not isinstance(raw_value, str)
-            or len(raw_value) != 64
-            or any(character not in "0123456789abcdef" for character in raw_value)
-        ):
-            raise ValueError(f"prepared fixture provenance must use lowercase sha256 hex: {key}")
-        values.append(raw_value)
-    return values[0], values[1], values[2]
+    return _request_identity.prepared_fixture_provenance(metadata)
 
 
 def _parse_artifacts(raw: object) -> tuple[RemoteOutputArtifact, ...]:
@@ -695,37 +731,18 @@ def _cleanup_failure_detail(primary_error: str, cleanup: RemoteCleanupOutcome) -
 
 
 def requests_are_reuse_compatible(requests: Sequence[RemoteExecutionRequest]) -> bool:
-    """Return whether every request can safely share one provisioned sandbox.
-
-    Prime-style reusable sessions are created from the first request.  Every
-    value that can leave filesystem, credential, environment, or snapshot state
-    behind must therefore be identical across the cohort. Commands, task ids,
-    output declarations, timeouts, and opaque metadata may differ because they
-    do not alter the provisioned sandbox contract.
-    """
-
-    if not requests:
-        return False
-    first = requests[0]
-    return all(
-        request.lifecycle == "reuse_matched_trials"
-        and request.image == first.image
-        and request.resources == first.resources
-        and request.region == first.region
-        and request.required_telemetry == first.required_telemetry
-        and request.network_policy == first.network_policy
-        and request.secrets_policy == first.secrets_policy
-        and request.secret_grants == first.secret_grants
-        and request.input_artifacts == first.input_artifacts
-        and dict(request.environment) == dict(first.environment)
-        and request.snapshot_id == first.snapshot_id
-        for request in requests
-    ) and len(requests) <= min(request.max_reuse_tasks for request in requests)
+    """Return whether every request can safely share one provisioned sandbox."""
+    return _request_identity.requests_are_reuse_compatible(requests)
 
 
 def _validate_artifact_name(name: str) -> None:
-    if not isinstance(name, str) or not name or name.startswith("/") or ".." in name.split("/"):
+    if type(name) is not str or not name or name.startswith("/") or ".." in name.split("/"):
         raise ValueError(f"artifact path must stay relative to the task root: {name!r}")
+
+
+def _require_exact_remote_request(request: object) -> None:
+    if type(request) is not RemoteExecutionRequest:
+        raise TypeError("remote request must be a RemoteExecutionRequest")
 
 
 __all__ = [

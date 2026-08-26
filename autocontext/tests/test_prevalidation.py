@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from autocontext.config.settings import AppSettings, load_settings
+from autocontext.execution import RemoteExecutionAccountingError, RemoteExecutionError, RemoteExecutionFailure
+from autocontext.execution.remote_execution import RemoteCleanupOutcome, RemoteExecutionResult
 from autocontext.scenarios.base import Result
 
 # ---------------------------------------------------------------------------
@@ -470,6 +474,75 @@ class TestStagePrevalidation:
         assert "regression_fixtures_revision" in event_names
         assert "regression_fixtures_passed" in event_names
         assert "dry_run_started" in event_names
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            RemoteExecutionFailure(
+                RemoteExecutionResult(
+                    task_id="prevalidation-paid-terminal",
+                    provider="primeintellect",
+                    status="cleanup_error",
+                    cleanup=RemoteCleanupOutcome(
+                        attempted=False,
+                        succeeded=False,
+                        detail="creation outcome unknown",
+                    ),
+                    error="creation outcome unknown",
+                )
+            ),
+            RemoteExecutionAccountingError("creation outcome unknown during durable accounting"),
+        ],
+        ids=["terminal-result", "accounting-boundary"],
+    )
+    def test_nonretryable_remote_fixture_failure_does_not_enter_revision_loop(
+        self,
+        failure: RemoteExecutionError,
+    ) -> None:
+        """A terminal paid outcome must escape before a new attempt namespace is used."""
+        from autocontext.analytics.regression_fixtures import RegressionFixture
+        from autocontext.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(max_retries=2)
+        ctx.settings = ctx.settings.model_copy(
+            update={"prevalidation_regression_fixtures_enabled": True}
+        )
+        events = MagicMock()
+        agents = MagicMock()
+        artifacts = MagicMock()
+        artifacts.knowledge_root = Path("/tmp/knowledge")
+        supervisor = MagicMock()
+        fixture = RegressionFixture(
+            fixture_id="fix-paid-terminal",
+            scenario="fake",
+            description="Paid terminal fixture",
+            seed=101,
+            strategy={},
+            expected_min_score=0.5,
+            source_evidence=["friction:paid:terminal"],
+            confidence=0.9,
+        )
+        fake_store = MagicMock()
+        fake_store.list_for_scenario.return_value = [fixture]
+        fake_evaluator = MagicMock()
+        fake_evaluator.evaluate.side_effect = failure
+
+        with (
+            patch("autocontext.loop.stage_prevalidation.FixtureStore", return_value=fake_store),
+            patch("autocontext.loop.stage_prevalidation.ScenarioEvaluator", return_value=fake_evaluator),
+            pytest.raises(RemoteExecutionError, match="creation outcome unknown") as raised,
+        ):
+            stage_prevalidation(
+                ctx,
+                events=events,
+                agents=agents,
+                artifacts=artifacts,
+                supervisor=supervisor,
+            )
+
+        assert raised.value is failure
+        assert fake_evaluator.evaluate.call_count == 1
+        agents.competitor.revise.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

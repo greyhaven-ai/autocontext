@@ -71,6 +71,10 @@ operator-verified capability allowlist; image, region, required telemetry,
 resolved hardware, and attributable usage then remain identity-bound through
 campaign scheduling and external-evaluation accounting. Unsupported requests
 fail before provider creation and never fall back to local CPU execution.
+The shipped Prime runtime also commits a durable pre-dispatch claim and full
+typed result under `runs/external-evaluations/`; restart replays a committed
+result or surfaces an unresolved, possibly billable claim instead of dispatching
+the paid request again.
 
 ## Run from a checkout
 

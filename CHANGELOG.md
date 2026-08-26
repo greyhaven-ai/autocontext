@@ -4,7 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-25
+
+This release aligns the PyPI `autocontext` and npm `autoctx` packages at
+`0.17.0`. It adds outcome-gated context bundles, capability-scoped local and
+remote execution, durable campaign operations, correctness-first recursive
+kernel evolution, and capability-validated accelerator requests. Live context
+promotion and paid accelerator execution remain opt-in and fail closed when
+their required authority, identity, telemetry, or capability contracts are not
+satisfied. The Pi extension remains on its separate `0.10.0` package line.
+
 ### Added
+
+- Prime generation and campaign execution now use a durable SQLite result
+  outbox. A stable request claim is committed before provider dispatch; the
+  complete typed result, usage, cleanup, provenance, retry lineage, and
+  external-evaluation ledger projection are committed before completion is
+  exposed. Restart replays committed results without another paid request and
+  fails closed on unresolved possibly-billable claims. Optional sink failures
+  remain retryable accounting work and never re-enter provider execution
+  (AC-999).
 
 - Kernel evolution can now compose bounded studies across variable-shape
   matmul, fused elementwise/reduction, and causal-attention families while
@@ -59,7 +78,7 @@ All notable changes to this project will be documented in this file.
   exact named-profile tolerances, and representable, exactly replayed
   Bonferroni receipts fail closed at binary64 boundary cases.
   A real H100/MIG v4 release run remains
-  pending the protected-boundary readiness gates documented under AC-1003
+  pending the protected-boundary readiness gates tracked under AC-1005
   (AC-1004).
 - Hostile accelerator candidates can now execute behind an accelerator-neutral,
   typed, bounded, non-pickle authority protocol. A protected Docker runner gives
@@ -126,11 +145,11 @@ All notable changes to this project will be documented in this file.
   into protocol identity, requires correctness plus per-case no-regression
   gates, and uses a persisted Bonferroni proposal budget. Profile-namespaced
   H100 evidence schema and export validation are prepared for disjoint
-  primary/confirmation plans. The authenticated AC-1003 authority prototype and
-  release guard are implemented, but AC-1003 remains incomplete: production
-  stays fail-closed pending role-separated telemetry, trusted mutation
-  observation, comparable reference timing, crash-safe container creation, and
-  subsequent H100/MIG validation (AC-994).
+  primary/confirmation plans. The authenticated AC-1003 authority boundary and
+  release guard are implemented; production stays fail-closed pending
+  role-separated telemetry, trusted mutation observation, comparable reference
+  timing, crash-safe container creation, and the real H100/MIG validation now
+  tracked by AC-1005 (AC-994).
 - An optional Python `CampaignScheduler` dispatches branch/trial jobs across
   local workers and remote adapters using capability/resource matching,
   expiring leases, heartbeats, bounded retry and concurrency, idempotent
@@ -199,6 +218,18 @@ All notable changes to this project will be documented in this file.
   active-pointer promotion. Promotion records include exact lineage, cohort,
   rationale, and rollback target. Python and TypeScript share canonical digests
   and parity fixtures through `autoctx/context-bundles` (AC-973).
+
+### Changed
+
+- Refreshed compatible npm transitive dependencies to patched releases for
+  request-path parsing and build tooling. The 0.17.0 production dependency
+  audit has no high, critical, or moderate advisories; the remaining low-severity
+  findings require a separately tested `secure-exec` major-version upgrade.
+- Repaired all known repository-relative Markdown paths, reconciled the
+  scenario/codegen parity guide with the current TypeScript registry, and
+  added a deterministic CI check for local paths and heading anchors. External
+  URL availability and generated/vendor content remain explicitly outside the
+  check (AC-954).
 
 ## [0.16.1] - 2026-08-14
 
@@ -1064,7 +1095,8 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.17.0...HEAD
+[0.17.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...py-v0.17.0
 [0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.1...py-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
 [0.15.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.0...py-v0.15.1

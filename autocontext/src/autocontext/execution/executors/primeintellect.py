@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from autocontext.execution.remote_execution import RemoteExecutionRequirements, RemoteExecutionResult
+from autocontext.execution.remote_failure import RemoteExecutionFailure
 from autocontext.execution.scenario_remote_task import build_scenario_remote_request
 from autocontext.integrations.primeintellect import _request as _request_helpers
 from autocontext.scenarios.base import (
@@ -20,6 +21,8 @@ if TYPE_CHECKING:
 
 
 class PrimeIntellectExecutor:
+    strict_task_identity_supported = True
+
     def __init__(
         self,
         client: PrimeIntellectClient,
@@ -49,6 +52,8 @@ class PrimeIntellectExecutor:
             initial_observation=None,
             fixture_digest=None,
             remote_requirements=None,
+            capture_remote_result=False,
+            strict_task_identity=False,
         )
 
     def execute_prepared_fixture(
@@ -72,6 +77,8 @@ class PrimeIntellectExecutor:
             initial_observation=initial_observation,
             fixture_digest=fixture_digest,
             remote_requirements=None,
+            capture_remote_result=False,
+            strict_task_identity=False,
         )
 
     def execute_with_task_id(
@@ -82,6 +89,7 @@ class PrimeIntellectExecutor:
         limits: ExecutionLimits,
         *,
         task_id: str,
+        strict_task_identity: bool = False,
     ) -> tuple[Result, ReplayEnvelope]:
         """Execute using the caller's lease-unique cancellation identity."""
 
@@ -95,6 +103,8 @@ class PrimeIntellectExecutor:
             initial_observation=None,
             fixture_digest=None,
             remote_requirements=None,
+            capture_remote_result=False,
+            strict_task_identity=strict_task_identity,
         )
 
     def execute_prepared_fixture_with_task_id(
@@ -108,6 +118,7 @@ class PrimeIntellectExecutor:
         initial_observation: Observation,
         fixture_digest: str,
         task_id: str,
+        strict_task_identity: bool = False,
     ) -> tuple[Result, ReplayEnvelope]:
         """Execute one attested fixture without dropping its lease identity."""
 
@@ -121,6 +132,8 @@ class PrimeIntellectExecutor:
             initial_observation=initial_observation,
             fixture_digest=fixture_digest,
             remote_requirements=None,
+            capture_remote_result=False,
+            strict_task_identity=strict_task_identity,
         )
 
     def execute_prepared_fixture_with_task_id_and_remote_requirements(
@@ -135,6 +148,7 @@ class PrimeIntellectExecutor:
         fixture_digest: str,
         task_id: str,
         remote_requirements: RemoteExecutionRequirements,
+        strict_task_identity: bool = False,
     ) -> tuple[Result, ReplayEnvelope]:
         return self._execute(
             scenario,
@@ -146,6 +160,8 @@ class PrimeIntellectExecutor:
             initial_observation=initial_observation,
             fixture_digest=fixture_digest,
             remote_requirements=remote_requirements,
+            capture_remote_result=True,
+            strict_task_identity=strict_task_identity,
         )
 
     def take_remote_result(self, task_id: str) -> RemoteExecutionResult | None:
@@ -164,6 +180,8 @@ class PrimeIntellectExecutor:
         initial_observation: Observation | None,
         fixture_digest: str | None,
         remote_requirements: RemoteExecutionRequirements | None,
+        capture_remote_result: bool,
+        strict_task_identity: bool,
     ) -> tuple[Result, ReplayEnvelope]:
         requirements = remote_requirements or self.client.default_requirements
         if requirements is None:
@@ -184,29 +202,53 @@ class PrimeIntellectExecutor:
             initial_state=initial_state,
             initial_observation=(initial_observation.model_dump(mode="json") if initial_observation is not None else None),
             fixture_digest=fixture_digest,
+            strict_task_identity=strict_task_identity,
         )
         remote = self.client.execute_request(
             request,
             max_retries=self.max_retries,
             backoff_seconds=self.backoff_seconds,
         )
-        if task_id is not None:
+        if capture_remote_result:
+            assert task_id is not None
             with self._remote_results_lock:
                 self._remote_results[task_id] = remote
         if not remote.succeeded:
             if self.client.allow_fallback:
                 if requirements.resources.accelerator is not None:
-                    raise RuntimeError(
-                        f"primeintellect {remote.status}: accelerator execution cannot fall back to CPU: {remote.error}"
+                    raise RemoteExecutionFailure(
+                        remote,
+                        detail=(
+                            f"primeintellect {remote.status}: accelerator execution cannot fall back to CPU: "
+                            f"{remote.error}"
+                        ),
                     )
                 if initial_state is not None:
-                    raise RuntimeError("primeintellect prepared-fixture execution cannot use an unattested fallback")
+                    raise RemoteExecutionFailure(
+                        remote,
+                        detail="primeintellect prepared-fixture execution cannot use an unattested fallback",
+                    )
                 fallback = self.client.fallback_local_response(scenario.name, seed)
-                return Result.model_validate(fallback["result"]), ReplayEnvelope.model_validate(fallback["replay"])
-            raise RuntimeError(f"primeintellect {remote.status}: {remote.error}")
-        execution = _request_helpers.last_json_object(remote.stdout)
-        result = Result.model_validate(execution.get("result"))
-        replay = ReplayEnvelope.model_validate(execution.get("replay"))
+                try:
+                    return Result.model_validate(fallback["result"]), ReplayEnvelope.model_validate(fallback["replay"])
+                except Exception as exc:
+                    raise RemoteExecutionFailure(
+                        remote,
+                        detail=f"primeintellect fallback response is invalid: {type(exc).__name__}: {exc}",
+                    ) from exc
+            raise RemoteExecutionFailure(remote)
+        try:
+            execution = _request_helpers.last_json_object(remote.stdout)
+            result = Result.model_validate(execution.get("result"))
+            replay = ReplayEnvelope.model_validate(execution.get("replay"))
+        except Exception as exc:
+            raise RemoteExecutionFailure(
+                remote,
+                detail=f"primeintellect result decoding failed: {type(exc).__name__}: {exc}",
+            ) from exc
         if fixture_digest is not None and execution.get("fixture_digest") != fixture_digest:
-            raise RuntimeError("primeintellect result lacks the prepared fixture attestation")
+            raise RemoteExecutionFailure(
+                remote,
+                detail="primeintellect result lacks the prepared fixture attestation",
+            )
         return result, replay

@@ -53,11 +53,12 @@ def test_probe_runs_single_match_and_refines() -> None:
 
     with patch("autocontext.loop.stage_probe.EvaluationRunner") as mock_runner_cls:
         mock_runner_cls.return_value.run.return_value = mock_eval_result
-        with patch("autocontext.loop.stage_probe.ScenarioEvaluator"):
+        with patch("autocontext.loop.stage_probe.ScenarioEvaluator") as mock_evaluator:
             result = stage_probe(ctx, agents=mock_agents, events=mock_events, supervisor=MagicMock())
 
     assert result.probe_refinement_applied is True
     assert result.current_strategy == {"move": "down"}
+    assert mock_evaluator.call_args.kwargs["task_namespace"] == "run:run_1:generation:1:evaluation:probe"
     mock_events.emit.assert_any_call("probe_started", {"run_id": "run_1", "generation": 1, "probe_matches": 1})
 
 

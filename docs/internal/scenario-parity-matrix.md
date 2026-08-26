@@ -1,6 +1,6 @@
 # Scenario Parity Matrix — Python & TypeScript
 
-> Current through PyPI `autocontext==0.16.1` and npm `autoctx@0.16.1`. This
+> Current through PyPI `autocontext==0.17.0` and npm `autoctx@0.17.0`. This
 > replaces the original AC-431 planning snapshot, which predated TypeScript
 > materialization, family-aware solve routing, code generation, spec auto-heal,
 > and operator-loop execution.
@@ -52,7 +52,7 @@ sandboxed generated-scenario runtime.
 The canonical command is `autoctx scenario create`; `autoctx new-scenario`
 remains a compatibility alias.
 
-| Path | Python 0.16.1 | TypeScript 0.16.1 |
+| Path | Python 0.17.0 | TypeScript 0.17.0 |
 | --- | --- | --- |
 | Template | `scenario create --template <t> --name <n>` | Same; persists the selected template |
 | Natural language | `scenario create --family <family> --name <n> --description "..."` for the nine registered custom family pipelines | `scenario create --description "..."`; classifies, designs, heals, validates, and materializes |
@@ -68,7 +68,7 @@ plain-language `autoctx solve` can select `agent_task` directly.
 
 ## Materialization And Execution
 
-| Family group | Python 0.16.1 | TypeScript 0.16.1 | Remaining difference |
+| Family group | Python 0.17.0 | TypeScript 0.17.0 | Remaining difference |
 | --- | --- | --- | --- |
 | Built-in `game` | `GenerationRunner` tournament and Elo loop | `GenerationRunner` tournament and Elo loop | TypeScript has two additional fixtures |
 | Generated `game` from `solve` | Generates, validates, registers, and runs the custom game | Persists the spec but rejects names absent from the built-in game registry | Custom generated-game execution is not symmetric |
@@ -111,4 +111,4 @@ game-only are no longer current.
 
 ---
 
-*Last verified against the 0.16.1 release sources: 2026-08-15.*
+*Last verified against the 0.17.0 release sources: 2026-08-25.*

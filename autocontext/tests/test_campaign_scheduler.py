@@ -234,6 +234,194 @@ def test_remote_expired_lease_is_terminal_without_duplicate_dispatch(tmp_path: P
     assert original.lease.attempt == 1
 
 
+def test_durable_restart_lease_rejects_changed_worker_environment(tmp_path: Path) -> None:
+    now = [100.0]
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    original_worker = _worker(
+        "remote",
+        locality="remote",
+        sandbox_features=frozenset({"durable_result_replay"}),
+    )
+    first = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    first.register_worker(original_worker)
+    first.enqueue(_job(1, max_attempts=2, retry_expired_lease=True))
+    assignment = first.claim("remote")[0]
+
+    now[0] = 111.0
+    dispatched: list[str] = []
+    restarted = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    restarted.register_worker(
+        _worker(
+            "remote",
+            locality="remote",
+            sandbox_features=frozenset({"durable_result_replay"}),
+            environment_labels={"image": "research-v2"},
+        ),
+        CallableCampaignWorker(lambda item: dispatched.append(item.lease.lease_id) or _success(item)),
+    )
+
+    assert restarted.reconcile() == ("job-1",)
+    assert restarted.job_status("job-1") == "infrastructure_failed"
+    result = restarted.job_result("job-1")
+    assert result is not None
+    assert result.retryable is False
+    assert restarted.run_until_idle() == 0
+    assert restarted.claim("remote") == ()
+    assert dispatched == []
+    assert [event.event_type for event in store.read()].count("job_leased") == 1
+    assert assignment.lease.attempt == 1
+    assert restarted.report().retries == 0
+
+
+def test_durable_restart_lease_without_current_executor_fails_closed(tmp_path: Path) -> None:
+    now = [100.0]
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    worker = _worker(
+        "remote",
+        locality="remote",
+        sandbox_features=frozenset({"durable_result_replay"}),
+    )
+    first = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    first.register_worker(worker)
+    first.enqueue(_job(1, max_attempts=2, retry_expired_lease=True))
+    assignment = first.claim("remote")[0]
+
+    now[0] = 111.0
+    restarted = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+
+    assert restarted.reconcile() == ("job-1",)
+    assert restarted.job_status("job-1") == "infrastructure_failed"
+    result = restarted.job_result("job-1")
+    assert result is not None
+    assert result.retryable is False
+    assert restarted.run_until_idle() == 0
+    events = store.read()
+    assert [event.event_type for event in events].count("job_leased") == 1
+    assert [event.event_type for event in events].count("job_requeued") == 0
+    assert assignment.lease.attempt == 1
+    assert restarted.report().retries == 0
+
+
+def test_durable_lease_classification_survives_later_worker_capability_drop(tmp_path: Path) -> None:
+    now = [100.0]
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    durable_worker = _worker(
+        "remote",
+        locality="remote",
+        sandbox_features=frozenset({"durable_result_replay"}),
+    )
+    downgraded_worker = _worker(
+        "remote",
+        locality="remote",
+        sandbox_features=frozenset(),
+    )
+    first = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    first.register_worker(durable_worker)
+    request = _job(1, max_attempts=2, retry_expired_lease=True)
+    first.enqueue(request)
+    assignment = first.claim("remote")[0]
+
+    first_restart = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    first_restart.register_worker(downgraded_worker)
+
+    now[0] = 111.0
+    dispatched: list[str] = []
+    second_restart = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    second_restart.register_worker(
+        downgraded_worker,
+        CallableCampaignWorker(lambda item: dispatched.append(item.lease.lease_id) or _success(item)),
+    )
+
+    assert second_restart.reconcile() == ("job-1",)
+    assert second_restart.job_status("job-1") == "infrastructure_failed"
+    result = second_restart.job_result("job-1")
+    assert result is not None
+    assert result.retryable is False
+    assert second_restart.run_until_idle() == 0
+    assert dispatched == []
+    report = second_restart.report()
+    assert report.reserved_by_campaign["campaign-1"] == SchedulerBudget()
+    assert report.consumed_by_campaign["campaign-1"] == SchedulerBudget(
+        tokens=request.reservation.tokens,
+        wall_seconds=10,
+        compute_units=request.reservation.compute_units,
+        jobs=1,
+    )
+    events = store.read()
+    assert [event.event_type for event in events].count("worker_registered") == 2
+    assert [event.event_type for event in events].count("job_leased") == 1
+    assert [event.event_type for event in events].count("job_lease_failed") == 1
+    assert [event.event_type for event in events].count("job_requeued") == 0
+    assert assignment.lease.attempt == 1
+    assert report.retries == 0
+
+    terminal_event_count = len(events)
+    terminal_restart = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    assert terminal_restart.reconcile() == ()
+    assert len(store.read()) == terminal_event_count
+    assert terminal_restart.report().consumed_by_campaign["campaign-1"] == report.consumed_by_campaign["campaign-1"]
+
+    actual = CampaignJobResult(
+        outcome="candidate_success",
+        consumed=SchedulerBudget(tokens=3, wall_seconds=1, compute_units=0.25, jobs=1),
+        cleanup_succeeded=True,
+    )
+    assert terminal_restart.complete(assignment.lease.lease_id, actual) == result
+    assert terminal_restart.complete(assignment.lease.lease_id, actual) == result
+    late_report = terminal_restart.report()
+    assert terminal_restart.job_status("job-1") == "infrastructure_failed"
+    assert terminal_restart.job_result("job-1") == result
+    assert late_report.succeeded == 0
+    assert late_report.consumed_by_campaign["campaign-1"] == actual.consumed
+    assert late_report.late_completions == 1
+    late_events = store.read()
+    assert [event.event_type for event in late_events].count("job_stale_completed") == 1
+    assert [event.event_type for event in late_events].count("job_leased") == 1
+    persisted = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    assert persisted.job_status("job-1") == "infrastructure_failed"
+    assert persisted.report().consumed_by_campaign["campaign-1"] == actual.consumed
+    assert persisted.report().late_completions == 1
+
+
+def test_non_durable_lease_remains_retryable_after_later_worker_capability_upgrade(tmp_path: Path) -> None:
+    now = [100.0]
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    original_worker = _worker("remote", locality="remote", sandbox_features=frozenset())
+    upgraded_worker = _worker(
+        "remote",
+        locality="remote",
+        sandbox_features=frozenset({"durable_result_replay"}),
+    )
+    first = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    first.register_worker(original_worker)
+    first.enqueue(_job(1, max_attempts=2, retry_expired_lease=True))
+    original_assignment = first.claim("remote")[0]
+
+    first_restart = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    first_restart.register_worker(upgraded_worker)
+
+    now[0] = 111.0
+    dispatched: list[CampaignAssignment] = []
+    second_restart = CampaignScheduler(store, lease_seconds=10, clock=lambda: now[0])
+    second_restart.register_worker(
+        upgraded_worker,
+        CallableCampaignWorker(lambda item: dispatched.append(item) or _success(item)),
+    )
+
+    assert second_restart.reconcile() == ("job-1",)
+    assert second_restart.job_status("job-1") == "queued"
+    assert second_restart.report().retries == 1
+    assert second_restart.run_until_idle() == 1
+    assert second_restart.job_status("job-1") == "succeeded"
+    assert len(dispatched) == 1
+    assert dispatched[0].lease.lease_id != original_assignment.lease.lease_id
+    assert dispatched[0].lease.attempt == 2
+    events = store.read()
+    assert [event.event_type for event in events].count("job_requeued") == 1
+    assert [event.event_type for event in events].count("job_lease_failed") == 0
+    assert [event.event_type for event in events].count("job_leased") == 2
+
+
 def test_scheduler_respects_capabilities_resources_budgets_and_comparable_lanes(tmp_path: Path) -> None:
     scheduler = CampaignScheduler(CampaignSchedulerEventStore(tmp_path / "events.jsonl"))
     scheduler.configure_campaign(

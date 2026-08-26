@@ -13,6 +13,9 @@ remote execution. It describes a task without naming a provider:
   `warm_snapshot` lifecycle.
 
 ```python
+from pathlib import Path
+
+from autocontext.execution import ExternalEvalLedgerOutbox
 from autocontext.execution.remote_execution import (
     RemoteExecutionRequest,
     RemoteInputArtifact,
@@ -30,7 +33,10 @@ request = RemoteExecutionRequest(
     input_artifacts=(RemoteInputArtifact("analyze.py", b"print('{}')"),),
 )
 
-result = PrimeIntellectClient(api_key="...").execute_request(request)
+result = PrimeIntellectClient(
+    api_key="...",
+    ledger_outbox=ExternalEvalLedgerOutbox(Path("runs/external-evaluations/prime-ledger.sqlite3")),
+).execute_request(request)
 ```
 
 `RemoteExecutionResult` returns structured stdout/stderr events, exit status,
@@ -51,6 +57,78 @@ capability drift, cleanup failure, timeout, an unknown post-dispatch outcome,
 and malformed completed output are terminal. Campaign adapters preserve this
 disposition so a scheduler retry cannot allocate a second paid sandbox under a
 new task identity.
+
+Generation orchestration honors the same disposition. `PrimeIntellectExecutor`
+raises a typed `RemoteExecutionFailure` carrying the complete result instead of
+flattening a paid failure into a generic exception. Tournament and regression-
+fixture retries propagate `retryable=False` outcomes immediately. A
+`retryable=True` result may consume the configured generation retry budget;
+for tournaments, that budget explicitly authorizes a fresh whole-tournament
+namespace and seed range, including repetition of successful matches from an
+incomplete prior attempt. Ordinary local transient exceptions retain their
+existing retry behavior.
+
+Failures at the durable replay, claim, result-commit, or ledger-delivery
+boundary raise `RemoteExecutionAccountingError`. This error has no fabricated
+provider result and is always non-retryable: the prior task may already be
+claimed, completed, or delivered, so generation orchestration must preserve
+its identity for reconciliation instead of allocating fresh paid work.
+
+### Durable paid-result accounting
+
+The shipped generation and campaign composition always wires Prime through a
+SQLite-backed `ExternalEvalLedgerOutbox` at
+`<runs_root>/external-evaluations/prime-ledger.sqlite3`. The client commits a
+stable request/attempt identity before provider dispatch, then atomically
+persists the complete typed result and its `ExternalEvalLedgerEntry` projection
+before exposing completion. Provider retry events retain deterministic attempt
+identities, cleanup outcomes, and backoff lineage.
+
+After restart, an already committed request returns its recorded result without
+creating another sandbox. A claim abandoned before result commit is treated as
+possibly billable and fails closed until an operator reconciles it; it is never
+authorization to repeat the request. A failed optional `ledger_sink` delivery
+is retained for retry after restart, again without provider re-execution.
+Outbox delivery uses an exclusive, expiring lease so concurrent clients do not
+normally invoke the sink together. Every delivered `ExternalEvalLedgerEntry`
+also carries its stable `attempt_id`; sinks must use that value as an
+idempotency key because a process can still crash after the external side
+effect succeeds but before the local acknowledgement is committed.
+`ExecutionRuntime.unresolved_remote_evaluations()` returns claimed or
+undelivered records, and runtime construction logs their count and database
+path so operators can locate the accounting state.
+
+Each outbox stores a cryptographically random instance identity. Prime campaign
+workers bind that identity into their environment fingerprint and advertise
+durable result replay only when the client, executor, and campaign runtime share
+that exact outbox object. Reopening or moving the intact database preserves its
+identity. A newly initialized or otherwise different-instance ledger—whether
+placed at the same path or selected through a new `runs_root`—fails closed
+before another provider request can be dispatched. The instance ID is a lineage
+marker, not an anti-rollback witness: it follows the complete database state
+rather than its filename. Stop every client before moving the intact database;
+live file replacement is unsupported. Operators must not restore a stale copy
+after paid dispatch because a full rollback can retain the identity while
+omitting newer claims. That requires manual provider-accounting reconciliation
+before campaign resume.
+
+`RemoteExecutionRequest.strict_task_identity` is a local durability policy,
+not provider payload. When enabled, one provider/task ID may bind exactly one
+request identity: a later request with the same task ID but different content
+fails before claim or dispatch. Live context promotion uses this mode because
+the semantic bundle/fixture/seed arm must remain stable across restart even if
+a nondeterministic competitor regenerates different strategy bytes; those
+changed bytes are rejected rather than billed as a second evaluation.
+
+Direct `PrimeIntellectClient` embeddings should supply their own durable
+`ExternalEvalLedgerOutbox`, as in the example above. Omitting it preserves the
+low-level adapter API but does not provide restart-safe paid-result accounting.
+With an outbox configured, the client and shipped runtime may be reconstructed
+offline or without a current Prime API key so they can return an existing
+committed result. Those conditions still reject every new request before it is
+claimed or dispatched. Expired opaque grant references are likewise retained
+as immutable request identity for replay, but are rejected by the mutable
+pre-dispatch validation gate before any new provider work.
 
 ## Prime Intellect adapter
 
@@ -104,11 +182,13 @@ CPU-only requests retain the existing generic image contract.
 
 Every provider create call receives the exact validated image, CPU/memory/disk
 request, accelerator kind/count, region, and a SHA-256 idempotency key derived
-from the complete non-secret remote request. After creation, the adapter checks
-the provider-resolved image, region, accelerator kind, and count before running
-the command. Drift is an infrastructure failure, the sandbox is cleaned up,
-and the command is not dispatched or retried. An accelerator request is never
-eligible for the historical local fallback, even when
+from the complete non-secret remote request and the high-level dispatch-attempt
+ordinal. Transport retries made by the SDK retain the same key, while a
+deliberate adapter retry receives a distinct key. After creation, the adapter
+checks the provider-resolved image, region, accelerator kind, and count before
+running the command. Drift is an infrastructure failure, the sandbox is
+cleaned up, and the command is not dispatched or retried. An accelerator
+request is never eligible for the historical local fallback, even when
 `AUTOCONTEXT_ALLOW_PRIMEINTELLECT_FALLBACK=true`.
 
 Typed result and ledger provenance include the request digest, requested

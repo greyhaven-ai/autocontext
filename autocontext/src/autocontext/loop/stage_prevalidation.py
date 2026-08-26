@@ -10,8 +10,12 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from autocontext.analytics.regression_fixtures import FixtureStore, RegressionFixture
+from autocontext.execution.remote_failure import RemoteExecutionError
 from autocontext.execution.strategy_validator import StrategyValidator, ValidationResult
-from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
+from autocontext.harness.evaluation.scenario_evaluator import (
+    ScenarioEvaluator,
+    generation_evaluation_namespace,
+)
 from autocontext.harness.evaluation.types import EvaluationLimits
 from autocontext.knowledge.dead_end_manager import DeadEndEntry
 from autocontext.loop.stage_types import GenerationContext
@@ -113,6 +117,7 @@ def stage_prevalidation(
                     ctx,
                     fixtures=fixtures,
                     supervisor=supervisor,
+                    attempt=attempt,
                 )
                 if fixture_result.passed:
                     events.emit("regression_fixtures_passed", {
@@ -240,14 +245,32 @@ def _validate_against_regression_fixtures(
     *,
     fixtures: list[RegressionFixture],
     supervisor: ExecutionSupervisor,
+    attempt: int,
 ) -> ValidationResult:
-    evaluator = ScenarioEvaluator(ctx.scenario, supervisor, hook_bus=ctx.hook_bus)
+    evaluator = ScenarioEvaluator(
+        ctx.scenario,
+        supervisor,
+        hook_bus=ctx.hook_bus,
+        task_namespace=generation_evaluation_namespace(
+            ctx.run_id,
+            ctx.generation,
+            f"prevalidation:attempt:{attempt}",
+        ),
+    )
     limits = EvaluationLimits(timeout_seconds=ctx.settings.harness_timeout_seconds)
     errors: list[str] = []
 
     for fixture in fixtures:
         try:
             result = evaluator.evaluate(ctx.current_strategy, fixture.seed, limits)
+        except RemoteExecutionError as exc:
+            if not exc.retryable:
+                raise
+            logger.debug("loop.stage_prevalidation: retryable remote execution failure", exc_info=True)
+            errors.append(
+                f"{fixture.fixture_id}: regression fixture '{fixture.description}' raised {exc}"
+            )
+            continue
         except Exception as exc:
             logger.debug("loop.stage_prevalidation: caught Exception", exc_info=True)
             errors.append(

@@ -11,9 +11,9 @@ across `hermes-agent` releases — is high enough that we should
 not pay it until a concrete operator workflow demands it.
 
 A working prototype shape is checked in at
-[`autocontext/src/autocontext/hermes/plugin_emitter.py`](../autocontext/src/autocontext/hermes/plugin_emitter.py)
+[`autocontext/src/autocontext/hermes/plugin_emitter.py`](../../autocontext/src/autocontext/hermes/plugin_emitter.py)
 with TDD coverage in
-[`tests/test_hermes_plugin_emitter.py`](../autocontext/tests/test_hermes_plugin_emitter.py).
+[`tests/test_hermes_plugin_emitter.py`](../../autocontext/tests/test_hermes_plugin_emitter.py).
 When this ticket is revisited, the production plugin glues
 Hermes's hook decorators to the orchestrator methods this module
 already exposes.

@@ -804,6 +804,37 @@ class _InlineExecutor:
         )
 
 
+class _TaskAwareInlineExecutor(_InlineExecutor):
+    strict_task_identity_supported = True
+
+    def __init__(self) -> None:
+        self.task_calls: list[tuple[str, bool, dict[str, Any]]] = []
+
+    def execute_prepared_fixture_with_task_id(
+        self,
+        scenario: ScenarioInterface,
+        strategy: Mapping[str, Any],
+        seed: int,
+        limits: ExecutionLimits,
+        *,
+        initial_state: Mapping[str, Any],
+        initial_observation: Observation,
+        fixture_digest: str,
+        task_id: str,
+        strict_task_identity: bool = False,
+    ) -> tuple[Result, ReplayEnvelope]:
+        self.task_calls.append((task_id, strict_task_identity, dict(strategy)))
+        return self.execute_prepared_fixture(
+            scenario,
+            strategy,
+            seed,
+            limits,
+            initial_state=initial_state,
+            initial_observation=initial_observation,
+            fixture_digest=fixture_digest,
+        )
+
+
 def test_live_unit_plan_does_not_relabel_identical_fixtures_as_independent(tmp_path: Path) -> None:
     scenario = _ScoreScenario()  # This scenario deliberately ignores its seed.
     config = LiveContextPromotionConfig(
@@ -930,6 +961,117 @@ def test_runtime_evaluator_uses_immutable_arm_context_without_identity_or_histor
     assert scenario.execution_count == 0
     assert orchestrator.settings is settings
     assert orchestrator.competitor.model == "baseline-model"
+
+
+def test_runtime_context_resume_reuses_strict_semantic_arm_identity() -> None:
+    generated_strategies: list[int] = []
+
+    class _RegeneratingClient(_ResettableStatefulClient):
+        def generate(
+            self,
+            *,
+            model: str,
+            prompt: str,
+            max_tokens: int,
+            temperature: float,
+            role: str = "",
+        ) -> ModelResponse:
+            if role != "competitor":
+                return super().generate(
+                    model=model,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    role=role,
+                )
+            del prompt, max_tokens, temperature
+            generated_strategies.append(len(generated_strategies) + 1)
+            return ModelResponse(
+                text=json.dumps({"move": generated_strategies[-1]}),
+                usage=RoleUsage(input_tokens=1, output_tokens=1, latency_ms=0, model=model),
+            )
+
+    scenario = _ScoreScenario()
+    executor = _TaskAwareInlineExecutor()
+    evaluator = build_runtime_context_bundle_evaluator(
+        scenario_name="demo",
+        scenario=scenario,
+        orchestrator=AgentOrchestrator(
+            _RegeneratingClient(),
+            AppSettings(agent_provider="deterministic"),
+        ),
+        supervisor=ExecutionSupervisor(executor),
+        task_namespace="run:run-a:generation:2:evaluation:context-promotion",
+    )
+    unit = ContextBundleEvaluationUnit(
+        "resume-fixture",
+        materialize_runtime_fixture(scenario, 42).digest,
+        42,
+        TrialLane.CONFIRMATION,
+    )
+    bundle = _bundle("CANDIDATE_MARKER")
+
+    evaluator.evaluate(bundle, unit)
+    evaluator.evaluate(bundle, unit)
+
+    assert len(executor.task_calls) == 2
+    assert executor.task_calls[0][0] == executor.task_calls[1][0]
+    assert executor.task_calls[0][1] is True
+    assert executor.task_calls[1][1] is True
+    assert executor.task_calls[0][2] != executor.task_calls[1][2]
+
+
+def test_runtime_context_keeps_legacy_task_aware_executor_on_compatible_path() -> None:
+    class _LegacyTaskAwareExecutor(_InlineExecutor):
+        task_calls = 0
+
+        def execute_prepared_fixture_with_task_id(
+            self,
+            scenario: ScenarioInterface,
+            strategy: Mapping[str, Any],
+            seed: int,
+            limits: ExecutionLimits,
+            *,
+            initial_state: Mapping[str, Any],
+            initial_observation: Observation,
+            fixture_digest: str,
+            task_id: str,
+        ) -> tuple[Result, ReplayEnvelope]:
+            del task_id
+            self.task_calls += 1
+            return self.execute_prepared_fixture(
+                scenario,
+                strategy,
+                seed,
+                limits,
+                initial_state=initial_state,
+                initial_observation=initial_observation,
+                fixture_digest=fixture_digest,
+            )
+
+    scenario = _ScoreScenario()
+    executor = _LegacyTaskAwareExecutor()
+    evaluator = build_runtime_context_bundle_evaluator(
+        scenario_name="demo",
+        scenario=scenario,
+        orchestrator=AgentOrchestrator(
+            _ResettableStatefulClient(),
+            AppSettings(agent_provider="deterministic"),
+        ),
+        supervisor=ExecutionSupervisor(executor),
+        task_namespace="run:run-a:generation:2:evaluation:context-promotion",
+    )
+    unit = ContextBundleEvaluationUnit(
+        "legacy-fixture",
+        materialize_runtime_fixture(scenario, 43).digest,
+        43,
+        TrialLane.CONFIRMATION,
+    )
+
+    outcome = evaluator.evaluate(_bundle("CANDIDATE_MARKER"), unit)
+
+    assert outcome.valid is True
+    assert executor.task_calls == 0
 
 
 def test_runtime_evaluator_fails_closed_when_scenario_fixture_changes_after_planning() -> None:

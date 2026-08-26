@@ -11,6 +11,7 @@ from pydantic import Field, model_validator
 
 from autocontext.config.settings import AppSettings
 from autocontext.context_bundles.models import stable_digest
+from autocontext.execution._immutable_json import thaw_json
 from autocontext.execution.campaign_scheduler_adapters import campaign_result_from_remote
 from autocontext.execution.campaign_scheduler_models import (
     CampaignJobResult,
@@ -165,7 +166,15 @@ def remote_result_dict(result: RemoteExecutionResult) -> dict[str, Any]:
         "error": result.error,
         "session_id": result.session_id,
         "provenance": asdict(result.provenance),
-        "events": [asdict(event) for event in result.events],
+        "events": [
+            {
+                "sequence": event.sequence,
+                "event_type": event.event_type,
+                "message": event.message,
+                "fields": thaw_json(event.fields),
+            }
+            for event in result.events
+        ],
         "retryable": result.retryable,
     }
 

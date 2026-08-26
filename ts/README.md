@@ -209,7 +209,7 @@ pipeline). They are available via `pip install autocontext`; the npm package's
 autoctx serve mcp
 ```
 
-The MCP server exposes 40+ tools across scenarios, runs, knowledge, evaluation, feedback, solve (`solve_scenario`, `solve_status`, `solve_result`), sandbox (`sandbox_create`, `sandbox_run`, `sandbox_status`, ...), export, and discovery (`capabilities`). Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/scenario-parity-matrix.md](../docs/scenario-parity-matrix.md).
+The MCP server exposes 40+ tools across scenarios, runs, knowledge, evaluation, feedback, solve (`solve_scenario`, `solve_status`, `solve_result`), sandbox (`sandbox_create`, `sandbox_run`, `sandbox_status`, ...), export, and discovery (`capabilities`). Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/internal/scenario-parity-matrix.md](../docs/internal/scenario-parity-matrix.md).
 
 ### Interactive run transcript extension
 
@@ -528,7 +528,7 @@ Reference docs moved out of this README:
 - [../docs/generated-fetch-packaging.md](../docs/generated-fetch-packaging.md)
 - [../docs/fetch-conformance.md](../docs/fetch-conformance.md)
 - [../docs/fetch-troubleshooting.md](../docs/fetch-troubleshooting.md)
-- [../docs/edge-runtime-compatibility.md](../docs/edge-runtime-compatibility.md)
+- [../docs/internal/edge-runtime-compatibility.md](../docs/internal/edge-runtime-compatibility.md)
 
 Runnable examples: [`examples/fetch-conformance-host-wrapper.ts`](examples/fetch-conformance-host-wrapper.ts)
 (typed executable wrapper) and

@@ -27,9 +27,9 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.16.1` |
-| Python library/dev  | `uv pip install autocontext==0.16.1`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.16.1`           |
+| Python CLI          | `uv tool install autocontext==0.17.0` |
+| Python library/dev  | `uv pip install autocontext==0.17.0`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.17.0`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -56,6 +56,10 @@ type/count, immutable-image, region, and telemetry capability validation. It
 fails before provider creation when the configured pool cannot satisfy the
 request and never downgrades accelerator work to CPU; see
 [remote execution sessions](docs/remote-execution-sessions.md).
+Shipped Prime generation and campaign paths persist a durable pre-dispatch
+claim plus the complete result/ledger projection before returning paid work;
+restart never treats an unresolved or already committed request as permission
+to provision another sandbox.
 
 ## Agent Entry Points
 
@@ -128,19 +132,19 @@ runtime (`python` or `typescript`).
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.16.1
+## What's New in 0.17.0
 
-- **A clearer paved-road CLI:** `run` now requires an explicit scenario, `--iterations` is the primary spelling, concise help leads with the core workflow, and `autoctx commands --all` exposes the full catalog. Existing `--gens` and legacy command aliases remain available for compatibility.
-- **Stable machine-readable inspection:** `status`, `show`, and `watch --ndjson` emit versioned, schema-backed envelopes with consistent stdout, stderr, and exit-code behavior. Status and show accept `--run-id`, while `--version --json` identifies the Python runtime and package version.
-- **More reliable run inspection:** `watch` no longer exits before a completed generation becomes visible, and `show` defaults to the latest generation while rejecting conflicting selectors instead of guessing.
-- **Portable exports by default:** `export` now writes JSON to stdout when no output path is supplied, supports Pi packages, and retains `strategy` as a compatibility alias for the default JSON format.
-- **Contracts ship with the package:** CLI contract v2 schemas and shared fixtures are included in wheels and source distributions so downstream tools can validate the same status, show, queue, and export shapes as the CLI.
-- **Ratcheted package boundaries:** domain, analytics, configuration, and storage implementations now follow enforced dependency directions while legacy module paths remain available as compatibility shims.
+- **Outcome-gated context bundles:** immutable candidates now move through matched screening, adaptive confirmation, held-out evaluation, false-promotion control, causal attribution, and atomic activation while rejected evidence remains available for scoped retesting.
+- **Capability-scoped execution:** generated research code can run in a locked-down Docker workspace, remote scenarios ship as verified content-addressed packages, and trusted-local execution remains an explicit operator choice rather than a fallback.
+- **Durable campaign operations:** restart-safe scheduling, leases, heartbeats, cancellation, bounded reuse, campaign auditing, and a paid-result outbox make long-running local and remote evaluation inspectable, accountable, and recoverable without duplicate provider execution.
+- **Correctness-first kernel evolution:** protected workers, fresh confirmation, finite-sample promotion gates, autonomous model-backed campaigns, and three-family transfer studies expose regressions, specialists, plateaus, and generalizing champions without averaging failures away.
+- **Capability-validated accelerators:** Prime requests bind immutable images, accelerator type/count, region, telemetry, idempotency, and resolved hardware identity; unsupported or drifting configurations fail before paid candidate execution.
+- **Stronger learning evidence across runtimes:** Python and TypeScript share context-bundle, attribution, and negative-result contracts, while Python training adds replayable adaptive confirmation and minimum-effect promotion artifacts.
 <!-- autocontext-whats-new:end -->
 
-### npm runtime highlights included in 0.16.1
+### npm runtime foundations carried into 0.17.0
 
-The aligned `autoctx@0.16.1` package also carries the TypeScript-first runtime
+The aligned `autoctx@0.17.0` package also carries the TypeScript-first runtime
 work introduced in 0.16.0 and hardened in 0.16.1:
 
 - **Host-owned live composition:** typed runtime capabilities, scoped cleanup
