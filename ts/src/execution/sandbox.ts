@@ -12,6 +12,7 @@ import type { SQLiteStore } from "../storage/index.js";
 
 export interface SandboxManagerOpts {
   provider: LLMProvider;
+  agentProvider?: string;
   store: SQLiteStore;
   runsRoot: string;
   knowledgeRoot: string;
@@ -29,6 +30,7 @@ export interface Sandbox {
 
 export class SandboxManager {
   #provider: LLMProvider;
+  #agentProvider: string;
   #store: SQLiteStore;
   #runsRoot: string;
   #knowledgeRoot: string;
@@ -37,6 +39,7 @@ export class SandboxManager {
 
   constructor(opts: SandboxManagerOpts) {
     this.#provider = opts.provider;
+    this.#agentProvider = opts.agentProvider ?? opts.provider.name;
     this.#store = opts.store;
     this.#runsRoot = opts.runsRoot;
     this.#knowledgeRoot = opts.knowledgeRoot;
@@ -89,6 +92,7 @@ export class SandboxManager {
 
       const runner = new GenerationRunner({
         provider: this.#provider,
+        agentProvider: this.#agentProvider,
         scenario,
         store: this.#store,
         runsRoot: this.#runsRoot,

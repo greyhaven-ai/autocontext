@@ -15,6 +15,7 @@ describe("AnthropicProvider", () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
     const provider = createAnthropicProvider({ apiKey: "test-key" });
     expect(provider.name).toBe("anthropic");
+    expect(provider.isStatelessNoToolsProvider).toBe(true);
     expect(typeof provider.defaultModel).toBe("function");
     expect(typeof provider.complete).toBe("function");
   });
@@ -143,11 +144,13 @@ describe("AnthropicProvider", () => {
       const { createAnthropicProvider } = await import("../src/providers/index.js");
       const provider = createAnthropicProvider({ apiKey: "sk-ant-request-secret" });
       const responseText = vi.fn(async () => "server leaked sk-ant-response-secret");
+      const cancelResponseBody = vi.fn(async () => undefined);
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status,
         headers: { get: () => null },
         text: responseText,
+        body: { cancel: cancelResponseBody },
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -164,6 +167,7 @@ describe("AnthropicProvider", () => {
       expect((caught as Error & { cause?: unknown }).cause).toMatchObject({ status });
       expect(mockFetch).toHaveBeenCalledOnce();
       expect(responseText).not.toHaveBeenCalled();
+      expect(cancelResponseBody).toHaveBeenCalledOnce();
     },
   );
 
@@ -173,6 +177,7 @@ describe("AnthropicProvider", () => {
       const { createAnthropicProvider } = await import("../src/providers/index.js");
       const provider = createAnthropicProvider({ apiKey: "test-key" });
       const responseText = vi.fn(async () => "sensitive response body");
+      const cancelResponseBody = vi.fn(async () => undefined);
       const mockFetch = vi
         .fn()
         .mockResolvedValueOnce({
@@ -180,6 +185,7 @@ describe("AnthropicProvider", () => {
           status,
           headers: { get: () => "0" },
           text: responseText,
+          body: { cancel: cancelResponseBody },
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -196,8 +202,30 @@ describe("AnthropicProvider", () => {
       expect(result.text).toBe("recovered");
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(responseText).not.toHaveBeenCalled();
+      expect(cancelResponseBody).toHaveBeenCalledOnce();
     },
   );
+
+  it("does not mask an Anthropic API error when response cancellation fails", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key" });
+    const cancelError = new Error("cancel failed");
+    const cancelResponseBody = vi.fn(() => Promise.reject(cancelError));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        headers: { get: () => null },
+        body: { cancel: cancelResponseBody },
+      }),
+    );
+
+    await expect(provider.complete({ systemPrompt: "sys", userPrompt: "test" })).rejects.toThrow(
+      "Anthropic API request failed with status 401",
+    );
+    expect(cancelResponseBody).toHaveBeenCalledOnce();
+  });
 
   it("bounds transient status retries", async () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
@@ -302,6 +330,7 @@ describe("OpenAICompatibleProvider", () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
     expect(provider.name).toBe("openai-compatible");
+    expect(provider.isStatelessNoToolsProvider).toBe(true);
     expect(typeof provider.defaultModel).toBe("function");
     expect(typeof provider.complete).toBe("function");
   });

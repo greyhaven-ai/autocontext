@@ -154,7 +154,10 @@ export class ImprovementLoop {
 
       // a cached round replays a real verdict; its embedded output must
       // never be re-classified as a judge parse failure
-      const failed = fromCache ? false : isParseFailure(result.score, result.reasoning);
+      const failed = fromCache
+        ? false
+        : result.authoritativeParseFailed === true ||
+          isParseFailure(result.score, result.reasoning);
       const roundResult = buildRoundResult({
         roundNumber: roundNum,
         output: currentOutput,

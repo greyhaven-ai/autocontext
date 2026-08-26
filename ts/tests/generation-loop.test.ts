@@ -32,6 +32,7 @@ describe("DeterministicProvider", () => {
     const { DeterministicProvider } = await import("../src/providers/deterministic.js");
     const provider = new DeterministicProvider();
     expect(provider.name).toBe("deterministic");
+    expect(provider.isStatelessNoToolsProvider).toBe(true);
     expect(typeof provider.defaultModel).toBe("function");
     expect(typeof provider.complete).toBe("function");
   });
@@ -337,6 +338,78 @@ describe("GenerationRunner", () => {
         elapsed_seconds: expect.any(Number),
       },
     ]);
+
+    store.close();
+  });
+
+  it("retains paid competitor telemetry when strategy repair fails the run", async () => {
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { EventStreamEmitter } = await import("../src/loop/events.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+
+    let completionCalls = 0;
+    const provider = {
+      name: "invalid-strategy-provider",
+      defaultModel: () => "invalid-strategy-model",
+      complete: async () => {
+        completionCalls += 1;
+        return {
+          text: completionCalls === 1 ? "not-json" : "still-not-json",
+          model: "invalid-strategy-model",
+          usage: completionCalls === 1
+            ? { input_tokens: 2, output_tokens: 3 }
+            : { input_tokens: 7, output_tokens: 11 },
+        };
+      },
+    };
+    const store = new SQLiteStore(asDbPath(join(dir, "failed-repair.db")));
+    store.migrate(join(__dirname, "..", "migrations"));
+    const events = new EventStreamEmitter(join(dir, "failed-repair-events.ndjson"));
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    events.subscribe((event, payload) => {
+      emitted.push({ event, payload });
+    });
+    const runner = new GenerationRunner({
+      provider,
+      scenario: new GridCtfScenario(),
+      store,
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      matchesPerGeneration: 2,
+      maxRetries: 0,
+      minDelta: 0,
+      events,
+    });
+
+    await expect(runner.run(asRunId("failed-strategy-repair"), 1)).rejects.toThrow(
+      "invalid strategy JSON after one repair attempt; generation was not evaluated",
+    );
+
+    const lifecycleEvents = emitted.filter(({ event }) => [
+      "generation_started",
+      "agents_started",
+      "role_completed",
+      "run_failed",
+    ].includes(event));
+    expect(lifecycleEvents.map(({ event }) => event)).toEqual([
+      "generation_started",
+      "agents_started",
+      "role_completed",
+      "role_completed",
+      "run_failed",
+    ]);
+    expect(
+      lifecycleEvents
+        .filter(({ event }) => event === "role_completed")
+        .map(({ payload }) => ({ role: payload.role, tokens: payload.tokens })),
+    ).toEqual([
+      { role: "competitor", tokens: 5 },
+      { role: "competitor", tokens: 18 },
+    ]);
+    expect(completionCalls).toBe(2);
+    expect(emitted.map(({ event }) => event)).not.toContain("tournament_started");
+    expect(store.getRun("failed-strategy-repair")?.status).toBe("failed");
 
     store.close();
   });

@@ -358,6 +358,7 @@ export async function executeBuiltInGameStartRun(opts: {
     const runner =
       opts.deps?.createRunner?.({
         provider: opts.providerBundle.defaultProvider,
+        agentProvider: opts.providerBundle.defaultConfig.providerType,
         roleProviders: opts.providerBundle.roleProviders,
         roleModels: opts.providerBundle.roleModels,
         scenario: scenarioInstance,
@@ -395,6 +396,7 @@ export async function executeBuiltInGameStartRun(opts: {
       }) ??
       new GenerationRunner({
         provider: opts.providerBundle.defaultProvider,
+        agentProvider: opts.providerBundle.defaultConfig.providerType,
         roleProviders: opts.providerBundle.roleProviders,
         roleModels: opts.providerBundle.roleModels,
         scenario: scenarioInstance,
@@ -567,6 +569,11 @@ export async function executeAgentTaskCustomStartRun(opts: {
   let bestScore: number | undefined;
   const startedGenerations = new Set<number>();
   const generationStartedAtMs = new Map<number, number>();
+  // Candidate work happens before the corresponding evaluation lifecycle is
+  // emitted. Retain that earlier boundary so durable round timing includes
+  // initial drafting and revisions without publishing a generation that may
+  // never be evaluated (for example, an unchanged revision).
+  const pendingGenerationStartedAtMs = new Map<number, number>();
   const completedGenerationNumbers = new Set<number>();
   const persistedOutputGenerations = new Set<number>();
   let store: SavedAgentTaskRunStore | null = null;
@@ -599,9 +606,27 @@ export async function executeAgentTaskCustomStartRun(opts: {
       saved_custom: true,
     });
     startedGenerations.add(generation);
-    generationStartedAtMs.set(generation, now());
+    generationStartedAtMs.set(
+      generation,
+      pendingGenerationStartedAtMs.get(generation) ?? now(),
+    );
+    pendingGenerationStartedAtMs.delete(generation);
     activeGeneration = generation;
     opts.events.emit("generation_started", { run_id: opts.runId, generation });
+  };
+
+  const markPendingGenerationWork = (generation: number): void => {
+    if (
+      !Number.isInteger(generation) ||
+      generation < 1 ||
+      generation > opts.generations ||
+      startedGenerations.has(generation) ||
+      completedGenerationNumbers.has(generation) ||
+      pendingGenerationStartedAtMs.has(generation)
+    ) {
+      return;
+    }
+    pendingGenerationStartedAtMs.set(generation, now());
   };
 
   const completeGeneration = (input: {
@@ -740,6 +765,16 @@ export async function executeAgentTaskCustomStartRun(opts: {
         onProgress: (progress) => {
           reportSavedAgentTaskProgress(taskPlan, progressNotes, progress);
           try {
+            if (progress.status === "started" && progress.phase === "draft") {
+              markPendingGenerationWork(1);
+            }
+            if (
+              progress.status === "started" &&
+              progress.phase === "revision" &&
+              progress.round !== undefined
+            ) {
+              markPendingGenerationWork(progress.round + 1);
+            }
             if (progress.phase === "evaluation" && progress.round !== undefined) {
               if (progress.status === "started") {
                 startGeneration(progress.round);

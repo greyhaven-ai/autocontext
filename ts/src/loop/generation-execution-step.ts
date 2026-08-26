@@ -28,9 +28,22 @@ export function parseCompetitorStrategyResult(
 
 export function buildCompetitorStrategyRepairPrompt(opts: {
   competitorPrompt: string;
+  strategyInterface: string;
   invalidOutput: string;
 }): string {
-  const boundedContext = opts.competitorPrompt.slice(0, COMPETITOR_REPAIR_CONTEXT_MAX_CHARS);
+  // Preserve the strategy contract before spending the remaining bounded
+  // context budget on scenario prose. Scenario rules and extension rewrites
+  // can be arbitrarily long and otherwise push the interface past a simple
+  // prefix slice.
+  const boundedInterface = opts.strategyInterface.slice(
+    0,
+    COMPETITOR_REPAIR_CONTEXT_MAX_CHARS,
+  );
+  const remainingContextCharacters = Math.max(
+    0,
+    COMPETITOR_REPAIR_CONTEXT_MAX_CHARS - boundedInterface.length,
+  );
+  const boundedContext = opts.competitorPrompt.slice(0, remainingContextCharacters);
   const boundedOutput = opts.invalidOutput.slice(0, COMPETITOR_REPAIR_OUTPUT_MAX_CHARS);
   return [
     "Repair the invalid competitor strategy below.",
@@ -38,7 +51,10 @@ export function buildCompetitorStrategyRepairPrompt(opts: {
     "The object must use the exact fields and constraints from the strategy interface.",
     "This is the only repair attempt; if the output is not valid JSON, the generation will fail.",
     "",
-    "## Bounded strategy context",
+    "## Strategy interface (authoritative)",
+    boundedInterface,
+    "",
+    "## Additional bounded strategy context",
     boundedContext,
     "",
     "## Invalid output",

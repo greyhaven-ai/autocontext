@@ -25,6 +25,7 @@ export interface GenerationAttemptWorkflow {
   runId: string;
   generation: number;
   competitorPrompt: string;
+  strategyInterface: string;
   seedBase: number;
   matchesPerGeneration: number;
   currentElo: number;
@@ -33,6 +34,7 @@ export interface GenerationAttemptWorkflow {
     repairPrompt: string;
     invalidOutput: string;
   }) => Promise<CompletionResult>;
+  onEvent?: (item: GenerationLoopEventSequenceItem) => void;
   beforeTournament?: () => Promise<void>;
   executeTournament: (input: {
     strategy: Record<string, unknown>;
@@ -70,12 +72,20 @@ export async function runGenerationAttemptWorkflow(workflow: GenerationAttemptWo
     role: "competitor",
     execute: workflow.executeCompetitor,
   });
-  const competitorEvents: GenerationLoopEventSequenceItem[] = [
-    {
-      event: "role_completed",
-      payload: competitorCompletion.roleCompletedPayload,
-    },
-  ];
+  const competitorEvents: GenerationLoopEventSequenceItem[] = [];
+  const recordCompetitorCompletion = (
+    item: GenerationLoopEventSequenceItem,
+  ): void => {
+    if (workflow.onEvent) {
+      workflow.onEvent(item);
+    } else {
+      competitorEvents.push(item);
+    }
+  };
+  recordCompetitorCompletion({
+    event: "role_completed",
+    payload: competitorCompletion.roleCompletedPayload,
+  });
   let competitorResult = competitorCompletion.result;
   let strategy: Record<string, unknown>;
   try {
@@ -88,6 +98,7 @@ export async function runGenerationAttemptWorkflow(workflow: GenerationAttemptWo
     const invalidOutput = competitorResult.text;
     const repairPrompt = buildCompetitorStrategyRepairPrompt({
       competitorPrompt: workflow.competitorPrompt,
+      strategyInterface: workflow.strategyInterface,
       invalidOutput,
     });
     competitorCompletion = await executeRoleCompletionSideEffect({
@@ -100,7 +111,7 @@ export async function runGenerationAttemptWorkflow(workflow: GenerationAttemptWo
           invalidOutput,
         }),
     });
-    competitorEvents.push({
+    recordCompetitorCompletion({
       event: "role_completed",
       payload: competitorCompletion.roleCompletedPayload,
     });

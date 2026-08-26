@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { resolveCustomAgentTask } from "../src/scenarios/custom-loader.js";
 import type { ScenarioDraft } from "../src/scenarios/draft-workflow.js";
+import type { CreatedScenarioResult } from "../src/scenarios/scenario-creator.js";
 import type { TaskDataSource } from "../src/scenarios/task-data-source.js";
 import { InteractiveScenarioSession } from "../src/server/interactive-scenario-session.js";
 
@@ -169,6 +170,46 @@ describe("interactive structured task session", () => {
     expect(session.pendingScenario?.preview.spec.referenceContext).toContain(referenceContent);
     expect(session.pendingScenario?.preview.spec.evaluationContext).toContain(evalContent);
     expect(session.pendingScenario?.preview.spec).not.toHaveProperty("evaluation_context");
+  });
+
+  it("does not restore an asynchronous draft after its client scope is cancelled", async () => {
+    let resolveCreation!: (created: CreatedScenarioResult) => void;
+    const delayedCreation = new Promise<CreatedScenarioResult>((resolve) => {
+      resolveCreation = resolve;
+    });
+    const scope = {};
+    const session = new InteractiveScenarioSession({
+      knowledgeRoot: "/tmp/knowledge",
+      humanizeName: (name) => name.replaceAll("_", " "),
+      deps: {
+        createScenarioFromDescription: vi.fn(async () => delayedCreation),
+      },
+    });
+
+    const creation = session.createScenario({
+      description: "Improve a delayed report.",
+      provider: {
+        name: "unused",
+        defaultModel: () => "unused",
+        complete: vi.fn(),
+      },
+      scope,
+    });
+    session.cancelScenario(scope);
+    resolveCreation({
+      name: "improve_a_delayed_report",
+      family: "agent_task",
+      spec: {
+        taskPrompt: "Improve a delayed report.",
+        rubric: "Evaluate the report.",
+        description: "A better report.",
+      },
+    });
+
+    await expect(creation).rejects.toThrow("cancelled or superseded");
+    await expect(session.confirmScenario(scope)).rejects.toThrow(
+      "No scenario preview is pending",
+    );
   });
 
   it("preserves the first same-name task and reloads a stable content-addressed successor", async () => {

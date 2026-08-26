@@ -29,14 +29,29 @@ describe("generation execution step", () => {
   it("bounds the strategy context and invalid output in repair prompts", () => {
     const prompt = buildCompetitorStrategyRepairPrompt({
       competitorPrompt: `context-start-${"a".repeat(10_000)}-context-end`,
+      strategyInterface: "required_field: number",
       invalidOutput: `output-start-${"b".repeat(6_000)}-output-end`,
     });
 
+    expect(prompt).toContain("required_field: number");
     expect(prompt).toContain("context-start-");
     expect(prompt).not.toContain("context-end");
     expect(prompt).toContain("output-start-");
     expect(prompt).not.toContain("output-end");
     expect(prompt.length).toBeLessThan(12_500);
+  });
+
+  it("retains the strategy interface when long scenario rules exhaust the context budget", () => {
+    const prompt = buildCompetitorStrategyRepairPrompt({
+      competitorPrompt:
+        `Scenario Rules:\n${"r".repeat(10_000)}` +
+        "\n\nStrategy Interface:\ncustom_action: string",
+      strategyInterface: "custom_action: string",
+      invalidOutput: "not-json",
+    });
+
+    expect(prompt).toContain("## Strategy interface (authoritative)\ncustom_action: string");
+    expect(prompt).not.toContain("Strategy Interface:\ncustom_action: string");
   });
 
   it("creates tournament execution plan from generation context", () => {

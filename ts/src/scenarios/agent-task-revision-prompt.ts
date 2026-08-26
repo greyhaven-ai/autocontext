@@ -1,4 +1,6 @@
 import type { AgentTaskResult } from "../types/index.js";
+import type { AgentTaskSpec } from "./agent-task-spec.js";
+import { buildAgentTaskOutputFormatBlock } from "./agent-task-output-format.js";
 
 export interface AgentTaskRevisionPromptOpts {
   revisionPrompt?: string | null;
@@ -6,6 +8,8 @@ export interface AgentTaskRevisionPromptOpts {
   judgeResult: AgentTaskResult;
   taskPrompt: string;
   judgeRubric: string;
+  outputFormat?: AgentTaskSpec["outputFormat"];
+  improvementTaskContractVersion?: 1;
   referenceContext?: string | null;
   referenceSources?: readonly string[] | null;
   requiredConcepts?: readonly string[] | null;
@@ -21,17 +25,21 @@ export function buildAgentTaskRevisionPrompt(opts: AgentTaskRevisionPromptOpts):
     normalizeText(opts.revisionPrompt) ??
     "Revise the following output based on the judge's feedback. Maintain what works, fix what doesn't.";
 
+  const structuredGrounding = opts.improvementTaskContractVersion === 1;
   return [
     instruction,
     `## Original Output\n${opts.output}`,
     `## Judge Score: ${opts.judgeResult.score.toFixed(2)}`,
     `## Judge Feedback\n${opts.judgeResult.reasoning}`,
-    buildTextBlock("Evaluation Criteria", opts.judgeRubric),
-    buildTextBlock("Reference Context", opts.referenceContext),
-    buildListBlock("Reference Sources", opts.referenceSources),
-    buildListBlock("Required Concepts", opts.requiredConcepts),
+    structuredGrounding ? buildTextBlock("Evaluation Criteria", opts.judgeRubric) : "",
+    structuredGrounding ? buildTextBlock("Reference Context", opts.referenceContext) : "",
+    structuredGrounding ? buildListBlock("Reference Sources", opts.referenceSources) : "",
+    structuredGrounding ? buildListBlock("Required Concepts", opts.requiredConcepts) : "",
     buildTextBlock("Input Data", opts.sampleInput),
     buildTextBlock("Task", opts.taskPrompt),
+    structuredGrounding
+      ? buildAgentTaskOutputFormatBlock(opts.outputFormat ?? "free_text")
+      : "",
     "Produce an improved version:",
   ]
     .filter((value) => value.length > 0)

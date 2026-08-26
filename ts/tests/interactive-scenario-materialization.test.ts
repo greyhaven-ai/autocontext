@@ -6,6 +6,7 @@ import { mkdtempSync } from "node:fs";
 
 import { buildScenarioDraft } from "../src/scenarios/draft-workflow.js";
 import { persistInteractiveScenarioDraft } from "../src/scenarios/interactive-scenario-materialization.js";
+import { resolveCustomAgentTask } from "../src/scenarios/custom-loader.js";
 
 let tmpDir: string;
 
@@ -88,11 +89,16 @@ describe("interactive scenario materialization", () => {
 
     expect(persistedSpec).toMatchObject({
       improvementTaskContractVersion: 1,
-      evaluationContext: "EVALUATOR_ONLY_CASE",
+      evaluationContextRef: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     });
     expect(agentTaskSpec).toMatchObject({
       improvement_task_contract_version: 1,
-      evaluation_context: "EVALUATOR_ONLY_CASE",
+      evaluation_context_ref: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     });
+    expect(JSON.stringify(persistedSpec)).not.toContain("EVALUATOR_ONLY_CASE");
+    expect(JSON.stringify(agentTaskSpec)).not.toContain("EVALUATOR_ONLY_CASE");
+    expect(
+      resolveCustomAgentTask(tmpDir, "structured_incident_analysis")?.spec.evaluationContext,
+    ).toBe("EVALUATOR_ONLY_CASE");
   });
 });

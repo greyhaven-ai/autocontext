@@ -56,12 +56,16 @@ export const TRANSCRIPT_PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
 export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);
 export const STRUCTURED_TASK_CREATION_CAPABILITY = "structured_task_creation_v1";
-export const SERVER_CAPABILITIES = [
+export const BASE_SERVER_CAPABILITIES = [STRUCTURED_TASK_CREATION_CAPABILITY] as const;
+export const TRANSCRIPT_SERVER_CAPABILITIES = [
   "run_transcript_v1",
   "safe_run_stop_v1",
   AGENT_TASK_PLAN_CAPABILITY,
   AGENT_PROGRESS_NOTE_CAPABILITY,
-  STRUCTURED_TASK_CREATION_CAPABILITY,
+] as const;
+export const SERVER_CAPABILITIES = [
+  ...TRANSCRIPT_SERVER_CAPABILITIES,
+  ...BASE_SERVER_CAPABILITIES,
 ] as const;
 
 const protocolObject = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();

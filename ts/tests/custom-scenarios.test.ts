@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -123,6 +124,160 @@ describe("CustomScenarioLoader", () => {
       improvementTaskContractVersion: 1,
       taskPrompt: "Use the persisted agent-task spec.",
     });
+  });
+
+  it("fails closed when a private evaluator record is missing or tampered", async () => {
+    const { persistAgentTaskScenario } = await import(
+      "../src/scenarios/agent-task-persistence-workflow.js"
+    );
+    const { resolveCustomAgentTask } = await import("../src/scenarios/custom-loader.js");
+    const scenarioName = "private_integrity_task";
+    const evaluationContext = "PRIVATE_INTEGRITY_SENTINEL";
+    const persist = () =>
+      persistAgentTaskScenario({
+        knowledgeRoot: dir,
+        name: scenarioName,
+        spec: {
+          taskPrompt: "Do private integrity work.",
+          judgeRubric: "Evaluate integrity.",
+          outputFormat: "free_text",
+          judgeModel: "",
+          evaluationContext,
+          maxRounds: 1,
+          qualityThreshold: 0.9,
+        },
+      });
+    const scenarioKey = createHash("sha256")
+      .update(`scenario:${scenarioName}`, "utf8")
+      .digest("hex");
+    const digest = createHash("sha256").update(evaluationContext, "utf8").digest("hex");
+    const privatePath = join(
+      dir,
+      "_private_evaluator_context",
+      scenarioKey,
+      `${digest}.json`,
+    );
+
+    persist();
+    rmSync(privatePath);
+    expect(() => resolveCustomAgentTask(dir, scenarioName)).toThrow(
+      /private evaluator context is missing/i,
+    );
+
+    persist();
+    writeFileSync(
+      privatePath,
+      JSON.stringify({
+        version: 1,
+        scenarioName,
+        evaluationContext: "TAMPERED_PRIVATE_CONTEXT",
+      }),
+      "utf8",
+    );
+    expect(() => resolveCustomAgentTask(dir, scenarioName)).toThrow(
+      /failed integrity verification/i,
+    );
+  });
+
+  it("resolves a healthy target even when an earlier sibling has a broken private record", async () => {
+    const { persistAgentTaskScenario } = await import(
+      "../src/scenarios/agent-task-persistence-workflow.js"
+    );
+    const { resolveCustomAgentTask } = await import("../src/scenarios/custom-loader.js");
+    const baseSpec = {
+      taskPrompt: "Resolve the requested task.",
+      judgeRubric: "Evaluate resolution.",
+      outputFormat: "free_text" as const,
+      judgeModel: "",
+      maxRounds: 1,
+      qualityThreshold: 0.9,
+    };
+    const brokenName = "a_broken_private_sibling";
+    const healthyName = "z_healthy_private_target";
+    const brokenContext = "BROKEN_SIBLING_CONTEXT";
+    persistAgentTaskScenario({
+      knowledgeRoot: dir,
+      name: brokenName,
+      spec: { ...baseSpec, evaluationContext: brokenContext },
+    });
+    persistAgentTaskScenario({
+      knowledgeRoot: dir,
+      name: healthyName,
+      spec: { ...baseSpec, evaluationContext: "HEALTHY_TARGET_CONTEXT" },
+    });
+    const brokenScenarioKey = createHash("sha256")
+      .update(`scenario:${brokenName}`, "utf8")
+      .digest("hex");
+    const brokenDigest = createHash("sha256").update(brokenContext, "utf8").digest("hex");
+    rmSync(
+      join(
+        dir,
+        "_private_evaluator_context",
+        brokenScenarioKey,
+        `${brokenDigest}.json`,
+      ),
+    );
+
+    expect(resolveCustomAgentTask(dir, healthyName)?.spec.evaluationContext).toBe(
+      "HEALTHY_TARGET_CONTEXT",
+    );
+    expect(() => resolveCustomAgentTask(dir, brokenName)).toThrow(
+      /private evaluator context is missing/i,
+    );
+  });
+
+  it("continues to load legacy plaintext evaluator context", async () => {
+    const { resolveCustomAgentTask } = await import("../src/scenarios/custom-loader.js");
+    const scenarioDir = join(dir, "_custom_scenarios", "legacy_private_task");
+    mkdirSync(scenarioDir, { recursive: true });
+    writeFileSync(join(scenarioDir, "scenario_type.txt"), "agent_task", "utf8");
+    writeFileSync(
+      join(scenarioDir, "agent_task_spec.json"),
+      JSON.stringify({
+        task_prompt: "Use a legacy evaluator context.",
+        judge_rubric: "Evaluate legacy compatibility.",
+        output_format: "free_text",
+        evaluation_context: "LEGACY_PRIVATE_CONTEXT",
+      }),
+      "utf8",
+    );
+
+    expect(resolveCustomAgentTask(dir, "legacy_private_task")?.spec.evaluationContext).toBe(
+      "LEGACY_PRIVATE_CONTEXT",
+    );
+  });
+
+  it.each([
+    ["null", { evaluation_context_ref: null }],
+    ["empty", { evaluation_context_ref: "" }],
+    ["wrong type", { evaluation_context_ref: 42 }],
+    [
+      "conflicting",
+      {
+        evaluationContextRef: `sha256:${"0".repeat(64)}`,
+        evaluation_context_ref: `sha256:${"1".repeat(64)}`,
+      },
+    ],
+  ])("rejects %s private evaluator reference metadata", async (_label, referenceFields) => {
+    const { resolveCustomAgentTask } = await import("../src/scenarios/custom-loader.js");
+    const scenarioName = `invalid_reference_${String(_label).replace(" ", "_")}`;
+    const scenarioDir = join(dir, "_custom_scenarios", scenarioName);
+    mkdirSync(scenarioDir, { recursive: true });
+    writeFileSync(join(scenarioDir, "scenario_type.txt"), "agent_task", "utf8");
+    writeFileSync(
+      join(scenarioDir, "agent_task_spec.json"),
+      JSON.stringify({
+        task_prompt: "Reject malformed private references.",
+        judge_rubric: "Evaluate integrity.",
+        output_format: "free_text",
+        ...referenceFields,
+      }),
+      "utf8",
+    );
+
+    expect(() => resolveCustomAgentTask(dir, scenarioName)).toThrow(
+      /private evaluator context reference/i,
+    );
   });
 
   it("registerCustomScenarios keeps agent tasks out of SCENARIO_REGISTRY", async () => {

@@ -11,6 +11,15 @@ export const AGENT_TASK_MAX_CONTINUATIONS = 2;
 /** Hard safety bound across the completed artifact, after overlap removal. */
 export const AGENT_TASK_MAX_ACCUMULATED_CHARACTERS = 400_000;
 
+/**
+ * A short suffix/prefix match is commonly just adjacent punctuation (for
+ * example, the two distinct `}` characters that close nested JSON objects).
+ * Only treat a boundary match as provider replay when it is long enough and
+ * contains enough word characters to be meaningful evidence of repetition.
+ */
+const MIN_RELIABLE_BOUNDARY_OVERLAP_CHARACTERS = 16;
+const MIN_RELIABLE_BOUNDARY_OVERLAP_WORD_CHARACTERS = 4;
+
 export type AgentTaskArtifactCompletionOptions = Omit<HookedProviderCompletionOpts, "maxTokens"> & {
   /** Human-readable label used only in fail-closed errors. */
   artifactLabel: string;
@@ -64,13 +73,24 @@ function continuationOverlap(existing: string, continuation: string): number {
   return Math.min(matched, maxLength);
 }
 
+function isReliableBoundaryReplay(existing: string, overlap: number): boolean {
+  if (overlap < MIN_RELIABLE_BOUNDARY_OVERLAP_CHARACTERS) return false;
+  const repeatedBoundary = existing.slice(-overlap);
+  const wordCharacterCount = repeatedBoundary.match(/[\p{L}\p{N}_]/gu)?.length ?? 0;
+  return wordCharacterCount >= MIN_RELIABLE_BOUNDARY_OVERLAP_WORD_CHARACTERS;
+}
+
 function appendContinuation(existing: string, continuation: string): string {
   if (!existing) return continuation;
+  // A provider may restart the artifact but stop before reaching the previous
+  // cutoff. Treat that strict-prefix replay as no progress instead of
+  // appending a corrupted duplicate. Exact replay follows the same path.
+  if (existing.startsWith(continuation)) return existing;
   // Some providers ignore the "new text only" instruction and return the
   // complete artifact. Accept that shape without duplicating the first part.
   if (continuation.startsWith(existing)) return continuation;
   const overlap = continuationOverlap(existing, continuation);
-  return existing + continuation.slice(overlap);
+  return existing + continuation.slice(isReliableBoundaryReplay(existing, overlap) ? overlap : 0);
 }
 
 function buildContinuationPrompt(

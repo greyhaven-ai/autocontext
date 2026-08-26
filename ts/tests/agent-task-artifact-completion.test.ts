@@ -26,21 +26,21 @@ describe("agent-task artifact completion", () => {
   it("continues twice, removes boundary overlap, and aggregates metering", async () => {
     const provider = providerWithResults([
       {
-        text: "Part one. café 🧪",
+        text: "Part one. café 🧪 The first continuation repeats this boundary.",
         model: "test-model",
         usage: { input: 2, output: 3 },
         costUsd: 0.01,
         stopReason: "max_tokens",
       },
       {
-        text: "🧪 Part two.",
+        text: "The first continuation repeats this boundary. Part two. The second continuation repeats this boundary.",
         model: "test-model",
         usage: { input: 5, output: 7 },
         costUsd: 0.02,
         stopReason: "length",
       },
       {
-        text: "Part two. Part three.",
+        text: "The second continuation repeats this boundary. Part three.",
         model: "test-model",
         usage: { input: 11, output: 13 },
         costUsd: 0.03,
@@ -70,7 +70,9 @@ describe("agent-task artifact completion", () => {
       metadata: { run_id: "run-1" },
     });
 
-    expect(result.text).toBe("Part one. café 🧪 Part two. Part three.");
+    expect(result.text).toBe(
+      "Part one. café 🧪 The first continuation repeats this boundary. Part two. The second continuation repeats this boundary. Part three.",
+    );
     expect(result.usage).toEqual({ input: 18, output: 23 });
     expect(result.costUsd).toBeCloseTo(0.06);
     expect(result.metadata).toEqual({
@@ -84,7 +86,7 @@ describe("agent-task artifact completion", () => {
       AGENT_TASK_SEGMENT_MAX_TOKENS,
     ]);
     expect(provider.complete.mock.calls[1]?.[0].userPrompt).toContain(
-      "<artifact_so_far>\nPart one. café 🧪\n</artifact_so_far>",
+      "<artifact_so_far>\nPart one. café 🧪 The first continuation repeats this boundary.\n</artifact_so_far>",
     );
     expect(requests).toHaveLength(3);
     expect(requests[0]).not.toHaveProperty("agent_task_continuation");
@@ -123,6 +125,51 @@ describe("agent-task artifact completion", () => {
     expect(result.metadata).toMatchObject({ agentTaskContinuationCount: 1 });
   });
 
+  it("preserves distinct adjacent punctuation when continuing nested JSON", async () => {
+    const provider = providerWithResults([
+      { text: '{"outer":{"x":1}', usage: {}, stopReason: "max_tokens" },
+      { text: "}", usage: {}, stopReason: "end_turn" },
+    ]);
+
+    const result = await completeAgentTaskArtifact({
+      provider,
+      role: "agent_task_initial",
+      artifactLabel: "JSON response",
+      systemPrompt: "Return JSON.",
+      userPrompt: "Return a nested object.",
+    });
+
+    expect(result.text).toBe('{"outer":{"x":1}}');
+    expect(JSON.parse(result.text)).toEqual({ outer: { x: 1 } });
+  });
+
+  it("removes a substantial repeated boundary from a normal continuation", async () => {
+    const provider = providerWithResults([
+      {
+        text: "Opening paragraph. The repeated boundary has several words.",
+        usage: {},
+        stopReason: "max_tokens",
+      },
+      {
+        text: "The repeated boundary has several words. Closing paragraph.",
+        usage: {},
+        stopReason: "end_turn",
+      },
+    ]);
+
+    const result = await completeAgentTaskArtifact({
+      provider,
+      role: "agent_task_initial",
+      artifactLabel: "article",
+      systemPrompt: "Write an article.",
+      userPrompt: "Return two paragraphs.",
+    });
+
+    expect(result.text).toBe(
+      "Opening paragraph. The repeated boundary has several words. Closing paragraph.",
+    );
+  });
+
   it.each([
     {
       label: "empty initial segment",
@@ -142,6 +189,14 @@ describe("agent-task artifact completion", () => {
       results: [
         { text: "Partial artifact.", usage: {}, stopReason: "max_tokens" },
         { text: "Partial artifact.\n", usage: {}, stopReason: "end_turn" },
+      ],
+      error: /continuation 1 returned no new text/i,
+    },
+    {
+      label: "restarted strict-prefix continuation",
+      results: [
+        { text: "Part one. Part two.", usage: {}, stopReason: "max_tokens" },
+        { text: "Part one.", usage: {}, stopReason: "end_turn" },
       ],
       error: /continuation 1 returned no new text/i,
     },

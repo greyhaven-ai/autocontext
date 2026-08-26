@@ -38,7 +38,7 @@ export function buildWeakDimensionSection(
 export function buildRevisionPrompt(opts: RevisionPromptOpts): string {
   const familyDescription = FAMILY_DESCRIPTIONS[opts.family as ScenarioFamilyName]
     ?? `a ${opts.family} scenario`;
-  const { providerVisibleSpec } = partitionScenarioRevisionSpec(
+  const { providerVisibleSpec, structuredAgentTask } = partitionScenarioRevisionSpec(
     opts.family,
     opts.currentSpec,
   );
@@ -58,10 +58,15 @@ export function buildRevisionPrompt(opts: RevisionPromptOpts): string {
   }
 
   sections.push(
-    ...(opts.family === "agent_task"
+    ...(opts.family === "agent_task" && structuredAgentTask
       ? [
           "\n## Immutable execution boundary",
-          "The executable task prompt and all attached mission data are immutable and omitted. Revise only evaluation metadata; preserve the task-prompt sentinel exactly.",
+          "All execution-semantic agent-task fields are immutable. Revise only descriptive metadata and preserve the task-prompt sentinel exactly.",
+        ]
+      : opts.family === "agent_task"
+        ? [
+          "\n## Protected evaluator boundary",
+          "Evaluator-only reference, calibration, and difficulty fields are immutable and omitted. The legacy task prompt and other execution settings remain revisable.",
         ]
       : []),
     `\n## Current Spec\n${JSON.stringify(providerVisibleSpec, null, 2)}`,

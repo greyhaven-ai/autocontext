@@ -3,6 +3,8 @@
  * Port of autocontext/src/autocontext/runtimes/base.py
  */
 
+import type { PromptVisibility } from "../types/index.js";
+
 export interface AgentOutput {
   text: string;
   structured?: Record<string, unknown>;
@@ -17,6 +19,7 @@ export interface AgentRuntime {
     prompt: string;
     system?: string;
     schema?: Record<string, unknown>;
+    promptVisibility?: PromptVisibility;
   }): Promise<AgentOutput>;
 
   revise(opts: {
@@ -24,6 +27,7 @@ export interface AgentRuntime {
     previousOutput: string;
     feedback: string;
     system?: string;
+    promptVisibility?: PromptVisibility;
   }): Promise<AgentOutput>;
 
   close?(): void;

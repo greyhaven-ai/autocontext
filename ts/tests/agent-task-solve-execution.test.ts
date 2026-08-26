@@ -34,6 +34,88 @@ describe("agent-task solve execution", () => {
     expect(spec.requiredConcepts).toEqual(["severity", "owner"]);
   });
 
+  it("uses and closes an owned no-tools isolate for an evaluator-bearing initial draft", async () => {
+    const policies: unknown[] = [];
+    const prompts: string[] = [];
+    let closes = 0;
+    const provider: LLMProvider = {
+      name: "tool-capable-runtime",
+      defaultModel: () => "test-model",
+      complete: async () => {
+        throw new Error("base provider must not generate the private task draft");
+      },
+      createIsolatedProvider: (policy) => {
+        policies.push(policy);
+        return {
+          name: "no-tools-draft-isolate",
+          defaultModel: () => "test-model",
+          complete: async (request) => {
+            prompts.push(request.userPrompt);
+            return { text: "Isolated initial response", model: "test-model", usage: {} };
+          },
+          close: () => {
+            closes += 1;
+          },
+        };
+      },
+    };
+    const stopAfterDraft = new Error("stop after isolated draft");
+
+    await expect(
+      executeAgentTaskSolve({
+        provider,
+        created: {
+          name: "private_draft",
+          spec: {
+            taskPrompt: "Draft the candidate response.",
+            judgeRubric: "Evaluate it.",
+            evaluationContext: "DRAFT_PRIVATE_SENTINEL",
+          },
+        },
+        generations: 1,
+        deps: {
+          createLoop: () => ({
+            run: vi.fn(async ({ initialOutput }) => {
+              expect(initialOutput).toBe("Isolated initial response");
+              throw stopAfterDraft;
+            }),
+          }),
+        },
+      }),
+    ).rejects.toBe(stopAfterDraft);
+
+    expect(policies).toEqual([{ noTools: true }]);
+    expect(closes).toBe(1);
+    expect(prompts).toEqual(["Draft the candidate response."]);
+    expect(prompts[0]).not.toContain("DRAFT_PRIVATE_SENTINEL");
+  });
+
+  it("rejects invalid structured-v1 JSON before the solve loop can judge or retain it", async () => {
+    const run = vi.fn();
+    const provider: LLMProvider = {
+      name: "candidate",
+      defaultModel: () => "candidate-model",
+      complete: async () => ({ text: "not valid JSON", usage: {} }),
+    };
+
+    await expect(executeAgentTaskSolve({
+      provider,
+      created: {
+        name: "invalid_json_solve",
+        spec: {
+          improvementTaskContractVersion: 1,
+          taskPrompt: "Return JSON.",
+          judgeRubric: "Evaluate JSON.",
+          outputFormat: "json_schema",
+        },
+      },
+      generations: 1,
+      deps: { createLoop: () => ({ run }) },
+    })).rejects.toThrow(/must be valid JSON because output_format is json_schema/);
+
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("executes the agent-task solve workflow and builds the exported package", async () => {
     const progressEvents: Array<{
       phase: string;
@@ -172,6 +254,63 @@ describe("agent-task solve execution", () => {
     ]);
   });
 
+  it("fails structured-v1 solves with no authoritative judge result before finalization", async () => {
+    const progressEvents: string[] = [];
+    const provider: LLMProvider = {
+      name: "candidate",
+      defaultModel: () => "candidate-model",
+      complete: async () => ({ text: "Candidate response", usage: {} }),
+    };
+    const failedResult: ImprovementResult = {
+      rounds: [1, 2].map((roundNumber) => ({
+        roundNumber,
+        output: "Candidate response",
+        score: 0,
+        reasoning: "Authoritative judge output could not be parsed",
+        dimensionScores: {},
+        evaluatorEpoch: null,
+        isRevision: roundNumber > 1,
+        judgeFailed: true,
+      })),
+      bestOutput: "Candidate response",
+      bestScore: 0,
+      bestRound: 1,
+      totalRounds: 2,
+      metThreshold: false,
+      judgeFailures: 2,
+      terminationReason: "consecutive_failures",
+      dimensionTrajectory: {},
+      totalInternalRetries: 0,
+      durationMs: 1,
+      judgeCalls: 2,
+      evaluatorEpoch: null,
+    };
+
+    await expect(executeAgentTaskSolve({
+      provider,
+      created: {
+        name: "judge_failure_contract",
+        spec: {
+          improvementTaskContractVersion: 1,
+          taskPrompt: "Produce the candidate response.",
+          judgeRubric: "Evaluate it.",
+        },
+      },
+      generations: 2,
+      onProgress: ({ phase, status }) => {
+        progressEvents.push(`${phase}:${status}`);
+      },
+      deps: {
+        createLoop: () => ({ run: vi.fn(async () => failedResult) }),
+      },
+    })).rejects.toThrow(
+      /produced no usable authoritative evaluation \(judge_failures=2, total_rounds=2/,
+    );
+
+    expect(progressEvents).not.toContain("finalization:started");
+    expect(progressEvents).not.toContain("finalization:completed");
+  });
+
   it("completes draft, judge, and revision phases with the deterministic provider", async () => {
     const { DeterministicProvider } = await import("../src/providers/deterministic.js");
     const phases: string[] = [];
@@ -208,6 +347,47 @@ describe("agent-task solve execution", () => {
     expect(phases).toContain("evaluation:completed");
     expect(phases).toContain("revision:completed");
     expect(phases.at(-1)).toBe("finalization:completed");
+  });
+
+  it("keeps deterministic structured-v1 JSON valid across the initial draft and revision", async () => {
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const evaluatedOutputs: string[] = [];
+
+    const result = await executeAgentTaskSolve({
+      provider: new DeterministicProvider(),
+      created: {
+        name: "deterministic_json_task",
+        spec: {
+          improvementTaskContractVersion: 1,
+          taskPrompt: "Analyze the observation and return a JSON recommendation.",
+          judgeRubric: "Score task completion and actionability.",
+          outputFormat: "json_schema",
+          sampleInput: "Observation: onboarding completion fell by 12%.",
+          maxRounds: 2,
+          qualityThreshold: 0.9,
+        },
+      },
+      generations: 2,
+      onProgress: (progress) => {
+        if (progress.phase === "evaluation" && progress.status === "completed") {
+          evaluatedOutputs.push(progress.roundResult!.output);
+        }
+      },
+    });
+
+    expect(evaluatedOutputs).toHaveLength(2);
+    expect(evaluatedOutputs.map((output) => JSON.parse(output))).toEqual([
+      expect.objectContaining({ result: expect.stringContaining("Deterministic task result") }),
+      expect.objectContaining({
+        result: expect.stringContaining("Deterministic revised task result"),
+      }),
+    ]);
+    const bestExample = result.result.example_outputs?.[0];
+    if (!bestExample) throw new Error("Expected a deterministic solve example output");
+    expect(JSON.parse(bestExample.output)).toEqual(expect.objectContaining({
+      result: expect.stringContaining("Deterministic revised task result"),
+    }));
+    expect(result.result.best_score).toBe(0.92);
   });
 
   it("keeps progress observer failures from changing solve results", async () => {

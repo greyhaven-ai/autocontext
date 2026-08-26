@@ -34,6 +34,7 @@ describe("generation attempt workflow", () => {
       runId: "run-1",
       generation: 1,
       competitorPrompt: "prompt",
+      strategyInterface: "aggression: number; defense: number; path_bias: number",
       seedBase: 1000,
       matchesPerGeneration: 2,
       currentElo: 1000,
@@ -130,8 +131,11 @@ describe("generation attempt workflow", () => {
     }): Promise<CompletionResult> => {
       expect(invalidOutput).toBe("not-json");
       expect(repairPrompt).toContain("Repair the invalid competitor strategy");
+      expect(repairPrompt).toContain(
+        "## Strategy interface (authoritative)\ncustom_action: string",
+      );
       return {
-        text: '{"aggression":0.8,"defense":0.4,"path_bias":0.3}',
+        text: '{"custom_action":"advance"}',
         model: "test-model",
         usage: {},
       };
@@ -140,6 +144,10 @@ describe("generation attempt workflow", () => {
     const result = await runGenerationAttemptWorkflow(
       createGenerationAttemptWorkflow({
         ...createStartedWorkflow(),
+        competitorPrompt:
+          `Scenario Rules:\n${"r".repeat(10_000)}` +
+          "\n\nStrategy Interface:\ncustom_action: string",
+        strategyInterface: "custom_action: string",
         executeCompetitor: async () => ({
           text: "not-json",
           model: "test-model",
@@ -160,12 +168,8 @@ describe("generation attempt workflow", () => {
       }),
     );
 
-    expect(tournamentStrategy).toEqual({
-      aggression: 0.8,
-      defense: 0.4,
-      path_bias: 0.3,
-    });
-    expect(result.competitorResult.text).toContain('"aggression":0.8');
+    expect(tournamentStrategy).toEqual({ custom_action: "advance" });
+    expect(result.competitorResult.text).toContain('"custom_action":"advance"');
     expect(result.events.filter((event) => event.event === "role_completed")).toHaveLength(2);
   });
 

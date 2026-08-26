@@ -13,6 +13,7 @@ import {
 export class DeterministicProvider implements LLMProvider {
   readonly name = "deterministic";
   readonly supportsThinkingStream = false;
+  readonly isStatelessNoToolsProvider = true;
 
   defaultModel(): string {
     return "deterministic-dev";
@@ -28,6 +29,7 @@ export class DeterministicProvider implements LLMProvider {
     }
     const prompt = opts.userPrompt.toLowerCase();
     const systemPrompt = opts.systemPrompt.toLowerCase();
+    const requiresJsonOutput = prompt.includes("return only valid json");
     let text: string;
 
     if (systemPrompt.includes("expert judge evaluating")) {
@@ -50,16 +52,26 @@ export class DeterministicProvider implements LLMProvider {
       prompt.includes("## original output") &&
       prompt.includes("## judge feedback")
     ) {
-      text =
-        "Deterministic revised task result. The response incorporates the evaluation feedback, " +
-        "uses the supplied context, and states a concrete, actionable conclusion.";
+      text = requiresJsonOutput
+        ? JSON.stringify({
+            result:
+              "Deterministic revised task result. The response incorporates the evaluation feedback and supplied context.",
+            actionable_next_step: "Apply the concrete recommendation and verify the result.",
+          })
+        : "Deterministic revised task result. The response incorporates the evaluation feedback, " +
+          "uses the supplied context, and states a concrete, actionable conclusion.";
     } else if (
       systemPrompt.includes("helpful assistant") &&
       !prompt.includes("continue the artifact")
     ) {
-      text =
-        "Deterministic task result. The response addresses the requested task using the supplied " +
-        "context and provides a concise conclusion with actionable next steps.";
+      text = requiresJsonOutput
+        ? JSON.stringify({
+            result:
+              "Deterministic task result. The response addresses the requested task using the supplied context.",
+            actionable_next_step: "Revise the response using the evaluation feedback.",
+          })
+        : "Deterministic task result. The response addresses the requested task using the supplied " +
+          "context and provides a concise conclusion with actionable next steps.";
     } else if (prompt.includes("describe your strategy") || prompt.includes("[competitor]")) {
       text = deterministicStrategyForPrompt(prompt);
     } else if (prompt.includes("analyze strengths/failures") || prompt.includes("[analyst]")) {

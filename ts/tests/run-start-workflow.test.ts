@@ -215,6 +215,9 @@ describe("run start workflow", () => {
     });
 
     expect(migrate).toHaveBeenCalledWith("/tmp/migrations");
+    expect(createRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ agentProvider: "deterministic" }),
+    );
     expect(run).toHaveBeenCalledWith("run_1", 2);
     expect(close).toHaveBeenCalledOnce();
     expect(closeProviderBundle).toHaveBeenCalledOnce();
@@ -684,6 +687,120 @@ describe("run start workflow", () => {
       completed_generations: 2,
       best_score: 0.84,
     });
+  });
+
+  it("includes candidate drafting and revision work in saved-task generation timing", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    const upsertGeneration = vi.fn();
+    const createStore = vi.fn(() => ({
+      migrate: vi.fn(),
+      createRun: vi.fn(),
+      updateRunStatus: vi.fn(),
+      upsertGeneration,
+      appendAgentOutput: vi.fn(),
+      close: vi.fn(),
+    }));
+    const now = vi
+      .fn()
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(4_000)
+      .mockReturnValueOnce(5_000)
+      .mockReturnValueOnce(11_000);
+
+    await executeAgentTaskCustomStartRun({
+      runId: "run_task_full_round_timing",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 2,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      persistence: {
+        dbPath: "/tmp/agent-task-timing.db",
+        migrationsDir: "/tmp/migrations",
+      },
+      controller: new LoopController(),
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
+        },
+      } as never,
+      deps: {
+        now,
+        createStore: createStore as never,
+        executeAgentTaskSolve: vi.fn(
+          async (solveOpts: { onProgress?: (progress: AgentTaskSolveProgress) => void }) => {
+            solveOpts.onProgress?.({ phase: "draft", status: "started" });
+            solveOpts.onProgress?.({ phase: "draft", status: "completed" });
+            solveOpts.onProgress?.({ phase: "evaluation", status: "started", round: 1 });
+            solveOpts.onProgress?.({
+              phase: "evaluation",
+              status: "completed",
+              round: 1,
+              bestScore: 0.4,
+              roundResult: {
+                roundNumber: 1,
+                output: "first attempt",
+                score: 0.4,
+                reasoning: "Revise it.",
+                dimensionScores: {},
+                evaluatorEpoch: null,
+                isRevision: false,
+                judgeFailed: false,
+                roundDurationMs: 25,
+              },
+            });
+            solveOpts.onProgress?.({ phase: "revision", status: "started", round: 1 });
+            solveOpts.onProgress?.({ phase: "revision", status: "completed", round: 1 });
+            solveOpts.onProgress?.({ phase: "evaluation", status: "started", round: 2 });
+            solveOpts.onProgress?.({
+              phase: "evaluation",
+              status: "completed",
+              round: 2,
+              bestScore: 0.9,
+              roundResult: {
+                roundNumber: 2,
+                output: "second attempt",
+                score: 0.9,
+                reasoning: "Improved.",
+                dimensionScores: {},
+                evaluatorEpoch: null,
+                isRevision: true,
+                judgeFailed: false,
+                roundDurationMs: 30,
+              },
+            });
+            return {
+              progress: 2,
+              result: { best_score: 0.9, scenario_name: "saved_task" },
+            };
+          },
+        ) as never,
+      },
+    });
+
+    expect(now).toHaveBeenCalledTimes(4);
+    expect(upsertGeneration).toHaveBeenNthCalledWith(
+      1,
+      "run_task_full_round_timing",
+      1,
+      expect.objectContaining({ durationSeconds: 3 }),
+    );
+    expect(upsertGeneration).toHaveBeenNthCalledWith(
+      2,
+      "run_task_full_round_timing",
+      2,
+      expect.objectContaining({ durationSeconds: 6 }),
+    );
+    expect(
+      emitted
+        .filter((entry) => entry.event === "generation_timing")
+        .map((entry) => entry.payload.elapsed_seconds),
+    ).toEqual([3, 6]);
   });
 
   it("does not start a dangling generation when an unchanged revision ends the solve", async () => {

@@ -5,7 +5,7 @@
 import { parseArgs } from "node:util";
 import { resolve } from "node:path";
 import { asDbPath } from "../../domain/ids.js";
-import type { LLMProvider } from "../../types/index.js";
+import type { AgentTaskInterface, LLMProvider } from "../../types/index.js";
 import {
   errorMessage,
   getMigrationsDir,
@@ -75,6 +75,7 @@ export async function cmdSolve(dbPath: string): Promise<void> {
     const summary = await executeSolveCommandWorkflow({
       manager: new SolveManager({
         provider,
+        agentProvider: settings.agentProvider,
         store,
         runsRoot: resolve(settings.runsRoot),
         knowledgeRoot: resolve(settings.knowledgeRoot),
@@ -249,6 +250,8 @@ export async function cmdJudge(_dbPath: string): Promise<void> {
   const { provider, model } = await getProvider();
   try {
     const { LLMJudge } = await import("../../judge/index.js");
+    const { createAgentTask: createNativeAgentTask } =
+      await import("../../scenarios/agent-task-factory.js");
     const savedScenario = values.scenario
       ? await loadSavedAgentTaskScenario(values.scenario)
       : null;
@@ -271,6 +274,16 @@ export async function cmdJudge(_dbPath: string): Promise<void> {
           hookBus,
         });
       },
+      createAgentTask: (taskOpts) =>
+        createNativeAgentTask({
+          name: taskOpts.name,
+          spec:
+            taskOpts.model && !taskOpts.spec.judgeModel
+              ? { ...taskOpts.spec, judgeModel: taskOpts.model }
+              : taskOpts.spec,
+          provider: taskOpts.provider as LLMProvider,
+          hookBus,
+        }),
     });
 
     console.log(renderJudgeResult(result));
@@ -325,6 +338,8 @@ export async function cmdImprove(_dbPath: string): Promise<void> {
   try {
     const { SimpleAgentTask } = await import("../../execution/task-runner.js");
     const { ImprovementLoop } = await import("../../execution/improvement-loop.js");
+    const { createStructuredAgentTaskWorkflow } =
+      await import("../../execution/structured-agent-task-workflow.js");
     const savedScenario = values.scenario
       ? await loadSavedAgentTaskScenario(values.scenario)
       : null;
@@ -339,7 +354,15 @@ export async function cmdImprove(_dbPath: string): Promise<void> {
       provider,
       model,
       savedScenario,
-      createTask: (taskPrompt, rubric, taskProvider, taskModel, revisionPrompt, rlmConfig) =>
+      createTask: (
+        taskPrompt,
+        rubric,
+        taskProvider,
+        taskModel,
+        revisionPrompt,
+        rlmConfig,
+        candidateGrounding,
+      ) =>
         new SimpleAgentTask(
           taskPrompt,
           rubric,
@@ -347,11 +370,20 @@ export async function cmdImprove(_dbPath: string): Promise<void> {
           taskModel ?? undefined,
           revisionPrompt ?? undefined,
           rlmConfig,
+          undefined,
+          undefined,
+          candidateGrounding,
         ),
+      createStructuredTask: (taskOpts) =>
+        createStructuredAgentTaskWorkflow({
+          ...taskOpts,
+          provider: taskOpts.provider as LLMProvider,
+        }),
       createLoop: (loopOpts) =>
-        new ImprovementLoop(
-          loopOpts as import("../../execution/improvement-loop.js").ImprovementLoopOpts,
-        ),
+        new ImprovementLoop({
+          ...loopOpts,
+          task: loopOpts.task as AgentTaskInterface,
+        }),
       now: () => performance.now(),
     });
 

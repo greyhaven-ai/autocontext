@@ -22,6 +22,7 @@ import type { TaskDataSourceContent } from "../scenarios/task-data-source.js";
 import {
   InteractiveScenarioSession,
   type InteractiveScenarioReadyInfo,
+  type InteractiveScenarioScope,
 } from "./interactive-scenario-session.js";
 import { readScenarioFamily } from "../scenarios/codegen/loader.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
@@ -461,12 +462,16 @@ export class RunManager {
     return id;
   }
 
-  async createScenario(description: string): Promise<ScenarioPreviewInfo> {
+  async createScenario(
+    description: string,
+    setupScope?: InteractiveScenarioScope,
+  ): Promise<ScenarioPreviewInfo> {
     const providerBundle = this.#resolveProviderBundle();
     try {
       return await this.#scenarioSession.createScenario({
         description,
         provider: providerBundle.defaultProvider,
+        scope: setupScope,
       });
     } finally {
       providerBundle.close?.();
@@ -476,28 +481,37 @@ export class RunManager {
   async createTask(
     contract: ImprovementTaskContract,
     sourceContents: TaskDataSourceContent[],
+    setupScope?: InteractiveScenarioScope,
   ): Promise<ScenarioPreviewInfo> {
-    return this.#scenarioSession.createTask({ contract, sourceContents });
+    return this.#scenarioSession.createTask({
+      contract,
+      sourceContents,
+      scope: setupScope,
+    });
   }
 
-  async reviseScenario(feedback: string): Promise<ScenarioPreviewInfo> {
+  async reviseScenario(
+    feedback: string,
+    setupScope?: InteractiveScenarioScope,
+  ): Promise<ScenarioPreviewInfo> {
     const providerBundle = this.#resolveProviderBundle();
     try {
       return await this.#scenarioSession.reviseScenario({
         feedback,
         provider: providerBundle.defaultProvider,
+        scope: setupScope,
       });
     } finally {
       providerBundle.close?.();
     }
   }
 
-  cancelScenario(): void {
-    this.#scenarioSession.cancelScenario();
+  cancelScenario(setupScope?: InteractiveScenarioScope): void {
+    this.#scenarioSession.cancelScenario(setupScope);
   }
 
-  async confirmScenario(): Promise<ScenarioReadyInfo> {
-    const ready = await this.#scenarioSession.confirmScenario();
+  async confirmScenario(setupScope?: InteractiveScenarioScope): Promise<ScenarioReadyInfo> {
+    const ready = await this.#scenarioSession.confirmScenario(setupScope);
     this.#reloadCustomScenarios();
     return ready;
   }

@@ -1,4 +1,5 @@
 import type { AgentTaskSpec } from "./agent-task-spec.js";
+import { evaluationContextReference } from "./private-evaluator-context-store.js";
 
 export function buildAgentTaskMaterializeInput(
   healedSpec: Record<string, unknown>,
@@ -47,7 +48,9 @@ export function buildAgentTaskPersistedSpecFields(
     judgeModel: agentTaskSpec.judgeModel,
     difficultyTiers: agentTaskSpec.difficultyTiers ?? null,
     referenceContext: agentTaskSpec.referenceContext ?? null,
-    evaluationContext: agentTaskSpec.evaluationContext ?? null,
+    ...(agentTaskSpec.evaluationContext?.trim()
+      ? { evaluationContextRef: evaluationContextReference(agentTaskSpec.evaluationContext) }
+      : {}),
     referenceSources: agentTaskSpec.referenceSources ?? null,
     requiredConcepts: agentTaskSpec.requiredConcepts ?? null,
     calibrationExamples: agentTaskSpec.calibrationExamples ?? null,

@@ -148,6 +148,7 @@ export function buildSimpleAgentTaskRevisionPrompt(opts: {
   referenceSources?: string[];
   requiredConcepts?: string[];
   sampleInput?: string;
+  candidateGrounding?: boolean;
 }): string {
   return buildAgentTaskRevisionPrompt({
     revisionPrompt: opts.revisionPrompt,
@@ -155,6 +156,7 @@ export function buildSimpleAgentTaskRevisionPrompt(opts: {
     judgeResult: opts.judgeResult,
     taskPrompt: opts.taskPrompt,
     judgeRubric: opts.rubric ?? "",
+    improvementTaskContractVersion: opts.candidateGrounding === false ? undefined : 1,
     referenceContext: opts.referenceContext,
     referenceSources: opts.referenceSources,
     requiredConcepts: opts.requiredConcepts,
@@ -175,6 +177,7 @@ export async function reviseSimpleAgentTaskOutput(opts: {
   hookBus?: HookBus | null;
   referenceContext?: string;
   requiredConcepts?: string[];
+  candidateGrounding?: boolean;
 }): Promise<string> {
   const rlmOutput = await runSimpleAgentTaskRlm({
     provider: opts.provider,
@@ -211,6 +214,7 @@ export async function reviseSimpleAgentTaskOutput(opts: {
       rubric: opts.rubric,
       referenceContext: opts.referenceContext,
       requiredConcepts: opts.requiredConcepts,
+      candidateGrounding: opts.candidateGrounding,
     }),
     model: opts.model,
   });

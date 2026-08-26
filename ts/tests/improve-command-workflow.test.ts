@@ -107,6 +107,75 @@ describe("improve command workflow", () => {
     });
   });
 
+  it("retains structured identity and evaluator-only context in an improve plan", () => {
+    const plan = planImproveCommand(
+      {
+        scenario: "structured_task",
+        prompt: undefined,
+        rubric: undefined,
+        output: "Initial candidate",
+        rlm: false,
+      },
+      {
+        name: "structured_task",
+        taskPrompt: "Rendered candidate prompt",
+        rubric: "Saved rubric",
+        referenceContext: "VISIBLE_REFERENCE",
+        agentTaskSpec: {
+          improvementTaskContractVersion: 1,
+          taskPrompt: "Raw candidate prompt",
+          judgeRubric: "Saved rubric",
+          outputFormat: "free_text",
+          judgeModel: "",
+          referenceContext: "VISIBLE_REFERENCE",
+          evaluationContext: "EVALUATOR_ONLY_CASE",
+          maxRounds: 3,
+          qualityThreshold: 0.9,
+        },
+      },
+      (raw) => Number.parseInt(raw, 10),
+    );
+
+    expect(plan.nativeAgentTask).toMatchObject({
+      name: "structured_task",
+      spec: {
+        improvementTaskContractVersion: 1,
+        taskPrompt: "Raw candidate prompt",
+        referenceContext: "VISIBLE_REFERENCE",
+        evaluationContext: "EVALUATOR_ONLY_CASE",
+      },
+    });
+    expect(plan.taskPrompt).not.toContain("EVALUATOR_ONLY_CASE");
+  });
+
+  it("rejects RLM for a saved structured task instead of bypassing native revisions", () => {
+    expect(() =>
+      planImproveCommand(
+        {
+          scenario: "structured_task",
+          output: "Initial candidate",
+          rlm: true,
+        },
+        {
+          name: "structured_task",
+          taskPrompt: "Candidate prompt",
+          rubric: "Rubric",
+          agentTaskSpec: {
+            improvementTaskContractVersion: 1,
+            taskPrompt: "Candidate prompt",
+            judgeRubric: "Rubric",
+            outputFormat: "free_text",
+            judgeModel: "",
+            evaluationContext: "EVALUATOR_ONLY_CASE",
+            maxRounds: 2,
+            qualityThreshold: 0.9,
+          },
+        },
+        (raw) => Number.parseInt(raw, 10),
+      ),
+    ).toThrow(/--rlm is not supported for saved structured tasks/i);
+  });
+
   it("executes improve workflow and generates initial output when not provided", async () => {
     const generateOutput = vi.fn().mockResolvedValue("generated output");
     const getRlmSessions = vi.fn(() => [{ round: 1 }]);
@@ -166,6 +235,7 @@ describe("improve command workflow", () => {
       "claude-sonnet",
       "Revise",
       { enabled: true },
+      true,
     );
     expect(generateOutput).toHaveBeenCalledWith({
       referenceContext: "Context",
@@ -186,6 +256,155 @@ describe("improve command workflow", () => {
     });
     expect(result.durationMs).toBe(250);
     expect(result.rlmSessions).toEqual([{ round: 1 }]);
+  });
+
+  it("keeps legacy saved-spec references judge-only during improve generation", async () => {
+    const savedScenario = {
+      name: "legacy-task",
+      taskPrompt: "Legacy public task",
+      rubric: "Legacy judge rubric",
+      referenceContext: "JUDGE_ONLY_REFERENCE",
+      requiredConcepts: ["JUDGE_ONLY_CONCEPT"],
+      agentTaskSpec: {
+        taskPrompt: "Legacy public task",
+        judgeRubric: "Legacy judge rubric",
+        outputFormat: "free_text" as const,
+        judgeModel: "",
+        referenceContext: "JUDGE_ONLY_REFERENCE",
+        requiredConcepts: ["JUDGE_ONLY_CONCEPT"],
+        maxRounds: 1,
+        qualityThreshold: 0.9,
+      },
+    };
+    const plan = planImproveCommand(
+      { scenario: "legacy-task" },
+      savedScenario,
+      (raw) => Number.parseInt(raw, 10),
+    );
+    const generateOutput = vi.fn(async () => "generated");
+    const createTask = vi.fn(() => ({ generateOutput, getRlmSessions: () => [] }));
+    const run = vi.fn(async () => ({
+      totalRounds: 1,
+      metThreshold: false,
+      bestScore: 0.5,
+      bestRound: 1,
+      judgeFailures: 0,
+      terminationReason: "max_rounds",
+      totalInternalRetries: 0,
+      dimensionTrajectory: {},
+      bestOutput: "generated",
+      rounds: [],
+    }));
+
+    await executeImproveCommandWorkflow({
+      plan,
+      provider: { name: "candidate" },
+      model: "candidate-model",
+      savedScenario,
+      createTask,
+      createLoop: () => ({ run }),
+      now: () => 0,
+    });
+
+    expect(createTask).toHaveBeenCalledWith(
+      "Legacy public task",
+      "Legacy judge rubric",
+      { name: "candidate" },
+      "candidate-model",
+      undefined,
+      expect.any(Object),
+      false,
+    );
+    expect(generateOutput).toHaveBeenCalledWith({
+      referenceContext: undefined,
+      requiredConcepts: undefined,
+    });
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({
+      referenceContext: "JUDGE_ONLY_REFERENCE",
+      requiredConcepts: ["JUDGE_ONLY_CONCEPT"],
+    }));
+  });
+
+  it("executes a saved structured task through native context preparation and improvement", async () => {
+    const generateOutput = vi.fn().mockResolvedValue("generated output");
+    const structuredTask = {
+      initialState: vi.fn(() => ({ structured: true })),
+      prepareContext: vi.fn(async (state: Record<string, unknown>) => ({ ...state, ready: true })),
+      validateContext: vi.fn(() => []),
+      generateOutput,
+      getRlmSessions: vi.fn(() => []),
+    };
+    const createStructuredTask = vi.fn(() => structuredTask);
+    const createTask = vi.fn(() => {
+      throw new Error("generic task must not be created");
+    });
+    const run = vi.fn().mockResolvedValue({
+      totalRounds: 1,
+      metThreshold: true,
+      bestScore: 0.95,
+      bestRound: 1,
+      judgeFailures: 0,
+      terminationReason: "threshold_met",
+      totalInternalRetries: 0,
+      dimensionTrajectory: {},
+      bestOutput: "generated output",
+      rounds: [],
+    });
+    const spec = {
+      improvementTaskContractVersion: 1 as const,
+      taskPrompt: "Task",
+      judgeRubric: "Rubric",
+      outputFormat: "free_text" as const,
+      judgeModel: "",
+      referenceContext: "VISIBLE_REFERENCE",
+      evaluationContext: "EVALUATOR_ONLY_CASE",
+      requiredConcepts: ["accuracy"],
+      maxRounds: 2,
+      qualityThreshold: 0.9,
+    };
+
+    await executeImproveCommandWorkflow({
+      plan: {
+        taskPrompt: "Task",
+        rubric: "Rubric",
+        maxRounds: 2,
+        qualityThreshold: 0.9,
+        minRounds: 1,
+        verbose: false,
+        rlmConfig: { enabled: false },
+        nativeAgentTask: { name: "structured", spec },
+      },
+      provider: { name: "provider" },
+      model: "model",
+      savedScenario: {
+        referenceContext: "VISIBLE_REFERENCE",
+        requiredConcepts: ["accuracy"],
+      },
+      createTask,
+      createStructuredTask,
+      createLoop: vi.fn(() => ({ run })),
+      now: vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(150),
+    });
+
+    expect(createTask).not.toHaveBeenCalled();
+    expect(createStructuredTask).toHaveBeenCalledWith({
+      name: "structured",
+      spec,
+      provider: { name: "provider" },
+      model: "model",
+    });
+    expect(generateOutput).toHaveBeenCalledWith({
+      referenceContext: "VISIBLE_REFERENCE",
+      requiredConcepts: ["accuracy"],
+      state: { structured: true, ready: true },
+    });
+    expect(run).toHaveBeenCalledWith({
+      initialOutput: "generated output",
+      state: { structured: true, ready: true },
+      referenceContext: "VISIBLE_REFERENCE",
+      requiredConcepts: ["accuracy"],
+      calibrationExamples: undefined,
+    });
   });
 
   it("renders verbose rounds to stderr and final json to stdout", () => {

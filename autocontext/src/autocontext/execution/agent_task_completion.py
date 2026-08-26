@@ -33,6 +33,9 @@ if TYPE_CHECKING:
     from autocontext.scenarios.agent_task import AgentTaskInterface
 
 
+NATIVE_AGENT_TASK_QUEUE_MARKER = "native_agent_task_v1"
+
+
 @dataclass(slots=True)
 class TaskConfig:
     """Configuration for a queued task run."""
@@ -55,6 +58,9 @@ class TaskConfig:
     judge_disagreement_threshold: float = 0.15
     judge_bias_probes_enabled: bool = False
     simplicity_mode: str = "off"
+    native_task_marker: str | None = None
+    saved_spec_digest: str | None = None
+    has_native_task_metadata: bool = False
 
     @classmethod
     def from_json(cls, data: str | None) -> TaskConfig:
@@ -80,6 +86,11 @@ class TaskConfig:
             judge_disagreement_threshold=parsed.get("judge_disagreement_threshold", 0.15),
             judge_bias_probes_enabled=parsed.get("judge_bias_probes_enabled", False),
             simplicity_mode=normalize_simplicity_mode(parsed.get("simplicity_mode")),
+            native_task_marker=parsed.get("native_task_marker"),
+            saved_spec_digest=parsed.get("saved_spec_digest"),
+            has_native_task_metadata=(
+                "native_task_marker" in parsed or "saved_spec_digest" in parsed
+            ),
         )
 
 

@@ -176,6 +176,32 @@ describe("judge --from-stdin", () => {
     expect(parsed.source).toBe("delegated");
   });
 
+  it("preserves authoritative parse-failure provenance from stdin", () => {
+    const input = JSON.stringify({
+      score: 0,
+      reasoning: "Evaluator output was unusable",
+      parseMethod: "none",
+      authoritativeParseFailed: false,
+      judgeFailed: false,
+    });
+
+    const r = spawnSync("npx", ["tsx", CLI, "judge", "--from-stdin"], {
+      input,
+      encoding: "utf8",
+      timeout: 15000,
+      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+    });
+
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      score: 0,
+      parseMethod: "none",
+      authoritativeParseFailed: true,
+      judgeFailed: true,
+      source: "delegated",
+    });
+  });
+
   it("rejects invalid JSON from stdin", () => {
     const r = spawnSync("npx", ["tsx", CLI, "judge", "--from-stdin"], {
       input: "not valid json",

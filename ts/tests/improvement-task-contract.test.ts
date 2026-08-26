@@ -255,6 +255,77 @@ describe("ImprovementTaskContract", () => {
     expect(spec.qualityThreshold).toBe(0.76);
   });
 
+  it("rejects unknown fields throughout nested rubric criteria", () => {
+    const rubric = {
+      rubric_id: "answer-quality",
+      title: "Answer quality",
+      goal: "Prefer supported answers",
+      scope: { include: ["claims"], exclude: [] },
+      corpus_profile: {
+        domain: "support",
+        audience: "operators",
+        source_summary: "Uploaded incidents",
+      },
+      criteria: [
+        {
+          id: "support",
+          description: "Claims are supported by evidence",
+          scale_id: "score",
+          weight: 1,
+          scope: { include: ["claims"], exclude: [] },
+          evidence_requirements: ["Cite an incident identifier"],
+        },
+      ],
+      scales: [
+        {
+          id: "score",
+          kind: "numeric" as const,
+          min_score: 0,
+          max_score: 1,
+          anchors: { "1": "Fully supported" },
+        },
+      ],
+      disqualifiers: [{ id: "fabricated", description: "Invented evidence" }],
+      evidence_requirements: ["Use retained evidence"],
+      output_constraints: ["Be concise"],
+      decision_thresholds: { pass_score: 0.8, excellent_score: 0.9 },
+    };
+    const contractFor = (criteria: Record<string, unknown>) => ({
+      objective: "Improve the answer.",
+      target: "Current answer",
+      deliverable: { description: "A better answer" },
+      criteria,
+    });
+
+    expect(() => ImprovementTaskContractSchema.parse(contractFor(rubric))).not.toThrow();
+
+    const withUnknownField = (
+      mutate: (candidate: Record<string, any>) => void,
+    ): Record<string, unknown> => {
+      const candidate = structuredClone(rubric) as Record<string, any>;
+      mutate(candidate);
+      return candidate;
+    };
+    const invalidRubrics = [
+      withUnknownField((candidate) => { candidate.unexpected = true; }),
+      withUnknownField((candidate) => { candidate.scope.unexpected = true; }),
+      withUnknownField((candidate) => { candidate.corpus_profile.unexpected = true; }),
+      withUnknownField((candidate) => { candidate.criteria[0].unexpected = true; }),
+      withUnknownField((candidate) => { candidate.criteria[0].scope.unexpected = true; }),
+      withUnknownField((candidate) => { candidate.scales[0].unexpected = true; }),
+      withUnknownField((candidate) => { candidate.disqualifiers[0].unexpected = true; }),
+      withUnknownField((candidate) => {
+        candidate.decision_thresholds.unexpected = true;
+      }),
+    ];
+
+    for (const invalidRubric of invalidRubrics) {
+      expect(() =>
+        ImprovementTaskContractSchema.parse(contractFor(invalidRubric)),
+      ).toThrow();
+    }
+  });
+
   it("rejects duplicate data-source identities", () => {
     expect(() =>
       ImprovementTaskContractSchema.parse({

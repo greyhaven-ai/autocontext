@@ -13,6 +13,8 @@ export interface PiCLIConfigOpts {
   timeout?: number;
   workspace?: string;
   noContextFiles?: boolean;
+  /** Host-requested privacy isolate: no tools, customizations, context, or session. */
+  isolatedNoTools?: boolean;
 }
 
 const PI_CLI_CONFIG_DEFAULTS = {
@@ -21,6 +23,7 @@ const PI_CLI_CONFIG_DEFAULTS = {
   timeout: 300.0,
   workspace: "",
   noContextFiles: false,
+  isolatedNoTools: false,
 };
 
 const TIMEOUT_KILL_GRACE_MS = 5_000;
@@ -48,6 +51,7 @@ export class PiCLIConfig {
   readonly timeout!: number;
   readonly workspace!: string;
   readonly noContextFiles!: boolean;
+  readonly isolatedNoTools!: boolean;
 
   constructor(opts: PiCLIConfigOpts = {}) {
     Object.assign(this, { ...PI_CLI_CONFIG_DEFAULTS, ...definedConfigOptions(opts) });
@@ -94,6 +98,11 @@ export class PiCLIRuntime {
     }
     if (this.#config.noContextFiles) {
       args.push("--no-context-files");
+    }
+    if (this.#config.isolatedNoTools) {
+      args.push("--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates");
+      if (!this.#config.noContextFiles) args.push("--no-context-files");
+      args.push("--no-session");
     }
 
     const result = await runPiCLIWithGroupKill(this.#config.piCommand, args, {

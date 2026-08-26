@@ -1,7 +1,15 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { compileRubricSpec, RubricSpecSchema } from "../judge/rubric-spec.js";
+import {
+  compileRubricSpec,
+  CorpusProfileSchema,
+  DecisionThresholdsSchema,
+  RubricCriterionSchema,
+  RubricDisqualifierSchema,
+  RubricScaleSchema,
+  RubricSpecSchema,
+} from "../judge/rubric-spec.js";
 import { AgentTaskSpecSchema, type AgentTaskSpec } from "./agent-task-spec.js";
 import {
   MAX_TASK_DATA_SOURCES,
@@ -23,7 +31,31 @@ export const ImprovementTaskDeliverableSchema = z
   })
   .strict();
 
-export const ImprovementTaskCriteriaSchema = z.union([NonEmptyTextSchema, RubricSpecSchema]);
+const StrictRubricScopeSchema = z
+  .object({
+    include: z.array(z.string()).default([]),
+    exclude: z.array(z.string()).default([]),
+  })
+  .strict()
+  .default({ include: [], exclude: [] });
+
+const StrictRubricCriterionSchema = RubricCriterionSchema.extend({
+  scope: StrictRubricScopeSchema.optional(),
+}).strict();
+
+const StrictRubricSpecSchema = RubricSpecSchema.extend({
+  scope: StrictRubricScopeSchema.optional(),
+  corpus_profile: CorpusProfileSchema.strict().optional(),
+  criteria: z.array(StrictRubricCriterionSchema),
+  scales: z.array(RubricScaleSchema.strict()),
+  disqualifiers: z.array(RubricDisqualifierSchema.strict()).default([]),
+  decision_thresholds: DecisionThresholdsSchema.strict().optional(),
+}).strict();
+
+export const ImprovementTaskCriteriaSchema = z.union([
+  NonEmptyTextSchema,
+  StrictRubricSpecSchema,
+]);
 
 /**
  * Structured intake for an iterative agent task.

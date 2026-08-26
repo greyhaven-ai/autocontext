@@ -49,6 +49,7 @@ describe("websocket session bootstrap", () => {
       {
         type: "hello",
         protocol_version: 2,
+        capabilities: ["structured_task_creation_v1"],
       },
       {
         type: "environments",
@@ -68,7 +69,7 @@ describe("websocket session bootstrap", () => {
     ]);
   });
 
-  it("advertises transcript capability only after explicit opt-in", () => {
+  it("adds transcript-only capabilities after explicit opt-in", () => {
     expect(buildSessionBootstrapMessages(environment, state, { runTranscript: true })).toEqual([
       {
         type: "hello",

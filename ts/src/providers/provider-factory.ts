@@ -4,6 +4,7 @@ import type {
   CompletionOptions,
   CompletionResult,
   LLMProvider,
+  ProviderIsolationPolicy,
   ValidatedImageAttachment,
 } from "../types/index.js";
 import { encodeValidatedImage } from "../types/index.js";
@@ -82,6 +83,14 @@ async function waitForAnthropicRetry(delayMs: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 }
 
+async function cancelAnthropicResponseBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Releasing a failed response is best-effort and must not mask the API error.
+  }
+}
+
 function supportsAnthropicImages(model: string): boolean {
   return /(?:^|\/)claude-(?:3|haiku|sonnet|opus|fable|mythos)(?:$|[-:.])/i.test(model);
 }
@@ -155,6 +164,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
 
       if (!res.ok) {
         const cause = new AnthropicHttpStatusError(res.status);
+        await cancelAnthropicResponseBody(res);
         if (!isTransientAnthropicStatus(res.status) || attempt === ANTHROPIC_MAX_RETRIES) {
           const attempts = attempt > 0 ? ` after ${attempt + 1} attempts` : "";
           throw new ProviderError(
@@ -180,6 +190,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
 
   return {
     name: "anthropic",
+    isStatelessNoToolsProvider: true,
     supportsThinkingStream: true,
     supportsImageAttachments: supportsImages,
     defaultModel: () => defaultModel,
@@ -528,6 +539,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
 
   return {
     name: "openai-compatible",
+    isStatelessNoToolsProvider: true,
     supportsThinkingStream: true,
     supportsImageAttachments: supportsImages,
     defaultModel: () => defaultModel,
@@ -945,6 +957,8 @@ export interface CreateProviderOpts {
   runtimeSessionRole?: string;
   runtimeSessionCwd?: string;
   runtimeSessionCommands?: RuntimeCommandGrant[];
+  /** Internal policy applied only to a freshly isolated runtime provider. */
+  runtimeIsolationPolicy?: ProviderIsolationPolicy;
 }
 
 export function createProvider(opts: CreateProviderOpts): LLMProvider {
@@ -1002,6 +1016,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
       permissionMode: opts.claudePermissionMode,
       sessionPersistence: opts.claudeSessionPersistence,
       timeout: opts.claudeTimeout ? opts.claudeTimeout * 1000 : undefined,
+      isolatedNoTools: opts.runtimeIsolationPolicy?.noTools === true,
     });
     return createRuntimeBridgeProvider(runtime, resolvedModel ?? "sonnet", opts, "claude-cli");
   }
@@ -1015,6 +1030,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         timeout: opts.codexTimeout,
         workspace: opts.codexWorkspace,
         quiet: opts.codexQuiet,
+        isolatedNoTools: opts.runtimeIsolationPolicy?.noTools === true,
       }),
     );
     return createRuntimeBridgeProvider(runtime, resolvedModel ?? "o4-mini", opts, "codex");
@@ -1029,6 +1045,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         workspace: opts.piWorkspace,
         model: resolvedModel,
         noContextFiles: opts.piNoContextFiles,
+        isolatedNoTools: opts.runtimeIsolationPolicy?.noTools === true,
       }),
     );
     return createRuntimeBridgeProvider(runtime, resolvedModel ?? "pi-default", opts, "pi");
@@ -1045,6 +1062,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         workspace: opts.piWorkspace,
         sessionPersistence: opts.piRpcSessionPersistence,
         noContextFiles: opts.piNoContextFiles,
+        isolatedNoTools: opts.runtimeIsolationPolicy?.noTools === true,
       }),
     );
     return createRuntimeBridgeProvider(runtime, resolvedModel ?? "pi-rpc-default", opts, "pi-rpc");
@@ -1074,7 +1092,28 @@ function createRuntimeBridgeProvider(
   opts: CreateProviderOpts,
   defaultRole: string,
 ): LLMProvider {
-  return new RuntimeBridgeProvider(runtime, model, runtimeBridgeProviderOpts(opts, defaultRole));
+  return new RuntimeBridgeProvider(runtime, model, {
+    ...runtimeBridgeProviderOpts(opts, defaultRole),
+    evaluatorIdentity: defaultRole,
+    createModelProvider: (requestedModel) =>
+      createProvider({
+        ...opts,
+        model: requestedModel,
+        ...(defaultRole === "claude-cli" ? { claudeModel: requestedModel } : {}),
+        ...(defaultRole === "codex" ? { codexModel: requestedModel } : {}),
+      }),
+    createIsolatedProvider: (policy) =>
+      createProvider({
+        ...opts,
+        runtimeIsolationPolicy: policy,
+        // Evaluator-only subprocesses must never resume or persist the
+        // candidate's provider conversation. Persistent runtimes may remain
+        // alive for retries within one evaluation, then the factory caller
+        // closes them in finally.
+        claudeSessionPersistence: false,
+        piRpcSessionPersistence: false,
+      }),
+  });
 }
 
 function runtimeBridgeProviderOpts(

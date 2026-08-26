@@ -352,8 +352,9 @@ export class GenerationRunner {
           orchestration,
           curatorEnabled: this.#curatorEnabled,
           maxRetries: this.#maxRetries,
-          runAttempt: ({ attemptOrchestration, generation }) =>
-            this.runGenerationAttempt(attemptOrchestration, runId, generation),
+          onEvent: (event) => this.emit(event.event, event.payload),
+          runAttempt: ({ attemptOrchestration, generation, onEvent }) =>
+            this.runGenerationAttempt(attemptOrchestration, runId, generation, onEvent),
         }),
       );
       generationBudget.check("generation lifecycle");
@@ -425,6 +426,7 @@ export class GenerationRunner {
     attemptOrchestration: GenerationAttemptOrchestration,
     runId: RunId,
     generation: number,
+    onEvent?: (item: GenerationLoopEventSequenceItem) => void,
   ): Promise<{
     attemptOrchestration: GenerationAttemptOrchestration;
     events: GenerationLoopEventSequenceItem[];
@@ -432,6 +434,7 @@ export class GenerationRunner {
     await this.#controller?.waitAtBoundary();
     const competitorInput = this.buildCompetitorInput(runId, generation);
     const competitorPrompt = competitorInput.prompt;
+    const strategyInterface = competitorInput.strategyInterface;
     this.publishTaskPlan((taskPlan) =>
       taskPlan.progress({
         activeStepId: "iterate_strategies",
@@ -449,6 +452,7 @@ export class GenerationRunner {
         runId,
         generation,
         competitorPrompt,
+        strategyInterface,
         seedBase: this.#seedBase,
         matchesPerGeneration: this.#matchesPerGeneration,
         currentElo: this.#runState!.currentElo,
@@ -462,6 +466,7 @@ export class GenerationRunner {
             [],
             COMPETITOR_REPAIR_MAX_OUTPUT_TOKENS,
           ),
+        ...(onEvent ? { onEvent } : {}),
         beforeTournament: async () => {
           await this.#controller?.waitAtBoundary();
         },
@@ -607,7 +612,11 @@ export class GenerationRunner {
   private buildCompetitorInput(
     runId: RunId,
     generation: number,
-  ): { prompt: string; imageAttachments: readonly ValidatedImageAttachment[] } {
+  ): {
+    prompt: string;
+    strategyInterface: string;
+    imageAttachments: readonly ValidatedImageAttachment[];
+  } {
     const consumedHint = consumeFreshStartHint(this.#runState!);
     this.#runState = consumedHint.state;
     const freshStartHint = consumedHint.hint;
@@ -633,10 +642,11 @@ export class GenerationRunner {
     const operatorHint =
       [trimmed.scout_mutation_guidance, injectedHint?.text].filter(Boolean).join("\n\n") || null;
 
+    const strategyInterface = this.#scenario.describeStrategyInterface();
     const competitor = buildCompetitorPrompt({
       scenarioName: this.#scenario.name,
       scenarioRules: this.#scenario.describeRules(),
-      strategyInterface: this.#scenario.describeStrategyInterface(),
+      strategyInterface,
       evaluationCriteria: this.#scenario.describeEvaluationCriteria(),
       playbook: trimmed.playbook,
       trajectory: trimmed.trajectory,
@@ -647,6 +657,7 @@ export class GenerationRunner {
     });
     return {
       prompt: this.applyContextHook(runId, generation, { competitor }).competitor ?? competitor,
+      strategyInterface,
       imageAttachments: injectedHint?.imageAttachments ?? [],
     };
   }
