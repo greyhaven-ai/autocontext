@@ -22,6 +22,7 @@ import {
 
 export interface SolveManagerOpts {
   provider: LLMProvider;
+  agentProvider?: string;
   store: SQLiteStore;
   runsRoot: string;
   knowledgeRoot: string;
@@ -36,6 +37,7 @@ export { buildAgentTaskSolveSpec } from "./agent-task-solve-execution.js";
 
 export class SolveManager {
   #provider: LLMProvider;
+  #agentProvider: string;
   #store: SQLiteStore;
   #runsRoot: string;
   #knowledgeRoot: string;
@@ -43,6 +45,7 @@ export class SolveManager {
 
   constructor(opts: SolveManagerOpts) {
     this.#provider = opts.provider;
+    this.#agentProvider = opts.agentProvider ?? opts.provider.name;
     this.#store = opts.store;
     this.#runsRoot = opts.runsRoot;
     this.#knowledgeRoot = opts.knowledgeRoot;
@@ -72,6 +75,7 @@ export class SolveManager {
     await executeSolveJobWorkflow({
       job,
       provider: this.#provider,
+      agentProvider: this.#agentProvider,
       store: this.#store,
       runsRoot: this.#runsRoot,
       knowledgeRoot: this.#knowledgeRoot,
@@ -88,6 +92,7 @@ export class SolveManager {
     await runBuiltInGameSolveJob({
       job,
       provider: this.#provider,
+      agentProvider: this.#agentProvider,
       store: this.#store,
       runsRoot: this.#runsRoot,
       knowledgeRoot: this.#knowledgeRoot,

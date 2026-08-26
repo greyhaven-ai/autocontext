@@ -34,11 +34,14 @@ describe("task runner workflows", () => {
         evaluatorEpoch: null,
       },
       taskPrompt: "Summarize the outage",
+      rubric: "Include the incident owner, severity, and supporting evidence.",
       revisionPrompt: "Add owner and severity.",
     });
 
     expect(prompt).toContain("Add owner and severity.");
     expect(prompt).toContain("## Judge Score: 0.45");
+    expect(prompt).toContain("## Evaluation Criteria");
+    expect(prompt).toContain("Include the incident owner, severity, and supporting evidence.");
     expect(prompt).toContain("Summarize the outage");
 
     const result = await evaluateSimpleAgentTaskOutput({

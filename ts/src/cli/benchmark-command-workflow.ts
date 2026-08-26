@@ -79,6 +79,7 @@ export async function executeBenchmarkCommandWorkflow<
   createStore: (dbPath: string) => TStore;
   createRunner: (args: {
     provider: TProviderBundle["defaultProvider"];
+    agentProvider: string;
     roleProviders: TProviderBundle["roleProviders"];
     roleModels: TProviderBundle["roleModels"];
     scenario: TScenario;
@@ -100,6 +101,7 @@ export async function executeBenchmarkCommandWorkflow<
         opts.assertFamilyContract(scenario, "game", `scenario '${opts.plan.scenarioName}'`);
         const runner = opts.createRunner({
           provider: opts.providerBundle.defaultProvider,
+          agentProvider: opts.providerBundle.defaultConfig.providerType,
           roleProviders: opts.providerBundle.roleProviders,
           roleModels: opts.providerBundle.roleModels,
           scenario,

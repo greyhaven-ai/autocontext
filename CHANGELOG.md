@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-08-26
+
+This TypeScript-only patch release adds a strict, capability-negotiated
+structured task creation flow for desktop missions. Python remains at
+`autocontext==0.17.0`, and Pi remains on its separate `0.10.0` package line.
+
+### Added
+
+- Protocol-v2 TypeScript servers now advertise `structured_task_creation_v1`
+  and accept a strict `create_task` command with a versioned improvement
+  objective, deliverable, evaluation contract, bounded source contents, typed
+  source roles, provenance, and SHA-256/byte-length verification. The npm
+  package ships a valid `structured-task-create-v1.json` protocol fixture
+  (issue #1299).
+- Structured tasks compile directly to native agent-task scenarios, emit setup
+  and run progress before provider work, persist reloadable source manifests
+  and task data, retain scored per-round outputs and a final artifact, and run
+  multiple evaluation/revision rounds without falling back to a generic
+  scenario prompt.
+- Agent-task provider output supports at most two bounded continuation segments
+  after a reported truncation. Empty, non-growing, oversized, or still-truncated
+  continuations fail closed before evaluation or retention.
+
+### Security
+
+- Candidate-visible generation and revision never receive evaluator-only
+  source contents. Retained judge reasoning is independently regenerated from
+  candidate-visible context while the evaluator-only score remains authoritative,
+  preventing sealed evaluation data from leaking through progress events,
+  transcripts, or SQLite analyst outputs.
+
 ## [0.17.0] - 2026-08-25
 
 This release aligns the PyPI `autocontext` and npm `autoctx` packages at

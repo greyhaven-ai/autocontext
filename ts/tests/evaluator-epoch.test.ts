@@ -38,6 +38,19 @@ describe("evaluator-epoch parity", () => {
     expect(areComparable(null, null)).toBe(true);
     expect(areComparable(null, "x")).toBe(false);
   });
+
+  it("includes evaluator-only context identity without changing legacy epochs", () => {
+    const legacy = computeEvaluatorEpoch("rubric", "provider", "model");
+    const legacyExplicitlyEmpty = computeEvaluatorEpoch("rubric", "provider", "model", null);
+    const first = computeEvaluatorEpoch("rubric", "provider", "model", "answer key A");
+    const same = computeEvaluatorEpoch("rubric", "provider", "model", "answer key A");
+    const changed = computeEvaluatorEpoch("rubric", "provider", "model", "answer key B");
+
+    expect(legacyExplicitlyEmpty.epochId).toBe(legacy.epochId);
+    expect(first.epochId).toBe(same.epochId);
+    expect(first.epochId).not.toBe(changed.epochId);
+    expect(JSON.stringify(first)).not.toContain("answer key A");
+  });
 });
 
 describe("resolveEpochRebaseline", () => {

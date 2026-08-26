@@ -8,6 +8,11 @@ import {
   renderQueuedTaskResult,
   renderStatusResult,
 } from "../src/cli/queue-status-command-workflow.js";
+import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
+import {
+  NATIVE_AGENT_TASK_QUEUE_MARKER,
+  savedAgentTaskSpecDigest,
+} from "../src/scenarios/saved-agent-task-routing.js";
 
 describe("queue/status command workflow", () => {
   it("exposes stable queue help text", () => {
@@ -72,6 +77,52 @@ describe("queue/status command workflow", () => {
         rlmMemoryLimitMb: 128,
       },
     });
+  });
+
+  it("keeps structured specs authoritative instead of flattening away their private context", () => {
+    const nativeSpec: AgentTaskSpec = {
+      improvementTaskContractVersion: 1,
+      taskPrompt: "Raw prompt",
+      judgeRubric: "Saved rubric",
+      outputFormat: "free_text",
+      judgeModel: "",
+      referenceContext: "VISIBLE_REFERENCE",
+      evaluationContext: "EVALUATOR_ONLY_CASE",
+      maxRounds: 3,
+      qualityThreshold: 0.9,
+    };
+    const plan = planQueueCommand(
+      {
+        spec: "structured-scenario",
+        prompt: undefined,
+        rubric: undefined,
+        "browser-url": undefined,
+        priority: "1",
+        "min-rounds": undefined,
+        rlm: false,
+      },
+      {
+        taskPrompt: "Rendered prompt with visible data",
+        rubric: "Saved rubric",
+        referenceContext: "VISIBLE_REFERENCE",
+        requiredConcepts: ["accuracy"],
+        maxRounds: 3,
+        qualityThreshold: 0.9,
+        agentTaskSpec: nativeSpec,
+      },
+    );
+
+    expect(plan.request).toMatchObject({
+      priority: 1,
+      rlmEnabled: false,
+      nativeTaskMarker: NATIVE_AGENT_TASK_QUEUE_MARKER,
+      savedSpecDigest: savedAgentTaskSpecDigest(nativeSpec),
+    });
+    expect(plan.request.savedSpecDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(plan.request.taskPrompt).toBeUndefined();
+    expect(plan.request.rubric).toBeUndefined();
+    expect(plan.request.referenceContext).toBeUndefined();
+    expect(JSON.stringify(plan.request)).not.toContain("EVALUATOR_ONLY_CASE");
   });
 
   it("rejects queue requests without a spec", () => {

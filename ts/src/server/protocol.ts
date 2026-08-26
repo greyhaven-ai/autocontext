@@ -7,6 +7,8 @@ import { z } from "zod";
 
 import { AGENT_PROGRESS_NOTE_CAPABILITY } from "../loop/agent-progress-note.js";
 import { AGENT_TASK_PLAN_CAPABILITY } from "../loop/agent-task-plan.js";
+import { ImprovementTaskContractSchema } from "../scenarios/improvement-task-contract.js";
+import { TaskDataSourceContentListSchema } from "../scenarios/task-data-source.js";
 import { ImageAttachmentListSchema } from "../types/image-attachments.js";
 
 export {
@@ -53,11 +55,17 @@ export const PROTOCOL_VERSION = 2;
 export const TRANSCRIPT_PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
 export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);
-export const SERVER_CAPABILITIES = [
+export const STRUCTURED_TASK_CREATION_CAPABILITY = "structured_task_creation_v1";
+export const BASE_SERVER_CAPABILITIES = [STRUCTURED_TASK_CREATION_CAPABILITY] as const;
+export const TRANSCRIPT_SERVER_CAPABILITIES = [
   "run_transcript_v1",
   "safe_run_stop_v1",
   AGENT_TASK_PLAN_CAPABILITY,
   AGENT_PROGRESS_NOTE_CAPABILITY,
+] as const;
+export const SERVER_CAPABILITIES = [
+  ...TRANSCRIPT_SERVER_CAPABILITIES,
+  ...BASE_SERVER_CAPABILITIES,
 ] as const;
 
 const protocolObject = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
@@ -102,6 +110,7 @@ export const PYTHON_SHARED_CLIENT_MESSAGE_TYPES = [
 
 export const TYPESCRIPT_ONLY_CLIENT_MESSAGE_TYPES = [
   "resume_run",
+  "create_task",
   "login",
   "logout",
   "switch_provider",
@@ -384,6 +393,12 @@ export const CreateScenarioCmdSchema = protocolObject({
   description: z.string().min(1),
 });
 
+export const CreateTaskCmdSchema = protocolObject({
+  type: z.literal("create_task"),
+  contract: ImprovementTaskContractSchema,
+  source_contents: TaskDataSourceContentListSchema.default([]),
+});
+
 export const ConfirmScenarioCmdSchema = protocolObject({
   type: z.literal("confirm_scenario"),
 });
@@ -452,6 +467,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   StartRunCmdSchema,
   ListScenariosCmdSchema,
   CreateScenarioCmdSchema,
+  CreateTaskCmdSchema,
   ConfirmScenarioCmdSchema,
   ReviseScenarioCmdSchema,
   CancelScenarioCmdSchema,

@@ -19,6 +19,7 @@ export interface BuiltInGameSolveDeps {
   ) => Promise<ScenarioClass | undefined> | ScenarioClass | undefined;
   createRunner?: (opts: {
     provider: LLMProvider;
+    agentProvider?: string;
     scenario: ScenarioInterface;
     store: SQLiteStore;
     runsRoot: string;
@@ -44,6 +45,7 @@ async function defaultResolveScenarioClass(
 
 async function defaultCreateRunner(opts: {
   provider: LLMProvider;
+  agentProvider?: string;
   scenario: ScenarioInterface;
   store: SQLiteStore;
   runsRoot: string;
@@ -61,6 +63,7 @@ async function defaultCreateRunner(opts: {
 
 export async function executeBuiltInGameSolve(opts: {
   provider: LLMProvider;
+  agentProvider?: string;
   store: SQLiteStore;
   runsRoot: string;
   knowledgeRoot: string;
@@ -81,6 +84,7 @@ export async function executeBuiltInGameSolve(opts: {
   assertFamilyContract(scenario, "game", `scenario '${opts.scenarioName}'`);
   const runner = await (opts.deps?.createRunner ?? defaultCreateRunner)({
     provider: opts.provider,
+    agentProvider: opts.agentProvider ?? opts.provider.name,
     scenario,
     store: opts.store,
     runsRoot: opts.runsRoot,

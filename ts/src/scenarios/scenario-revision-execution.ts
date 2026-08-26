@@ -4,6 +4,8 @@ import { normalizeScenarioRevisionSpec } from "./revision-spec-normalizer.js";
 
 export interface ExecuteScenarioRevisionOpts {
   currentSpec: Record<string, unknown>;
+  /** Local-only full spec used to validate a response after hidden fields were omitted. */
+  validationSpec?: Record<string, unknown>;
   family: string;
   prompt: string;
   provider: LLMProvider;
@@ -42,7 +44,7 @@ export async function executeScenarioRevision(
       };
     }
 
-    const merged = { ...original, ...revised };
+    const merged = { ...(opts.validationSpec ?? original), ...revised };
     const normalized = normalizeScenarioRevisionSpec(family, merged);
 
     return {

@@ -1,4 +1,4 @@
-import type { LLMProvider, JudgeResult } from "../types/index.js";
+import type { LLMProvider, JudgeResult, PromptVisibility } from "../types/index.js";
 import { HookEvents, type HookBus } from "../extensions/index.js";
 import { parseJudgeResponse } from "./parse.js";
 import type { ParseMethod } from "./parse.js";
@@ -17,6 +17,9 @@ export interface LLMJudgeOpts {
   maxTokens?: number;
   checkCoherence?: boolean;
   hookBus?: HookBus | null;
+  promptVisibility?: PromptVisibility;
+  /** Private evaluator-only context; only its hash contributes to epoch identity. */
+  evaluationContext?: string | null;
 }
 
 export function detectGeneratedDimensions(dimensionKeys: string[], rubric: string): boolean {
@@ -45,6 +48,8 @@ export class LLMJudge {
   #hookBus: HookBus | null;
   #typedDimensionIds: string[];
   #evaluatorEpoch: string | null;
+  #promptVisibility: PromptVisibility | undefined;
+  #evaluationContext: string | null | undefined;
 
   constructor(opts: LLMJudgeOpts) {
     this.#provider = opts.provider;
@@ -61,6 +66,8 @@ export class LLMJudge {
     this.#maxTokens = Math.max(256, opts.maxTokens ?? 4096);
     this.#temperature = opts.temperature ?? 0;
     this.#hookBus = opts.hookBus ?? null;
+    this.#promptVisibility = opts.promptVisibility;
+    this.#evaluationContext = opts.evaluationContext;
 
     if (opts.checkCoherence) {
       const result = checkRubricCoherence(this.rubric);
@@ -83,7 +90,12 @@ export class LLMJudge {
 
   private epochForModel(model: string): string | null {
     try {
-      return computeEvaluatorEpoch(this.rubric, this.#provider.name, model).epochId;
+      return computeEvaluatorEpoch(
+        this.rubric,
+        this.#provider.evaluatorIdentity ?? this.#provider.name,
+        model,
+        this.#evaluationContext,
+      ).epochId;
     } catch {
       return null;
     }
@@ -174,6 +186,7 @@ export class LLMJudge {
           model: finalModel,
           temperature: finalTemperature,
           maxTokens: this.#maxTokens,
+          ...(this.#promptVisibility ? { promptVisibility: this.#promptVisibility } : {}),
         });
         if (
           result.stopReason === "max_tokens" ||

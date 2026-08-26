@@ -25,37 +25,72 @@ export function buildScenarioReadyMessage(ready: ScenarioReadyInfo): ServerMessa
 export async function executeInteractiveScenarioCommand(opts: {
   command: Extract<
     ClientMessage,
-    { type: "create_scenario" | "revise_scenario" | "confirm_scenario" | "cancel_scenario" }
+    {
+      type:
+        | "create_scenario"
+        | "create_task"
+        | "revise_scenario"
+        | "confirm_scenario"
+        | "cancel_scenario";
+    }
   >;
   runManager: Pick<
     typeof import("./run-manager.js").RunManager.prototype,
-    "createScenario" | "reviseScenario" | "confirmScenario" | "cancelScenario"
+    | "createScenario"
+    | "createTask"
+    | "reviseScenario"
+    | "confirmScenario"
+    | "cancelScenario"
   >;
+  setupScope?: object;
 }): Promise<ServerMessage[]> {
   switch (opts.command.type) {
     case "create_scenario": {
-      const preview = await opts.runManager.createScenario(opts.command.description);
+      const preview = opts.setupScope
+        ? await opts.runManager.createScenario(opts.command.description, opts.setupScope)
+        : await opts.runManager.createScenario(opts.command.description);
       return [
         { type: "scenario_generating", name: "custom_scenario" },
         buildScenarioPreviewMessage(preview),
       ];
     }
+    case "create_task": {
+      const preview = opts.setupScope
+        ? await opts.runManager.createTask(
+            opts.command.contract,
+            opts.command.source_contents,
+            opts.setupScope,
+          )
+        : await opts.runManager.createTask(
+            opts.command.contract,
+            opts.command.source_contents,
+          );
+      return [
+        { type: "scenario_generating", name: "improvement_task" },
+        buildScenarioPreviewMessage(preview),
+      ];
+    }
     case "revise_scenario": {
-      const preview = await opts.runManager.reviseScenario(opts.command.feedback);
+      const preview = opts.setupScope
+        ? await opts.runManager.reviseScenario(opts.command.feedback, opts.setupScope)
+        : await opts.runManager.reviseScenario(opts.command.feedback);
       return [
         { type: "scenario_generating", name: "custom_scenario" },
         buildScenarioPreviewMessage(preview),
       ];
     }
     case "confirm_scenario": {
-      const ready = await opts.runManager.confirmScenario();
+      const ready = opts.setupScope
+        ? await opts.runManager.confirmScenario(opts.setupScope)
+        : await opts.runManager.confirmScenario();
       return [
         { type: "ack", action: "confirm_scenario" },
         buildScenarioReadyMessage(ready),
       ];
     }
     case "cancel_scenario": {
-      opts.runManager.cancelScenario();
+      if (opts.setupScope) opts.runManager.cancelScenario(opts.setupScope);
+      else opts.runManager.cancelScenario();
       return [{ type: "ack", action: "cancel_scenario" }];
     }
     default:

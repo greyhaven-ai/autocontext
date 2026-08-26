@@ -84,7 +84,7 @@ describe("ImprovementLoop", () => {
     expect(result.terminationReason).toBe("threshold_met");
   });
 
-  it("reports evaluation and revision boundaries without judge feedback", async () => {
+  it("reports evaluation and revision boundaries with finalized round results", async () => {
     const progress: ImprovementLoopProgress[] = [];
     const task = makeFakeTask([
       { score: 0.5, reasoning: "private judge feedback", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
@@ -101,7 +101,7 @@ describe("ImprovementLoop", () => {
 
     await loop.run({ initialOutput: "test", state: {} });
 
-    expect(progress).toEqual([
+    expect(progress.map(({ phase, status, round }) => ({ phase, status, round }))).toEqual([
       { phase: "evaluation", status: "started", round: 1 },
       { phase: "evaluation", status: "completed", round: 1 },
       { phase: "revision", status: "started", round: 1 },
@@ -109,7 +109,31 @@ describe("ImprovementLoop", () => {
       { phase: "evaluation", status: "started", round: 2 },
       { phase: "evaluation", status: "completed", round: 2 },
     ]);
-    expect(JSON.stringify(progress)).not.toContain("private judge feedback");
+    const completed = progress.filter(
+      (event) => event.phase === "evaluation" && event.status === "completed",
+    );
+    expect(completed).toEqual([
+      expect.objectContaining({
+        round: 1,
+        bestScore: 0.5,
+        roundResult: expect.objectContaining({
+          roundNumber: 1,
+          score: 0.5,
+          reasoning: "private judge feedback",
+          judgeFailed: false,
+        }),
+      }),
+      expect.objectContaining({
+        round: 2,
+        bestScore: 0.95,
+        roundResult: expect.objectContaining({
+          roundNumber: 2,
+          score: 0.95,
+          reasoning: "also private",
+          judgeFailed: false,
+        }),
+      }),
+    ]);
   });
 
   it("keeps rejected async progress observers from changing loop results", async () => {
@@ -143,14 +167,31 @@ describe("ImprovementLoop", () => {
   });
 
   it("handles judge parse failure gracefully", async () => {
+    const progress: ImprovementLoopProgress[] = [];
     const task = makeFakeTask([
       { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
       { score: 0.8, reasoning: "good", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
-    const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
+    const loop = new ImprovementLoop({
+      task,
+      maxRounds: 3,
+      qualityThreshold: 0.9,
+      onProgress: (event) => {
+        progress.push(event);
+      },
+    });
     const result = await loop.run({ initialOutput: "test", state: {} });
     expect(result.judgeFailures).toBe(1);
     expect(result.bestScore).toBe(0.8);
+    expect(progress[1]).toEqual(
+      expect.objectContaining({
+        phase: "evaluation",
+        status: "completed",
+        round: 1,
+        bestScore: 0,
+        roundResult: expect.objectContaining({ score: 0, judgeFailed: true }),
+      }),
+    );
   });
 
   it("aborts after 3 consecutive failures", async () => {
@@ -166,6 +207,7 @@ describe("ImprovementLoop", () => {
 
   it("calls verifyFacts and appends issues to reasoning", async () => {
     let verifyCalled = false;
+    const progress: ImprovementLoopProgress[] = [];
     const task: AgentTaskInterface = {
       getTaskPrompt: () => "test",
       getRubric: () => "test rubric",
@@ -182,7 +224,14 @@ describe("ImprovementLoop", () => {
         return { verified: false, issues: ["Date is wrong", "Name misspelled"] };
       },
     };
-    const loop = new ImprovementLoop({ task, maxRounds: 1, qualityThreshold: 0.9 });
+    const loop = new ImprovementLoop({
+      task,
+      maxRounds: 1,
+      qualityThreshold: 0.9,
+      onProgress: (event) => {
+        progress.push(event);
+      },
+    });
     const result = await loop.run({ initialOutput: "test", state: {} });
     expect(verifyCalled).toBe(true);
     expect(result.rounds[0].reasoning).toContain("Fact-check issues");
@@ -190,6 +239,18 @@ describe("ImprovementLoop", () => {
     expect(result.rounds[0].reasoning).toContain("Name misspelled");
     // Score is penalized by 0.9x when facts are unverified
     expect(result.bestScore).toBe(0.95 * 0.9);
+    expect(progress.at(-1)).toEqual(
+      expect.objectContaining({
+        phase: "evaluation",
+        status: "completed",
+        bestScore: 0.95 * 0.9,
+        roundResult: expect.objectContaining({
+          score: 0.95 * 0.9,
+          reasoning: expect.stringContaining("Fact-check issues"),
+          judgeFailed: false,
+        }),
+      }),
+    );
   });
 
   it("threshold sensitivity: score 0.91 with threshold 0.90 does not stop immediately", async () => {

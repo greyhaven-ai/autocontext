@@ -4,6 +4,7 @@ import type {
   CompletionOptions,
   CompletionResult,
   LLMProvider,
+  ProviderIsolationPolicy,
   ValidatedImageAttachment,
 } from "../types/index.js";
 import { encodeValidatedImage } from "../types/index.js";
@@ -23,10 +24,7 @@ import { ClaudeCLIRuntime } from "../runtimes/claude-cli.js";
 import { CodexCLIRuntime, CodexCLIConfig } from "../runtimes/codex-cli.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
 import { PiPersistentRPCRuntime, PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
-import {
-  RuntimeBridgeProvider,
-  type RuntimeBridgeProviderOpts,
-} from "./runtime-bridge.js";
+import { RuntimeBridgeProvider, type RuntimeBridgeProviderOpts } from "./runtime-bridge.js";
 import type { AgentRuntime } from "../runtimes/base.js";
 import { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
 import type { RuntimeCommandGrant } from "../runtimes/workspace-env.js";
@@ -37,6 +35,60 @@ export { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
 export interface AnthropicProviderOpts {
   apiKey: string;
   model?: string;
+}
+
+const ANTHROPIC_MAX_RETRIES = 2;
+const ANTHROPIC_RETRY_BASE_DELAY_MS = 250;
+const ANTHROPIC_RETRY_MAX_DELAY_MS = 5_000;
+
+class AnthropicHttpStatusError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`Anthropic HTTP status ${status}`);
+    this.name = "AnthropicHttpStatusError";
+    this.status = status;
+  }
+}
+
+function isTransientAnthropicStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || (status >= 500 && status <= 599);
+}
+
+function isTransientAnthropicTransportError(error: unknown): boolean {
+  return error instanceof TypeError || (error instanceof Error && error.name === "NetworkError");
+}
+
+function boundedAnthropicRetryAfterMs(value: string | null): number | null {
+  if (value === null || value.trim() === "") return null;
+  const trimmed = value.trim();
+  const seconds = /^\d+(?:\.\d+)?$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  const unboundedMs = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(trimmed) - Date.now();
+  if (!Number.isFinite(unboundedMs)) return null;
+  return Math.min(Math.max(0, unboundedMs), ANTHROPIC_RETRY_MAX_DELAY_MS);
+}
+
+function anthropicRetryDelayMs(response: Response | null, retryIndex: number): number {
+  const retryAfter = response
+    ? boundedAnthropicRetryAfterMs(response.headers.get("retry-after"))
+    : null;
+  return (
+    retryAfter ??
+    Math.min(ANTHROPIC_RETRY_BASE_DELAY_MS * 2 ** retryIndex, ANTHROPIC_RETRY_MAX_DELAY_MS)
+  );
+}
+
+async function waitForAnthropicRetry(delayMs: number): Promise<void> {
+  if (delayMs <= 0) return;
+  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function cancelAnthropicResponseBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Releasing a failed response is best-effort and must not mask the API error.
+  }
 }
 
 function supportsAnthropicImages(model: string): boolean {
@@ -84,25 +136,61 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
   const supportsImages = (model = defaultModel) => supportsAnthropicImages(model);
 
   const post = async (body: Record<string, unknown>): Promise<AnthropicMessageResponse> => {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": opts.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(body),
-    });
+    for (let attempt = 0; attempt <= ANTHROPIC_MAX_RETRIES; attempt++) {
+      let res: Response;
+      try {
+        res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": opts.apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        const transient = isTransientAnthropicTransportError(error);
+        if (!transient || attempt === ANTHROPIC_MAX_RETRIES) {
+          const attempts = attempt > 0 ? ` after ${attempt + 1} attempts` : "";
+          throw new ProviderError(
+            `Anthropic transport request failed${attempts}`,
+            {},
+            { cause: error },
+          );
+        }
+        await waitForAnthropicRetry(anthropicRetryDelayMs(null, attempt));
+        continue;
+      }
 
-    if (!res.ok) {
-      const errorBody = await res.text();
-      throw new ProviderError(`Anthropic API error ${res.status}: ${errorBody.slice(0, 200)}`);
+      if (!res.ok) {
+        const cause = new AnthropicHttpStatusError(res.status);
+        await cancelAnthropicResponseBody(res);
+        if (!isTransientAnthropicStatus(res.status) || attempt === ANTHROPIC_MAX_RETRIES) {
+          const attempts = attempt > 0 ? ` after ${attempt + 1} attempts` : "";
+          throw new ProviderError(
+            `Anthropic API request failed with status ${res.status}${attempts}`,
+            {},
+            { cause },
+          );
+        }
+        await waitForAnthropicRetry(anthropicRetryDelayMs(res, attempt));
+        continue;
+      }
+
+      let payload: unknown;
+      try {
+        payload = await res.json();
+      } catch {
+        throw new ProviderError("Anthropic API returned an unreadable message response");
+      }
+      return parseAnthropicMessageResponse(payload);
     }
-    return parseAnthropicMessageResponse(await res.json());
+    throw new Error("Anthropic retry loop exhausted without returning or raising");
   };
 
   return {
     name: "anthropic",
+    isStatelessNoToolsProvider: true,
     supportsThinkingStream: true,
     supportsImageAttachments: supportsImages,
     defaultModel: () => defaultModel,
@@ -166,8 +254,11 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
             ...claudeRequestControls(model, callOpts.temperature ?? 0),
           });
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          throw new ProviderError(message, usage);
+          const message =
+            error instanceof ProviderError ? error.message : "Anthropic thinking request failed";
+          const combinedUsage = { ...usage };
+          if (error instanceof ProviderError) addCompletionUsage(combinedUsage, error.usage);
+          throw new ProviderError(message, combinedUsage, { cause: error });
         }
         addCompletionUsage(usage, {
           input: data.usage.input_tokens,
@@ -213,8 +304,9 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
           try {
             thinkingStream.push(extractDeepThought(block.input));
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            throw new ProviderError(message, usage);
+            const message =
+              error instanceof ProviderError ? error.message : "Invalid deep_think arguments";
+            throw new ProviderError(message, usage, { cause: error });
           }
           toolResults.push({
             type: "tool_result",
@@ -338,13 +430,9 @@ function isUnsupportedResponseFormatError(status: number, body: string): boolean
 
   const message = body.toLowerCase();
   const mentionsSchema = message.includes("response_format") || message.includes("json_schema");
-  const rejectsSchema = [
-    "unsupported",
-    "not supported",
-    "unknown",
-    "unrecognized",
-    "invalid",
-  ].some((token) => message.includes(token));
+  const rejectsSchema = ["unsupported", "not supported", "unknown", "unrecognized", "invalid"].some(
+    (token) => message.includes(token),
+  );
   return mentionsSchema && rejectsSchema;
 }
 
@@ -355,13 +443,9 @@ function isUnsupportedReasoningEffortError(status: number, body: string): boolea
     message.includes("reasoning_effort") ||
     message.includes("reasoning effort") ||
     /(?:valid|supported|allowed) levels?/.test(message);
-  const rejectsField = [
-    "unsupported",
-    "not supported",
-    "unknown",
-    "unrecognized",
-    "invalid",
-  ].some((token) => message.includes(token));
+  const rejectsField = ["unsupported", "not supported", "unknown", "unrecognized", "invalid"].some(
+    (token) => message.includes(token),
+  );
   return mentionsField && rejectsField;
 }
 
@@ -402,13 +486,9 @@ function isUnsupportedToolsError(status: number, body: string): boolean {
     "function calling",
     "function_call",
   ].some((token) => message.includes(token));
-  const rejectsTools = [
-    "unsupported",
-    "not supported",
-    "unknown",
-    "unrecognized",
-    "invalid",
-  ].some((token) => message.includes(token));
+  const rejectsTools = ["unsupported", "not supported", "unknown", "unrecognized", "invalid"].some(
+    (token) => message.includes(token),
+  );
   return mentionsTools && rejectsTools;
 }
 
@@ -425,7 +505,9 @@ const REASONING_EFFORT_ORDER = [
 function lowestSupportedReasoningEffort(body: string, current: string): string | undefined {
   const message = body.toLowerCase();
   if (!/(?:valid|supported|allowed) levels?/.test(message)) return undefined;
-  const advertised = new Set(message.match(/\b(?:none|minimal|low|medium|high|xhigh|max)\b/g) ?? []);
+  const advertised = new Set(
+    message.match(/\b(?:none|minimal|low|medium|high|xhigh|max)\b/g) ?? [],
+  );
   advertised.delete(current.toLowerCase());
   return REASONING_EFFORT_ORDER.find((effort) => advertised.has(effort));
 }
@@ -453,10 +535,11 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
   const supportsImages = (model = defaultModel) =>
     typeof opts.imageSupport === "function"
       ? opts.imageSupport(model)
-      : opts.imageSupport ?? (isOfficialOpenAIBaseUrl(baseUrl) && supportsOpenAIImages(model));
+      : (opts.imageSupport ?? (isOfficialOpenAIBaseUrl(baseUrl) && supportsOpenAIImages(model)));
 
   return {
     name: "openai-compatible",
+    isStatelessNoToolsProvider: true,
     supportsThinkingStream: true,
     supportsImageAttachments: supportsImages,
     defaultModel: () => defaultModel,
@@ -470,9 +553,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
           model,
           [tokenField]: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
           ...(supportsTemperature(model) ? { temperature: callOpts.temperature ?? 0 } : {}),
-          ...(wireReasoningEffort !== undefined
-            ? { reasoning_effort: wireReasoningEffort }
-            : {}),
+          ...(wireReasoningEffort !== undefined ? { reasoning_effort: wireReasoningEffort } : {}),
           messages: [
             { role: "system", content: callOpts.systemPrompt },
             { role: "user", content: openAIUserContent(callOpts) },
@@ -720,10 +801,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
         for (const toolCall of toolCalls) {
           const name = toolCall.function?.name ?? "";
           if (name !== DEEP_THINK_TOOL_NAME) {
-            throw new ProviderError(
-              `Unexpected thinking tool call: ${name || "<missing>"}`,
-              usage,
-            );
+            throw new ProviderError(`Unexpected thinking tool call: ${name || "<missing>"}`, usage);
           }
           try {
             thinkingStream.push(extractDeepThought(toolCall.function?.arguments));
@@ -879,6 +957,8 @@ export interface CreateProviderOpts {
   runtimeSessionRole?: string;
   runtimeSessionCwd?: string;
   runtimeSessionCommands?: RuntimeCommandGrant[];
+  /** Internal policy applied only to a freshly isolated runtime provider. */
+  runtimeIsolationPolicy?: ProviderIsolationPolicy;
 }
 
 export function createProvider(opts: CreateProviderOpts): LLMProvider {
@@ -936,6 +1016,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
       permissionMode: opts.claudePermissionMode,
       sessionPersistence: opts.claudeSessionPersistence,
       timeout: opts.claudeTimeout ? opts.claudeTimeout * 1000 : undefined,
+      isolatedNoTools: opts.runtimeIsolationPolicy?.noTools === true,
     });
     return createRuntimeBridgeProvider(runtime, resolvedModel ?? "sonnet", opts, "claude-cli");
   }
@@ -949,6 +1030,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         timeout: opts.codexTimeout,
         workspace: opts.codexWorkspace,
         quiet: opts.codexQuiet,
+        isolatedNoTools: opts.runtimeIsolationPolicy?.noTools === true,
       }),
     );
     return createRuntimeBridgeProvider(runtime, resolvedModel ?? "o4-mini", opts, "codex");
@@ -963,6 +1045,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         workspace: opts.piWorkspace,
         model: resolvedModel,
         noContextFiles: opts.piNoContextFiles,
+        isolatedNoTools: opts.runtimeIsolationPolicy?.noTools === true,
       }),
     );
     return createRuntimeBridgeProvider(runtime, resolvedModel ?? "pi-default", opts, "pi");
@@ -979,6 +1062,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         workspace: opts.piWorkspace,
         sessionPersistence: opts.piRpcSessionPersistence,
         noContextFiles: opts.piNoContextFiles,
+        isolatedNoTools: opts.runtimeIsolationPolicy?.noTools === true,
       }),
     );
     return createRuntimeBridgeProvider(runtime, resolvedModel ?? "pi-rpc-default", opts, "pi-rpc");
@@ -1008,7 +1092,28 @@ function createRuntimeBridgeProvider(
   opts: CreateProviderOpts,
   defaultRole: string,
 ): LLMProvider {
-  return new RuntimeBridgeProvider(runtime, model, runtimeBridgeProviderOpts(opts, defaultRole));
+  return new RuntimeBridgeProvider(runtime, model, {
+    ...runtimeBridgeProviderOpts(opts, defaultRole),
+    evaluatorIdentity: defaultRole,
+    createModelProvider: (requestedModel) =>
+      createProvider({
+        ...opts,
+        model: requestedModel,
+        ...(defaultRole === "claude-cli" ? { claudeModel: requestedModel } : {}),
+        ...(defaultRole === "codex" ? { codexModel: requestedModel } : {}),
+      }),
+    createIsolatedProvider: (policy) =>
+      createProvider({
+        ...opts,
+        runtimeIsolationPolicy: policy,
+        // Evaluator-only subprocesses must never resume or persist the
+        // candidate's provider conversation. Persistent runtimes may remain
+        // alive for retries within one evaluation, then the factory caller
+        // closes them in finally.
+        claudeSessionPersistence: false,
+        piRpcSessionPersistence: false,
+      }),
+  });
 }
 
 function runtimeBridgeProviderOpts(

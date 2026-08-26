@@ -4,6 +4,48 @@ import json
 import sqlite3
 from typing import Any
 
+_DEQUEUE_TASK_SQL = """
+    UPDATE task_queue
+    SET status = 'running',
+        started_at = datetime('now'),
+        updated_at = datetime('now'),
+        attempts = attempts + 1
+    WHERE id = (
+        SELECT id FROM task_queue
+        WHERE status = 'pending'
+          AND (scheduled_at IS NULL OR scheduled_at <= datetime('now'))
+        ORDER BY priority DESC, created_at ASC
+        LIMIT 1
+    )
+    RETURNING *
+"""
+
+_DEQUEUE_PYTHON_WORKER_TASK_SQL = """
+    UPDATE task_queue
+    SET status = 'running',
+        started_at = datetime('now'),
+        updated_at = datetime('now'),
+        attempts = attempts + 1
+    WHERE id = (
+        SELECT id FROM task_queue
+        WHERE status = 'pending'
+          AND (scheduled_at IS NULL OR scheduled_at <= datetime('now'))
+          AND CASE
+              -- Invalid/non-object configs are left for TaskConfig to validate. For
+              -- valid objects, key presence alone reserves the row for the native
+              -- worker, including unknown, incomplete, and JSON-null metadata.
+              WHEN config_json IS NULL OR json_valid(config_json) = 0 THEN 1
+              WHEN json_type(config_json, '$') <> 'object' THEN 1
+              WHEN json_type(config_json, '$.native_task_marker') IS NOT NULL THEN 0
+              WHEN json_type(config_json, '$.saved_spec_digest') IS NOT NULL THEN 0
+              ELSE 1
+          END = 1
+        ORDER BY priority DESC, created_at ASC
+        LIMIT 1
+    )
+    RETURNING *
+"""
+
 
 class SQLiteTaskQueueStoreMixin:
     def connect(self) -> sqlite3.Connection:
@@ -37,28 +79,23 @@ class SQLiteTaskQueueStoreMixin:
         Uses a single UPDATE with subquery for true atomic dequeue —
         prevents double-processing under concurrent access.
         """
+        return self._claim_task(_DEQUEUE_TASK_SQL)
+
+    def dequeue_task_for_python_worker(self) -> dict[str, Any] | None:
+        """Claim the next row that is safe for the Python worker.
+
+        Native saved-task metadata is filtered inside the atomic claim, so a
+        Python worker neither changes those rows nor consumes an attempt.
+        """
+        return self._claim_task(_DEQUEUE_PYTHON_WORKER_TASK_SQL)
+
+    def _claim_task(self, statement: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             # AC-906: single-statement claim (the ambient-queue idiom). The
             # UPDATE takes the write lock atomically, so two runners cannot
             # claim the same row, and attempts is burned AT CLAIM so a handler
             # that kills the process still counts toward the dead-letter limit.
-            updated = conn.execute(
-                """
-                UPDATE task_queue
-                SET status = 'running',
-                    started_at = datetime('now'),
-                    updated_at = datetime('now'),
-                    attempts = attempts + 1
-                WHERE id = (
-                    SELECT id FROM task_queue
-                    WHERE status = 'pending'
-                      AND (scheduled_at IS NULL OR scheduled_at <= datetime('now'))
-                    ORDER BY priority DESC, created_at ASC
-                    LIMIT 1
-                )
-                RETURNING *
-                """,
-            ).fetchone()
+            updated = conn.execute(statement).fetchone()
             return dict(updated) if updated else None
 
     def complete_task(

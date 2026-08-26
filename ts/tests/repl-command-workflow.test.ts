@@ -110,6 +110,7 @@ describe("repl command workflow", () => {
       currentOutput: "current output",
       referenceContext: "override context",
       requiredConcepts: ["concept-a", "concept-b"],
+      requiresNoToolsProviderIsolation: false,
       config: {
         enabled: true,
         model: "override-model",
@@ -121,6 +122,63 @@ describe("repl command workflow", () => {
         memoryLimitMb: 128,
       },
     });
+  });
+
+  it("does not inherit judge-only grounding from a legacy saved AgentTaskSpec", () => {
+    const plan = planReplCommand(
+      {
+        scenario: "legacy-scenario",
+        "required-concept": ["explicit-candidate-concept"],
+      },
+      {
+        taskPrompt: "Legacy public prompt",
+        rubric: "Legacy judge rubric",
+        referenceContext: "JUDGE_ONLY_REFERENCE",
+        requiredConcepts: ["JUDGE_ONLY_CONCEPT"],
+        agentTaskSpec: {
+          taskPrompt: "Legacy public prompt",
+          judgeRubric: "Legacy judge rubric",
+          outputFormat: "free_text",
+          judgeModel: "",
+          referenceContext: "JUDGE_ONLY_REFERENCE",
+          requiredConcepts: ["JUDGE_ONLY_CONCEPT"],
+          maxRounds: 1,
+          qualityThreshold: 0.9,
+        },
+      },
+    );
+
+    expect(plan.referenceContext).toBeUndefined();
+    expect(plan.rubric).toBe("");
+    expect(plan.requiredConcepts).toEqual(["explicit-candidate-concept"]);
+    expect(plan.requiresNoToolsProviderIsolation).toBe(false);
+  });
+
+  it("inherits candidate-visible grounding from a structured v1 saved task", () => {
+    const plan = planReplCommand(
+      { scenario: "structured-scenario" },
+      {
+        taskPrompt: "Structured public prompt",
+        rubric: "Structured rubric",
+        referenceContext: "CANDIDATE_VISIBLE_REFERENCE",
+        requiredConcepts: ["candidate-visible-concept"],
+        agentTaskSpec: {
+          improvementTaskContractVersion: 1,
+          taskPrompt: "Structured public prompt",
+          judgeRubric: "Structured rubric",
+          outputFormat: "free_text",
+          judgeModel: "",
+          referenceContext: "CANDIDATE_VISIBLE_REFERENCE",
+          requiredConcepts: ["candidate-visible-concept"],
+          maxRounds: 1,
+          qualityThreshold: 0.9,
+        },
+      },
+    );
+
+    expect(plan.referenceContext).toBe("CANDIDATE_VISIBLE_REFERENCE");
+    expect(plan.requiredConcepts).toEqual(["candidate-visible-concept"]);
+    expect(plan.requiresNoToolsProviderIsolation).toBe(true);
   });
 
   it("builds REPL session requests with provider/model wiring", () => {
@@ -135,6 +193,7 @@ describe("repl command workflow", () => {
           currentOutput: undefined,
           referenceContext: "Context",
           requiredConcepts: ["concept-a"],
+          requiresNoToolsProviderIsolation: false,
           config: {
             enabled: true,
             model: "override-model",
@@ -166,6 +225,7 @@ describe("repl command workflow", () => {
       currentOutput: undefined,
       referenceContext: "Context",
       requiredConcepts: ["concept-a"],
+      requiresNoToolsProviderIsolation: false,
     });
   });
 });

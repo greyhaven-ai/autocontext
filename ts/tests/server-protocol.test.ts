@@ -42,7 +42,11 @@ interface BufferedSocket {
 }
 
 const LegacyHelloSchema = z
-  .object({ type: z.literal("hello"), protocol_version: z.number().int().optional() })
+  .object({
+    type: z.literal("hello"),
+    protocol_version: z.number().int().optional(),
+    capabilities: z.array(z.string()).optional(),
+  })
   .strict();
 
 const LegacyRunMessageSchema = z.discriminatedUnion("type", [
@@ -910,6 +914,77 @@ describe("InteractiveServer", () => {
     }
   });
 
+  it("applies queued-message backpressure to recoverable invalid tasks", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const deterministicProvider = new DeterministicProvider();
+    let providerEntered = false;
+    let releaseProvider!: () => void;
+    const providerGate = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const gatedProvider = {
+      name: deterministicProvider.name,
+      defaultModel: () => deterministicProvider.defaultModel(),
+      complete: async (opts: Parameters<typeof deterministicProvider.complete>[0]) => {
+        providerEntered = true;
+        await providerGate;
+        return deterministicProvider.complete(opts);
+      },
+    };
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+      deps: {
+        resolveProviderBundle: () => ({
+          defaultProvider: gatedProvider,
+          defaultConfig: {
+            providerType: "deterministic",
+            apiKey: "",
+            baseUrl: "",
+            model: "deterministic-dev",
+          },
+          roleProviders: {},
+          roleModels: {},
+        }),
+      },
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    const socket = await openSocket(server.url);
+    try {
+      await socket.waitFor((message) => message.type === "hello");
+      await socket.waitFor((message) => message.type === "environments");
+      await socket.waitFor((message) => message.type === "state");
+      socket.send({ type: "chat_agent", role: "analyst", message: "Hold this request." });
+      await waitForCondition(() => providerEntered);
+
+      for (let index = 0; index < 40; index += 1) {
+        socket.send({
+          type: "create_task",
+          contract: {
+            target: "Current draft",
+            deliverable: { description: "A revised draft" },
+            criteria: "Evaluate grounding.",
+          },
+          source_contents: [],
+        });
+      }
+
+      await expect(socket.waitForClose()).resolves.toEqual({
+        code: 1013,
+        reason: "interactive server message budget is busy",
+      });
+    } finally {
+      releaseProvider();
+      socket.close();
+      await server.stop();
+    }
+  });
+
   it("keeps safe run control responsive while both expensive handler slots are stalled", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
     const mgr = new RunManager({
@@ -1409,6 +1484,7 @@ describe("InteractiveServer", () => {
           "safe_run_stop_v1",
           "agent_task_plan_v1",
           "agent_progress_notes_v1",
+          "structured_task_creation_v1",
         ],
       });
       await socket.waitFor((msg) => msg.type === "environments");

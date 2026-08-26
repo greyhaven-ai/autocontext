@@ -19,6 +19,10 @@ import {
 import { jsonSafeRecord } from "./runtime-json.js";
 import { createRuntimeSessionGrantEventSink } from "./runtime-grant-events.js";
 import type { RuntimeSessionEventSink } from "./runtime-session-notifications.js";
+import type { PromptVisibility } from "../types/index.js";
+
+export const EVALUATOR_ONLY_PROMPT_REDACTION = "[EVALUATOR-ONLY PROMPT REDACTED]";
+export const EVALUATOR_ONLY_RESPONSE_REDACTION = "[EVALUATOR-ONLY RESPONSE REDACTED]";
 
 export interface RuntimeSessionCreateOpts {
   sessionId?: string;
@@ -77,6 +81,7 @@ export type RuntimeSessionPromptHandler = (
 
 export interface RuntimeSessionSubmitPromptOpts {
   prompt: string;
+  promptVisibility?: PromptVisibility;
   role?: string;
   cwd?: string;
   commands?: RuntimeCommandGrant[];
@@ -123,6 +128,28 @@ interface RuntimeSessionConstructorOpts {
   depth?: number;
   maxDepth?: number;
   maxConcurrentChildTasks?: number;
+}
+
+function evaluatorOnlySafeMetadata(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const source = jsonSafeRecord(metadata);
+  const safe: Record<string, unknown> = {};
+  for (const key of [
+    "runtime",
+    "operation",
+    "runtimeSessionId",
+    "agentRuntimeSessionId",
+    "model",
+    "costUsd",
+    "exitCode",
+  ]) {
+    const value = source[key];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      safe[key] = value;
+    }
+  }
+  return safe;
 }
 
 export class RuntimeSession {
@@ -194,6 +221,10 @@ export class RuntimeSession {
   async submitPrompt(opts: RuntimeSessionSubmitPromptOpts): Promise<RuntimeSessionPromptResult> {
     const role = opts.role ?? "assistant";
     const requestId = randomUUID().slice(0, 12);
+    const evaluatorOnly = opts.promptVisibility === "evaluator_only";
+    const recordingMetadata = evaluatorOnly
+      ? { promptVisibility: "evaluator_only", contentRedacted: true }
+      : {};
     let promptEventId = "";
     const scopedWorkspace = await this.workspace.scope({
       cwd: opts.cwd,
@@ -206,9 +237,10 @@ export class RuntimeSession {
     });
     const promptEvent = this.log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
       requestId,
-      prompt: opts.prompt,
+      prompt: evaluatorOnly ? EVALUATOR_ONLY_PROMPT_REDACTION : opts.prompt,
       role,
       cwd: scopedWorkspace.cwd,
+      ...recordingMetadata,
     });
     promptEventId = promptEvent.eventId;
 
@@ -224,10 +256,13 @@ export class RuntimeSession {
       this.log.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
         requestId,
         promptEventId: promptEvent.eventId,
-        text: output.text,
-        metadata: jsonSafeRecord(output.metadata),
+        text: evaluatorOnly ? EVALUATOR_ONLY_RESPONSE_REDACTION : output.text,
+        metadata: evaluatorOnly
+          ? evaluatorOnlySafeMetadata(output.metadata)
+          : jsonSafeRecord(output.metadata),
         role,
         cwd: scopedWorkspace.cwd,
+        ...recordingMetadata,
       });
       const result = this.promptResult({
         role,
@@ -243,11 +278,12 @@ export class RuntimeSession {
       this.log.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
         requestId,
         promptEventId: promptEvent.eventId,
-        text: "",
-        error: message,
+        text: evaluatorOnly ? EVALUATOR_ONLY_RESPONSE_REDACTION : "",
+        error: evaluatorOnly ? "Evaluator-only provider request failed" : message,
         isError: true,
         role,
         cwd: scopedWorkspace.cwd,
+        ...recordingMetadata,
       });
       const result = this.promptResult({
         role,

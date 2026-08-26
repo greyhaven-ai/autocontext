@@ -25,7 +25,10 @@ import {
   subscribeToMissionProgressEvents,
 } from "./mission-progress-workflow.js";
 import { buildCampaignApiRoutes } from "./campaign-api.js";
-import { buildClientErrorMessage } from "./client-error-workflow.js";
+import {
+  buildClientErrorMessage,
+  buildRecognizableClientValidationError,
+} from "./client-error-workflow.js";
 import { executeChatAgentCommand } from "./chat-agent-command-workflow.js";
 import { executeInteractiveControlCommand } from "./interactive-control-command-workflow.js";
 import { executeInteractiveScenarioCommand } from "./interactive-scenario-command-workflow.js";
@@ -444,6 +447,7 @@ export class InteractiveServer {
       this.#solveProvider = this.#runManager.buildProvider();
       this.#solveManager = new SolveManager({
         provider: this.#solveProvider,
+        agentProvider: this.#runManager.getEnvironmentInfo().agentProvider,
         store: this.#solveStore,
         runsRoot: this.#runManager.getRunsRoot(),
         knowledgeRoot: this.#runManager.getKnowledgeRoot(),
@@ -594,9 +598,43 @@ export class InteractiveServer {
         pendingMessageBytes += messageBytes;
       }
       let parsedMessage: ClientMessage | null = null;
+      let rawMessage: Record<string, unknown> | null = null;
       try {
-        parsedMessage = this.#parseMessage(data.toString());
-      } catch {
+        const decoded: unknown = JSON.parse(data.toString());
+        if (!isRecord(decoded)) {
+          throw new Error("interactive message must be an object");
+        }
+        rawMessage = decoded;
+        parsedMessage = parseClientMessage(rawMessage);
+      } catch (error) {
+        const validationError = buildRecognizableClientValidationError(error, rawMessage);
+        if (validationError) {
+          if (!preReservedNormalLane) {
+            if (
+              pendingMessageBytes + messageBytes > MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES
+            ) {
+              ws.close(1009, "interactive message queue exceeds the payload limit");
+              return;
+            }
+            if (!this.#reserveInteractiveMessage(messageBytes, false)) {
+              ws.close(1013, "interactive server message budget is busy");
+              return;
+            }
+            pendingMessageBytes += messageBytes;
+          }
+          const settleValidationMessage = () => {
+            pendingMessageBytes -= messageBytes;
+            this.#releaseInteractiveMessage(messageBytes, false);
+          };
+          messageTail = messageTail.then(() => {
+            this.#runManager.cancelScenario(ws);
+            if (ws.readyState === WebSocket.OPEN) {
+              this.#send(ws, { type: "scenario_generating", name: "improvement_task" });
+              this.#sendLegacyOrCurrent(ws, validationError);
+            }
+          }).finally(settleValidationMessage);
+          return;
+        }
         if (preReservedNormalLane) {
           pendingMessageBytes -= messageBytes;
           this.#releaseInteractiveMessage(messageBytes, false);
@@ -671,6 +709,7 @@ export class InteractiveServer {
     ws.on("error", () => undefined);
 
     ws.on("close", () => {
+      this.#runManager.cancelScenario(ws);
       this.#interactiveClients.delete(ws);
       this.#transcriptClients.delete(ws);
       this.#clientRunScopes.delete(ws);
@@ -826,13 +865,28 @@ export class InteractiveServer {
         return;
       }
       case "create_scenario":
+      case "create_task":
       case "confirm_scenario":
       case "revise_scenario":
       case "cancel_scenario": {
+        const startsScenarioGeneration =
+          msg.type === "create_scenario" ||
+          msg.type === "create_task" ||
+          msg.type === "revise_scenario";
+        if (startsScenarioGeneration) {
+          this.#send(ws, {
+            type: "scenario_generating",
+            name: msg.type === "create_task" ? "improvement_task" : "custom_scenario",
+          });
+        }
         for (const response of await executeInteractiveScenarioCommand({
           command: msg,
           runManager: this.#runManager,
+          setupScope: ws,
         })) {
+          if (startsScenarioGeneration && response.type === "scenario_generating") {
+            continue;
+          }
           this.#send(ws, response);
         }
         return;
@@ -1275,16 +1329,16 @@ export class InteractiveServer {
     ws.send(wire);
   }
 
-  #parseMessage(raw: string): ClientMessage {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return parseClientMessage(parsed);
-  }
 }
 
 function rawDataByteLength(data: WebSocket.RawData): number {
   return Array.isArray(data)
     ? data.reduce((total, chunk) => total + chunk.byteLength, 0)
     : data.byteLength;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isPriorityRunControlMessage(message: ClientMessage): boolean {
@@ -1295,6 +1349,7 @@ function interactiveMessageUsesExpensiveSlot(message: ClientMessage): boolean {
   switch (message.type) {
     case "chat_agent":
     case "create_scenario":
+    case "create_task":
     case "confirm_scenario":
     case "revise_scenario":
     case "login":

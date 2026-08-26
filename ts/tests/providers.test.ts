@@ -9,10 +9,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 describe("AnthropicProvider", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("should implement LLMProvider interface", async () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
     const provider = createAnthropicProvider({ apiKey: "test-key" });
     expect(provider.name).toBe("anthropic");
+    expect(provider.isStatelessNoToolsProvider).toBe(true);
     expect(typeof provider.defaultModel).toBe("function");
     expect(typeof provider.complete).toBe("function");
   });
@@ -25,7 +28,10 @@ describe("AnthropicProvider", () => {
 
   it("should use custom model when specified", async () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
-    const provider = createAnthropicProvider({ apiKey: "test-key", model: "claude-haiku-4-5-20251001" });
+    const provider = createAnthropicProvider({
+      apiKey: "test-key",
+      model: "claude-haiku-4-5-20251001",
+    });
     expect(provider.defaultModel()).toBe("claude-haiku-4-5-20251001");
   });
 
@@ -112,14 +118,17 @@ describe("AnthropicProvider", () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
     const provider = createAnthropicProvider({ apiKey: "test-key" });
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        content: [{ type: "text", text: "Test response" }],
-        model: "claude-sonnet-5",
-        usage: { input_tokens: 15, output_tokens: 8 },
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          content: [{ type: "text", text: "Test response" }],
+          model: "claude-sonnet-5",
+          usage: { input_tokens: 15, output_tokens: 8 },
+        }),
       }),
-    }));
+    );
 
     const result = await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
     expect(result.text).toBe("Test response");
@@ -129,21 +138,186 @@ describe("AnthropicProvider", () => {
     vi.unstubAllGlobals();
   });
 
-  it("should throw ProviderError on API failure", async () => {
+  it.each([400, 401, 403, 404, 422, 600])(
+    "does not retry permanent status %i or surface the response body",
+    async (status) => {
+      const { createAnthropicProvider } = await import("../src/providers/index.js");
+      const provider = createAnthropicProvider({ apiKey: "sk-ant-request-secret" });
+      const responseText = vi.fn(async () => "server leaked sk-ant-response-secret");
+      const cancelResponseBody = vi.fn(async () => undefined);
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        headers: { get: () => null },
+        text: responseText,
+        body: { cancel: cancelResponseBody },
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      let caught: unknown;
+      try {
+        await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toBe(`Anthropic API request failed with status ${status}`);
+      expect((caught as Error).message).not.toContain("sk-ant-");
+      expect((caught as Error & { cause?: unknown }).cause).toMatchObject({ status });
+      expect(mockFetch).toHaveBeenCalledOnce();
+      expect(responseText).not.toHaveBeenCalled();
+      expect(cancelResponseBody).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([408, 409, 429, 500, 599])(
+    "retries transient status %i and then returns the completion",
+    async (status) => {
+      const { createAnthropicProvider } = await import("../src/providers/index.js");
+      const provider = createAnthropicProvider({ apiKey: "test-key" });
+      const responseText = vi.fn(async () => "sensitive response body");
+      const cancelResponseBody = vi.fn(async () => undefined);
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status,
+          headers: { get: () => "0" },
+          text: responseText,
+          body: { cancel: cancelResponseBody },
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            content: [{ type: "text", text: "recovered" }],
+            model: "claude-sonnet-5",
+            usage: { input_tokens: 1, output_tokens: 2 },
+          }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
+
+      expect(result.text).toBe("recovered");
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(responseText).not.toHaveBeenCalled();
+      expect(cancelResponseBody).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not mask an Anthropic API error when response cancellation fails", async () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
     const provider = createAnthropicProvider({ apiKey: "test-key" });
+    const cancelError = new Error("cancel failed");
+    const cancelResponseBody = vi.fn(() => Promise.reject(cancelError));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        headers: { get: () => null },
+        body: { cancel: cancelResponseBody },
+      }),
+    );
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    await expect(provider.complete({ systemPrompt: "sys", userPrompt: "test" })).rejects.toThrow(
+      "Anthropic API request failed with status 401",
+    );
+    expect(cancelResponseBody).toHaveBeenCalledOnce();
+  });
+
+  it("bounds transient status retries", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key" });
+    const mockFetch = vi.fn().mockResolvedValue({
       ok: false,
-      status: 401,
-      text: async () => "Unauthorized",
-    }));
+      status: 503,
+      headers: { get: () => "0" },
+      text: async () => "overloaded",
+    });
+    vi.stubGlobal("fetch", mockFetch);
 
-    await expect(
-      provider.complete({ systemPrompt: "sys", userPrompt: "test" }),
-    ).rejects.toThrow("Anthropic API error 401");
+    await expect(provider.complete({ systemPrompt: "sys", userPrompt: "test" })).rejects.toThrow(
+      "Anthropic API request failed with status 503 after 3 attempts",
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
 
-    vi.unstubAllGlobals();
+  it("retries a transient transport failure and preserves it if retries are exhausted", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key" });
+    const transportError = new TypeError("socket disconnected");
+    const timeout = vi.fn((callback: () => void, _delay?: number) => {
+      callback();
+      return 1;
+    });
+    vi.stubGlobal("setTimeout", timeout);
+    const mockFetch = vi.fn().mockRejectedValue(transportError);
+    vi.stubGlobal("fetch", mockFetch);
+
+    let caught: unknown;
+    try {
+      await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe("Anthropic transport request failed after 3 attempts");
+    expect((caught as Error & { cause?: unknown }).cause).toBe(transportError);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(timeout.mock.calls.map((call) => call[1])).toEqual([250, 500]);
+  });
+
+  it("does not retry a non-transport exception", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key" });
+    const cause = new RangeError("invalid request construction");
+    const mockFetch = vi.fn().mockRejectedValue(cause);
+    vi.stubGlobal("fetch", mockFetch);
+
+    let caught: unknown;
+    try {
+      await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect((caught as Error).message).toBe("Anthropic transport request failed");
+    expect((caught as Error & { cause?: unknown }).cause).toBe(cause);
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it("honors a bounded Retry-After delay", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key" });
+    const timeout = vi.fn((callback: () => void, _delay?: number) => {
+      callback();
+      return 1;
+    });
+    vi.stubGlobal("setTimeout", timeout);
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: { get: () => "60" },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          content: [{ type: "text", text: "recovered" }],
+          model: "claude-sonnet-5",
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
+
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(timeout.mock.calls[0][1]).toBe(5_000);
   });
 });
 
@@ -156,6 +330,7 @@ describe("OpenAICompatibleProvider", () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
     expect(provider.name).toBe("openai-compatible");
+    expect(provider.isStatelessNoToolsProvider).toBe(true);
     expect(typeof provider.defaultModel).toBe("function");
     expect(typeof provider.complete).toBe("function");
   });
@@ -394,14 +569,17 @@ describe("OpenAICompatibleProvider", () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: "GPT response" } }],
-        model: "gpt-5.6-terra",
-        usage: { prompt_tokens: 20, completion_tokens: 10 },
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "GPT response" } }],
+          model: "gpt-5.6-terra",
+          usage: { prompt_tokens: 20, completion_tokens: 10 },
+        }),
       }),
-    }));
+    );
 
     const result = await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
     expect(result.text).toBe("GPT response");
@@ -415,15 +593,18 @@ describe("OpenAICompatibleProvider", () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: false,
-      status: 429,
-      text: async () => "Rate limited",
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        text: async () => "Rate limited",
+      }),
+    );
 
-    await expect(
-      provider.complete({ systemPrompt: "sys", userPrompt: "test" }),
-    ).rejects.toThrow("OpenAI API error 429");
+    await expect(provider.complete({ systemPrompt: "sys", userPrompt: "test" })).rejects.toThrow(
+      "OpenAI API error 429",
+    );
 
     vi.unstubAllGlobals();
   });
@@ -544,7 +725,9 @@ describe("createProvider", () => {
 
   it("should throw ProviderError for unknown type", async () => {
     const { createProvider } = await import("../src/providers/index.js");
-    expect(() => createProvider({ providerType: "unknown" as any })).toThrow("Unknown provider type");
+    expect(() => createProvider({ providerType: "unknown" as any })).toThrow(
+      "Unknown provider type",
+    );
   });
 
   it("should pass model through to provider", async () => {

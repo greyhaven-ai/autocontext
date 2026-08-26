@@ -1,3 +1,6 @@
+import type { AgentTaskSpec } from "../scenarios/agent-task-spec.js";
+import { requiresNativeAgentTaskExecution } from "../scenarios/saved-agent-task-routing.js";
+
 export const REPL_HELP_TEXT = `autoctx repl — run a direct iterative task session
 
 Usage:
@@ -37,6 +40,7 @@ export interface ReplCommandValues {
 }
 
 interface SavedReplScenario {
+  agentTaskSpec?: AgentTaskSpec;
   taskPrompt?: string;
   rubric?: string;
   referenceContext?: string;
@@ -50,6 +54,7 @@ export interface PlannedReplCommand {
   currentOutput?: string;
   referenceContext?: string;
   requiredConcepts: string[];
+  requiresNoToolsProviderIsolation: boolean;
   config: {
     enabled: true;
     model?: string;
@@ -93,17 +98,25 @@ export function planReplCommand(
       "Error: repl requires either --scenario <name> or both --prompt and --rubric.",
     );
   }
+  const inheritSavedCandidateGrounding =
+    !savedScenario?.agentTaskSpec
+    || savedScenario.agentTaskSpec.improvementTaskContractVersion === 1;
 
   return {
     phase,
     taskPrompt,
-    rubric,
+    rubric: inheritSavedCandidateGrounding ? rubric : (values.rubric ?? ""),
     currentOutput: values.output,
     referenceContext:
-      values["reference-context"] ?? savedScenario?.referenceContext,
+      values["reference-context"]
+      ?? (inheritSavedCandidateGrounding ? savedScenario?.referenceContext : undefined),
     requiredConcepts: mergeUniqueStrings(
-      savedScenario?.requiredConcepts,
+      inheritSavedCandidateGrounding ? savedScenario?.requiredConcepts : undefined,
       values["required-concept"],
+    ),
+    requiresNoToolsProviderIsolation: Boolean(
+      savedScenario?.agentTaskSpec &&
+        requiresNativeAgentTaskExecution(savedScenario.agentTaskSpec),
     ),
     config: {
       enabled: true,
@@ -132,6 +145,7 @@ export function buildReplSessionRequest<TProvider>(input: {
   currentOutput?: string;
   referenceContext?: string;
   requiredConcepts: string[];
+  requiresNoToolsProviderIsolation: boolean;
 } {
   return {
     provider: input.provider,
@@ -143,5 +157,6 @@ export function buildReplSessionRequest<TProvider>(input: {
     currentOutput: input.plan.currentOutput,
     referenceContext: input.plan.referenceContext,
     requiredConcepts: input.plan.requiredConcepts,
+    requiresNoToolsProviderIsolation: input.plan.requiresNoToolsProviderIsolation,
   };
 }

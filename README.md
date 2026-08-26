@@ -29,7 +29,7 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 | ------------------- | ------------------------------------- |
 | Python CLI          | `uv tool install autocontext==0.17.0` |
 | Python library/dev  | `uv pip install autocontext==0.17.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.17.0`           |
+| TypeScript/Node CLI | `bun add -g autoctx@0.17.1`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -142,10 +142,25 @@ Python owns the full control-plane package; TypeScript owns several operator-fac
 - **Stronger learning evidence across runtimes:** Python and TypeScript share context-bundle, attribution, and negative-result contracts, while Python training adds replayable adaptive confirmation and minimum-effect promotion artifacts.
 <!-- autocontext-whats-new:end -->
 
-### npm runtime foundations carried into 0.17.0
+### npm 0.17.1 structured task creation
 
-The aligned `autoctx@0.17.0` package also carries the TypeScript-first runtime
-work introduced in 0.16.0 and hardened in 0.16.1:
+`autoctx@0.17.1` is a TypeScript-only patch release; the Python package remains
+at `autocontext==0.17.0`. The npm package adds:
+
+- **Structured desktop missions:** protocol-v2 servers advertise
+  `structured_task_creation_v1` and accept strict, versioned `create_task`
+  commands with bounded source contents, explicit data roles, retained
+  provenance, integrity checks, ordered setup/run progress, and durable
+  multi-round results.
+- **Privacy-preserving evaluation:** evaluator-only sources can affect scores
+  without entering candidate prompts, revision feedback, transcripts, or
+  retained analyst output.
+- **Bounded artifact continuation:** truncated initial or revised task outputs
+  can continue within explicit segment and total-size limits; exhausted or
+  non-growing continuation fails closed before evaluation.
+
+The package also carries the TypeScript-first runtime work introduced in 0.16.0
+and hardened in 0.16.1:
 
 - **Host-owned live composition:** typed runtime capabilities, scoped cleanup
   and effect policies, reactive component graphs, and durable transactional
@@ -160,7 +175,8 @@ work introduced in 0.16.0 and hardened in 0.16.1:
   priority controls, bounded WebSocket resources, credential redaction, and
   terminal-control sanitization are enforced across the interactive path.
 
-Python parity for the pi-tui client and image attachments remains deferred.
+Python parity for structured task creation, the pi-tui client, and image
+attachments remains deferred.
 See the [TypeScript guide](ts/README.md), [runtime composition
 contracts](docs/internal/runtime-component-graph.md), and the full
 [changelog](CHANGELOG.md) for details.

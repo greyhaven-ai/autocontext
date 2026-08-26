@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from autocontext.config.settings import AppSettings
 from autocontext.execution.agent_task_completion import (
+    NATIVE_AGENT_TASK_QUEUE_MARKER,
     TaskConfig,
     build_evaluator_guardrail_payload,
     build_objective_guardrail_payload,
@@ -326,6 +327,11 @@ class TaskRunner:
         workspace_evaluate_fn: WorkspaceEvaluateFn | None = None,
     ) -> None:
         self.store = store
+        dequeue_for_python_worker = getattr(store, "dequeue_task_for_python_worker", None)
+        if not callable(dequeue_for_python_worker):
+            msg = "TaskRunner requires a store with dequeue_task_for_python_worker()"
+            raise TypeError(msg)
+        self._dequeue_for_python_worker: Callable[[], dict[str, Any] | None] = dequeue_for_python_worker
         self.provider = provider
         self.model = model
         self.poll_interval = poll_interval
@@ -403,7 +409,7 @@ class TaskRunner:
 
     def run_once(self) -> dict[str, Any] | None:
         """Process a single task from the queue. Returns the task dict or None."""
-        task = self.store.dequeue_task()
+        task = self._dequeue_for_python_worker()
         if task is None:
             return None
         self._process_task(task)
@@ -420,7 +426,7 @@ class TaskRunner:
         max_tasks = limit if limit is not None else self.concurrency
         tasks: list[dict[str, Any]] = []
         for _ in range(max_tasks):
-            task = self.store.dequeue_task()
+            task = self._dequeue_for_python_worker()
             if task is None:
                 break
             tasks.append(task)
@@ -460,6 +466,13 @@ class TaskRunner:
 
         try:
             config = TaskConfig.from_json(task.get("config_json"))
+            if config.has_native_task_metadata:
+                msg = (
+                    f"Queued task '{spec_name}' contains native saved-task metadata and must be "
+                    f"processed by the TypeScript worker ({NATIVE_AGENT_TASK_QUEUE_MARKER}); "
+                    "Python SimpleAgentTask execution is disabled to preserve evaluator isolation"
+                )
+                raise ValueError(msg)
             reference_context = self._resolve_reference_context(task_id, config)
 
             agent_task = SimpleAgentTask(

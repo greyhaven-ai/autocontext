@@ -7,6 +7,7 @@ import type {
   CompletionOptions,
   CompletionResult,
   LLMProvider,
+  ProviderIsolationPolicy,
   ThinkingCompletionOptions,
 } from "../types/index.js";
 import { ProviderError } from "../types/index.js";
@@ -22,8 +23,11 @@ import type { RuntimeSession } from "../session/runtime-session.js";
 
 export class RuntimeBridgeProvider implements LLMProvider {
   readonly name = "runtime-bridge";
+  readonly evaluatorIdentity: string | undefined;
+  readonly createIsolatedProvider?: (policy?: ProviderIsolationPolicy) => LLMProvider;
   #runtime: AgentRuntime;
   #model: string;
+  #createModelProvider: ((model: string) => LLMProvider) | undefined;
 
   constructor(runtime: AgentRuntime, model: string, opts: RuntimeBridgeProviderOpts = {}) {
     this.#runtime = opts.session
@@ -36,6 +40,9 @@ export class RuntimeBridgeProvider implements LLMProvider {
         })
       : runtime;
     this.#model = model;
+    this.evaluatorIdentity = opts.evaluatorIdentity;
+    this.createIsolatedProvider = opts.createIsolatedProvider;
+    this.#createModelProvider = opts.createModelProvider;
   }
 
   get supportsConcurrentRequests() {
@@ -62,13 +69,33 @@ export class RuntimeBridgeProvider implements LLMProvider {
     if (opts.imageAttachments?.length) {
       throw new ProviderError("Runtime-backed providers do not support image attachments");
     }
+    const requestedModel = opts.model ?? this.#model;
+    if (requestedModel !== this.#model) {
+      if (!this.#createModelProvider) {
+        throw new ProviderError(
+          `Runtime-backed provider configured for ${JSON.stringify(this.#model)} cannot honor requested model ${JSON.stringify(requestedModel)}`,
+        );
+      }
+      const modelProvider = this.#createModelProvider(requestedModel);
+      if (!modelProvider || modelProvider === this) {
+        throw new ProviderError(
+          `Runtime-backed provider could not create an owned runtime for requested model ${JSON.stringify(requestedModel)}`,
+        );
+      }
+      try {
+        return await modelProvider.complete({ ...opts, model: requestedModel });
+      } finally {
+        modelProvider.close?.();
+      }
+    }
     const output = await this.#runtime.generate({
       prompt: opts.userPrompt,
       system: opts.systemPrompt || undefined,
+      ...(opts.promptVisibility ? { promptVisibility: opts.promptVisibility } : {}),
     });
     return {
       text: output.text,
-      model: opts.model ?? this.#model,
+      model: requestedModel,
       usage: {},
     };
   }
@@ -79,6 +106,11 @@ export interface RuntimeBridgeProviderOpts {
   role?: string;
   cwd?: string;
   commands?: RuntimeCommandGrant[];
+  createIsolatedProvider?: (policy?: ProviderIsolationPolicy) => LLMProvider;
+  /** Stable backend identity used for evaluator epochs; `name` stays API-compatible. */
+  evaluatorIdentity?: string;
+  /** Create a fresh owned runtime that actually executes the requested model. */
+  createModelProvider?: (model: string) => LLMProvider;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +125,7 @@ export interface RetryOpts {
 
 export class RetryProvider implements LLMProvider {
   readonly name: string;
+  readonly createIsolatedProvider?: (policy?: ProviderIsolationPolicy) => LLMProvider;
   #inner: LLMProvider;
   #maxRetries: number;
   #baseDelay: number;
@@ -104,10 +137,29 @@ export class RetryProvider implements LLMProvider {
     this.#maxRetries = opts.maxRetries;
     this.#baseDelay = opts.baseDelay ?? 250;
     this.#maxDelay = opts.maxDelay ?? 10_000;
+    if (inner.createIsolatedProvider) {
+      this.createIsolatedProvider = (policy) => {
+        const isolatedInner = inner.createIsolatedProvider!(policy);
+        if (isolatedInner === inner) return this;
+        return new RetryProvider(isolatedInner, {
+          maxRetries: this.#maxRetries,
+          baseDelay: this.#baseDelay,
+          maxDelay: this.#maxDelay,
+        });
+      };
+    }
   }
 
   get supportsConcurrentRequests() {
     return this.#inner.supportsConcurrentRequests !== false;
+  }
+
+  get isStatelessNoToolsProvider() {
+    return this.#inner.isStatelessNoToolsProvider === true;
+  }
+
+  get evaluatorIdentity() {
+    return this.#inner.evaluatorIdentity;
   }
 
   get supportsThinkingStream() {

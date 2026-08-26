@@ -9,6 +9,7 @@ import {
   type RlmTaskConfig,
 } from "../rlm/types.js";
 import type { TaskQueueEnqueueStore } from "./task-queue-store.js";
+import { NATIVE_AGENT_TASK_QUEUE_MARKER } from "../scenarios/saved-agent-task-routing.js";
 
 export interface TaskConfig {
   maxRounds?: number;
@@ -24,6 +25,8 @@ export interface TaskConfig {
   revisionPrompt?: string;
   delegatedResults?: DelegatedResult[];
   rlm?: RlmTaskConfig;
+  nativeTaskMarker?: typeof NATIVE_AGENT_TASK_QUEUE_MARKER;
+  savedSpecDigest?: string;
 }
 
 export interface EnqueueTaskRequest {
@@ -46,6 +49,8 @@ export interface EnqueueTaskRequest {
   rlmMaxStdoutChars?: number;
   rlmCodeTimeoutMs?: number;
   rlmMemoryLimitMb?: number;
+  nativeTaskMarker?: typeof NATIVE_AGENT_TASK_QUEUE_MARKER;
+  savedSpecDigest?: string;
 }
 
 const DelegatedResultSchema = z.object({
@@ -76,6 +81,8 @@ const TaskConfigSchema = z.object({
   rlm_max_stdout_chars: z.number().int().positive().optional(),
   rlm_code_timeout_ms: z.number().int().positive().optional(),
   rlm_memory_limit_mb: z.number().int().positive().optional(),
+  native_task_marker: z.literal(NATIVE_AGENT_TASK_QUEUE_MARKER).optional(),
+  saved_spec_digest: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
 }).passthrough();
 
 export function resolveRlmConfig(raw: Partial<RlmTaskConfig> | null | undefined): RlmTaskConfig | null {
@@ -114,6 +121,8 @@ export function parseTaskConfig(json: string | null): TaskConfig {
       codeTimeoutMs: parsed.rlm_code_timeout_ms,
       memoryLimitMb: parsed.rlm_memory_limit_mb,
     }) ?? undefined,
+    nativeTaskMarker: parsed.native_task_marker,
+    savedSpecDigest: parsed.saved_spec_digest,
   };
 }
 
@@ -128,12 +137,15 @@ export function serializeTaskResult(
       reasoning: round.reasoning,
       dimension_scores: round.dimensionScores,
       is_revision: round.isRevision,
+      judge_failed: round.judgeFailed,
       evaluator_epoch: round.evaluatorEpoch ?? null,
     })),
     best_score: result.bestScore,
     best_round: result.bestRound,
     total_rounds: result.totalRounds,
     met_threshold: result.metThreshold,
+    judge_failures: result.judgeFailures,
+    termination_reason: result.terminationReason,
     evaluator_epoch: result.evaluatorEpoch ?? null,
     ...(result.durationMs != null ? { duration_ms: result.durationMs } : {}),
     ...(result.judgeCalls ? { judge_calls: result.judgeCalls } : {}),
@@ -167,6 +179,8 @@ export function buildEnqueueTaskConfig(opts?: EnqueueTaskRequest): Record<string
   if (opts?.rlmMaxStdoutChars != null) config.rlm_max_stdout_chars = opts.rlmMaxStdoutChars;
   if (opts?.rlmCodeTimeoutMs != null) config.rlm_code_timeout_ms = opts.rlmCodeTimeoutMs;
   if (opts?.rlmMemoryLimitMb != null) config.rlm_memory_limit_mb = opts.rlmMemoryLimitMb;
+  if (opts?.nativeTaskMarker) config.native_task_marker = opts.nativeTaskMarker;
+  if (opts?.savedSpecDigest) config.saved_spec_digest = opts.savedSpecDigest;
   return Object.keys(config).length > 0 ? config : undefined;
 }
 

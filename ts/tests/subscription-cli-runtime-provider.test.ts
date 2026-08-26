@@ -137,6 +137,68 @@ describe("subscription-backed CLI runtime provider parity", () => {
         encoding: "utf8",
       }),
     );
+
+    const isolated = provider.createIsolatedProvider?.({ noTools: true });
+    expect(isolated).toBeDefined();
+    await isolated!.complete({ systemPrompt: "private system", userPrompt: "private prompt" });
+    const isolatedArgs = (
+      execFileAsyncMock.mock.calls as unknown as Array<[string, string[]]>
+    ).at(-1)?.[1];
+    expect(isolatedArgs).toEqual([
+      "-p",
+      "--output-format",
+      "json",
+      "--model",
+      "sonnet",
+      "--fallback-model",
+      "haiku",
+      "--tools",
+      "",
+      "--safe-mode",
+      "--disable-slash-commands",
+      "--permission-mode",
+      "dontAsk",
+      "--no-session-persistence",
+      "--system-prompt",
+      "private system",
+      "private prompt",
+    ]);
+
+    const modelOverrideResult = await isolated!.complete({
+      systemPrompt: "private system",
+      userPrompt: "private model override",
+      model: "opus",
+    });
+    const modelOverrideArgs = (
+      execFileAsyncMock.mock.calls as unknown as Array<[string, string[]]>
+    ).at(-1)?.[1];
+    expect(modelOverrideArgs).toContain("opus");
+    expect(modelOverrideArgs).toContain("--safe-mode");
+    expect(modelOverrideArgs).toContain("--no-session-persistence");
+    expect(modelOverrideResult.model).toBe("opus");
+    isolated!.close?.();
+
+    const { ClaudeCLIRuntime } = await import("../src/runtimes/claude-cli.js");
+    const restrictedRuntime = new ClaudeCLIRuntime({
+      model: "sonnet",
+      isolatedNoTools: true,
+      sessionId: "00000000-0000-4000-8000-000000000000",
+      systemPrompt: "ambient system replacement",
+      appendSystemPrompt: "ambient customization",
+    });
+    await restrictedRuntime.generate({ prompt: "runtime prompt", system: "explicit system" });
+    const restrictedArgs = (
+      execFileAsyncMock.mock.calls as unknown as Array<[string, string[]]>
+    ).at(-1)?.[1];
+    expect(restrictedArgs).not.toContain("--session-id");
+    expect(restrictedArgs).not.toContain("--append-system-prompt");
+    expect(restrictedArgs).toContain("explicit system");
+
+    await restrictedRuntime.generate({ prompt: "runtime prompt without explicit system" });
+    const noSystemArgs = (
+      execFileAsyncMock.mock.calls as unknown as Array<[string, string[]]>
+    ).at(-1)?.[1];
+    expect(noSystemArgs).not.toContain("ambient system replacement");
   });
 
   it("buildRoleProviderBundle threads Codex CLI settings into run providers", async () => {
@@ -145,16 +207,7 @@ describe("subscription-backed CLI runtime provider parity", () => {
         return "" as never;
       }
       expect(command).toBe("codex");
-      expect(args).toEqual([
-        "exec",
-        "--model",
-        "o3",
-        "--full-auto",
-        "--quiet",
-        "--cd",
-        "/tmp/codex-workspace",
-        "bundle task",
-      ]);
+      expect(args).toBeDefined();
       return "codex output" as never;
     }) as unknown as typeof execFileSync);
 
@@ -174,6 +227,31 @@ describe("subscription-backed CLI runtime provider parity", () => {
     });
 
     expect(result.text).toBe("codex output");
-    expect(execFileSyncMock).toHaveBeenCalled();
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      "codex",
+      [
+        "exec",
+        "--model",
+        "o3",
+        "--full-auto",
+        "--quiet",
+        "--cd",
+        "/tmp/codex-workspace",
+        "bundle task",
+      ],
+      expect.any(Object),
+    );
+
+    const isolated = bundle.defaultProvider.createIsolatedProvider?.({ noTools: true });
+    await isolated!.complete({ systemPrompt: "", userPrompt: "isolated bundle task" });
+    const isolatedArgs = execFileSyncMock.mock.calls
+      .filter(([command]) => command === "codex")
+      .at(-1)?.[1] as string[];
+    expect(isolatedArgs).toContain("--ephemeral");
+    expect(isolatedArgs).toContain("project_doc_max_bytes=0");
+    expect(isolatedArgs).toContain("shell_tool");
+    expect(isolatedArgs).toContain("workspace_dependencies");
+    expect(isolatedArgs).not.toContain("--full-auto");
+    isolated!.close?.();
   });
 });

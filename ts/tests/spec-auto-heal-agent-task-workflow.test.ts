@@ -35,6 +35,7 @@ describe("spec auto-heal agent-task workflow", () => {
 
   it("normalizes snake_case agent-task specs into an AgentTaskSpec", () => {
     const healed = normalizeAgentTaskHealSpec({
+      improvement_task_contract_version: 1,
       task_prompt: "You will be provided with an outage log.",
       judge_rubric: "Evaluate accuracy",
       output_format: "code",
@@ -44,6 +45,7 @@ describe("spec auto-heal agent-task workflow", () => {
     });
 
     expect(healed).toMatchObject({
+      improvementTaskContractVersion: 1,
       taskPrompt: "You will be provided with an outage log.",
       judgeRubric: "Evaluate accuracy",
       outputFormat: "code",
@@ -57,6 +59,7 @@ describe("spec auto-heal agent-task workflow", () => {
     const healedCamel = applyHealedAgentTaskSpec(
       { taskPrompt: "Prompt", rubric: "" },
       {
+        improvementTaskContractVersion: 1,
         taskPrompt: "Prompt",
         judgeRubric: "Evaluate",
         outputFormat: "free_text",
@@ -69,6 +72,7 @@ describe("spec auto-heal agent-task workflow", () => {
     const healedSnake = applyHealedAgentTaskSpec(
       { task_prompt: "Prompt", judge_rubric: "", output_format: "free_text" },
       {
+        improvementTaskContractVersion: 1,
         taskPrompt: "Prompt",
         judgeRubric: "Evaluate",
         outputFormat: "free_text",
@@ -80,12 +84,14 @@ describe("spec auto-heal agent-task workflow", () => {
     );
 
     expect(healedCamel).toMatchObject({
+      improvementTaskContractVersion: 1,
       taskPrompt: "Prompt",
       judgeRubric: "Evaluate",
       rubric: "Evaluate",
       sampleInput: '{"data":[1]}',
     });
     expect(healedSnake).toMatchObject({
+      improvement_task_contract_version: 1,
       task_prompt: "Prompt",
       judge_rubric: "Evaluate",
       sample_input: '{"data":[1]}',
@@ -106,5 +112,21 @@ describe("spec auto-heal agent-task workflow", () => {
 
     expect(healed.sampleInput).toBeDefined();
     expect(healed.taskPrompt).toBe(spec.taskPrompt);
+  });
+
+  it("never invents replacement input for structured improvement tasks", () => {
+    const spec: AgentTaskSpec = {
+      improvementTaskContractVersion: 1,
+      taskPrompt: "Using the provided dataset, improve the current thesis.",
+      judgeRubric: "Evaluate factual support",
+      outputFormat: "free_text",
+      judgeModel: "",
+      maxRounds: 2,
+      qualityThreshold: 0.9,
+    };
+
+    expect(needsSampleInput(spec)).toBe(true);
+    expect(healAgentTaskSpec(spec)).toBe(spec);
+    expect(healAgentTaskSpec(spec).sampleInput).toBeUndefined();
   });
 });

@@ -5,6 +5,9 @@ import {
   parseTaskConfig,
   serializeTaskResult,
 } from "../src/execution/task-runner-config.js";
+import { NATIVE_AGENT_TASK_QUEUE_MARKER } from "../src/scenarios/saved-agent-task-routing.js";
+
+const SAVED_SPEC_DIGEST = `sha256:${"a".repeat(64)}`;
 
 describe("task runner config workflow", () => {
   it("parses queue config JSON into runtime config", () => {
@@ -23,6 +26,8 @@ describe("task runner config workflow", () => {
         }],
         rlm_enabled: true,
         rlm_max_turns: 3,
+        native_task_marker: NATIVE_AGENT_TASK_QUEUE_MARKER,
+        saved_spec_digest: SAVED_SPEC_DIGEST,
       })),
     ).toMatchObject({
       maxRounds: 4,
@@ -40,6 +45,8 @@ describe("task runner config workflow", () => {
         enabled: true,
         maxTurns: 3,
       },
+      nativeTaskMarker: NATIVE_AGENT_TASK_QUEUE_MARKER,
+      savedSpecDigest: SAVED_SPEC_DIGEST,
     });
   });
 
@@ -70,6 +77,9 @@ describe("task runner config workflow", () => {
     }, [{ phase: "generate", content: "draft" } as never]));
 
     expect(payload.best_score).toBe(0.9);
+    expect(payload.rounds[0].judge_failed).toBe(false);
+    expect(payload.judge_failures).toBe(0);
+    expect(payload.termination_reason).toBe("threshold_met");
     expect(payload.duration_ms).toBe(12);
     expect(payload.judge_calls).toBe(1);
     expect(payload.rlm_sessions).toEqual([{ phase: "generate", content: "draft" }]);
@@ -126,12 +136,16 @@ describe("task runner config workflow", () => {
       minRounds: 3,
       rlmEnabled: true,
       rlmModel: "claude",
+      nativeTaskMarker: NATIVE_AGENT_TASK_QUEUE_MARKER,
+      savedSpecDigest: SAVED_SPEC_DIGEST,
     })).toEqual({
       task_prompt: "Prompt",
       browser_url: "https://example.com",
       min_rounds: 3,
       rlm_enabled: true,
       rlm_model: "claude",
+      native_task_marker: NATIVE_AGENT_TASK_QUEUE_MARKER,
+      saved_spec_digest: SAVED_SPEC_DIGEST,
     });
 
     expect(buildEnqueueTaskConfig()).toBeUndefined();

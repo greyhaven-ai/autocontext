@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -51,6 +51,7 @@ import type { ToolFragilitySpec } from "../src/scenarios/tool-fragility-spec.js"
 import type { WorkflowSpec } from "../src/scenarios/workflow-spec.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 import { AgentTaskResultSchema } from "../src/types/index.js";
+import { ImprovementLoop } from "../src/execution/improvement-loop.js";
 
 // --- Helpers ---
 
@@ -1349,6 +1350,185 @@ describe("sampleInput wiring", () => {
     const prompt = task.getTaskPrompt({});
     expect(prompt).toBe(SAMPLE_SPEC.taskPrompt);
   });
+
+  it("keeps legacy reference and output-format metadata out of the candidate prompt", () => {
+    const task = createAgentTask({
+      name: "legacy_visibility",
+      spec: {
+        ...SAMPLE_SPEC,
+        taskPrompt: "Transform the supplied input.",
+        sampleInput: "PUBLIC_SAMPLE_INPUT",
+        outputFormat: "code",
+        referenceContext: "JUDGE_ONLY_REFERENCE",
+        referenceSources: ["JUDGE_ONLY_SOURCE"],
+        requiredConcepts: ["JUDGE_ONLY_CONCEPT"],
+        calibrationExamples: [{ output: "JUDGE_ONLY_CALIBRATION" }],
+        difficultyTiers: [{ name: "JUDGE_ONLY_DIFFICULTY" }],
+      },
+    });
+
+    expect(task.getTaskPrompt({})).toBe(
+      "Transform the supplied input.\n\n## Input Data\nPUBLIC_SAMPLE_INPUT",
+    );
+  });
+
+  it.each([
+    [
+      "json_schema" as const,
+      "Return only valid JSON. Do not include Markdown fences, comments, or explanatory prose.",
+    ],
+    [
+      "code" as const,
+      "Return only the requested code. Do not include Markdown fences or explanatory prose.",
+    ],
+  ])("enforces structured-v1 %s output in initial and revision prompts", async (
+    outputFormat,
+    directive,
+  ) => {
+    const prompts: string[] = [];
+    const provider: LLMProvider = {
+      name: "candidate",
+      defaultModel: () => "candidate-model",
+      complete: async (opts) => {
+        prompts.push(opts.userPrompt);
+        return {
+          text: outputFormat === "json_schema" ? '{"revised":true}' : "revised artifact",
+          usage: {},
+        };
+      },
+    };
+    const task = createAgentTask({
+      name: `structured_${outputFormat}`,
+      provider,
+      spec: {
+        ...SAMPLE_SPEC,
+        improvementTaskContractVersion: 1,
+        outputFormat,
+        maxRounds: 2,
+        revisionPrompt: "Improve the artifact.",
+      },
+    });
+
+    const initialPrompt = task.getTaskPrompt({});
+    expect(initialPrompt).toContain(directive);
+    expect(initialPrompt.split(directive)).toHaveLength(2);
+    await task.reviseOutput?.(
+      "first artifact",
+      {
+        score: 0.4,
+        reasoning: "Needs improvement.",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
+      {},
+    );
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(directive);
+    expect(prompts[0]?.split(directive)).toHaveLength(2);
+  });
+
+  it("renders structured output directives without changing legacy saved prompts", async () => {
+    const { renderAgentTaskPrompt } = await import("../src/scenarios/custom-loader.js");
+    const legacySpec: AgentTaskSpec = {
+      ...SAMPLE_SPEC,
+      taskPrompt: "Legacy code task",
+      outputFormat: "code",
+      referenceContext: "JUDGE_ONLY_REFERENCE",
+    };
+    const structuredSpec: AgentTaskSpec = {
+      ...legacySpec,
+      improvementTaskContractVersion: 1,
+    };
+
+    expect(renderAgentTaskPrompt(legacySpec)).toBe("Legacy code task");
+    expect(renderAgentTaskPrompt(structuredSpec)).toContain(
+      "Return only the requested code. Do not include Markdown fences or explanatory prose.",
+    );
+    expect(renderAgentTaskPrompt(structuredSpec)).toContain("JUDGE_ONLY_REFERENCE");
+  });
+
+  it("rejects invalid structured-v1 JSON before authoritative judging", async () => {
+    const complete = vi.fn(async () => ({ text: "must not run", usage: {} }));
+    const task = createAgentTask({
+      name: "invalid_json",
+      provider: {
+        name: "judge",
+        defaultModel: () => "judge-model",
+        complete,
+      },
+      spec: {
+        ...SAMPLE_SPEC,
+        improvementTaskContractVersion: 1,
+        outputFormat: "json_schema",
+        judgeModel: "",
+      },
+    });
+
+    await expect(task.evaluateOutput("```json\n{}\n```", {})).rejects.toThrow(
+      /must be valid JSON because output_format is json_schema/,
+    );
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["object", '{"ok":true}'],
+    ["array", '[1,"two",false]'],
+    ["scalar", '"plain scalar"'],
+  ])("accepts a valid structured-v1 JSON %s", async (_shape, output) => {
+    const complete = vi.fn(async () => ({
+      text:
+        "<!-- JUDGE_RESULT_START -->\n" +
+        JSON.stringify({ score: 1, reasoning: "Valid.", dimensions: { validity: 1 } }) +
+        "\n<!-- JUDGE_RESULT_END -->",
+      usage: {},
+    }));
+    const task = createAgentTask({
+      name: "valid_json",
+      provider: {
+        name: "judge",
+        defaultModel: () => "judge-model",
+        complete,
+      },
+      spec: {
+        ...SAMPLE_SPEC,
+        improvementTaskContractVersion: 1,
+        outputFormat: "json_schema",
+        judgeModel: "",
+      },
+    });
+
+    await expect(task.evaluateOutput(output, {})).resolves.toMatchObject({ score: 1 });
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("leaves legacy json_schema evaluation behavior unchanged", async () => {
+    const complete = vi.fn(async () => ({
+      text:
+        "<!-- JUDGE_RESULT_START -->\n" +
+        JSON.stringify({ score: 0.5, reasoning: "Legacy verdict.", dimensions: {} }) +
+        "\n<!-- JUDGE_RESULT_END -->",
+      usage: {},
+    }));
+    const task = createAgentTask({
+      name: "legacy_json",
+      provider: {
+        name: "judge",
+        defaultModel: () => "judge-model",
+        complete,
+      },
+      spec: {
+        ...SAMPLE_SPEC,
+        outputFormat: "json_schema",
+        judgeModel: "",
+      },
+    });
+
+    await expect(task.evaluateOutput("legacy non-JSON artifact", {})).resolves.toMatchObject({
+      score: 0.5,
+    });
+    expect(complete).toHaveBeenCalledOnce();
+  });
 });
 
 describe("internalRetries surfacing", () => {
@@ -1403,7 +1583,13 @@ describe("AC-306: factory reviseOutput model sanitization", () => {
     }
     await task.reviseOutput(
       "original output",
-      { score: 0.5, reasoning: "needs work", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      {
+        score: 0.5,
+        reasoning: "needs work",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
       {},
     );
 
@@ -1411,7 +1597,7 @@ describe("AC-306: factory reviseOutput model sanitization", () => {
     expect(capturedModel).toBeUndefined();
   });
 
-  it("should pass actual model when judgeModel is non-empty", async () => {
+  it("does not route a judge-only model to candidate revision", async () => {
     const { createAgentTask } = await import("../src/scenarios/agent-task-factory.js");
 
     let capturedModel: string | undefined;
@@ -1444,10 +1630,551 @@ describe("AC-306: factory reviseOutput model sanitization", () => {
     }
     await task.reviseOutput(
       "original",
-      { score: 0.5, reasoning: "weak", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      {
+        score: 0.5,
+        reasoning: "weak",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
       {},
     );
 
-    expect(capturedModel).toBe("custom-model");
+    expect(capturedModel).toBeUndefined();
+  });
+
+  it("finishes a truncated revision before returning it to the loop", async () => {
+    const { createAgentTask } = await import("../src/scenarios/agent-task-factory.js");
+
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: "Revised part one.",
+        model: "default-model",
+        usage: {},
+        stopReason: "max_tokens",
+      })
+      .mockResolvedValueOnce({
+        text: " Part two.",
+        model: "default-model",
+        usage: {},
+        stopReason: "end_turn",
+      });
+    const task = createAgentTask({
+      spec: {
+        taskPrompt: "Write something",
+        judgeRubric: "Evaluate quality",
+        judgeModel: "",
+        outputFormat: "free_text",
+        maxRounds: 3,
+        qualityThreshold: 0.9,
+        revisionPrompt: "Improve your response.",
+      },
+      name: "continued_revision",
+      provider: {
+        name: "mock",
+        defaultModel: () => "default-model",
+        complete,
+      },
+    });
+    if (!task.reviseOutput) {
+      throw new Error("expected the created agent task to support reviseOutput");
+    }
+
+    const revised = await task.reviseOutput(
+      "original output",
+      {
+        score: 0.5,
+        reasoning: "needs work",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
+      {},
+    );
+
+    expect(revised).toBe("Revised part one. Part two.");
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls.map(([request]) => request.maxTokens)).toEqual([8_192, 8_192]);
+  });
+});
+
+describe("factory revision grounding", () => {
+  it("rejects an invalid structured-v1 JSON revision before it returns to the loop", async () => {
+    const provider: LLMProvider = {
+      name: "candidate",
+      defaultModel: () => "candidate-model",
+      complete: async () => ({ text: "not valid JSON", usage: {} }),
+    };
+    const task = createAgentTask({
+      name: "invalid_json_revision",
+      provider,
+      spec: {
+        ...SAMPLE_SPEC,
+        improvementTaskContractVersion: 1,
+        outputFormat: "json_schema",
+        maxRounds: 2,
+        revisionPrompt: "Improve the JSON.",
+      },
+    });
+
+    await expect(task.reviseOutput?.(
+      '{"draft":true}',
+      {
+        score: 0.5,
+        reasoning: "Needs work.",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
+      {},
+    )).rejects.toThrow(/must be valid JSON because output_format is json_schema/);
+  });
+
+  it("keeps legacy judge metadata out of revision prompts", async () => {
+    let candidatePrompt = "";
+    const provider: LLMProvider = {
+      name: "legacy-candidate",
+      defaultModel: () => "candidate-model",
+      complete: async (opts) => {
+        candidatePrompt = opts.userPrompt;
+        return { text: "legacy revised output", usage: {} };
+      },
+    };
+    const task = createAgentTask({
+      name: "legacy_judge_only_context",
+      provider,
+      spec: {
+        taskPrompt: "PUBLIC_TASK_PROMPT",
+        judgeRubric: "JUDGE_ONLY_RUBRIC",
+        outputFormat: "json_schema",
+        judgeModel: "judge-only-model",
+        maxRounds: 2,
+        qualityThreshold: 0.9,
+        revisionPrompt: "Revise the public artifact.",
+        sampleInput: "PUBLIC_SAMPLE_INPUT",
+        referenceContext: "JUDGE_ONLY_REFERENCE",
+        referenceSources: ["JUDGE_ONLY_SOURCE"],
+        requiredConcepts: ["JUDGE_ONLY_CONCEPT"],
+        calibrationExamples: [{ output: "JUDGE_ONLY_CALIBRATION" }],
+        difficultyTiers: [{ name: "JUDGE_ONLY_DIFFICULTY" }],
+      },
+    });
+
+    await task.reviseOutput?.(
+      "Original artifact",
+      {
+        score: 0.5,
+        reasoning: "Candidate-safe feedback.",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
+      {},
+    );
+
+    expect(candidatePrompt).toContain("PUBLIC_TASK_PROMPT");
+    expect(candidatePrompt).toContain("PUBLIC_SAMPLE_INPUT");
+    expect(candidatePrompt).not.toContain("JUDGE_ONLY_RUBRIC");
+    expect(candidatePrompt).not.toContain("JUDGE_ONLY_REFERENCE");
+    expect(candidatePrompt).not.toContain("JUDGE_ONLY_SOURCE");
+    expect(candidatePrompt).not.toContain("JUDGE_ONLY_CONCEPT");
+    expect(candidatePrompt).not.toContain("JUDGE_ONLY_CALIBRATION");
+    expect(candidatePrompt).not.toContain("JUDGE_ONLY_DIFFICULTY");
+    expect(candidatePrompt).not.toContain("Return only valid JSON");
+  });
+
+  it("uses judge-provider models only for authoritative evaluation", async () => {
+    const candidateModels: Array<string | undefined> = [];
+    const judgeModels: Array<string | undefined> = [];
+    const candidateProvider: LLMProvider = {
+      name: "candidate-provider",
+      isStatelessNoToolsProvider: true,
+      defaultModel: () => "candidate-native-model",
+      complete: async (opts) => {
+        candidateModels.push(opts.model);
+        if (opts.model && opts.model !== "candidate-native-model") {
+          throw new Error(`foreign candidate model: ${opts.model}`);
+        }
+        if (opts.systemPrompt.includes("expert judge")) {
+          return {
+            text:
+              "<!-- JUDGE_RESULT_START -->\n" +
+              JSON.stringify({
+                score: 0.8,
+                reasoning: "Candidate-safe feedback.",
+                dimensions: { quality: 0.8 },
+              }) +
+              "\n<!-- JUDGE_RESULT_END -->",
+            usage: {},
+          };
+        }
+        return { text: "candidate revision", usage: {} };
+      },
+    };
+    const evaluationProvider: LLMProvider = {
+      name: "judge-provider",
+      isStatelessNoToolsProvider: true,
+      defaultModel: () => "judge-native-model",
+      complete: async (opts) => {
+        judgeModels.push(opts.model);
+        if (opts.model !== "judge-foreign-model") {
+          throw new Error(`wrong authoritative model: ${String(opts.model)}`);
+        }
+        return {
+          text:
+            "<!-- JUDGE_RESULT_START -->\n" +
+            JSON.stringify({
+              score: 0.4,
+              reasoning: "Private authoritative feedback.",
+              dimensions: { quality: 0.4 },
+            }) +
+            "\n<!-- JUDGE_RESULT_END -->",
+          usage: {},
+        };
+      },
+    };
+    const task = createAgentTask({
+      name: "cross_provider_routing",
+      provider: candidateProvider,
+      evaluationProvider,
+      spec: {
+        improvementTaskContractVersion: 1,
+        taskPrompt: "Produce the candidate artifact.",
+        judgeRubric: "Evaluate quality.",
+        outputFormat: "free_text",
+        judgeModel: "judge-foreign-model",
+        maxRounds: 2,
+        qualityThreshold: 0.9,
+        revisionPrompt: "Improve it.",
+        evaluationContext: "PRIVATE_EVALUATOR_CASE",
+      },
+    });
+
+    const result = await task.evaluateOutput("draft", {});
+    await task.reviseOutput?.("draft", result, {});
+
+    expect(judgeModels).toEqual(["judge-foreign-model"]);
+    expect(candidateModels).toEqual(["candidate-native-model", undefined]);
+  });
+
+  it("fails closed when an unknown provider cannot attest to no-tools isolation", async () => {
+    const complete = vi.fn(async () => ({ text: "must not run", usage: {} }));
+    const provider: LLMProvider = {
+      name: "third-party-stateful-provider",
+      defaultModel: () => "default-model",
+      complete,
+    };
+    const task = createAgentTask({
+      name: "unknown_provider_private_task",
+      provider,
+      spec: {
+        taskPrompt: "Assess the claim.",
+        judgeRubric: "Score evidentiary support.",
+        outputFormat: "free_text",
+        judgeModel: "",
+        maxRounds: 1,
+        qualityThreshold: 0.9,
+        evaluationContext: "Private answer key.",
+      },
+    });
+
+    await expect(task.evaluateOutput("Candidate answer", {})).rejects.toThrow(
+      /cannot guarantee no-tools isolation/i,
+    );
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("isolates evaluator-only state from candidate-safe judging and closes the provider", async () => {
+    const candidateJudgePrompts: string[] = [];
+    const privateJudgeRequests: Array<{ prompt: string; visibility?: string }> = [];
+    const revisionPrompts: string[] = [];
+    const isolationPolicies: unknown[] = [];
+    let isolatedProviderCreations = 0;
+    let isolatedProviderCloses = 0;
+
+    const candidateProvider: LLMProvider = {
+      name: "stateful-candidate",
+      defaultModel: () => "default-model",
+      createIsolatedProvider: (policy) => {
+        isolationPolicies.push(policy);
+        isolatedProviderCreations += 1;
+        return {
+          name: "stateful-no-tools-isolate",
+          defaultModel: () => "default-model",
+          complete: async (opts) => {
+            if (!opts.systemPrompt.includes("expert judge")) {
+              revisionPrompts.push(opts.userPrompt);
+              return {
+                text: "Candidate-safe revised output.",
+                model: "default-model",
+                usage: {},
+              };
+            }
+            const isPrivate = opts.userPrompt.includes("SEALED_EVALUATOR_FACT");
+            if (isPrivate) {
+              privateJudgeRequests.push({
+                prompt: opts.userPrompt,
+                visibility: opts.promptVisibility,
+              });
+            } else {
+              candidateJudgePrompts.push(opts.userPrompt);
+            }
+            return {
+              text:
+                "<!-- JUDGE_RESULT_START -->\n" +
+                JSON.stringify({
+                  score: isPrivate ? 0.37 : 0.8,
+                  reasoning: isPrivate
+                    ? "SEALED_EVALUATOR_FACT disproves the claim."
+                    : "Add candidate-visible citations.",
+                  dimensions: { evidence: isPrivate ? 0.37 : 0.8 },
+                }) +
+                "\n<!-- JUDGE_RESULT_END -->",
+              model: "default-model",
+              usage: {},
+            };
+          },
+          close: () => {
+            isolatedProviderCloses += 1;
+          },
+        };
+      },
+      complete: async () => {
+        throw new Error("evaluation-bearing phases must not use the candidate base provider");
+      },
+    };
+    const spec: AgentTaskSpec = {
+      taskPrompt: "Assess the claim.",
+      judgeRubric: "Score evidentiary support.",
+      outputFormat: "free_text",
+      judgeModel: "",
+      maxRounds: 2,
+      qualityThreshold: 0.9,
+      revisionPrompt: "Address candidate-safe feedback.",
+      evaluationContext: "SEALED_EVALUATOR_FACT: the claim is false.",
+    };
+
+    const task = createAgentTask({ spec, name: "isolated_evaluator", provider: candidateProvider });
+    const result = await task.evaluateOutput("The claim is true.", {});
+    const revision = await task.reviseOutput?.("The claim is true.", result, {});
+
+    expect(result).toMatchObject({
+      score: 0.37,
+      reasoning: "Add candidate-visible citations.",
+    });
+    expect(result.authoritativeParseFailed).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain("SEALED_EVALUATOR_FACT");
+    expect(revision).toBe("Candidate-safe revised output.");
+    expect(isolatedProviderCreations).toBe(3);
+    expect(isolatedProviderCloses).toBe(3);
+    expect(isolationPolicies).toEqual([
+      { noTools: true },
+      { noTools: true },
+      { noTools: true },
+    ]);
+    expect(privateJudgeRequests).toHaveLength(1);
+    expect(privateJudgeRequests[0]?.prompt).toContain("SEALED_EVALUATOR_FACT");
+    expect(privateJudgeRequests[0]?.visibility).toBe("evaluator_only");
+    expect(candidateJudgePrompts).toHaveLength(1);
+    expect(candidateJudgePrompts[0]).not.toContain("SEALED_EVALUATOR_FACT");
+    expect(revisionPrompts).toHaveLength(1);
+    expect(revisionPrompts[0]).not.toContain("SEALED_EVALUATOR_FACT");
+  });
+
+  it("closes an owned evaluator provider when private judging throws", async () => {
+    let closes = 0;
+    const provider: LLMProvider = {
+      name: "candidate",
+      defaultModel: () => "default-model",
+      complete: async () => ({ text: "unused", model: "default-model", usage: {} }),
+      createIsolatedProvider: () => ({
+        name: "throwing-private-evaluator",
+        defaultModel: () => "default-model",
+        complete: async () => {
+          throw new Error("private evaluator unavailable");
+        },
+        close: () => {
+          closes += 1;
+        },
+      }),
+    };
+    const task = createAgentTask({
+      name: "throwing_private_evaluator",
+      provider,
+      spec: {
+        taskPrompt: "Assess the claim.",
+        judgeRubric: "Score evidentiary support.",
+        outputFormat: "free_text",
+        judgeModel: "",
+        maxRounds: 1,
+        qualityThreshold: 0.9,
+        evaluationContext: "Private answer key.",
+      },
+    });
+
+    await expect(task.evaluateOutput("Candidate answer", {})).rejects.toThrow(
+      "private evaluator unavailable",
+    );
+    expect(closes).toBe(1);
+  });
+
+  it("preserves private judge parse failure after candidate-safe reasoning replaces it", async () => {
+    let calls = 0;
+    const provider: LLMProvider = {
+      name: "parse-failure-provider",
+      isStatelessNoToolsProvider: true,
+      defaultModel: () => "default-model",
+      complete: async () => {
+        calls += 1;
+        if (calls <= 2) {
+          return { text: "not a judge result", model: "default-model", usage: {} };
+        }
+        return {
+          text:
+            "<!-- JUDGE_RESULT_START -->\n" +
+            JSON.stringify({
+              score: 0.7,
+              reasoning: "Candidate-safe feedback is available.",
+              dimensions: { quality: 0.7 },
+            }) +
+            "\n<!-- JUDGE_RESULT_END -->",
+          model: "default-model",
+          usage: {},
+        };
+      },
+    };
+    const spec: AgentTaskSpec = {
+      taskPrompt: "Answer the question.",
+      judgeRubric: "Evaluate quality.",
+      outputFormat: "free_text",
+      judgeModel: "",
+      maxRounds: 1,
+      qualityThreshold: 0.9,
+      evaluationContext: "Private answer key.",
+    };
+    const task = createAgentTask({ spec, name: "private_parse_failure", provider });
+    const result = await new ImprovementLoop({ task, maxRounds: 1 }).run({
+      initialOutput: "Candidate answer",
+      state: {},
+    });
+
+    expect(calls).toBe(3);
+    expect(result.judgeFailures).toBe(1);
+    expect(result.rounds[0]).toMatchObject({
+      score: 0,
+      reasoning: "Candidate-safe feedback is available.",
+      judgeFailed: true,
+    });
+  });
+
+  it("grounds revisions in the task, evaluation contract, and source material", async () => {
+    let capturedUserPrompt = "";
+    let capturedSystemPrompt = "";
+    const capturedJudgePrompts: string[] = [];
+    const mockProvider: LLMProvider = {
+      name: "mock",
+      isStatelessNoToolsProvider: true,
+      defaultModel: () => "default-model",
+      complete: async (opts) => {
+        if (opts.systemPrompt.includes("expert judge")) {
+          capturedJudgePrompts.push(opts.userPrompt);
+          const hasEvaluatorOnlyContext = opts.userPrompt.includes("SEALED_EVAL_CASE");
+          return {
+            text:
+              "<!-- JUDGE_RESULT_START -->\n" +
+              JSON.stringify({
+                score: hasEvaluatorOnlyContext ? 0.42 : 0.5,
+                reasoning: hasEvaluatorOnlyContext
+                  ? "SEALED_EVAL_CASE failed because the conclusion lacks citations."
+                  : "The conclusion needs citations and actionable next steps.",
+                dimensions: { evidence: 0.3, actionability: 0.5 },
+              }) +
+              "\n<!-- JUDGE_RESULT_END -->",
+            model: "default-model",
+            usage: {},
+          };
+        }
+        capturedUserPrompt = opts.userPrompt;
+        capturedSystemPrompt = opts.systemPrompt;
+        return { text: "grounded revised output", model: "default-model", usage: {} };
+      },
+    };
+    const spec: AgentTaskSpec = {
+      improvementTaskContractVersion: 1,
+      taskPrompt: "Determine whether the product thesis is supported.",
+      judgeRubric: "Use cited evidence, distinguish facts from inference, and state next steps.",
+      outputFormat: "free_text",
+      judgeModel: "",
+      maxRounds: 3,
+      qualityThreshold: 0.9,
+      revisionPrompt: "Fix every failed criterion without inventing evidence.",
+      referenceContext: "The issue export is the authoritative source for this run.",
+      evaluationContext: "SEALED_EVAL_CASE: reject unsupported issue-count claims.",
+      referenceSources: ["linear-issues.csv", "research-notes.md"],
+      requiredConcepts: ["adoption risk", "workflow friction"],
+      sampleInput: "id,title,status\nAC-1,Improve upload flow,Open",
+    };
+    const task = createAgentTask({ spec, name: "grounded_revision", provider: mockProvider });
+    if (!task.reviseOutput) {
+      throw new Error("expected the created agent task to support reviseOutput");
+    }
+
+    const judgeResult = await task.evaluateOutput(
+      "The thesis is supported.",
+      {},
+      {
+        referenceContext: "Run-specific evidence is authoritative for this evaluation.",
+        requiredConcepts: ["validated adoption risk", "measured workflow friction"],
+      },
+    );
+    expect(judgeResult).toMatchObject({
+      score: 0.42,
+      reasoning: "The conclusion needs citations and actionable next steps.",
+    });
+    expect(JSON.stringify(judgeResult)).not.toContain("SEALED_EVAL_CASE");
+    const revised = await task.reviseOutput("The thesis is supported.", judgeResult, {});
+
+    expect(revised).toBe("grounded revised output");
+    expect(task.getTaskPrompt({})).toContain(
+      "## Reference Context\nThe issue export is the authoritative source for this run.",
+    );
+    expect(task.getTaskPrompt({})).not.toContain("SEALED_EVAL_CASE");
+    expect(capturedJudgePrompts).toHaveLength(2);
+    expect(capturedJudgePrompts[0]).toContain("## Candidate Input and Improvement Target");
+    expect(capturedJudgePrompts[0]).toContain("id,title,status\nAC-1,Improve upload flow,Open");
+    expect(capturedJudgePrompts[0]).toContain("## Evaluator-only Context");
+    expect(capturedJudgePrompts[0]).toContain("SEALED_EVAL_CASE");
+    expect(capturedJudgePrompts[1]).not.toContain("## Evaluator-only Context");
+    expect(capturedJudgePrompts[1]).not.toContain("SEALED_EVAL_CASE");
+    expect(capturedSystemPrompt).toBe("You are a helpful assistant revising your previous output.");
+    expect(capturedUserPrompt).toContain("Fix every failed criterion without inventing evidence.");
+    expect(capturedUserPrompt).toContain("## Original Output\nThe thesis is supported.");
+    expect(capturedUserPrompt).toContain("## Judge Score: 0.42");
+    expect(capturedUserPrompt).toContain(
+      "## Judge Feedback\nThe conclusion needs citations and actionable next steps.",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Evaluation Criteria\nUse cited evidence, distinguish facts from inference, and state next steps.",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Reference Context\nRun-specific evidence is authoritative for this evaluation.",
+    );
+    expect(capturedUserPrompt).not.toContain("SEALED_EVAL_CASE");
+    expect(capturedUserPrompt).not.toContain(
+      "## Reference Context\nThe issue export is the authoritative source for this run.",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Reference Sources\n- linear-issues.csv\n- research-notes.md",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Required Concepts\n- validated adoption risk\n- measured workflow friction",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Input Data\nid,title,status\nAC-1,Improve upload flow,Open",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Task\nDetermine whether the product thesis is supported.",
+    );
   });
 });

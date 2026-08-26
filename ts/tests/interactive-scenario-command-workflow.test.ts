@@ -50,6 +50,15 @@ describe("interactive scenario command workflow", () => {
         constraints: [],
         winThreshold: 0.9,
       })),
+      createTask: vi.fn(async () => ({
+        name: "incident_triage",
+        displayName: "Incident Triage",
+        description: "Structured incident triage task",
+        strategyParams: [],
+        scoringComponents: [],
+        constraints: ["Improvement loop: up to 3 attempts."],
+        winThreshold: 0.85,
+      })),
       reviseScenario: vi.fn(async () => ({
         name: "incident_triage",
         displayName: "Incident Triage",
@@ -96,11 +105,50 @@ describe("interactive scenario command workflow", () => {
         win_threshold: 0.9,
       },
     ]);
+
+    await expect(executeInteractiveScenarioCommand({
+      command: {
+        type: "create_task",
+        contract: {
+          schemaVersion: 1,
+          objective: "Improve incident triage summaries.",
+          target: "The current incident triage summary.",
+          deliverable: {
+            description: "A concise, actionable incident summary.",
+            outputFormat: "free_text",
+          },
+          dataSources: [],
+          criteria: "Evaluate accuracy, completeness, and actionability.",
+          qualityThreshold: 0.85,
+          iterations: 3,
+          revisionPrompt: null,
+        },
+        source_contents: [],
+      },
+      runManager,
+    })).resolves.toEqual([
+      { type: "scenario_generating", name: "improvement_task" },
+      {
+        type: "scenario_preview",
+        name: "incident_triage",
+        display_name: "Incident Triage",
+        description: "Structured incident triage task",
+        strategy_params: [],
+        scoring_components: [],
+        constraints: ["Improvement loop: up to 3 attempts."],
+        win_threshold: 0.85,
+      },
+    ]);
+    expect(runManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ objective: "Improve incident triage summaries." }),
+      [],
+    );
   });
 
   it("executes confirm and cancel commands with ack semantics", async () => {
     const runManager = {
       createScenario: vi.fn(),
+      createTask: vi.fn(),
       reviseScenario: vi.fn(),
       confirmScenario: vi.fn(async () => ({
         name: "incident_triage",

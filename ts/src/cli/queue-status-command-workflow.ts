@@ -1,3 +1,10 @@
+import type { AgentTaskSpec } from "../scenarios/agent-task-spec.js";
+import {
+  NATIVE_AGENT_TASK_QUEUE_MARKER,
+  requiresNativeAgentTaskExecution,
+  savedAgentTaskSpecDigest,
+} from "../scenarios/saved-agent-task-routing.js";
+
 export const QUEUE_HELP_TEXT = `autoctx queue — add work to the background queue
 
 Usage:
@@ -41,6 +48,7 @@ export interface QueueCommandValues {
 }
 
 interface SavedQueueScenario {
+  agentTaskSpec?: AgentTaskSpec;
   taskPrompt?: string;
   rubric?: string;
   referenceContext?: string;
@@ -69,6 +77,8 @@ export interface PlannedQueueCommand {
     rlmMaxStdoutChars?: number;
     rlmCodeTimeoutMs?: number;
     rlmMemoryLimitMb?: number;
+    nativeTaskMarker?: typeof NATIVE_AGENT_TASK_QUEUE_MARKER;
+    savedSpecDigest?: string;
   };
 }
 
@@ -83,17 +93,26 @@ export function planQueueCommand(
   if (!values.spec) {
     throw new Error("Queue spec is required");
   }
+  const nativeAgentTaskSpec =
+    savedScenario?.agentTaskSpec && requiresNativeAgentTaskExecution(savedScenario.agentTaskSpec)
+      ? savedScenario.agentTaskSpec
+      : undefined;
+  if (nativeAgentTaskSpec && values.rlm) {
+    throw new Error(
+      "--rlm is not supported for saved structured tasks because queued execution must retain the native evaluator-isolated revision path",
+    );
+  }
 
   return {
     specName: values.spec,
     request: {
-      taskPrompt: values.prompt ?? savedScenario?.taskPrompt,
-      rubric: values.rubric ?? savedScenario?.rubric,
+      taskPrompt: values.prompt ?? (nativeAgentTaskSpec ? undefined : savedScenario?.taskPrompt),
+      rubric: values.rubric ?? (nativeAgentTaskSpec ? undefined : savedScenario?.rubric),
       browserUrl: values["browser-url"],
-      referenceContext: savedScenario?.referenceContext,
-      requiredConcepts: savedScenario?.requiredConcepts,
-      maxRounds: savedScenario?.maxRounds,
-      qualityThreshold: savedScenario?.qualityThreshold,
+      referenceContext: nativeAgentTaskSpec ? undefined : savedScenario?.referenceContext,
+      requiredConcepts: nativeAgentTaskSpec ? undefined : savedScenario?.requiredConcepts,
+      maxRounds: nativeAgentTaskSpec ? undefined : savedScenario?.maxRounds,
+      qualityThreshold: nativeAgentTaskSpec ? undefined : savedScenario?.qualityThreshold,
       priority: Number.parseInt(values.priority ?? "0", 10),
       ...(values["min-rounds"] ? { minRounds: Number.parseInt(values["min-rounds"], 10) } : {}),
       rlmEnabled: values.rlm,
@@ -113,6 +132,12 @@ export function planQueueCommand(
         : {}),
       ...(values["rlm-memory-mb"]
         ? { rlmMemoryLimitMb: Number.parseInt(values["rlm-memory-mb"], 10) }
+        : {}),
+      ...(nativeAgentTaskSpec
+        ? {
+            nativeTaskMarker: NATIVE_AGENT_TASK_QUEUE_MARKER,
+            savedSpecDigest: savedAgentTaskSpecDigest(nativeAgentTaskSpec),
+          }
         : {}),
     },
   };

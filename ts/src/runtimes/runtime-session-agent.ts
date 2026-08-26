@@ -2,6 +2,7 @@ import type { RuntimeCommandGrant } from "./workspace-env.js";
 import type { AgentOutput, AgentRuntime } from "./base.js";
 import { agentOutputMetadata } from "./agent-output-metadata.js";
 import type { RuntimeSession } from "../session/runtime-session.js";
+import type { PromptVisibility } from "../types/index.js";
 
 export interface RuntimeSessionAgentRuntimeOpts {
   runtime: AgentRuntime;
@@ -32,8 +33,11 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
     prompt: string;
     system?: string;
     schema?: Record<string, unknown>;
+    promptVisibility?: PromptVisibility;
   }): Promise<AgentOutput> {
-    return this.#record("generate", opts.prompt, () => this.#runtime.generate(opts));
+    return this.#record("generate", opts.prompt, opts.promptVisibility, () =>
+      this.#runtime.generate(opts),
+    );
   }
 
   async revise(opts: {
@@ -41,8 +45,11 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
     previousOutput: string;
     feedback: string;
     system?: string;
+    promptVisibility?: PromptVisibility;
   }): Promise<AgentOutput> {
-    return this.#record("revise", opts.prompt, () => this.#runtime.revise(opts));
+    return this.#record("revise", opts.prompt, opts.promptVisibility, () =>
+      this.#runtime.revise(opts),
+    );
   }
 
   close(): void {
@@ -52,12 +59,14 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
   async #record(
     operation: string,
     prompt: string,
+    promptVisibility: PromptVisibility | undefined,
     run: () => Promise<AgentOutput>,
   ): Promise<AgentOutput> {
     let output: AgentOutput | undefined;
     let failure: unknown;
     const result = await this.#session.submitPrompt({
       prompt,
+      promptVisibility,
       role: this.#role,
       cwd: this.#cwd,
       commands: this.#commands,

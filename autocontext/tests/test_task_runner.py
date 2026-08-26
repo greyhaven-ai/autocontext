@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -73,6 +74,7 @@ class TestTaskConfig:
         assert cfg.quality_threshold == 0.9
 
     def test_from_json(self):
+        saved_spec_digest = f"sha256:{'a' * 64}"
         data = json.dumps(
             {
                 "generations": 3,
@@ -80,6 +82,8 @@ class TestTaskConfig:
                 "quality_threshold": 0.8,
                 "reference_context": "ref",
                 "browser_url": "https://example.com",
+                "native_task_marker": "native_agent_task_v1",
+                "saved_spec_digest": saved_spec_digest,
             }
         )
         cfg = TaskConfig.from_json(data)
@@ -88,6 +92,9 @@ class TestTaskConfig:
         assert cfg.quality_threshold == 0.8
         assert cfg.reference_context == "ref"
         assert cfg.browser_url == "https://example.com"
+        assert cfg.native_task_marker == "native_agent_task_v1"
+        assert cfg.saved_spec_digest == saved_spec_digest
+        assert cfg.has_native_task_metadata is True
 
     def test_from_empty_string(self):
         cfg = TaskConfig.from_json("")
@@ -120,6 +127,37 @@ class TestTaskQueue:
 
     def test_dequeue_empty_returns_none(self, store):
         assert store.dequeue_task() is None
+
+    def test_ordinary_dequeue_still_claims_native_saved_task(self, store):
+        store.enqueue_task(
+            "native",
+            "structured-task",
+            config={"native_task_marker": None},
+        )
+
+        task = store.dequeue_task()
+
+        assert task is not None
+        assert task["id"] == "native"
+        assert task["status"] == "running"
+        assert task["attempts"] == 1
+
+    def test_python_worker_dequeue_allows_malformed_config(self, store):
+        with store.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO task_queue(id, spec_name, config_json)
+                VALUES (?, ?, ?)
+                """,
+                ("malformed", "generic-task", "{not-json"),
+            )
+
+        task = store.dequeue_task_for_python_worker()
+
+        assert task is not None
+        assert task["id"] == "malformed"
+        assert task["status"] == "running"
+        assert task["attempts"] == 1
 
     def test_dequeue_skips_running(self, store):
         store.enqueue_task("t1", "spec")
@@ -289,6 +327,22 @@ class TestTaskRunner:
         result = runner.run_once()
         assert result is None
 
+    def test_incompatible_store_fails_before_generic_dequeue(self):
+        class GenericOnlyStore:
+            def __init__(self) -> None:
+                self.claims = 0
+
+            def dequeue_task(self):
+                self.claims += 1
+                return None
+
+        store = GenericOnlyStore()
+
+        with pytest.raises(TypeError, match=r"dequeue_task_for_python_worker\(\)"):
+            TaskRunner(store=cast(TaskQueueStore, store), provider=_MockProvider())
+
+        assert store.claims == 0
+
     def test_run_once_processes_task(self, store):
         # Provider responses: generate, judge (score 0.95 to meet threshold)
         provider = _MockProvider(
@@ -307,6 +361,95 @@ class TestTaskRunner:
         assert result["status"] == "completed"
         assert result["best_score"] == 0.95
         assert result["met_threshold"] == 1
+
+    @pytest.mark.parametrize(
+        "native_config",
+        [
+            {
+                "native_task_marker": "native_agent_task_v1",
+                "saved_spec_digest": f"sha256:{'a' * 64}",
+            },
+            {
+                "native_task_marker": "native_agent_task_future",
+                "saved_spec_digest": f"sha256:{'b' * 64}",
+            },
+            {"native_task_marker": "native_agent_task_v1"},
+            {"saved_spec_digest": f"sha256:{'c' * 64}"},
+            {"native_task_marker": None},
+            {"saved_spec_digest": None},
+        ],
+    )
+    def test_python_worker_leaves_native_queue_row_unclaimed(
+        self,
+        store,
+        native_config,
+    ):
+        provider = _MockProvider(["must not be called"])
+        store.enqueue_task(
+            "native-ts-task",
+            "structured-task",
+            config=native_config,
+        )
+
+        result = TaskRunner(store=store, provider=provider, max_attempts=1).run_once()
+
+        assert result is None
+        queued = store.get_task("native-ts-task")
+        assert queued is not None
+        assert queued["status"] == "pending"
+        assert queued["attempts"] == 0
+        assert provider.calls == []
+
+    def test_python_worker_skips_higher_priority_native_task(self, store):
+        provider = _MockProvider(["Generic output", _judge_response(0.95, "excellent")])
+        store.enqueue_task(
+            "native-high",
+            "structured-task",
+            priority=100,
+            config={"saved_spec_digest": None},
+        )
+        store.enqueue_task(
+            "generic-low",
+            "generic-task",
+            priority=0,
+            config={
+                "task_prompt": "Write a short answer",
+                "rubric": "Quality",
+                "quality_threshold": 0.9,
+            },
+        )
+
+        result = TaskRunner(store=store, provider=provider).run_once()
+
+        assert result is not None
+        assert result["id"] == "generic-low"
+        assert result["status"] == "completed"
+        native = store.get_task("native-high")
+        assert native is not None
+        assert native["status"] == "pending"
+        assert native["attempts"] == 0
+
+    def test_post_claim_guard_rejects_native_task(self, store):
+        provider = _MockProvider(["must not be called"])
+        store.enqueue_task(
+            "native-ts-task",
+            "structured-task",
+            config={
+                "native_task_marker": "native_agent_task_v1",
+                "saved_spec_digest": f"sha256:{'a' * 64}",
+            },
+        )
+
+        with patch.object(store, "dequeue_task_for_python_worker", side_effect=store.dequeue_task):
+            result = TaskRunner(store=store, provider=provider, max_attempts=1).run_once()
+
+        assert result is not None
+        assert result["status"] == "failed"
+        assert "native_agent_task_v1" in result["error"]
+        assert "must be processed by the TypeScript worker" in result["error"]
+        assert "SimpleAgentTask execution is disabled" in result["error"]
+        assert "sha256:" not in result["error"]
+        assert provider.calls == []
 
     def test_run_once_with_revision(self, store):
         # Round 1: score 0.5 (below threshold), Round 2: revise then score 0.95

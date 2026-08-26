@@ -1,7 +1,49 @@
 export type { AgentTaskSpec } from "./agent-task-spec.js";
 export { AgentTaskSpecSchema, parseRawSpec } from "./agent-task-spec.js";
+export {
+  TASK_DATA_SOURCE_ROLES,
+  TASK_DATA_SOURCE_SCHEMA_VERSION,
+  TaskDataSourceContentSchema,
+  TaskDataSourceContentListSchema,
+  TaskDataSourceIntegritySchema,
+  TaskDataSourceIdSchema,
+  TaskDataSourceProvenanceSchema,
+  TaskDataSourceRoleSchema,
+  TaskDataSourceSchema,
+  MAX_TASK_DATA_SOURCES,
+  MAX_TASK_DATA_SOURCE_ID_CHARACTERS,
+  MAX_TASK_DATA_SOURCE_CONTENT_CHARACTERS,
+  MAX_TASK_DATA_SOURCE_CONTENT_TOTAL_CHARACTERS,
+} from "./task-data-source.js";
+export type {
+  TaskDataSource,
+  TaskDataSourceContent,
+  TaskDataSourceIntegrity,
+  TaskDataSourceProvenance,
+  TaskDataSourceRole,
+} from "./task-data-source.js";
+export {
+  IMPROVEMENT_TASK_CONTRACT_SCHEMA_VERSION,
+  MAX_IMPROVEMENT_TASK_CONTRACT_CHARACTERS,
+  TASK_DATA_METADATA_MARKER,
+  TASK_DATA_TRUNCATION_WARNING,
+  ImprovementTaskContractSchema,
+  ImprovementTaskCriteriaSchema,
+  ImprovementTaskDeliverableSchema,
+  compileImprovementTaskContract,
+  compileResolvedImprovementTaskContract,
+} from "./improvement-task-contract.js";
+export type {
+  ImprovementTaskContract,
+  ImprovementTaskCriteria,
+  ImprovementTaskDeliverable,
+} from "./improvement-task-contract.js";
 export type { ArtifactEditingSpec, ArtifactSpec } from "./artifact-editing-spec.js";
-export { ArtifactEditingSpecSchema, ArtifactSpecSchema, parseRawArtifactEditingSpec } from "./artifact-editing-spec.js";
+export {
+  ArtifactEditingSpecSchema,
+  ArtifactSpecSchema,
+  parseRawArtifactEditingSpec,
+} from "./artifact-editing-spec.js";
 export {
   ARTIFACT_SPEC_START,
   ARTIFACT_SPEC_END,
@@ -10,7 +52,10 @@ export {
   designArtifactEditing,
 } from "./artifact-editing-designer.js";
 export { ArtifactEditingCreator } from "./artifact-editing-creator.js";
-export type { ArtifactEditingCreatorOpts, ArtifactEditingScenarioHandle } from "./artifact-editing-creator.js";
+export type {
+  ArtifactEditingCreatorOpts,
+  ArtifactEditingScenarioHandle,
+} from "./artifact-editing-creator.js";
 export {
   INVESTIGATION_SPEC_START,
   INVESTIGATION_SPEC_END,
@@ -19,13 +64,29 @@ export {
   designInvestigation,
 } from "./investigation-designer.js";
 export { InvestigationCreator } from "./investigation-creator.js";
-export type { InvestigationCreatorOpts, InvestigationScenarioHandle } from "./investigation-creator.js";
+export type {
+  InvestigationCreatorOpts,
+  InvestigationScenarioHandle,
+} from "./investigation-creator.js";
 export type { InvestigationSpec } from "./investigation-spec.js";
 export { InvestigationSpecSchema, parseRawInvestigationSpec } from "./investigation-spec.js";
-export { parseAgentTaskSpec, designAgentTask, SPEC_START, SPEC_END, AGENT_TASK_DESIGNER_SYSTEM } from "./agent-task-designer.js";
+export {
+  parseAgentTaskSpec,
+  designAgentTask,
+  SPEC_START,
+  SPEC_END,
+  AGENT_TASK_DESIGNER_SYSTEM,
+} from "./agent-task-designer.js";
 export { validateSpec } from "./agent-task-validator.js";
 export { createAgentTask } from "./agent-task-factory.js";
 export type { AgentTaskFactoryOpts } from "./agent-task-factory.js";
+export {
+  AGENT_TASK_MAX_ACCUMULATED_CHARACTERS,
+  AGENT_TASK_MAX_CONTINUATIONS,
+  AGENT_TASK_SEGMENT_MAX_TOKENS,
+  completeAgentTaskArtifact,
+} from "./agent-task-artifact-completion.js";
+export type { AgentTaskArtifactCompletionOptions } from "./agent-task-artifact-completion.js";
 export { AgentTaskCreator } from "./agent-task-creator.js";
 export type { AgentTaskCreatorOpts, CreatedScenario } from "./agent-task-creator.js";
 export {
@@ -34,8 +95,18 @@ export {
   routeToFamily,
   LowConfidenceError,
 } from "./family-classifier.js";
-export type { AsyncLlmFn, FamilyCandidate, FamilyClassification, LlmFn } from "./family-classifier.js";
-export { getPipeline, hasPipeline, UnsupportedFamilyError, validateForFamily } from "./family-pipeline.js";
+export type {
+  AsyncLlmFn,
+  FamilyCandidate,
+  FamilyClassification,
+  LlmFn,
+} from "./family-classifier.js";
+export {
+  getPipeline,
+  hasPipeline,
+  UnsupportedFamilyError,
+  validateForFamily,
+} from "./family-pipeline.js";
 export type { FamilyPipeline } from "./family-pipeline.js";
 export {
   SIM_SPEC_START,
@@ -47,7 +118,11 @@ export {
 export { SimulationCreator, shouldUseSimulationFamily } from "./simulation-creator.js";
 export type { SimulationCreatorOpts, SimulationScenarioHandle } from "./simulation-creator.js";
 export type { SimulationSpec, SimulationActionSpec } from "./simulation-spec.js";
-export { SimulationSpecSchema, SimulationActionSpecSchema, parseRawSimulationSpec } from "./simulation-spec.js";
+export {
+  SimulationSpecSchema,
+  SimulationActionSpecSchema,
+  parseRawSimulationSpec,
+} from "./simulation-spec.js";
 export {
   WORKFLOW_SPEC_START,
   WORKFLOW_SPEC_END,
@@ -58,7 +133,11 @@ export {
 export { WorkflowCreator } from "./workflow-creator.js";
 export type { WorkflowCreatorOpts, WorkflowScenarioHandle } from "./workflow-creator.js";
 export type { WorkflowSpec, WorkflowStepSpec } from "./workflow-spec.js";
-export { WorkflowSpecSchema, WorkflowStepSpecSchema, parseRawWorkflowSpec } from "./workflow-spec.js";
+export {
+  WorkflowSpecSchema,
+  WorkflowStepSpecSchema,
+  parseRawWorkflowSpec,
+} from "./workflow-spec.js";
 export { getScenarioTypeMarker, SCENARIO_TYPE_MARKERS } from "./families.js";
 export {
   SCENARIO_ENVIRONMENT_HOOK_KINDS,
@@ -142,8 +221,20 @@ export type {
 } from "./family-interfaces.js";
 
 // Codegen pipeline (AC-436)
-export { generateScenarioSource, generateAndValidateScenarioSource, hasCodegen, ScenarioRuntime, CodegenUnsupportedFamilyError, validateGeneratedScenario } from "./codegen/index.js";
-export type { ScenarioProxy, ScenarioRuntimeOpts, CodegenFn, ExecutionValidationResult } from "./codegen/index.js";
+export {
+  generateScenarioSource,
+  generateAndValidateScenarioSource,
+  hasCodegen,
+  ScenarioRuntime,
+  CodegenUnsupportedFamilyError,
+  validateGeneratedScenario,
+} from "./codegen/index.js";
+export type {
+  ScenarioProxy,
+  ScenarioRuntimeOpts,
+  CodegenFn,
+  ExecutionValidationResult,
+} from "./codegen/index.js";
 export { loadCustomScenario, readScenarioFamily } from "./codegen/loader.js";
 
 // Spec auto-heal (AC-440)
@@ -157,12 +248,14 @@ export {
 } from "./spec-auto-heal.js";
 
 // Scenario revision (AC-441)
-export {
-  buildRevisionPrompt,
-  reviseSpec,
-  reviseAgentTaskOutput,
+export { buildRevisionPrompt, reviseSpec, reviseAgentTaskOutput } from "./scenario-revision.js";
+export type {
+  RevisionResult,
+  JudgeResult,
+  RevisionPromptOpts,
+  ReviseSpecOpts,
+  OutputRevisionOpts,
 } from "./scenario-revision.js";
-export type { RevisionResult, JudgeResult, RevisionPromptOpts, ReviseSpecOpts, OutputRevisionOpts } from "./scenario-revision.js";
 
 // Scenario templates (AC-443)
 export { TemplateLoader } from "./templates/index.js";

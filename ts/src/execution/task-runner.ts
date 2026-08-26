@@ -24,6 +24,7 @@ import {
 } from "./task-runner-config.js";
 import type { TaskConfig } from "./task-runner-config.js";
 import { executeQueuedTaskWorkflow } from "./task-processing-workflow.js";
+import { createStructuredAgentTaskWorkflow } from "./structured-agent-task-workflow.js";
 import {
   createQueuedTaskBrowserContextService,
   type QueuedTaskBrowserContextService,
@@ -59,6 +60,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
   #lastRequiredConcepts?: string[];
   readonly #judgeOverride?: JudgeInterface;
   readonly #hookBus: HookBus | null;
+  readonly #candidateGrounding: boolean;
 
   constructor(
     taskPrompt: string,
@@ -69,6 +71,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
     rlmConfig?: Partial<RlmTaskConfig> | null,
     judgeOverride?: JudgeInterface,
     hookBus?: HookBus | null,
+    candidateGrounding = true,
   ) {
     this.#taskPrompt = taskPrompt;
     this.#rubric = rubric;
@@ -78,6 +81,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
     this.#rlmConfig = resolveRlmConfig(rlmConfig);
     this.#judgeOverride = judgeOverride;
     this.#hookBus = hookBus ?? null;
+    this.#candidateGrounding = candidateGrounding;
     assertFamilyContract(this, "agent_task", "SimpleAgentTask");
   }
 
@@ -136,12 +140,12 @@ export class SimpleAgentTask implements AgentTaskInterface {
       provider: this.#provider,
       model: this.#model,
       taskPrompt: this.#taskPrompt,
-      rubric: this.#rubric,
+      rubric: this.#candidateGrounding ? this.#rubric : "",
       rlmConfig: this.#rlmConfig,
       rlmSessions: this.#rlmSessions,
       hookBus: this.#hookBus,
-      referenceContext: context?.referenceContext,
-      requiredConcepts: context?.requiredConcepts,
+      referenceContext: this.#candidateGrounding ? context?.referenceContext : undefined,
+      requiredConcepts: this.#candidateGrounding ? context?.requiredConcepts : undefined,
     });
   }
 
@@ -154,15 +158,16 @@ export class SimpleAgentTask implements AgentTaskInterface {
       provider: this.#provider,
       model: this.#model,
       taskPrompt: this.#taskPrompt,
-      rubric: this.#rubric,
+      rubric: this.#candidateGrounding ? this.#rubric : "",
       revisionPrompt: this.#revisionPrompt,
       output,
       judgeResult,
       rlmConfig: this.#rlmConfig,
       rlmSessions: this.#rlmSessions,
       hookBus: this.#hookBus,
-      referenceContext: this.#lastReferenceContext,
-      requiredConcepts: this.#lastRequiredConcepts,
+      referenceContext: this.#candidateGrounding ? this.#lastReferenceContext : undefined,
+      requiredConcepts: this.#candidateGrounding ? this.#lastRequiredConcepts : undefined,
+      candidateGrounding: this.#candidateGrounding,
     });
   }
 }
@@ -302,6 +307,7 @@ export class TaskRunner {
           revisionPrompt,
           rlm,
           delegatedJudge,
+          candidateGrounding,
         }) => new SimpleAgentTask(
           taskPrompt,
           rubric,
@@ -311,7 +317,13 @@ export class TaskRunner {
           rlm,
           delegatedJudge,
           this.#hookBus,
+          candidateGrounding,
         ),
+        createStructuredAgentTask: (taskOpts) =>
+          createStructuredAgentTaskWorkflow({
+            ...taskOpts,
+            hookBus: this.#hookBus,
+          }),
       },
     });
   }

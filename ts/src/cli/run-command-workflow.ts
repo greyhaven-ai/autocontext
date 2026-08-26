@@ -304,6 +304,7 @@ export async function executeRunCommandWorkflow<
     opts:
       | {
           provider: TProviderBundle["defaultProvider"];
+          agentProvider: string;
           roleProviders: TProviderBundle["roleProviders"];
           roleModels: TProviderBundle["roleModels"];
           scenario: TScenario;
@@ -351,6 +352,7 @@ export async function executeRunCommandWorkflow<
     store.migrate(opts.migrationsDir);
     const runner = opts.createRunner({
       provider: opts.providerBundle.defaultProvider,
+      agentProvider: opts.providerBundle.defaultConfig.providerType,
       roleProviders: opts.providerBundle.roleProviders,
       roleModels: opts.providerBundle.roleModels,
       scenario,

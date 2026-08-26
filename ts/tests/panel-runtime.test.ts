@@ -77,6 +77,24 @@ describe("panel runtime", () => {
     expect(result.costUsd).toBe(0.03);
   });
 
+  it("fails closed when no-tools isolation is requested", () => {
+    const panel = new PanelProvider({
+      role: "analyst",
+      baseProvider: provider("base"),
+      config: {
+        role: "analyst",
+        participants: [{ provider: "runtime", model: "agent" }],
+        synthesizerProvider: "",
+        synthesizerModel: "",
+      },
+      providerFactory: () => provider("runtime"),
+    });
+
+    expect(() => panel.createIsolatedProvider({ noTools: true })).toThrow(
+      /cannot guarantee no-tools isolation/i,
+    );
+  });
+
   it("reports benchmark deltas", () => {
     expect(comparePanelBenchmark({
       singleScore: 0.4,

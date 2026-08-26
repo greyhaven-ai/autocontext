@@ -2,6 +2,23 @@
   "version": 1,
   "contract": "interactive WebSocket protocol surface shared by Python and TypeScript with runtime-only extensions marked explicitly",
   "protocol_version": 2,
+  "structured_task_creation_extension": {
+    "capability": "structured_task_creation_v1",
+    "advertised_runtimes": ["typescript"],
+    "command": "create_task",
+    "contract": "ImprovementTaskContractSchema@1",
+    "source_content_boundary": "TaskDataSourceContentSchema",
+    "candidate_hidden_roles": ["eval"],
+    "eval_behavior": "raw eval content is available to the judge for each attempt and is never rendered into candidate generation or revision context",
+    "unsupported_roles": ["holdout"],
+    "holdout_behavior": "rejected until winner-only post-loop verification is implemented",
+    "source_content_completeness": "exactly one inline content entry is required for every manifest source",
+    "source_integrity": "utf8 byte length and sha256 are verified before role routing",
+    "package_fixture": "protocol-fixtures/structured-task-create-v1.json",
+    "setup_sequence": ["scenario_generating", "scenario_preview", "confirm_scenario ack", "scenario_ready"],
+    "setup_failure": "invalid or unpersistable tasks terminate with an actionable error and never advertise scenario_ready",
+    "python_support": "deferred"
+  },
   "transcript_extension": {
     "capability": "run_transcript_v1",
     "transcript_protocol_version": 1,
@@ -325,6 +342,10 @@
     {
       "type": "resume_run",
       "reason": "TypeScript durable run transcript resume/backfill extension"
+    },
+    {
+      "type": "create_task",
+      "reason": "TypeScript structured improvement-task authoring extension"
     },
     {
       "type": "login",

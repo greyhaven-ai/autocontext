@@ -16,6 +16,7 @@ import {
   reviseAgentTaskOutput,
   type RevisionResult,
 } from "../src/scenarios/scenario-revision.js";
+import { IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL } from "../src/scenarios/scenario-revision-visibility.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -41,17 +42,46 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("buildRevisionPrompt", () => {
-  it("includes current spec, feedback, and instructions", () => {
+  it("keeps legacy task prompts revisable while protecting evaluator-only fields", () => {
     const prompt = buildRevisionPrompt({
-      currentSpec: { description: "Old task", taskPrompt: "Do X", rubric: "Evaluate X" },
+      currentSpec: {
+        description: "Old task",
+        taskPrompt: "Do X",
+        rubric: "Evaluate X",
+        referenceContext: "PRIVATE_REFERENCE",
+      },
       feedback: "Make it harder and add edge cases",
       family: "agent_task",
     });
 
     expect(prompt).toContain("Old task");
     expect(prompt).toContain("Do X");
+    expect(prompt).not.toContain("Evaluate X");
+    expect(prompt).not.toContain("PRIVATE_REFERENCE");
+    expect(prompt).not.toContain(IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL);
+    expect(prompt).toContain("Protected evaluator boundary");
+    expect(prompt).not.toContain("Immutable execution boundary");
     expect(prompt).toContain("Make it harder");
     expect(prompt).toContain("Revise");
+  });
+
+  it("uses the immutable prompt sentinel for structured v1 tasks", () => {
+    const prompt = buildRevisionPrompt({
+      currentSpec: {
+        improvementTaskContractVersion: 1,
+        description: "Structured task",
+        taskPrompt: "IMMUTABLE_OPERATOR_PROMPT",
+        judgeRubric: "Immutable rubric",
+        outputFormat: "code",
+      },
+      feedback: "Change everything",
+      family: "agent_task",
+    });
+
+    expect(prompt).not.toContain("IMMUTABLE_OPERATOR_PROMPT");
+    expect(prompt).toContain(IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL);
+    expect(prompt).toContain("Immutable execution boundary");
+    expect(prompt).not.toContain("Protected evaluator boundary");
   });
 
   it("includes family context", () => {
@@ -113,7 +143,191 @@ describe("reviseSpec", () => {
 
     expect(result.revised).toBeDefined();
     expect(result.revised.description).toContain("edge cases");
+    expect(result.revised.taskPrompt).toBe("Do X with edge cases and error handling");
     expect(result.changesApplied).toBe(true);
+  });
+
+  it("keeps legacy evaluator-only fields outside the provider boundary and restores them", async () => {
+    let capturedPrompt = "";
+    const mockProvider = {
+      name: "stateless-revision-test",
+      isStatelessNoToolsProvider: true,
+      complete: async (opts: { systemPrompt: string; userPrompt: string }) => {
+        capturedPrompt = opts.userPrompt;
+        return {
+          text: JSON.stringify({
+            description: "Improved grounded task",
+            taskPrompt: "Produce a more precise grounded answer.",
+            rubric: "MUTATED_RUBRIC_ALIAS",
+            judgeRubric: "MUTATED_CAMEL_RUBRIC",
+            judge_rubric: "MUTATED_SNAKE_RUBRIC",
+            outputFormat: "code",
+            evaluationContext: "MUTATED_EVAL_SECRET",
+            evaluation_context: "MUTATED_SNAKE_CASE_SECRET",
+            referenceContext: "MUTATED_REFERENCE",
+            required_concepts: ["MUTATED_CONCEPT"],
+            calibrationExamples: [{ output: "mutated" }],
+            difficulty_tiers: [{ name: "mutated" }],
+            evaluationContextRef: `sha256:${"f".repeat(64)}`,
+            improvementTaskContractVersion: 1,
+          }),
+        };
+      },
+      defaultModel: () => "test-model",
+    };
+    const original = {
+      description: "Grounded task",
+      taskPrompt: "Produce a grounded answer.",
+      rubric: "ORIGINAL_RUBRIC_ALIAS",
+      judgeRubric: "ORIGINAL_CAMEL_RUBRIC",
+      judge_rubric: "ORIGINAL_SNAKE_RUBRIC",
+      evaluationContext: "ORIGINAL_EVAL_SECRET",
+      reference_context: "ORIGINAL_SNAKE_REFERENCE",
+      evaluation_context_ref: `sha256:${"a".repeat(64)}`,
+      referenceSources: ["ORIGINAL_SOURCE"],
+      requiredConcepts: ["ORIGINAL_CONCEPT"],
+      calibrationExamples: [{ output: "original" }],
+      difficultyTiers: [{ name: "original" }],
+    };
+
+    const result = await reviseSpec({
+      currentSpec: original,
+      feedback: "Make the task more precise.",
+      family: "agent_task",
+      provider: mockProvider as never,
+    });
+
+    expect(capturedPrompt).not.toContain("ORIGINAL_EVAL_SECRET");
+    expect(capturedPrompt).not.toContain("ORIGINAL_SNAKE_REFERENCE");
+    expect(capturedPrompt).not.toContain("ORIGINAL_RUBRIC_ALIAS");
+    expect(capturedPrompt).not.toContain("ORIGINAL_CAMEL_RUBRIC");
+    expect(capturedPrompt).not.toContain("ORIGINAL_SNAKE_RUBRIC");
+    expect(capturedPrompt).toContain("Produce a grounded answer.");
+    expect(capturedPrompt).not.toContain(IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL);
+    expect(capturedPrompt).not.toContain("evaluationContext");
+    expect(capturedPrompt).not.toContain("evaluation_context");
+    expect(result.original).toEqual(original);
+    expect(result.revised.taskPrompt).toBe("Produce a more precise grounded answer.");
+    expect(result.revised.outputFormat).toBe("code");
+    expect(result.revised.rubric).toBe("ORIGINAL_RUBRIC_ALIAS");
+    expect(result.revised.judgeRubric).toBe("ORIGINAL_CAMEL_RUBRIC");
+    expect(result.revised.judge_rubric).toBe("ORIGINAL_SNAKE_RUBRIC");
+    expect(result.revised.evaluationContext).toBe("ORIGINAL_EVAL_SECRET");
+    expect(result.revised.reference_context).toBe("ORIGINAL_SNAKE_REFERENCE");
+    expect(result.revised.evaluation_context_ref).toBe(`sha256:${"a".repeat(64)}`);
+    expect(result.revised.referenceSources).toEqual(["ORIGINAL_SOURCE"]);
+    expect(result.revised.requiredConcepts).toEqual(["ORIGINAL_CONCEPT"]);
+    expect(result.revised.calibrationExamples).toEqual([{ output: "original" }]);
+    expect(result.revised.difficultyTiers).toEqual([{ name: "original" }]);
+    expect(result.revised).not.toHaveProperty("improvementTaskContractVersion");
+    expect(result.revised).not.toHaveProperty("evaluation_context");
+    expect(JSON.stringify(result.revised)).not.toContain("MUTATED_EVAL_SECRET");
+    expect(JSON.stringify(result.revised)).not.toContain("MUTATED_SNAKE_CASE_SECRET");
+    expect(JSON.stringify(result.revised)).not.toContain("MUTATED_REFERENCE");
+    expect(JSON.stringify(result.revised)).not.toContain("MUTATED_CONCEPT");
+    expect(JSON.stringify(result.revised)).not.toContain("MUTATED_RUBRIC");
+  });
+
+  it("restores every structured v1 execution field after a provider attempts valid mutations", async () => {
+    const original = {
+      improvementTaskContractVersion: 1,
+      description: "Structured task",
+      taskPrompt: "Immutable prompt",
+      judgeRubric: "Immutable rubric",
+      outputFormat: "code",
+      judgeModel: "judge-only-model",
+      maxRounds: 4,
+      qualityThreshold: 0.93,
+      revisionPrompt: "Immutable revision",
+      sampleInput: "Immutable input",
+      referenceContext: "Immutable candidate reference",
+      evaluationContext: "Immutable evaluator secret",
+      evaluationContextRef: `sha256:${"b".repeat(64)}`,
+      referenceSources: ["immutable-source"],
+      requiredConcepts: ["immutable-concept"],
+      calibrationExamples: [{ output: "immutable" }],
+      difficultyTiers: [{ name: "immutable" }],
+      contextPreparation: "Immutable preparation",
+      requiredContextKeys: ["ready"],
+      taskDataSources: [],
+    };
+    let capturedPrompt = "";
+    const provider = {
+      name: "stateless-revision-test",
+      isStatelessNoToolsProvider: true,
+      defaultModel: () => "test-model",
+      complete: async (opts: { userPrompt: string }) => {
+        capturedPrompt = opts.userPrompt;
+        return {
+          text: JSON.stringify({
+            description: "Revised description",
+            taskPrompt: "Mutated prompt",
+            judgeRubric: "Mutated rubric",
+            outputFormat: "json_schema",
+            judgeModel: "candidate-foreign-model",
+            maxRounds: 99,
+            qualityThreshold: 0.1,
+            revisionPrompt: "Mutated revision",
+            sampleInput: "Mutated input",
+            referenceContext: "Mutated reference",
+            requiredConcepts: ["mutated"],
+          }),
+        };
+      },
+    };
+
+    const result = await reviseSpec({
+      currentSpec: original,
+      feedback: "Change the description",
+      family: "agent_task",
+      provider: provider as never,
+    });
+
+    expect(capturedPrompt).toContain(IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL);
+    expect(capturedPrompt).not.toContain("Immutable prompt");
+    expect(capturedPrompt).not.toContain("Immutable evaluator secret");
+    expect(result.changesApplied).toBe(true);
+    expect(result.revised.description).toBe("Revised description");
+    for (const [key, value] of Object.entries(original)) {
+      if (key !== "description") expect(result.revised[key]).toEqual(value);
+    }
+    expect(JSON.stringify(result.revised)).not.toContain("Mutated prompt");
+    expect(JSON.stringify(result.revised)).not.toContain("candidate-foreign-model");
+  });
+
+  it("rejects an invalid structured-v1 execution mutation without changing the spec", async () => {
+    const original = {
+      improvementTaskContractVersion: 1,
+      description: "Structured task",
+      taskPrompt: "Immutable prompt",
+      judgeRubric: "Immutable rubric",
+      outputFormat: "code",
+      judgeModel: "",
+      maxRounds: 2,
+      qualityThreshold: 0.9,
+    };
+    const provider = {
+      name: "stateless-revision-test",
+      isStatelessNoToolsProvider: true,
+      defaultModel: () => "test-model",
+      complete: async () => ({
+        text: JSON.stringify({
+          description: "Should not apply",
+          outputFormat: "not-a-supported-format",
+        }),
+      }),
+    };
+
+    const result = await reviseSpec({
+      currentSpec: original,
+      feedback: "Use an unsupported output format",
+      family: "agent_task",
+      provider: provider as never,
+    });
+
+    expect(result.changesApplied).toBe(false);
+    expect(result.revised).toEqual(original);
+    expect(result.error).toContain("outputFormat");
   });
 
   it("preserves original spec on LLM failure", async () => {
@@ -151,8 +365,20 @@ describe("reviseSpec", () => {
           failure_modes: ["timeout"],
           max_steps: 20,
           actions: [
-            { name: "step1", description: "First step", parameters: {}, preconditions: [], effects: [] },
-            { name: "step2", description: "Second step", parameters: {}, preconditions: ["step1"], effects: [] },
+            {
+              name: "step1",
+              description: "First step",
+              parameters: {},
+              preconditions: [],
+              effects: [],
+            },
+            {
+              name: "step2",
+              description: "Second step",
+              parameters: {},
+              preconditions: ["step1"],
+              effects: [],
+            },
           ],
         }),
       }),
@@ -162,7 +388,9 @@ describe("reviseSpec", () => {
     const result = await reviseSpec({
       currentSpec: {
         description: "Old sim",
-        actions: [{ name: "step1", description: "Step", parameters: {}, preconditions: [], effects: [] }],
+        actions: [
+          { name: "step1", description: "Step", parameters: {}, preconditions: [], effects: [] },
+        ],
       },
       feedback: "Add a second step with dependency",
       family: "simulation",
@@ -179,7 +407,13 @@ describe("reviseSpec", () => {
       complete: async () => ({
         text: JSON.stringify({
           actions: [
-            { name: "only_one", description: "Only step", parameters: {}, preconditions: [], effects: [] },
+            {
+              name: "only_one",
+              description: "Only step",
+              parameters: {},
+              preconditions: [],
+              effects: [],
+            },
           ],
           max_steps: "twenty",
         }),
@@ -195,8 +429,20 @@ describe("reviseSpec", () => {
       failure_modes: [],
       max_steps: 10,
       actions: [
-        { name: "step1", description: "First step", parameters: {}, preconditions: [], effects: [] },
-        { name: "step2", description: "Second step", parameters: {}, preconditions: ["step1"], effects: [] },
+        {
+          name: "step1",
+          description: "First step",
+          parameters: {},
+          preconditions: [],
+          effects: [],
+        },
+        {
+          name: "step2",
+          description: "Second step",
+          parameters: {},
+          preconditions: ["step1"],
+          effects: [],
+        },
       ],
     };
 
@@ -217,11 +463,14 @@ describe("RunManager scenario revision flow", () => {
   it("revises the pending spec instead of recreating from the description", async () => {
     const { RunManager } = await import("../src/server/run-manager.js");
     const dir = makeTempDir();
+    const operatorMission = "Create a scenario about incident report triage.";
     let sawRevisionPrompt = false;
     const provider = {
       complete: async (opts: { systemPrompt: string; userPrompt: string }) => {
         if (opts.systemPrompt.includes("Revise the agent_task spec")) {
-          sawRevisionPrompt = opts.userPrompt.includes("\"taskPrompt\": \"Summarize incident reports with a triage focus.\"");
+          sawRevisionPrompt =
+            !opts.userPrompt.includes(IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL) &&
+            opts.userPrompt.includes(operatorMission);
           return {
             text: JSON.stringify({
               description: "Summarize incident reports with severity and owner assignment.",
@@ -260,7 +509,7 @@ describe("RunManager scenario revision flow", () => {
       },
     });
 
-    await mgr.createScenario("Create a scenario about incident report triage.");
+    await mgr.createScenario(operatorMission);
     const revised = await mgr.reviseScenario("Also require severity and owner assignment.");
 
     expect(sawRevisionPrompt).toBe(true);
@@ -270,7 +519,9 @@ describe("RunManager scenario revision flow", () => {
     const savedSpec = JSON.parse(
       readFileSync(join(dir, "knowledge", "_custom_scenarios", ready.name, "spec.json"), "utf-8"),
     ) as Record<string, unknown>;
-    expect(savedSpec.taskPrompt).toBe("Summarize incident reports with severity and owner assignment.");
+    expect(savedSpec.taskPrompt).toBe(
+      "Summarize incident reports with severity and owner assignment.",
+    );
   });
 });
 
