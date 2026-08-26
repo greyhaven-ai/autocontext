@@ -4,11 +4,19 @@ export function isInteractiveScenarioCommand(
   message: ClientMessage | Record<string, unknown> | null,
 ): message is Extract<
   ClientMessage,
-  { type: "create_scenario" | "confirm_scenario" | "revise_scenario" | "cancel_scenario" }
+  {
+    type:
+      | "create_scenario"
+      | "create_task"
+      | "confirm_scenario"
+      | "revise_scenario"
+      | "cancel_scenario";
+  }
 > {
   const type = message && typeof message === "object" ? message.type : null;
   return (
     type === "create_scenario" ||
+    type === "create_task" ||
     type === "confirm_scenario" ||
     type === "revise_scenario" ||
     type === "cancel_scenario"
@@ -24,7 +32,7 @@ export function buildClientErrorMessage(
     return {
       type: "scenario_error",
       message: detail,
-      stage: "server",
+      stage: message.type === "create_task" ? "validation" : "server",
     };
   }
   const correlation = commandCorrelation(message);

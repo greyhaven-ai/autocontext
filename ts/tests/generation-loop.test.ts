@@ -48,6 +48,33 @@ describe("DeterministicProvider", () => {
     expect(result.text).toContain("aggression");
   });
 
+  it.each([
+    [
+      "grid_ctf",
+      "Describe your strategy for the grid_ctf scenario. Strategy Interface: aggression, defense, path_bias",
+      { aggression: 0.6, defense: 0.55, path_bias: 0.5 },
+    ],
+    [
+      "othello",
+      "Describe your strategy for the othello scenario. Strategy Interface: mobility_weight, corner_weight, stability_weight",
+      { mobility_weight: 0.35, corner_weight: 0.45, stability_weight: 0.4 },
+    ],
+    [
+      "resource_trader",
+      "Describe your strategy for the resource_trader scenario. Strategy Interface: `buy`, `sell`, `amount`",
+      { buy: "wood", sell: "stone", amount: 1 },
+    ],
+  ])(
+    "returns a valid %s strategy for its scenario-specific prompt",
+    async (_name, userPrompt, expected) => {
+      const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+      const provider = new DeterministicProvider();
+      const result = await provider.complete({ systemPrompt: "", userPrompt });
+
+      expect(JSON.parse(result.text)).toEqual(expected);
+    },
+  );
+
   it("returns canned analyst response", async () => {
     const { DeterministicProvider } = await import("../src/providers/deterministic.js");
     const provider = new DeterministicProvider();
@@ -269,6 +296,7 @@ describe("GenerationRunner", () => {
 
   it("runs a single generation with deterministic provider", async () => {
     const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { EventStreamEmitter } = await import("../src/loop/events.js");
     const { DeterministicProvider } = await import("../src/providers/deterministic.js");
     const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
@@ -276,6 +304,11 @@ describe("GenerationRunner", () => {
     const dbPath = join(dir, "test.db");
     const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
+    const events = new EventStreamEmitter(join(dir, "events.ndjson"));
+    const generationTimings: Array<Record<string, unknown>> = [];
+    events.subscribe((event, payload) => {
+      if (event === "generation_timing") generationTimings.push(payload);
+    });
 
     const runner = new GenerationRunner({
       provider: new DeterministicProvider(),
@@ -286,6 +319,8 @@ describe("GenerationRunner", () => {
       matchesPerGeneration: 2,
       maxRetries: 1,
       minDelta: 0.005,
+      agentProvider: "  Deterministic  ",
+      events,
     });
 
     const result = await runner.run(asRunId("test-run"), 1);
@@ -293,6 +328,15 @@ describe("GenerationRunner", () => {
     expect(result.generationsCompleted).toBe(1);
     expect(typeof result.bestScore).toBe("number");
     expect(result.bestScore).toBeGreaterThanOrEqual(0);
+    expect(store.getRun("test-run")?.agent_provider).toBe("deterministic");
+    expect(store.getGenerations("test-run")[0]?.duration_seconds).toEqual(expect.any(Number));
+    expect(generationTimings).toEqual([
+      {
+        run_id: "test-run",
+        generation: 1,
+        elapsed_seconds: expect.any(Number),
+      },
+    ]);
 
     store.close();
   });

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -1403,7 +1403,13 @@ describe("AC-306: factory reviseOutput model sanitization", () => {
     }
     await task.reviseOutput(
       "original output",
-      { score: 0.5, reasoning: "needs work", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      {
+        score: 0.5,
+        reasoning: "needs work",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
       {},
     );
 
@@ -1444,10 +1450,181 @@ describe("AC-306: factory reviseOutput model sanitization", () => {
     }
     await task.reviseOutput(
       "original",
-      { score: 0.5, reasoning: "weak", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      {
+        score: 0.5,
+        reasoning: "weak",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
       {},
     );
 
     expect(capturedModel).toBe("custom-model");
+  });
+
+  it("finishes a truncated revision before returning it to the loop", async () => {
+    const { createAgentTask } = await import("../src/scenarios/agent-task-factory.js");
+
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: "Revised part one.",
+        model: "default-model",
+        usage: {},
+        stopReason: "max_tokens",
+      })
+      .mockResolvedValueOnce({
+        text: " Part two.",
+        model: "default-model",
+        usage: {},
+        stopReason: "end_turn",
+      });
+    const task = createAgentTask({
+      spec: {
+        taskPrompt: "Write something",
+        judgeRubric: "Evaluate quality",
+        judgeModel: "",
+        outputFormat: "free_text",
+        maxRounds: 3,
+        qualityThreshold: 0.9,
+        revisionPrompt: "Improve your response.",
+      },
+      name: "continued_revision",
+      provider: {
+        name: "mock",
+        defaultModel: () => "default-model",
+        complete,
+      },
+    });
+    if (!task.reviseOutput) {
+      throw new Error("expected the created agent task to support reviseOutput");
+    }
+
+    const revised = await task.reviseOutput(
+      "original output",
+      {
+        score: 0.5,
+        reasoning: "needs work",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
+      {},
+    );
+
+    expect(revised).toBe("Revised part one. Part two.");
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls.map(([request]) => request.maxTokens)).toEqual([8_192, 8_192]);
+  });
+});
+
+describe("factory revision grounding", () => {
+  it("grounds revisions in the task, evaluation contract, and source material", async () => {
+    let capturedUserPrompt = "";
+    let capturedSystemPrompt = "";
+    const capturedJudgePrompts: string[] = [];
+    const mockProvider: LLMProvider = {
+      name: "mock",
+      defaultModel: () => "default-model",
+      complete: async (opts) => {
+        if (opts.systemPrompt.includes("expert judge")) {
+          capturedJudgePrompts.push(opts.userPrompt);
+          const hasEvaluatorOnlyContext = opts.userPrompt.includes("SEALED_EVAL_CASE");
+          return {
+            text:
+              "<!-- JUDGE_RESULT_START -->\n" +
+              JSON.stringify({
+                score: hasEvaluatorOnlyContext ? 0.42 : 0.5,
+                reasoning: hasEvaluatorOnlyContext
+                  ? "SEALED_EVAL_CASE failed because the conclusion lacks citations."
+                  : "The conclusion needs citations and actionable next steps.",
+                dimensions: { evidence: 0.3, actionability: 0.5 },
+              }) +
+              "\n<!-- JUDGE_RESULT_END -->",
+            model: "default-model",
+            usage: {},
+          };
+        }
+        capturedUserPrompt = opts.userPrompt;
+        capturedSystemPrompt = opts.systemPrompt;
+        return { text: "grounded revised output", model: "default-model", usage: {} };
+      },
+    };
+    const spec: AgentTaskSpec = {
+      taskPrompt: "Determine whether the product thesis is supported.",
+      judgeRubric: "Use cited evidence, distinguish facts from inference, and state next steps.",
+      outputFormat: "free_text",
+      judgeModel: "",
+      maxRounds: 3,
+      qualityThreshold: 0.9,
+      revisionPrompt: "Fix every failed criterion without inventing evidence.",
+      referenceContext: "The issue export is the authoritative source for this run.",
+      evaluationContext: "SEALED_EVAL_CASE: reject unsupported issue-count claims.",
+      referenceSources: ["linear-issues.csv", "research-notes.md"],
+      requiredConcepts: ["adoption risk", "workflow friction"],
+      sampleInput: "id,title,status\nAC-1,Improve upload flow,Open",
+    };
+    const task = createAgentTask({ spec, name: "grounded_revision", provider: mockProvider });
+    if (!task.reviseOutput) {
+      throw new Error("expected the created agent task to support reviseOutput");
+    }
+
+    const judgeResult = await task.evaluateOutput(
+      "The thesis is supported.",
+      {},
+      {
+        referenceContext: "Run-specific evidence is authoritative for this evaluation.",
+        requiredConcepts: ["validated adoption risk", "measured workflow friction"],
+      },
+    );
+    expect(judgeResult).toMatchObject({
+      score: 0.42,
+      reasoning: "The conclusion needs citations and actionable next steps.",
+    });
+    expect(JSON.stringify(judgeResult)).not.toContain("SEALED_EVAL_CASE");
+    const revised = await task.reviseOutput("The thesis is supported.", judgeResult, {});
+
+    expect(revised).toBe("grounded revised output");
+    expect(task.getTaskPrompt({})).toContain(
+      "## Reference Context\nThe issue export is the authoritative source for this run.",
+    );
+    expect(task.getTaskPrompt({})).not.toContain("SEALED_EVAL_CASE");
+    expect(capturedJudgePrompts).toHaveLength(2);
+    expect(capturedJudgePrompts[0]).toContain("## Candidate Input and Improvement Target");
+    expect(capturedJudgePrompts[0]).toContain("id,title,status\nAC-1,Improve upload flow,Open");
+    expect(capturedJudgePrompts[0]).toContain("## Evaluator-only Context");
+    expect(capturedJudgePrompts[0]).toContain("SEALED_EVAL_CASE");
+    expect(capturedJudgePrompts[1]).not.toContain("## Evaluator-only Context");
+    expect(capturedJudgePrompts[1]).not.toContain("SEALED_EVAL_CASE");
+    expect(capturedSystemPrompt).toBe("You are a helpful assistant revising your previous output.");
+    expect(capturedUserPrompt).toContain("Fix every failed criterion without inventing evidence.");
+    expect(capturedUserPrompt).toContain("## Original Output\nThe thesis is supported.");
+    expect(capturedUserPrompt).toContain("## Judge Score: 0.42");
+    expect(capturedUserPrompt).toContain(
+      "## Judge Feedback\nThe conclusion needs citations and actionable next steps.",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Evaluation Criteria\nUse cited evidence, distinguish facts from inference, and state next steps.",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Reference Context\nRun-specific evidence is authoritative for this evaluation.",
+    );
+    expect(capturedUserPrompt).not.toContain("SEALED_EVAL_CASE");
+    expect(capturedUserPrompt).not.toContain(
+      "## Reference Context\nThe issue export is the authoritative source for this run.",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Reference Sources\n- linear-issues.csv\n- research-notes.md",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Required Concepts\n- validated adoption risk\n- measured workflow friction",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Input Data\nid,title,status\nAC-1,Improve upload flow,Open",
+    );
+    expect(capturedUserPrompt).toContain(
+      "## Task\nDetermine whether the product thesis is supported.",
+    );
   });
 });

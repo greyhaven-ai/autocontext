@@ -1409,6 +1409,7 @@ describe("InteractiveServer", () => {
           "safe_run_stop_v1",
           "agent_task_plan_v1",
           "agent_progress_notes_v1",
+          "structured_task_creation_v1",
         ],
       });
       await socket.waitFor((msg) => msg.type === "environments");

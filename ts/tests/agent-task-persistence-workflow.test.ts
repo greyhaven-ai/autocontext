@@ -23,6 +23,7 @@ describe("agent task persistence workflow", () => {
 
   it("builds persisted spec data and writes custom scenario files", () => {
     const spec: AgentTaskSpec = {
+      improvementTaskContractVersion: 1,
       taskPrompt: "Write about RLMs",
       judgeRubric: "Check accuracy",
       outputFormat: "free_text",
@@ -37,6 +38,7 @@ describe("agent task persistence workflow", () => {
     };
 
     expect(buildPersistedAgentTaskSpecData(spec)).toMatchObject({
+      improvement_task_contract_version: 1,
       task_prompt: "Write about RLMs",
       judge_rubric: "Check accuracy",
       output_format: "free_text",
@@ -59,7 +61,10 @@ describe("agent task persistence workflow", () => {
     expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
       getScenarioTypeMarker("agent_task"),
     );
-    expect(JSON.parse(readFileSync(join(scenarioDir, "agent_task_spec.json"), "utf-8"))).toMatchObject({
+    expect(
+      JSON.parse(readFileSync(join(scenarioDir, "agent_task_spec.json"), "utf-8")),
+    ).toMatchObject({
+      improvement_task_contract_version: 1,
       task_prompt: "Write about RLMs",
       required_concepts: ["context folding"],
     });

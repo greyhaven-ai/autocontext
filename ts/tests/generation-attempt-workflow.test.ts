@@ -78,9 +78,7 @@ describe("generation attempt workflow", () => {
 
     expect(workflow.attemptOrchestration.phaseState.phase).toBe("gate_decided");
     expect(workflow.attemptOrchestration.orchestration.runState.bestScore).toBe(0);
-    expect(
-      workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event),
-    ).toEqual([
+    expect(workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event)).toEqual([
       "role_completed",
       "tournament_started",
       "match_completed",
@@ -112,14 +110,91 @@ describe("generation attempt workflow", () => {
     expect(workflow.attemptOrchestration.orchestration.runState.bestScore).toBe(0.7);
     expect(workflow.attemptOrchestration.orchestration.runState.currentElo).toBe(1015);
     expect(workflow.attempt.tournamentResult.bestScore).toBe(0.7);
-    expect(
-      workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event),
-    ).toEqual([
+    expect(workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event)).toEqual([
       "role_completed",
       "tournament_started",
       "match_completed",
       "tournament_completed",
       "gate_decided",
     ]);
+  });
+
+  it("repairs malformed competitor JSON once before tournament evaluation", async () => {
+    let tournamentStrategy: Record<string, unknown> | null = null;
+    const repairCompetitor = async ({
+      repairPrompt,
+      invalidOutput,
+    }: {
+      repairPrompt: string;
+      invalidOutput: string;
+    }): Promise<CompletionResult> => {
+      expect(invalidOutput).toBe("not-json");
+      expect(repairPrompt).toContain("Repair the invalid competitor strategy");
+      return {
+        text: '{"aggression":0.8,"defense":0.4,"path_bias":0.3}',
+        model: "test-model",
+        usage: {},
+      };
+    };
+
+    const result = await runGenerationAttemptWorkflow(
+      createGenerationAttemptWorkflow({
+        ...createStartedWorkflow(),
+        executeCompetitor: async () => ({
+          text: "not-json",
+          model: "test-model",
+          usage: {},
+        }),
+        repairCompetitor,
+        executeTournament: ({ strategy }) => {
+          tournamentStrategy = strategy;
+          return {
+            matches: [],
+            meanScore: 0.8,
+            bestScore: 0.8,
+            wins: 1,
+            losses: 0,
+            elo: 1015,
+          };
+        },
+      }),
+    );
+
+    expect(tournamentStrategy).toEqual({
+      aggression: 0.8,
+      defense: 0.4,
+      path_bias: 0.3,
+    });
+    expect(result.competitorResult.text).toContain('"aggression":0.8');
+    expect(result.events.filter((event) => event.event === "role_completed")).toHaveLength(2);
+  });
+
+  it("fails before tournament evaluation when the bounded repair is still invalid", async () => {
+    let repairCalls = 0;
+    let tournamentCalls = 0;
+    await expect(
+      runGenerationAttemptWorkflow(
+        createGenerationAttemptWorkflow({
+          ...createStartedWorkflow(),
+          executeCompetitor: async () => ({
+            text: "not-json",
+            model: "test-model",
+            usage: {},
+          }),
+          repairCompetitor: async () => {
+            repairCalls += 1;
+            return { text: "still-not-json", model: "test-model", usage: {} };
+          },
+          executeTournament: (input) => {
+            tournamentCalls += 1;
+            return createStartedWorkflow().executeTournament(input);
+          },
+        }),
+      ),
+    ).rejects.toThrow(
+      "invalid strategy JSON after one repair attempt; generation was not evaluated",
+    );
+    expect(repairCalls).toBe(1);
+    expect(tournamentCalls).toBe(0);
   });
 });

@@ -5,9 +5,11 @@
 import type { AgentTaskInterface, AgentTaskResult } from "../types/index.js";
 import { LLMJudge } from "../judge/llm-judge.js";
 import type { LLMProvider } from "../types/index.js";
-import { completeWithProviderHooks, type HookBus } from "../extensions/index.js";
+import type { HookBus } from "../extensions/index.js";
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { assertFamilyContract } from "./family-interfaces.js";
+import { completeAgentTaskArtifact } from "./agent-task-artifact-completion.js";
+import { buildAgentTaskRevisionPrompt } from "./agent-task-revision-prompt.js";
 
 export interface AgentTaskFactoryOpts {
   spec: AgentTaskSpec;
@@ -24,6 +26,8 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
   readonly spec: AgentTaskSpec;
 } {
   const { spec, name, provider, hookBus } = opts;
+  let lastReferenceContext = spec.referenceContext ?? undefined;
+  let lastRequiredConcepts = spec.requiredConcepts ? [...spec.requiredConcepts] : undefined;
 
   const task = {
     name,
@@ -33,6 +37,9 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
       let prompt = spec.taskPrompt;
       if (spec.sampleInput) {
         prompt += "\n\n## Input Data\n" + spec.sampleInput;
+      }
+      if (spec.referenceContext) {
+        prompt += "\n\n## Reference Context\n" + spec.referenceContext;
       }
       return prompt;
     },
@@ -75,21 +82,42 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
         rubric: spec.judgeRubric,
         hookBus: hookBus ?? null,
       });
-      const result = await judge.evaluate({
+      lastReferenceContext = evalOpts?.referenceContext ?? spec.referenceContext ?? undefined;
+      const judgeReferenceContext = combineJudgeReferenceContext(
+        spec.sampleInput,
+        lastReferenceContext,
+        spec.evaluationContext,
+      );
+      const effectiveRequiredConcepts =
+        evalOpts?.requiredConcepts ?? spec.requiredConcepts ?? undefined;
+      lastRequiredConcepts = effectiveRequiredConcepts ? [...effectiveRequiredConcepts] : undefined;
+      const privateResult = await judge.evaluate({
         taskPrompt: spec.taskPrompt,
         agentOutput: output,
-        referenceContext: evalOpts?.referenceContext ?? spec.referenceContext ?? undefined,
-        requiredConcepts: evalOpts?.requiredConcepts ?? spec.requiredConcepts ?? undefined,
+        referenceContext: judgeReferenceContext,
+        requiredConcepts: lastRequiredConcepts,
         calibrationExamples: evalOpts?.calibrationExamples,
       });
-      return {
-        score: result.score,
-        reasoning: result.reasoning,
-        dimensionScores: result.dimensionScores ?? {},
-        internalRetries: result.internalRetries ?? 0,
-        // AC-885: carry the judge's evaluator epoch so the improve loop can detect epoch changes.
-        evaluatorEpoch: result.evaluatorEpoch ?? null,
-      };
+      return candidateSafeJudgeResult({
+        judgeResult: {
+          score: privateResult.score,
+          reasoning: privateResult.reasoning,
+          dimensionScores: privateResult.dimensionScores ?? {},
+          internalRetries: privateResult.internalRetries ?? 0,
+          // AC-885: carry the judge's evaluator epoch so the improve loop can detect epoch changes.
+          evaluatorEpoch: privateResult.evaluatorEpoch ?? null,
+        },
+        evaluationContext: spec.evaluationContext,
+        provider,
+        model: spec.judgeModel || provider.defaultModel(),
+        rubric: spec.judgeRubric,
+        hookBus: hookBus ?? null,
+        taskPrompt: spec.taskPrompt,
+        output,
+        sampleInput: spec.sampleInput,
+        referenceContext: lastReferenceContext,
+        requiredConcepts: lastRequiredConcepts,
+      });
     },
 
     async prepareContext(state: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -120,19 +148,22 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
       if (!provider || (!spec.revisionPrompt && spec.maxRounds <= 1)) {
         return output;
       }
-      const revisionInstructions =
-        spec.revisionPrompt ?? "Revise the output based on the feedback.";
-      const prompt = [
-        `Original output:\n${output}`,
-        `\nJudge score: ${judgeResult.score}`,
-        `Judge reasoning: ${judgeResult.reasoning}`,
-        `\nRevision instructions: ${revisionInstructions}`,
-        `\nProvide the revised output:`,
-      ].join("\n");
-      const result = await completeWithProviderHooks({
+      const prompt = buildAgentTaskRevisionPrompt({
+        revisionPrompt: spec.revisionPrompt,
+        output,
+        judgeResult,
+        taskPrompt: spec.taskPrompt,
+        judgeRubric: spec.judgeRubric,
+        referenceContext: lastReferenceContext,
+        referenceSources: spec.referenceSources,
+        requiredConcepts: lastRequiredConcepts,
+        sampleInput: spec.sampleInput,
+      });
+      const result = await completeAgentTaskArtifact({
         hookBus: hookBus ?? null,
         provider,
         role: "agent_task_revise",
+        artifactLabel: "revision",
         systemPrompt: "You are a helpful assistant revising your previous output.",
         userPrompt: prompt,
         model: spec.judgeModel || undefined,
@@ -143,4 +174,67 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
 
   assertFamilyContract(task, "agent_task", `custom agent task '${name}'`);
   return task;
+}
+
+async function candidateSafeJudgeResult(opts: {
+  judgeResult: AgentTaskResult;
+  evaluationContext?: string | null;
+  provider: LLMProvider;
+  model: string;
+  rubric: string;
+  hookBus: HookBus | null;
+  taskPrompt: string;
+  output: string;
+  sampleInput?: string | null;
+  referenceContext?: string;
+  requiredConcepts?: string[];
+}): Promise<AgentTaskResult> {
+  if (!opts.evaluationContext?.trim()) return opts.judgeResult;
+
+  const publicJudge = new LLMJudge({
+    provider: opts.provider,
+    model: opts.model,
+    rubric: opts.rubric,
+    hookBus: opts.hookBus,
+  });
+  const publicFeedback = await publicJudge.evaluate({
+    taskPrompt: opts.taskPrompt,
+    agentOutput: opts.output,
+    referenceContext: combineJudgeReferenceContext(opts.sampleInput, opts.referenceContext),
+    requiredConcepts: opts.requiredConcepts,
+  });
+  return {
+    score: opts.judgeResult.score,
+    reasoning: publicFeedback.reasoning,
+    dimensionScores: publicFeedback.dimensionScores ?? {},
+    internalRetries: opts.judgeResult.internalRetries + (publicFeedback.internalRetries ?? 0),
+    evaluatorEpoch: opts.judgeResult.evaluatorEpoch ?? null,
+  };
+}
+
+function combineJudgeReferenceContext(
+  sampleInput?: string | null,
+  visibleReferenceContext?: string,
+  evaluationContext?: string | null,
+): string | undefined {
+  const sections = [
+    sampleInput?.trim()
+      ? [
+          "## Candidate Input and Improvement Target",
+          "Use this candidate-visible material to verify that the output transforms, analyzes, or improves the supplied input as requested.",
+          sampleInput.trim(),
+        ].join("\n")
+      : "",
+    visibleReferenceContext?.trim()
+      ? `## Task Reference Context\n${visibleReferenceContext.trim()}`
+      : "",
+    evaluationContext?.trim()
+      ? [
+          "## Evaluator-only Context",
+          "Use this material only to evaluate the candidate. Do not treat it as part of the candidate output. Its raw content and identifying details must not appear in judge reasoning because revision may use only candidate-safe feedback.",
+          evaluationContext.trim(),
+        ].join("\n")
+      : "",
+  ].filter((section) => section.length > 0);
+  return sections.length > 0 ? sections.join("\n\n") : undefined;
 }

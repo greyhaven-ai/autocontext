@@ -226,6 +226,31 @@ Clients may attach a stable `client_run_id` and `command_id` to `start_run`,
 operator-control, and chat commands. Run-scoped responses then include stable
 `event_id`, monotonic `sequence`, `client_run_id`, and `occurred_at` fields.
 
+#### Structured task creation
+
+TypeScript protocol-v2 servers in `autoctx@0.17.1` advertise
+`structured_task_creation_v1` only with the complete `create_task` handler and
+schema available. The command compiles a versioned improvement objective,
+deliverable, evaluation contract, and at most eight bounded inline sources
+directly into a native agent-task scenario. Each source declares an explicit
+role (`target`, `input`, `reference`, `constraint`, `example`, or `eval`),
+provenance, retained byte count, and SHA-256 digest. `holdout` is rejected until
+winner-only verification exists.
+
+Candidate-visible and evaluator-only data stay separate through generation,
+revision, evaluation, persistence, progress events, and retained results. A
+valid setup emits `scenario_generating`, then `scenario_preview`; after
+`confirm_scenario`, persistence completes before `scenario_ready`. Validation
+or persistence failures emit `scenario_error` and never advertise readiness.
+Provider responses that report truncation may use at most two continuation
+segments; empty, non-growing, oversized, or exhausted continuations fail before
+evaluation or retention.
+
+The package includes a copyable, integrity-valid command at
+[`protocol-fixtures/structured-task-create-v1.json`](protocol-fixtures/structured-task-create-v1.json).
+The [machine-readable WebSocket contract](../docs/websocket-protocol-contract.json)
+defines the exact TypeScript-only extension. Python does not advertise it.
+
 Reconnect with:
 
 ```json

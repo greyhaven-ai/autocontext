@@ -11,22 +11,26 @@ describe("agent-task solve execution", () => {
   it("builds agent-task solve specs from mixed naming conventions", () => {
     const spec = buildAgentTaskSolveSpec(
       {
+        improvement_task_contract_version: 1,
         task_prompt: "Summarize incident reports",
         rubric: "Evaluate completeness",
         output_format: "free_text",
         max_rounds: "3",
         quality_threshold: "0.85",
         reference_context: "PagerDuty timeline",
+        evaluation_context: "Hidden evaluator case",
         required_concepts: ["severity", "owner"],
       },
       1,
     );
 
     expect(spec.taskPrompt).toBe("Summarize incident reports");
+    expect(spec.improvementTaskContractVersion).toBe(1);
     expect(spec.judgeRubric).toBe("Evaluate completeness");
     expect(spec.maxRounds).toBe(3);
     expect(spec.qualityThreshold).toBe(0.85);
     expect(spec.referenceContext).toBe("PagerDuty timeline");
+    expect(spec.evaluationContext).toBe("Hidden evaluator case");
     expect(spec.requiredConcepts).toEqual(["severity", "owner"]);
   });
 
@@ -46,7 +50,10 @@ describe("agent-task solve execution", () => {
       })),
     };
 
-    const task: AgentTaskInterface & { name: string; spec: ReturnType<typeof buildAgentTaskSolveSpec> } = {
+    const task: AgentTaskInterface & {
+      name: string;
+      spec: ReturnType<typeof buildAgentTaskSolveSpec>;
+    } = {
       name: "incident_triage",
       spec: buildAgentTaskSolveSpec(
         {
@@ -124,7 +131,13 @@ describe("agent-task solve execution", () => {
           return {
             run: vi.fn(async () => {
               opts.onProgress?.({ phase: "evaluation", status: "started", round: 1 });
-              opts.onProgress?.({ phase: "evaluation", status: "completed", round: 1 });
+              opts.onProgress?.({
+                phase: "evaluation",
+                status: "completed",
+                round: 1,
+                roundResult: loopResult.rounds[0],
+                bestScore: loopResult.bestScore,
+              });
               opts.onProgress?.({ phase: "revision", status: "started", round: 1 });
               opts.onProgress?.({ phase: "revision", status: "completed", round: 1 });
               return loopResult;
@@ -145,12 +158,56 @@ describe("agent-task solve execution", () => {
       { phase: "draft", status: "started" },
       { phase: "draft", status: "completed" },
       { phase: "evaluation", status: "started", round: 1 },
-      { phase: "evaluation", status: "completed", round: 1 },
+      {
+        phase: "evaluation",
+        status: "completed",
+        round: 1,
+        roundResult: loopResult.rounds[0],
+        bestScore: 0.93,
+      },
       { phase: "revision", status: "started", round: 1 },
       { phase: "revision", status: "completed", round: 1 },
-      { phase: "finalization", status: "started" },
-      { phase: "finalization", status: "completed" },
+      { phase: "finalization", status: "started", round: 1 },
+      { phase: "finalization", status: "completed", round: 1 },
     ]);
+  });
+
+  it("completes draft, judge, and revision phases with the deterministic provider", async () => {
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const phases: string[] = [];
+
+    const result = await executeAgentTaskSolve({
+      provider: new DeterministicProvider(),
+      created: {
+        name: "deterministic_task_smoke",
+        spec: {
+          taskPrompt: "Analyze the supplied observations and recommend one next step.",
+          judgeRubric: "Score task completion and actionability.",
+          sampleInput: "Observation: onboarding completion fell by 12%.",
+          maxRounds: 2,
+          qualityThreshold: 0.9,
+        },
+      },
+      generations: 2,
+      onProgress: (progress) => {
+        phases.push(`${progress.phase}:${progress.status}`);
+      },
+    });
+
+    expect(result.progress).toBe(2);
+    expect(result.result.best_score).toBe(0.92);
+    expect(result.result.best_strategy).toEqual(expect.objectContaining({ best_round: 2 }));
+    expect(result.result.metadata).toEqual(expect.objectContaining({ judge_failures: 0 }));
+    expect(result.result.example_outputs).toEqual([
+      expect.objectContaining({
+        output: expect.stringContaining("Deterministic revised task result"),
+        score: 0.92,
+      }),
+    ]);
+    expect(phases).toContain("draft:completed");
+    expect(phases).toContain("evaluation:completed");
+    expect(phases).toContain("revision:completed");
+    expect(phases.at(-1)).toBe("finalization:completed");
   });
 
   it("keeps progress observer failures from changing solve results", async () => {
@@ -168,10 +225,13 @@ describe("agent-task solve execution", () => {
       spec: ReturnType<typeof buildAgentTaskSolveSpec>;
     } = {
       name: "observer_safety",
-      spec: buildAgentTaskSolveSpec({
-        taskPrompt: "Do work",
-        judgeRubric: "Evaluate work",
-      }, 1),
+      spec: buildAgentTaskSolveSpec(
+        {
+          taskPrompt: "Do work",
+          judgeRubric: "Evaluate work",
+        },
+        1,
+      ),
       getTaskPrompt: () => "Do work",
       getRubric: () => "Evaluate work",
       describeTask: () => "Do work",
@@ -213,26 +273,28 @@ describe("agent-task solve execution", () => {
         usage: {},
       })),
     };
-    const taskFromSpec = vi.fn((opts: {
-      spec: ReturnType<typeof buildAgentTaskSolveSpec>;
-      name: string;
-      provider: LLMProvider;
-    }) => ({
-      name: "saved_task",
-      spec: opts.spec,
-      getTaskPrompt: () => "Do work",
-      getRubric: () => "Do it well",
-      describeTask: () => "Do work",
-      initialState: () => ({}),
-      validateContext: () => [],
-      evaluateOutput: async () => ({
-        score: 0.5,
-        reasoning: "ok",
-        dimensionScores: {},
-        internalRetries: 0,
-        evaluatorEpoch: null,
+    const taskFromSpec = vi.fn(
+      (opts: {
+        spec: ReturnType<typeof buildAgentTaskSolveSpec>;
+        name: string;
+        provider: LLMProvider;
+      }) => ({
+        name: "saved_task",
+        spec: opts.spec,
+        getTaskPrompt: () => "Do work",
+        getRubric: () => "Do it well",
+        describeTask: () => "Do work",
+        initialState: () => ({}),
+        validateContext: () => [],
+        evaluateOutput: async () => ({
+          score: 0.5,
+          reasoning: "ok",
+          dimensionScores: {},
+          internalRetries: 0,
+          evaluatorEpoch: null,
+        }),
       }),
-    }));
+    );
 
     await executeAgentTaskSolve({
       provider,
@@ -280,7 +342,10 @@ describe("agent-task solve execution", () => {
       complete: vi.fn(async () => ({ text: "ignored", model: "test-model", usage: {} })),
     };
 
-    const invalidTask: AgentTaskInterface & { name: string; spec: ReturnType<typeof buildAgentTaskSolveSpec> } = {
+    const invalidTask: AgentTaskInterface & {
+      name: string;
+      spec: ReturnType<typeof buildAgentTaskSolveSpec>;
+    } = {
       name: "incident_triage",
       spec: buildAgentTaskSolveSpec(
         {
@@ -324,7 +389,9 @@ describe("agent-task solve execution", () => {
           }),
         },
       }),
-    ).rejects.toThrow("agent_task context preparation failed: missing required context key: 'timeline'");
+    ).rejects.toThrow(
+      "agent_task context preparation failed: missing required context key: 'timeline'",
+    );
   });
 
   it("threads provider hooks through saved agent-task initial generation", async () => {
@@ -388,8 +455,107 @@ describe("agent-task solve execution", () => {
 
     expect(seen).toEqual(["before_initial", "after_initial"]);
     expect(providerPrompts[0]).toContain("hook provider request");
-    expect(result.result.skill_markdown).toContain(
-      "Initial answer rewritten by provider hook",
-    );
+    expect(result.result.skill_markdown).toContain("Initial answer rewritten by provider hook");
+  });
+
+  it("finishes a truncated saved-task draft before starting evaluation", async () => {
+    const stopAfterDraft = new Error("stop after completed draft");
+    const run = vi.fn(async ({ initialOutput }: { initialOutput: string }) => {
+      expect(initialOutput).toBe("Part one. Part two. Part three.");
+      throw stopAfterDraft;
+    });
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: "Part one.",
+        model: "test-model",
+        usage: {},
+        stopReason: "max_tokens",
+      })
+      .mockResolvedValueOnce({
+        text: " Part two.",
+        model: "test-model",
+        usage: {},
+        stopReason: "length",
+      })
+      .mockResolvedValueOnce({
+        text: " Part three.",
+        model: "test-model",
+        usage: {},
+        stopReason: "end_turn",
+      });
+    const provider: LLMProvider = {
+      name: "test-provider",
+      defaultModel: () => "test-model",
+      complete,
+    };
+
+    await expect(
+      executeAgentTaskSolve({
+        provider,
+        created: {
+          name: "continued_saved_task",
+          spec: {
+            taskPrompt: "Deliver the complete artifact.",
+            judgeRubric: "Evaluate completeness.",
+          },
+        },
+        generations: 2,
+        deps: { createLoop: () => ({ run }) },
+      }),
+    ).rejects.toBe(stopAfterDraft);
+
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(complete.mock.calls.map(([request]) => request.maxTokens)).toEqual([
+      8_192, 8_192, 8_192,
+    ]);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not evaluate a saved-task draft that remains truncated", async () => {
+    const run = vi.fn();
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: "Part one.",
+        model: "test-model",
+        usage: {},
+        stopReason: "max_tokens",
+      })
+      .mockResolvedValueOnce({
+        text: " Part two.",
+        model: "test-model",
+        usage: {},
+        stopReason: "length",
+      })
+      .mockResolvedValueOnce({
+        text: " Part three.",
+        model: "test-model",
+        usage: {},
+        stopReason: "max_tokens",
+      });
+    const provider: LLMProvider = {
+      name: "test-provider",
+      defaultModel: () => "test-model",
+      complete,
+    };
+
+    await expect(
+      executeAgentTaskSolve({
+        provider,
+        created: {
+          name: "exhausted_saved_task",
+          spec: {
+            taskPrompt: "Deliver the complete artifact.",
+            judgeRubric: "Evaluate completeness.",
+          },
+        },
+        generations: 2,
+        deps: { createLoop: () => ({ run }) },
+      }),
+    ).rejects.toThrow(/remained truncated after 2 continuation attempts/i);
+
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(run).not.toHaveBeenCalled();
   });
 });

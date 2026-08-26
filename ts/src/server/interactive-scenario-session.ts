@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import type { LLMProvider } from "../types/index.js";
 import {
   buildScenarioDraft,
@@ -6,10 +10,22 @@ import {
   type ScenarioDraft,
   type ScenarioPreviewInfo,
 } from "../scenarios/draft-workflow.js";
+import {
+  compileResolvedImprovementTaskContract,
+  type ImprovementTaskContract,
+} from "../scenarios/improvement-task-contract.js";
+import type { TaskDataSourceContent } from "../scenarios/task-data-source.js";
 import type { CreatedScenarioResult } from "../scenarios/scenario-creator.js";
-import { createScenarioFromDescription } from "../scenarios/scenario-creator.js";
+import {
+  createScenarioFromDescription,
+  deriveScenarioName,
+} from "../scenarios/scenario-creator.js";
 import type { RevisionResult } from "../scenarios/scenario-revision.js";
 import { reviseSpec } from "../scenarios/scenario-revision.js";
+import {
+  partitionScenarioRevisionSpec,
+  restoreScenarioRevisionSpec,
+} from "../scenarios/scenario-revision-visibility.js";
 import { persistInteractiveScenarioDraft } from "../scenarios/interactive-scenario-materialization.js";
 import type { MaterializeResult } from "../scenarios/materialize.js";
 
@@ -59,11 +75,37 @@ export class InteractiveScenarioSession {
     description: string;
     provider: LLMProvider;
   }): Promise<ScenarioPreviewInfo> {
-    const created = await (this.#deps.createScenarioFromDescription ?? createScenarioFromDescription)(
-      opts.description,
-      opts.provider,
-    );
+    const created = await (
+      this.#deps.createScenarioFromDescription ?? createScenarioFromDescription
+    )(opts.description, opts.provider);
     const draft = buildScenarioDraft({ description: opts.description, created });
+    this.#pendingScenario = draft;
+    return this.#buildPreview(draft);
+  }
+
+  async createTask(opts: {
+    contract: ImprovementTaskContract;
+    sourceContents: TaskDataSourceContent[];
+  }): Promise<ScenarioPreviewInfo> {
+    const spec = compileResolvedImprovementTaskContract(opts.contract, opts.sourceContents);
+    const name = resolveStructuredTaskScenarioName({
+      knowledgeRoot: this.#knowledgeRoot,
+      baseName: deriveScenarioName(opts.contract.objective),
+      spec,
+    });
+    const created: CreatedScenarioResult = {
+      name,
+      family: "agent_task",
+      spec: {
+        ...spec,
+        rubric: spec.judgeRubric,
+        description: opts.contract.deliverable.description,
+      },
+    };
+    const draft = buildScenarioDraft({
+      description: opts.contract.objective,
+      created,
+    });
     this.#pendingScenario = draft;
     return this.#buildPreview(draft);
   }
@@ -73,8 +115,17 @@ export class InteractiveScenarioSession {
     provider: LLMProvider;
   }): Promise<ScenarioPreviewInfo> {
     const draft = this.#requirePendingScenario();
+    if (
+      draft.preview.spec.improvementTaskContractVersion === 1 ||
+      draft.preview.spec.improvement_task_contract_version === 1
+    ) {
+      throw new Error(
+        "Structured task contracts cannot be revised in place. Cancel setup, edit the mission or data roles, and compile a new task.",
+      );
+    }
+    const visibility = partitionScenarioRevisionSpec(draft.preview.family, draft.preview.spec);
     const revision = await (this.#deps.reviseSpec ?? reviseSpec)({
-      currentSpec: draft.preview.spec,
+      currentSpec: visibility.providerVisibleSpec,
       feedback: opts.feedback,
       family: draft.preview.family,
       provider: opts.provider,
@@ -85,7 +136,11 @@ export class InteractiveScenarioSession {
 
     const revisedDraft = reviseScenarioDraft({
       draft,
-      revisedSpec: revision.revised,
+      revisedSpec: restoreScenarioRevisionSpec(
+        draft.preview.family,
+        revision.revised,
+        visibility.immutableSpec,
+      ),
     });
     this.#pendingScenario = revisedDraft;
     return this.#buildPreview(revisedDraft);
@@ -101,7 +156,9 @@ export class InteractiveScenarioSession {
       throw new Error(pending.validation.issues.join("; "));
     }
 
-    const persisted = await (this.#deps.persistInteractiveScenarioDraft ?? persistInteractiveScenarioDraft)({
+    const persisted = await (
+      this.#deps.persistInteractiveScenarioDraft ?? persistInteractiveScenarioDraft
+    )({
       draft: pending,
       knowledgeRoot: this.#knowledgeRoot,
     });
@@ -125,4 +182,29 @@ export class InteractiveScenarioSession {
       humanizeName: this.#humanizeName,
     });
   }
+}
+
+function resolveStructuredTaskScenarioName(opts: {
+  knowledgeRoot: string;
+  baseName: string;
+  spec: Record<string, unknown>;
+}): string {
+  const customScenariosRoot = join(opts.knowledgeRoot, "_custom_scenarios");
+  if (!existsSync(join(customScenariosRoot, opts.baseName))) return opts.baseName;
+
+  const digest = createHash("sha256")
+    .update(JSON.stringify(canonicalizeForHash(opts.spec)))
+    .digest("hex");
+  return `${opts.baseName}_${digest.slice(0, 12)}`;
+}
+
+function canonicalizeForHash(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeForHash);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonicalizeForHash(entry)]),
+  );
 }

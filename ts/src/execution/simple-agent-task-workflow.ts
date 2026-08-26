@@ -4,6 +4,7 @@ import { completeWithProviderHooks, type HookBus } from "../extensions/index.js"
 import type { JudgeInterface } from "../judge/delegated.js";
 import type { RlmSessionRecord, RlmTaskConfig } from "../rlm/types.js";
 import { runAgentTaskRlmSession } from "../rlm/agent-task.js";
+import { buildAgentTaskRevisionPrompt } from "../scenarios/agent-task-revision-prompt.js";
 
 export interface EvaluateSimpleAgentTaskOpts {
   taskPrompt: string;
@@ -142,25 +143,23 @@ export function buildSimpleAgentTaskRevisionPrompt(opts: {
   output: string;
   judgeResult: AgentTaskResult;
   taskPrompt: string;
+  rubric?: string;
   referenceContext?: string;
+  referenceSources?: string[];
   requiredConcepts?: string[];
+  sampleInput?: string;
 }): string {
-  const instruction =
-    opts.revisionPrompt ??
-    "Revise the following output based on the judge's feedback. Maintain what works, fix what doesn't.";
-
-  return [
-    instruction,
-    `## Original Output\n${opts.output}`,
-    `## Judge Score: ${opts.judgeResult.score.toFixed(2)}`,
-    `## Judge Feedback\n${opts.judgeResult.reasoning}`,
-    buildReferenceContextBlock(opts.referenceContext),
-    buildRequiredConceptsBlock(opts.requiredConcepts),
-    `## Task\n${opts.taskPrompt}`,
-    "Produce an improved version:",
-  ]
-    .filter((value) => value.length > 0)
-    .join("\n\n");
+  return buildAgentTaskRevisionPrompt({
+    revisionPrompt: opts.revisionPrompt,
+    output: opts.output,
+    judgeResult: opts.judgeResult,
+    taskPrompt: opts.taskPrompt,
+    judgeRubric: opts.rubric ?? "",
+    referenceContext: opts.referenceContext,
+    referenceSources: opts.referenceSources,
+    requiredConcepts: opts.requiredConcepts,
+    sampleInput: opts.sampleInput,
+  });
 }
 
 export async function reviseSimpleAgentTaskOutput(opts: {
@@ -209,6 +208,7 @@ export async function reviseSimpleAgentTaskOutput(opts: {
       output: opts.output,
       judgeResult: opts.judgeResult,
       taskPrompt: opts.taskPrompt,
+      rubric: opts.rubric,
       referenceContext: opts.referenceContext,
       requiredConcepts: opts.requiredConcepts,
     }),

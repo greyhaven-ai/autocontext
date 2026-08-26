@@ -10,6 +10,22 @@ describe("client error workflow", () => {
     expect(
       isInteractiveScenarioCommand({ type: "create_scenario", description: "Draft a scenario" }),
     ).toBe(true);
+    expect(
+      isInteractiveScenarioCommand({
+        type: "create_task",
+        contract: {
+          schemaVersion: 1,
+          objective: "Improve the draft",
+          target: "Current draft",
+          deliverable: { description: "Revised draft", outputFormat: "free_text" },
+          dataSources: [],
+          criteria: "Evaluate quality",
+          iterations: 2,
+          revisionPrompt: null,
+        },
+        source_contents: [],
+      }),
+    ).toBe(true);
     expect(isInteractiveScenarioCommand({ type: "confirm_scenario" })).toBe(true);
     expect(
       isInteractiveScenarioCommand({ type: "revise_scenario", feedback: "Add guardrails" }),
@@ -40,6 +56,29 @@ describe("client error workflow", () => {
     ).toEqual({
       type: "error",
       message: "bad auth",
+    });
+  });
+
+  it("labels structured task compilation failures as actionable validation errors", () => {
+    expect(
+      buildClientErrorMessage(new Error("task data source contentHash mismatch"), {
+        type: "create_task",
+        contract: {
+          schemaVersion: 1,
+          objective: "Improve the draft",
+          target: "Current draft",
+          deliverable: { description: "Revised draft", outputFormat: "free_text" },
+          dataSources: [],
+          criteria: "Evaluate quality",
+          iterations: 2,
+          revisionPrompt: null,
+        },
+        source_contents: [],
+      }),
+    ).toEqual({
+      type: "scenario_error",
+      message: "task data source contentHash mismatch",
+      stage: "validation",
     });
   });
 

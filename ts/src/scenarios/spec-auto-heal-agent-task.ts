@@ -1,4 +1,4 @@
-import type { AgentTaskSpec } from "./agent-task-spec.js";
+import { AgentTaskSpecSchema, type AgentTaskSpec } from "./agent-task-spec.js";
 import {
   getNumberValue,
   getRecordArrayValue,
@@ -31,9 +31,7 @@ function hasInlineDataAfter(prompt: string, pattern: string): boolean {
   }
 
   const lines = after.split("\n").filter((line) => line.trim());
-  const kvLines = lines.filter((line) =>
-    /^[A-Za-z0-9 _()/.-]{1,40}:\s+\S/.test(line.trim()),
-  );
+  const kvLines = lines.filter((line) => /^[A-Za-z0-9 _()/.-]{1,40}:\s+\S/.test(line.trim()));
   if (kvLines.length >= 2) return true;
 
   return false;
@@ -51,10 +49,7 @@ export function needsSampleInput(spec: AgentTaskSpec): boolean {
   }
 
   for (const pattern of CONTEXTUAL_DATA_PATTERNS) {
-    if (
-      promptLower.includes(pattern) &&
-      !hasInlineDataAfter(spec.taskPrompt, pattern)
-    ) {
+    if (promptLower.includes(pattern) && !hasInlineDataAfter(spec.taskPrompt, pattern)) {
       return true;
     }
   }
@@ -99,22 +94,8 @@ function extractDomainHints(taskPrompt: string, description: string): string[] {
   return words.filter((word) => word.length > 3 && !STOP_WORDS.has(word)).slice(0, 10);
 }
 
-const COLLECTION_WORDS = new Set([
-  "data",
-  "records",
-  "items",
-  "list",
-  "entries",
-  "results",
-]);
-const ENTITY_WORDS = new Set([
-  "patient",
-  "customer",
-  "user",
-  "client",
-  "employee",
-  "student",
-]);
+const COLLECTION_WORDS = new Set(["data", "records", "items", "list", "entries", "results"]);
+const ENTITY_WORDS = new Set(["patient", "customer", "user", "client", "employee", "student"]);
 const ITEM_WORDS = new Set([
   "drug",
   "medication",
@@ -124,10 +105,7 @@ const ITEM_WORDS = new Set([
   "transaction",
 ]);
 
-export function generateSyntheticSampleInput(
-  taskPrompt: string,
-  description = "",
-): string {
+export function generateSyntheticSampleInput(taskPrompt: string, description = ""): string {
   const hints = extractDomainHints(taskPrompt, description);
   const sample: Record<string, unknown> = {};
 
@@ -157,58 +135,32 @@ export function generateSyntheticSampleInput(
   return JSON.stringify(sample, null, 2);
 }
 
-export function normalizeAgentTaskHealSpec(
-  spec: Record<string, unknown>,
-): AgentTaskSpec {
+export function normalizeAgentTaskHealSpec(spec: Record<string, unknown>): AgentTaskSpec {
   const outputFormat = getStringValue(spec, "outputFormat", "output_format");
   return {
+    improvementTaskContractVersion:
+      spec.improvementTaskContractVersion === 1 || spec.improvement_task_contract_version === 1
+        ? 1
+        : undefined,
+    taskDataSources: AgentTaskSpecSchema.shape.taskDataSources.parse(
+      spec.taskDataSources ?? spec.task_data_sources,
+    ),
     taskPrompt: getStringValue(spec, "taskPrompt", "task_prompt") ?? "",
     judgeRubric:
-      getStringValue(spec, "judgeRubric", "judge_rubric", "rubric") ??
-      "Evaluate the response.",
+      getStringValue(spec, "judgeRubric", "judge_rubric", "rubric") ?? "Evaluate the response.",
     outputFormat:
-      outputFormat === "json_schema" || outputFormat === "code"
-        ? outputFormat
-        : "free_text",
+      outputFormat === "json_schema" || outputFormat === "code" ? outputFormat : "free_text",
     judgeModel: getStringValue(spec, "judgeModel", "judge_model") ?? "",
-    difficultyTiers: getRecordArrayValue(
-      spec,
-      "difficultyTiers",
-      "difficulty_tiers",
-    ),
-    referenceContext: getStringValue(
-      spec,
-      "referenceContext",
-      "reference_context",
-    ),
-    referenceSources: getStringArrayValue(
-      spec,
-      "referenceSources",
-      "reference_sources",
-    ),
-    requiredConcepts: getStringArrayValue(
-      spec,
-      "requiredConcepts",
-      "required_concepts",
-    ),
-    calibrationExamples: getRecordArrayValue(
-      spec,
-      "calibrationExamples",
-      "calibration_examples",
-    ),
-    contextPreparation: getStringValue(
-      spec,
-      "contextPreparation",
-      "context_preparation",
-    ),
-    requiredContextKeys: getStringArrayValue(
-      spec,
-      "requiredContextKeys",
-      "required_context_keys",
-    ),
+    difficultyTiers: getRecordArrayValue(spec, "difficultyTiers", "difficulty_tiers"),
+    referenceContext: getStringValue(spec, "referenceContext", "reference_context"),
+    evaluationContext: getStringValue(spec, "evaluationContext", "evaluation_context"),
+    referenceSources: getStringArrayValue(spec, "referenceSources", "reference_sources"),
+    requiredConcepts: getStringArrayValue(spec, "requiredConcepts", "required_concepts"),
+    calibrationExamples: getRecordArrayValue(spec, "calibrationExamples", "calibration_examples"),
+    contextPreparation: getStringValue(spec, "contextPreparation", "context_preparation"),
+    requiredContextKeys: getStringArrayValue(spec, "requiredContextKeys", "required_context_keys"),
     maxRounds: getNumberValue(spec, "maxRounds", "max_rounds") ?? 1,
-    qualityThreshold:
-      getNumberValue(spec, "qualityThreshold", "quality_threshold") ?? 0.9,
+    qualityThreshold: getNumberValue(spec, "qualityThreshold", "quality_threshold") ?? 0.9,
     revisionPrompt: getStringValue(spec, "revisionPrompt", "revision_prompt"),
     sampleInput: getStringValue(spec, "sampleInput", "sample_input"),
   };
@@ -228,6 +180,12 @@ export function applyHealedAgentTaskSpec(
     "sample_input" in healed;
 
   if (usesSnakeCase) {
+    if (healedTask.improvementTaskContractVersion !== undefined) {
+      healed.improvement_task_contract_version = healedTask.improvementTaskContractVersion;
+    }
+    if (healedTask.taskDataSources !== undefined) {
+      healed.task_data_sources = healedTask.taskDataSources;
+    }
     healed.task_prompt = healedTask.taskPrompt;
     healed.judge_rubric = healedTask.judgeRubric;
     healed.output_format = healedTask.outputFormat;
@@ -237,6 +195,7 @@ export function applyHealedAgentTaskSpec(
     healed.sample_input = healedTask.sampleInput ?? null;
     healed.context_preparation = healedTask.contextPreparation ?? null;
     healed.reference_context = healedTask.referenceContext ?? null;
+    healed.evaluation_context = healedTask.evaluationContext ?? null;
     healed.reference_sources = healedTask.referenceSources ?? null;
     healed.required_concepts = healedTask.requiredConcepts ?? null;
     healed.calibration_examples = healedTask.calibrationExamples ?? null;
@@ -246,6 +205,12 @@ export function applyHealedAgentTaskSpec(
     return healed;
   }
 
+  if (healedTask.improvementTaskContractVersion !== undefined) {
+    healed.improvementTaskContractVersion = healedTask.improvementTaskContractVersion;
+  }
+  if (healedTask.taskDataSources !== undefined) {
+    healed.taskDataSources = healedTask.taskDataSources;
+  }
   healed.taskPrompt = healedTask.taskPrompt;
   healed.judgeRubric = healedTask.judgeRubric;
   healed.outputFormat = healedTask.outputFormat;
@@ -255,6 +220,7 @@ export function applyHealedAgentTaskSpec(
   healed.sampleInput = healedTask.sampleInput ?? null;
   healed.contextPreparation = healedTask.contextPreparation ?? null;
   healed.referenceContext = healedTask.referenceContext ?? null;
+  healed.evaluationContext = healedTask.evaluationContext ?? null;
   healed.referenceSources = healedTask.referenceSources ?? null;
   healed.requiredConcepts = healedTask.requiredConcepts ?? null;
   healed.calibrationExamples = healedTask.calibrationExamples ?? null;
@@ -267,10 +233,10 @@ export function applyHealedAgentTaskSpec(
   return healed;
 }
 
-export function healAgentTaskSpec(
-  spec: AgentTaskSpec,
-  description = "",
-): AgentTaskSpec {
+export function healAgentTaskSpec(spec: AgentTaskSpec, description = ""): AgentTaskSpec {
+  // Structured intake has already resolved the operator's actual sources. Never
+  // manufacture substitute task data when those sources are absent.
+  if (spec.improvementTaskContractVersion === 1) return spec;
   if (!needsSampleInput(spec)) return spec;
   const synthetic = generateSyntheticSampleInput(spec.taskPrompt, description);
   return { ...spec, sampleInput: synthetic };

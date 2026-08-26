@@ -17,6 +17,8 @@ import type {
 import { providerSupportsImageAttachments } from "../providers/index.js";
 import { runtimeSessionIdForRun } from "../session/runtime-session-ids.js";
 import type { ScenarioPreviewInfo } from "../scenarios/draft-workflow.js";
+import type { ImprovementTaskContract } from "../scenarios/improvement-task-contract.js";
+import type { TaskDataSourceContent } from "../scenarios/task-data-source.js";
 import {
   InteractiveScenarioSession,
   type InteractiveScenarioReadyInfo,
@@ -425,6 +427,11 @@ export class RunManager {
               generations,
               provider: providerBundle.defaultProvider,
               settings,
+              persistence: {
+                dbPath: this.#opts.dbPath,
+                migrationsDir: this.#opts.migrationsDir,
+                agentProvider: providerBundle.defaultConfig.providerType,
+              },
               controller: this.#controller,
               events: this.#events,
             });
@@ -464,6 +471,13 @@ export class RunManager {
     } finally {
       providerBundle.close?.();
     }
+  }
+
+  async createTask(
+    contract: ImprovementTaskContract,
+    sourceContents: TaskDataSourceContent[],
+  ): Promise<ScenarioPreviewInfo> {
+    return this.#scenarioSession.createTask({ contract, sourceContents });
   }
 
   async reviseScenario(feedback: string): Promise<ScenarioPreviewInfo> {

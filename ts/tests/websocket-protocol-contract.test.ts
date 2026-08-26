@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildEventStreamEnvelope } from "../src/server/event-stream-envelope.js";
+import { compileResolvedImprovementTaskContract } from "../src/scenarios/improvement-task-contract.js";
 import {
   AGENT_PROGRESS_NOTE_CAPABILITY,
   AckMsgSchema,
@@ -17,6 +18,7 @@ import {
   ScenarioErrorMsgSchema,
   SERVER_MESSAGE_TYPES,
   SERVER_CAPABILITIES,
+  STRUCTURED_TASK_CREATION_CAPABILITY,
   MAX_AGENT_PROGRESS_NOTE_EVIDENCE_TARGETS,
   MAX_AGENT_PROGRESS_NOTE_ID_LENGTH,
   MAX_AGENT_PROGRESS_NOTE_TEXT_LENGTH,
@@ -188,6 +190,23 @@ type WebSocketProtocolContract = {
       advertised_runtimes: ["typescript"];
     };
   };
+  structured_task_creation_extension: {
+    advertised_runtimes: ["typescript"];
+    capability: "structured_task_creation_v1";
+    command: "create_task";
+    contract: "ImprovementTaskContractSchema@1";
+    candidate_hidden_roles: ["eval"];
+    eval_behavior: string;
+    unsupported_roles: ["holdout"];
+    holdout_behavior: string;
+    source_content_completeness: string;
+    source_integrity: string;
+    package_fixture: "protocol-fixtures/structured-task-create-v1.json";
+    setup_sequence: string[];
+    setup_failure: string;
+    python_support: "deferred";
+    source_content_boundary: "TaskDataSourceContentSchema";
+  };
   shared_client_messages: string[];
   shared_server_messages: string[];
   top_level_unknown_field_policy: "forbid";
@@ -222,6 +241,66 @@ describe("WebSocket protocol shared contract", () => {
     expect(TYPESCRIPT_ONLY_CLIENT_MESSAGE_TYPES).toEqual(tsOnlyClient);
     expect(SERVER_MESSAGE_TYPES).toEqual([...CONTRACT.shared_server_messages, ...tsOnlyServer]);
     expect(CLIENT_MESSAGE_TYPES).toEqual([...CONTRACT.shared_client_messages, ...tsOnlyClient]);
+  });
+
+  it("advertises strict structured task creation as a TypeScript extension", () => {
+    expect(CONTRACT.structured_task_creation_extension).toMatchObject({
+      advertised_runtimes: ["typescript"],
+      capability: STRUCTURED_TASK_CREATION_CAPABILITY,
+      command: "create_task",
+      candidate_hidden_roles: ["eval"],
+      unsupported_roles: ["holdout"],
+      source_content_completeness:
+        "exactly one inline content entry is required for every manifest source",
+      python_support: "deferred",
+    });
+    expect(SERVER_CAPABILITIES).toContain(STRUCTURED_TASK_CREATION_CAPABILITY);
+    expect(
+      parseClientMessage({
+        type: "create_task",
+        contract: {
+          objective: "Improve incident triage summaries.",
+          target: "The current incident triage summary.",
+          deliverable: {
+            description: "A concise, actionable incident summary.",
+            outputFormat: "free_text",
+          },
+          criteria: "Evaluate accuracy and actionability.",
+          iterations: 3,
+        },
+        source_contents: [],
+      }),
+    ).toMatchObject({
+      type: "create_task",
+      contract: {
+        schemaVersion: 1,
+        dataSources: [],
+        iterations: 3,
+      },
+      source_contents: [],
+    });
+  });
+
+  it("ships a parseable, integrity-valid structured task protocol fixture", () => {
+    expect(CONTRACT.structured_task_creation_extension.package_fixture).toBe(
+      "protocol-fixtures/structured-task-create-v1.json",
+    );
+    const fixture = JSON.parse(
+      readFileSync(
+        join(
+          import.meta.dirname,
+          "..",
+          CONTRACT.structured_task_creation_extension.package_fixture,
+        ),
+        "utf-8",
+      ),
+    );
+    const message = parseClientMessage(fixture);
+    expect(message.type).toBe("create_task");
+    if (message.type !== "create_task") throw new Error("expected create_task fixture");
+    expect(() =>
+      compileResolvedImprovementTaskContract(message.contract, message.source_contents),
+    ).not.toThrow();
   });
 
   it("forbids unknown top-level client fields like the Python protocol", () => {

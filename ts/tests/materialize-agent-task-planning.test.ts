@@ -9,6 +9,7 @@ describe("materialize agent-task planning", () => {
   it("builds normalized agent-task schema input from healed specs", () => {
     expect(
       buildAgentTaskMaterializeInput({
+        improvement_task_contract_version: 1,
         task_prompt: "Write a poem",
         rubric: "Judge creativity",
         max_rounds: 2,
@@ -16,6 +17,7 @@ describe("materialize agent-task planning", () => {
         reference_sources: ["docs"],
       }),
     ).toMatchObject({
+      improvementTaskContractVersion: 1,
       taskPrompt: "Write a poem",
       judgeRubric: "Judge creativity",
       maxRounds: 2,
@@ -27,6 +29,7 @@ describe("materialize agent-task planning", () => {
   it("builds persisted camelCase agent-task fields from a parsed spec", () => {
     expect(
       buildAgentTaskPersistedSpecFields({
+        improvementTaskContractVersion: 1,
         taskPrompt: "Write a poem",
         judgeRubric: "Judge creativity",
         outputFormat: "free_text",
@@ -44,6 +47,7 @@ describe("materialize agent-task planning", () => {
         sampleInput: null,
       }),
     ).toMatchObject({
+      improvementTaskContractVersion: 1,
       taskPrompt: "Write a poem",
       judgeRubric: "Judge creativity",
       rubric: "Judge creativity",

@@ -92,7 +92,9 @@ describe("createScenarioFromDescription family-aware routing", () => {
 
     expect(provider.complete).toHaveBeenCalledWith(
       expect.objectContaining({
-        systemPrompt: expect.stringContaining("You classify a natural-language scenario description"),
+        systemPrompt: expect.stringContaining(
+          "You classify a natural-language scenario description",
+        ),
       }),
     );
     expect(provider.complete).toHaveBeenCalledWith(
@@ -358,6 +360,8 @@ describe("createScenarioFromDescription family-aware routing", () => {
   });
 
   it("falls back to agent_task when family-aware simulation creation degrades to a core-only generic spec", async () => {
+    const operatorMission =
+      "Create a geopolitical crisis simulation where a national security advisor manages an escalating international crisis using diplomatic, economic, military, intelligence, public communication, alliance, UN, and cyber actions under hidden adversary intentions and escalation thresholds.";
     const provider = {
       defaultModel: () => "mock-model",
       complete: vi.fn(async ({ systemPrompt }: { systemPrompt?: string }) => {
@@ -389,13 +393,34 @@ describe("createScenarioFromDescription family-aware routing", () => {
       }),
     };
 
-    const created = await createScenarioFromDescription(
-      "Create a geopolitical crisis simulation where a national security advisor manages an escalating international crisis using diplomatic, economic, military, intelligence, public communication, alliance, UN, and cyber actions under hidden adversary intentions and escalation thresholds.",
-      provider as never,
-    );
+    const created = await createScenarioFromDescription(operatorMission, provider as never);
 
     expect(created.family).toBe("agent_task");
-    expect(created.spec.taskPrompt).toBe("Coordinate the crisis response.");
+    expect(created.spec.taskPrompt).toBe(operatorMission);
     expect(created.spec).not.toHaveProperty("actions");
+  });
+
+  it("preserves a long operator mission while bounding invalid-JSON fallback metadata", async () => {
+    const operatorMission =
+      `Analyze the attached evidence and produce an actionable recommendation.\n${"evidence ".repeat(1_100)}`.trimEnd();
+    const provider = {
+      defaultModel: () => "mock-model",
+      complete: vi.fn(async () => ({
+        text: "not valid scenario json",
+        model: "mock-model",
+        usage: { inputTokens: 0, outputTokens: 0 },
+      })),
+    };
+
+    const created = await createScenarioFromDescription(operatorMission, provider as never, {
+      familyOverride: "agent_task",
+    });
+
+    expect(created.family).toBe("agent_task");
+    expect(created.spec.taskPrompt).toBe(operatorMission);
+    expect(created.spec.description.length).toBeLessThan(500);
+    expect(created.spec.rubric.length).toBeLessThan(500);
+    expect(created.spec.description).not.toContain(operatorMission);
+    expect(created.spec.rubric).not.toContain(operatorMission);
   });
 });

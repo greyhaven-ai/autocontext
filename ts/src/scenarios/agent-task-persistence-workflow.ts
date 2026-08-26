@@ -4,17 +4,22 @@ import { join } from "node:path";
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { getScenarioTypeMarker } from "./families.js";
 
-export function buildPersistedAgentTaskSpecData(
-  spec: AgentTaskSpec,
-): Record<string, unknown> {
+export function buildPersistedAgentTaskSpecData(spec: AgentTaskSpec): Record<string, unknown> {
   const specData: Record<string, unknown> = {
     task_prompt: spec.taskPrompt,
     judge_rubric: spec.judgeRubric,
     output_format: spec.outputFormat,
     judge_model: spec.judgeModel,
   };
+  if (spec.improvementTaskContractVersion) {
+    specData.improvement_task_contract_version = spec.improvementTaskContractVersion;
+  }
+  if (spec.taskDataSources !== undefined) {
+    specData.task_data_sources = spec.taskDataSources;
+  }
   if (spec.difficultyTiers) specData.difficulty_tiers = spec.difficultyTiers;
   if (spec.referenceContext) specData.reference_context = spec.referenceContext;
+  if (spec.evaluationContext) specData.evaluation_context = spec.evaluationContext;
   if (spec.referenceSources) specData.reference_sources = spec.referenceSources;
   if (spec.requiredConcepts) specData.required_concepts = spec.requiredConcepts;
   if (spec.calibrationExamples) specData.calibration_examples = spec.calibrationExamples;

@@ -10,11 +10,7 @@
  *   5. Persist to SQLite + artifacts
  */
 
-import type {
-  CompletionResult,
-  LLMProvider,
-  ValidatedImageAttachment,
-} from "../types/index.js";
+import type { CompletionResult, LLMProvider, ValidatedImageAttachment } from "../types/index.js";
 import { assertProviderSupportsImageAttachments } from "../providers/image-capability.js";
 import { asScenarioName, type RunId, type ScenarioName } from "../domain/ids.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
@@ -63,6 +59,7 @@ import {
   buildCuratorPrompt,
   buildSupportPrompt,
 } from "./generation-prompts.js";
+import { COMPETITOR_REPAIR_MAX_OUTPUT_TOKENS } from "./generation-execution-step.js";
 import {
   createGenerationAttemptWorkflow,
   runGenerationAttemptWorkflow,
@@ -112,6 +109,7 @@ const BUILT_IN_GAME_PLAN_STEPS = [
 
 export interface GenerationRunnerOpts {
   provider: LLMProvider;
+  agentProvider?: string;
   roleProviders?: Partial<Record<GenerationRole, LLMProvider>>;
   roleModels?: Partial<Record<GenerationRole, string>>;
   scenario: ScenarioInterface;
@@ -167,6 +165,7 @@ export interface RunResult {
 
 export class GenerationRunner {
   #provider: LLMProvider;
+  #agentProvider: string;
   #roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
   #roleModels: Partial<Record<GenerationRole, string>>;
   #scenario: ScenarioInterface;
@@ -216,6 +215,7 @@ export class GenerationRunner {
 
   constructor(opts: GenerationRunnerOpts) {
     this.#provider = opts.provider;
+    this.#agentProvider = normalizeAgentProviderName(opts.agentProvider ?? opts.provider.name);
     this.#roleProviders = opts.roleProviders ?? {};
     this.#roleModels = opts.roleModels ?? {};
     this.#scenario = opts.scenario;
@@ -293,7 +293,7 @@ export class GenerationRunner {
       loaded_extensions: this.#loadedExtensions,
     });
     // Create run record
-    this.#store.createRun(runId, this.#scenario.name, generations, "local");
+    this.#store.createRun(runId, this.#scenario.name, generations, "local", this.#agentProvider);
     let orchestration = createGenerationLoopOrchestration({
       runId,
       scenarioName: this.#scenario.name,
@@ -333,6 +333,7 @@ export class GenerationRunner {
     orchestration: GenerationLoopOrchestration,
   ): Promise<GenerationLoopOrchestration> {
     await this.#controller?.waitAtBoundary();
+    const generationStartedAtMs = Date.now();
     const generationBudget = new SolveGenerationBudget({
       scenarioName: this.#scenario.name,
       budgetSeconds: this.#generationTimeBudgetSeconds,
@@ -375,9 +376,21 @@ export class GenerationRunner {
         lifecycle.phaseState.previousBestForGeneration,
       );
       generationBudget.check("advanced generation features");
+      const elapsedSeconds = Math.max(0, (Date.now() - generationStartedAtMs) / 1_000);
+      this.#journal.persistGenerationTiming(
+        runId,
+        lifecycle.generation,
+        lifecycle.finalizedAttempt,
+        elapsedSeconds,
+      );
       await this.#controller?.waitAtBoundary();
       lifecycle = completeGenerationLifecycleWorkflow(lifecycle);
       orchestration = lifecycle.orchestration;
+      this.emit("generation_timing", {
+        run_id: runId,
+        generation: lifecycle.generation,
+        elapsed_seconds: elapsedSeconds,
+      });
       this.emit("generation_completed", orchestration.events.generationCompleted!);
       this.publishProgressNote({
         generation: lifecycle.generation,
@@ -440,11 +453,14 @@ export class GenerationRunner {
         matchesPerGeneration: this.#matchesPerGeneration,
         currentElo: this.#runState!.currentElo,
         executeCompetitor: () =>
+          this.completeRole("competitor", competitorPrompt, "", competitorInput.imageAttachments),
+        repairCompetitor: ({ repairPrompt }) =>
           this.completeRole(
             "competitor",
-            competitorPrompt,
-            "",
-            competitorInput.imageAttachments,
+            repairPrompt,
+            "You repair malformed strategy output. Return one valid JSON object only.",
+            [],
+            COMPETITOR_REPAIR_MAX_OUTPUT_TOKENS,
           ),
         beforeTournament: async () => {
           await this.#controller?.waitAtBoundary();
@@ -765,6 +781,7 @@ export class GenerationRunner {
     userPrompt: string,
     systemPrompt = "",
     imageAttachments: readonly ValidatedImageAttachment[] = [],
+    maxTokens?: number,
   ): Promise<CompletionResult> {
     const provider = this.providerForRole(role);
     const model = this.modelForRole(role);
@@ -777,6 +794,7 @@ export class GenerationRunner {
       systemPrompt,
       userPrompt,
       imageAttachments,
+      maxTokens,
     });
   }
 
@@ -1258,4 +1276,8 @@ function readStringRecord(value: unknown): Record<string, string> | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeAgentProviderName(value: string): string {
+  return value.trim().toLowerCase() || "unknown";
 }

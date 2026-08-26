@@ -66,16 +66,16 @@ export type CompletionResult = z.infer<typeof CompletionResultSchema>;
 export class ProviderError extends Error {
   usage: Record<string, number>;
 
-  constructor(message: string, usage: Record<string, number> = {}) {
-    super(message);
+  constructor(message: string, usage: Record<string, number> = {}, options?: ErrorOptions) {
+    super(message, options);
     this.name = "ProviderError";
     this.usage = { ...usage };
   }
 }
 
 export class ThinkingUnsupportedError extends ProviderError {
-  constructor(message: string, usage: Record<string, number> = {}) {
-    super(message, usage);
+  constructor(message: string, usage: Record<string, number> = {}, options?: ErrorOptions) {
+    super(message, usage, options);
     this.name = "ThinkingUnsupportedError";
   }
 }

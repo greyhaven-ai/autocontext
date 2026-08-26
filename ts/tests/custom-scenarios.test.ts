@@ -18,8 +18,12 @@ function makeTempDir(): string {
 describe("CustomScenarioLoader", () => {
   let dir: string;
 
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("should be importable", async () => {
     const { loadCustomScenarios } = await import("../src/scenarios/custom-loader.js");
@@ -106,6 +110,7 @@ describe("CustomScenarioLoader", () => {
     writeFileSync(
       join(scenarioDir, "agent_task_spec.json"),
       JSON.stringify({
+        improvement_task_contract_version: 1,
         task_prompt: "Use the persisted agent-task spec.",
         judge_rubric: "Judge for alignment.",
         output_format: "free_text",
@@ -114,7 +119,10 @@ describe("CustomScenarioLoader", () => {
     );
 
     const loaded = loadCustomScenarios(customDir);
-    expect(loaded.get("persisted_task")?.spec.taskPrompt).toBe("Use the persisted agent-task spec.");
+    expect(loaded.get("persisted_task")?.spec).toMatchObject({
+      improvementTaskContractVersion: 1,
+      taskPrompt: "Use the persisted agent-task spec.",
+    });
   });
 
   it("registerCustomScenarios keeps agent tasks out of SCENARIO_REGISTRY", async () => {
@@ -162,15 +170,12 @@ describe("IntentValidator", () => {
   it("approves when spec matches intent keywords", async () => {
     const { IntentValidator } = await import("../src/scenarios/intent-validator.js");
     const validator = new IntentValidator();
-    const result = validator.validate(
-      "I want a scenario that tests summarization quality",
-      {
-        name: "summarization_test",
-        taskPrompt: "Summarize the following document.",
-        rubric: "Evaluate summarization quality and completeness.",
-        description: "Tests how well an agent can summarize documents.",
-      },
-    );
+    const result = validator.validate("I want a scenario that tests summarization quality", {
+      name: "summarization_test",
+      taskPrompt: "Summarize the following document.",
+      rubric: "Evaluate summarization quality and completeness.",
+      description: "Tests how well an agent can summarize documents.",
+    });
     expect(result.valid).toBe(true);
     expect(result.confidence).toBeGreaterThan(0.5);
   });
@@ -178,15 +183,12 @@ describe("IntentValidator", () => {
   it("rejects when spec has no overlap with intent", async () => {
     const { IntentValidator } = await import("../src/scenarios/intent-validator.js");
     const validator = new IntentValidator();
-    const result = validator.validate(
-      "I want to test code generation for Python",
-      {
-        name: "cooking_recipe",
-        taskPrompt: "Write a recipe for chocolate cake.",
-        rubric: "Is the recipe clear and complete?",
-        description: "Tests recipe writing skills.",
-      },
-    );
+    const result = validator.validate("I want to test code generation for Python", {
+      name: "cooking_recipe",
+      taskPrompt: "Write a recipe for chocolate cake.",
+      rubric: "Is the recipe clear and complete?",
+      description: "Tests recipe writing skills.",
+    });
     expect(result.valid).toBe(false);
     expect(result.confidence).toBeLessThan(0.5);
   });
@@ -194,15 +196,12 @@ describe("IntentValidator", () => {
   it("provides issues array on rejection", async () => {
     const { IntentValidator } = await import("../src/scenarios/intent-validator.js");
     const validator = new IntentValidator();
-    const result = validator.validate(
-      "test math problem solving",
-      {
-        name: "poetry_writing",
-        taskPrompt: "Write a sonnet about spring.",
-        rubric: "Evaluate poetic meter and imagery.",
-        description: "Tests creative poetry writing.",
-      },
-    );
+    const result = validator.validate("test math problem solving", {
+      name: "poetry_writing",
+      taskPrompt: "Write a sonnet about spring.",
+      rubric: "Evaluate poetic meter and imagery.",
+      description: "Tests creative poetry writing.",
+    });
     expect(result.issues.length).toBeGreaterThan(0);
   });
 
@@ -222,15 +221,12 @@ describe("IntentValidator", () => {
   it("configurable minimum confidence threshold", async () => {
     const { IntentValidator } = await import("../src/scenarios/intent-validator.js");
     const validator = new IntentValidator(0.8);
-    const result = validator.validate(
-      "test something vaguely related",
-      {
-        name: "vague_match",
-        taskPrompt: "Do a vaguely related thing.",
-        rubric: "Is it done?",
-        description: "A vague test scenario.",
-      },
-    );
+    const result = validator.validate("test something vaguely related", {
+      name: "vague_match",
+      taskPrompt: "Do a vaguely related thing.",
+      rubric: "Is it done?",
+      description: "A vague test scenario.",
+    });
     // With high threshold, marginal matches should fail
     expect(typeof result.valid).toBe("boolean");
     expect(typeof result.confidence).toBe("number");

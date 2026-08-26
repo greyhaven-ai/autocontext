@@ -32,6 +32,15 @@ export function persistMaterializedScenarioArtifacts(
       join(opts.scenarioDir, "agent_task_spec.json"),
       JSON.stringify(
         {
+          ...(opts.agentTaskSpec.improvementTaskContractVersion === undefined
+            ? {}
+            : {
+                improvement_task_contract_version:
+                  opts.agentTaskSpec.improvementTaskContractVersion,
+              }),
+          ...(opts.agentTaskSpec.taskDataSources === undefined
+            ? {}
+            : { task_data_sources: opts.agentTaskSpec.taskDataSources }),
           task_prompt: opts.agentTaskSpec.taskPrompt,
           judge_rubric: opts.agentTaskSpec.judgeRubric,
           output_format: opts.agentTaskSpec.outputFormat,
@@ -41,6 +50,7 @@ export function persistMaterializedScenarioArtifacts(
           revision_prompt: opts.agentTaskSpec.revisionPrompt ?? null,
           sample_input: opts.agentTaskSpec.sampleInput ?? null,
           reference_context: opts.agentTaskSpec.referenceContext ?? null,
+          evaluation_context: opts.agentTaskSpec.evaluationContext ?? null,
           reference_sources: opts.agentTaskSpec.referenceSources ?? null,
           required_concepts: opts.agentTaskSpec.requiredConcepts ?? null,
           calibration_examples: opts.agentTaskSpec.calibrationExamples ?? null,

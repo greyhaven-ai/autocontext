@@ -3,7 +3,12 @@
  * Port of autocontext/src/autocontext/execution/improvement_loop.py
  */
 
-import type { AgentTaskInterface, AgentTaskResult, ImprovementResult } from "../types/index.js";
+import type {
+  AgentTaskInterface,
+  AgentTaskResult,
+  ImprovementResult,
+  RoundResult,
+} from "../types/index.js";
 import { EvaluationCache, contentFingerprint } from "./verifier-cache.js";
 import { cleanRevisionOutput } from "./output-cleaner.js";
 import { isImproved, isParseFailure } from "./improvement-loop-detection.js";
@@ -23,6 +28,10 @@ export interface ImprovementLoopProgress {
   phase: "evaluation" | "revision";
   status: "started" | "completed";
   round: number;
+  /** Finalized evaluation result, present only for completed evaluations. */
+  roundResult?: RoundResult;
+  /** Best score retained by the loop after this completed evaluation. */
+  bestScore?: number;
 }
 
 export type ImprovementLoopProgressObserver = (
@@ -140,7 +149,6 @@ export class ImprovementLoop {
         judgeCalls += 1;
       }
       this.#timeBudget?.check(`round ${roundNum} evaluation`);
-      this.reportProgress({ phase: "evaluation", status: "completed", round: roundNum });
       const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
 
@@ -156,11 +164,11 @@ export class ImprovementLoop {
       });
       rounds.push(roundResult);
 
+      let stopForRepeatedCachedFailure = false;
       if (fromCache && cachedVerdict !== undefined && !cachedVerdict.passed) {
         consecutiveCachedFailures += 1;
         if (consecutiveCachedFailures >= 2) {
-          terminationReason = "unchanged_output";
-          break;
+          stopForRepeatedCachedFailure = true;
         }
       } else if (!failed) {
         consecutiveCachedFailures = 0;
@@ -170,6 +178,8 @@ export class ImprovementLoop {
         judgeFailures += 1;
         consecutiveFailures += 1;
         thresholdMetRound = null;
+
+        this.reportCompletedEvaluation(roundResult, bestScore);
 
         if (consecutiveFailures >= maxConsecutiveFailures) {
           terminationReason = "consecutive_failures";
@@ -292,6 +302,13 @@ export class ImprovementLoop {
         bestRound = roundNum;
       }
 
+      this.reportCompletedEvaluation(roundResult, bestScore);
+
+      if (stopForRepeatedCachedFailure) {
+        terminationReason = "unchanged_output";
+        break;
+      }
+
       const plateauState = evaluatePlateauState({
         prevValidScore,
         score: result.score,
@@ -380,6 +397,22 @@ export class ImprovementLoop {
     } catch {
       // Progress telemetry must never alter solve results.
     }
+  }
+
+  private reportCompletedEvaluation(roundResult: RoundResult, bestScore: number): void {
+    // Observers must not be able to mutate the retained loop result through
+    // the telemetry object they receive.
+    const progressRoundResult: RoundResult = {
+      ...roundResult,
+      dimensionScores: { ...roundResult.dimensionScores },
+    };
+    this.reportProgress({
+      phase: "evaluation",
+      status: "completed",
+      round: roundResult.roundNumber,
+      roundResult: progressRoundResult,
+      bestScore,
+    });
   }
 }
 

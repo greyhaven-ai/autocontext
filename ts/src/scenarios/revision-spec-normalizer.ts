@@ -111,12 +111,20 @@ export function normalizeScenarioRevisionSpec(
   switch (family as ScenarioFamilyName) {
     case "agent_task": {
       const normalized = parseRawSpec({
+        improvement_task_contract_version: pick(
+          spec,
+          "improvement_task_contract_version",
+          "improvementTaskContractVersion",
+        ),
+        task_data_sources: pick(spec, "task_data_sources", "taskDataSources"),
         task_prompt: pick(spec, "task_prompt", "taskPrompt"),
         judge_rubric: pick(spec, "judge_rubric", "judgeRubric", "rubric"),
         output_format: pick(spec, "output_format", "outputFormat") ?? "free_text",
         judge_model: pick(spec, "judge_model", "judgeModel") ?? "",
         difficulty_tiers: pick(spec, "difficulty_tiers", "difficultyTiers") ?? null,
         reference_context: pick(spec, "reference_context", "referenceContext") ?? null,
+        evaluation_context:
+          pick(spec, "evaluation_context", "evaluationContext") ?? null,
         reference_sources: pick(spec, "reference_sources", "referenceSources") ?? null,
         required_concepts: pick(spec, "required_concepts", "requiredConcepts") ?? null,
         calibration_examples: pick(spec, "calibration_examples", "calibrationExamples") ?? null,

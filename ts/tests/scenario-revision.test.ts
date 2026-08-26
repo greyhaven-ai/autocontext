@@ -16,6 +16,7 @@ import {
   reviseAgentTaskOutput,
   type RevisionResult,
 } from "../src/scenarios/scenario-revision.js";
+import { IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL } from "../src/scenarios/scenario-revision-visibility.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -41,7 +42,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("buildRevisionPrompt", () => {
-  it("includes current spec, feedback, and instructions", () => {
+  it("includes mutable metadata and feedback without exposing the executable task prompt", () => {
     const prompt = buildRevisionPrompt({
       currentSpec: { description: "Old task", taskPrompt: "Do X", rubric: "Evaluate X" },
       feedback: "Make it harder and add edge cases",
@@ -49,7 +50,9 @@ describe("buildRevisionPrompt", () => {
     });
 
     expect(prompt).toContain("Old task");
-    expect(prompt).toContain("Do X");
+    expect(prompt).not.toContain("Do X");
+    expect(prompt).toContain(IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL);
+    expect(prompt).toContain("Immutable execution boundary");
     expect(prompt).toContain("Make it harder");
     expect(prompt).toContain("Revise");
   });
@@ -113,7 +116,53 @@ describe("reviseSpec", () => {
 
     expect(result.revised).toBeDefined();
     expect(result.revised.description).toContain("edge cases");
+    expect(result.revised.taskPrompt).toBe("Do X");
+    expect(result.revised.taskPrompt).not.toContain("edge cases");
     expect(result.changesApplied).toBe(true);
+  });
+
+  it("keeps evaluator-only context outside the provider revision boundary", async () => {
+    let capturedPrompt = "";
+    const mockProvider = {
+      complete: async (opts: { systemPrompt: string; userPrompt: string }) => {
+        capturedPrompt = opts.userPrompt;
+        return {
+          text: JSON.stringify({
+            description: "Improved grounded task",
+            taskPrompt: "Produce a more precise grounded answer.",
+            rubric: "Evaluate evidence coverage.",
+            evaluationContext: "MUTATED_EVAL_SECRET",
+            evaluation_context: "MUTATED_SNAKE_CASE_SECRET",
+          }),
+        };
+      },
+      defaultModel: () => "test-model",
+    };
+    const original = {
+      description: "Grounded task",
+      taskPrompt: "Produce a grounded answer.",
+      rubric: "Evaluate evidence coverage.",
+      evaluationContext: "ORIGINAL_EVAL_SECRET",
+    };
+
+    const result = await reviseSpec({
+      currentSpec: original,
+      feedback: "Make the task more precise.",
+      family: "agent_task",
+      provider: mockProvider as never,
+    });
+
+    expect(capturedPrompt).not.toContain("ORIGINAL_EVAL_SECRET");
+    expect(capturedPrompt).not.toContain("Produce a grounded answer.");
+    expect(capturedPrompt).toContain(IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL);
+    expect(capturedPrompt).not.toContain("evaluationContext");
+    expect(capturedPrompt).not.toContain("evaluation_context");
+    expect(result.original).toEqual(original);
+    expect(result.revised.taskPrompt).toBe("Produce a grounded answer.");
+    expect(result.revised.evaluationContext).toBe("ORIGINAL_EVAL_SECRET");
+    expect(result.revised).not.toHaveProperty("evaluation_context");
+    expect(JSON.stringify(result.revised)).not.toContain("MUTATED_EVAL_SECRET");
+    expect(JSON.stringify(result.revised)).not.toContain("MUTATED_SNAKE_CASE_SECRET");
   });
 
   it("preserves original spec on LLM failure", async () => {
@@ -151,8 +200,20 @@ describe("reviseSpec", () => {
           failure_modes: ["timeout"],
           max_steps: 20,
           actions: [
-            { name: "step1", description: "First step", parameters: {}, preconditions: [], effects: [] },
-            { name: "step2", description: "Second step", parameters: {}, preconditions: ["step1"], effects: [] },
+            {
+              name: "step1",
+              description: "First step",
+              parameters: {},
+              preconditions: [],
+              effects: [],
+            },
+            {
+              name: "step2",
+              description: "Second step",
+              parameters: {},
+              preconditions: ["step1"],
+              effects: [],
+            },
           ],
         }),
       }),
@@ -162,7 +223,9 @@ describe("reviseSpec", () => {
     const result = await reviseSpec({
       currentSpec: {
         description: "Old sim",
-        actions: [{ name: "step1", description: "Step", parameters: {}, preconditions: [], effects: [] }],
+        actions: [
+          { name: "step1", description: "Step", parameters: {}, preconditions: [], effects: [] },
+        ],
       },
       feedback: "Add a second step with dependency",
       family: "simulation",
@@ -179,7 +242,13 @@ describe("reviseSpec", () => {
       complete: async () => ({
         text: JSON.stringify({
           actions: [
-            { name: "only_one", description: "Only step", parameters: {}, preconditions: [], effects: [] },
+            {
+              name: "only_one",
+              description: "Only step",
+              parameters: {},
+              preconditions: [],
+              effects: [],
+            },
           ],
           max_steps: "twenty",
         }),
@@ -195,8 +264,20 @@ describe("reviseSpec", () => {
       failure_modes: [],
       max_steps: 10,
       actions: [
-        { name: "step1", description: "First step", parameters: {}, preconditions: [], effects: [] },
-        { name: "step2", description: "Second step", parameters: {}, preconditions: ["step1"], effects: [] },
+        {
+          name: "step1",
+          description: "First step",
+          parameters: {},
+          preconditions: [],
+          effects: [],
+        },
+        {
+          name: "step2",
+          description: "Second step",
+          parameters: {},
+          preconditions: ["step1"],
+          effects: [],
+        },
       ],
     };
 
@@ -217,11 +298,14 @@ describe("RunManager scenario revision flow", () => {
   it("revises the pending spec instead of recreating from the description", async () => {
     const { RunManager } = await import("../src/server/run-manager.js");
     const dir = makeTempDir();
+    const operatorMission = "Create a scenario about incident report triage.";
     let sawRevisionPrompt = false;
     const provider = {
       complete: async (opts: { systemPrompt: string; userPrompt: string }) => {
         if (opts.systemPrompt.includes("Revise the agent_task spec")) {
-          sawRevisionPrompt = opts.userPrompt.includes("\"taskPrompt\": \"Summarize incident reports with a triage focus.\"");
+          sawRevisionPrompt =
+            opts.userPrompt.includes(IMMUTABLE_AGENT_TASK_PROMPT_SENTINEL) &&
+            !opts.userPrompt.includes(operatorMission);
           return {
             text: JSON.stringify({
               description: "Summarize incident reports with severity and owner assignment.",
@@ -260,7 +344,7 @@ describe("RunManager scenario revision flow", () => {
       },
     });
 
-    await mgr.createScenario("Create a scenario about incident report triage.");
+    await mgr.createScenario(operatorMission);
     const revised = await mgr.reviseScenario("Also require severity and owner assignment.");
 
     expect(sawRevisionPrompt).toBe(true);
@@ -270,7 +354,7 @@ describe("RunManager scenario revision flow", () => {
     const savedSpec = JSON.parse(
       readFileSync(join(dir, "knowledge", "_custom_scenarios", ready.name, "spec.json"), "utf-8"),
     ) as Record<string, unknown>;
-    expect(savedSpec.taskPrompt).toBe("Summarize incident reports with severity and owner assignment.");
+    expect(savedSpec.taskPrompt).toBe(operatorMission);
   });
 });
 

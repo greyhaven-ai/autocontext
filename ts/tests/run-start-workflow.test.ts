@@ -6,6 +6,10 @@ import { join } from "node:path";
 import type { AppSettings } from "../src/config/index.js";
 import { LoopController } from "../src/loop/controller.js";
 import type { CustomScenarioEntry } from "../src/scenarios/custom-loader.js";
+import {
+  TASK_DATA_METADATA_MARKER,
+  TASK_DATA_TRUNCATION_WARNING,
+} from "../src/scenarios/improvement-task-contract.js";
 import type { ScenarioFamilyName } from "../src/scenarios/families.js";
 import type { RoleProviderBundle } from "../src/providers/index.js";
 import { HookBus } from "../src/extensions/index.js";
@@ -486,7 +490,440 @@ describe("run start workflow", () => {
       emitted
         .filter((entry) => entry.event === "agent_progress_note")
         .map((entry) => entry.payload.kind),
-    ).toEqual(["intent", "verification"]);
+    ).toEqual(["intent", "decision"]);
+  });
+
+  it("retains a run warning when structured mission data was truncated", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+
+    await executeAgentTaskCustomStartRun({
+      runId: "run_truncated_task_data",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: {
+          taskPrompt: "Do work",
+          judgeRubric: "Do it well",
+          sampleInput:
+            `${TASK_DATA_METADATA_MARKER}: input: issues.csv (source id: input)]\n` +
+            `${TASK_DATA_TRUNCATION_WARNING} The task received 100 of 200 source bytes.`,
+        },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 1,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      controller: new LoopController(),
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
+        },
+      } as never,
+      deps: {
+        executeAgentTaskSolve: vi.fn(async () => ({
+          progress: 1,
+          result: { best_score: 0.7, scenario_name: "saved_task" },
+        })) as never,
+      },
+    });
+
+    expect(emitted.find((entry) => entry.event === "monitor_alert")?.payload).toMatchObject({
+      condition_id: "structured_task_data_truncated",
+      condition_name: "Mission data was truncated",
+      condition_type: "data_integrity",
+      scope: "run:run_truncated_task_data",
+    });
+  });
+
+  it("streams each saved task evaluation with its round score and running best", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+
+    await executeAgentTaskCustomStartRun({
+      runId: "run_task_live",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 2,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      controller: new LoopController(),
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
+        },
+      } as never,
+      deps: {
+        now: () => 0,
+        executeAgentTaskSolve: vi.fn(
+          async (solveOpts: { onProgress?: (progress: AgentTaskSolveProgress) => void }) => {
+            expect(emitted.filter((entry) => entry.event === "generation_started")).toEqual([]);
+            solveOpts.onProgress?.({
+              phase: "context_preparation",
+              status: "started",
+            });
+            solveOpts.onProgress?.({
+              phase: "context_preparation",
+              status: "completed",
+            });
+            expect(emitted.filter((entry) => entry.event === "generation_started")).toEqual([]);
+            solveOpts.onProgress?.({ phase: "draft", status: "started" });
+            expect(
+              emitted
+                .filter((entry) => entry.event === "generation_started")
+                .map((entry) => entry.payload.generation),
+            ).toEqual([]);
+            solveOpts.onProgress?.({ phase: "draft", status: "completed" });
+            solveOpts.onProgress?.({ phase: "evaluation", status: "started", round: 1 });
+            expect(
+              emitted
+                .filter((entry) => entry.event === "generation_started")
+                .map((entry) => entry.payload.generation),
+            ).toEqual([1]);
+            solveOpts.onProgress?.({
+              phase: "evaluation",
+              status: "completed",
+              round: 1,
+              bestScore: 0.41,
+              roundResult: {
+                roundNumber: 1,
+                output: "first attempt",
+                score: 0.41,
+                reasoning: "Needs stronger evidence.",
+                dimensionScores: { evidence: 0.31, clarity: 0.51 },
+                evaluatorEpoch: null,
+                isRevision: false,
+                judgeFailed: false,
+                roundDurationMs: 12,
+              },
+            });
+            solveOpts.onProgress?.({ phase: "revision", status: "started", round: 1 });
+            expect(
+              emitted
+                .filter((entry) => entry.event === "generation_started")
+                .map((entry) => entry.payload.generation),
+            ).toEqual([1]);
+            solveOpts.onProgress?.({ phase: "revision", status: "completed", round: 1 });
+            solveOpts.onProgress?.({ phase: "evaluation", status: "started", round: 2 });
+            expect(
+              emitted
+                .filter((entry) => entry.event === "generation_started")
+                .map((entry) => entry.payload.generation),
+            ).toEqual([1, 2]);
+            solveOpts.onProgress?.({
+              phase: "evaluation",
+              status: "completed",
+              round: 2,
+              bestScore: 0.84,
+              roundResult: {
+                roundNumber: 2,
+                output: "second attempt",
+                score: 0.84,
+                reasoning: "Evidence is now grounded and clear.",
+                dimensionScores: { evidence: 0.82, clarity: 0.86 },
+                evaluatorEpoch: null,
+                isRevision: true,
+                judgeFailed: false,
+                roundDurationMs: 18,
+              },
+            });
+            return {
+              progress: 2,
+              result: { best_score: 0.84, scenario_name: "saved_task" },
+            };
+          },
+        ) as never,
+      },
+    });
+
+    expect(
+      emitted
+        .filter(
+          (entry) => entry.event === "generation_started" || entry.event === "generation_completed",
+        )
+        .map((entry) => ({ event: entry.event, generation: entry.payload.generation })),
+    ).toEqual([
+      { event: "generation_started", generation: 1 },
+      { event: "generation_completed", generation: 1 },
+      { event: "generation_started", generation: 2 },
+      { event: "generation_completed", generation: 2 },
+    ]);
+    expect(emitted.filter((entry) => entry.event === "generation_completed")).toEqual([
+      {
+        event: "generation_completed",
+        payload: expect.objectContaining({
+          generation: 1,
+          mean_score: 0.41,
+          best_score: 0.41,
+          reasoning: "Needs stronger evidence.",
+          dimension_scores: { evidence: 0.31, clarity: 0.51 },
+          judge_failed: false,
+          round_duration_ms: 12,
+          rounds_completed: 1,
+        }),
+      },
+      {
+        event: "generation_completed",
+        payload: expect.objectContaining({
+          generation: 2,
+          mean_score: 0.84,
+          best_score: 0.84,
+          reasoning: "Evidence is now grounded and clear.",
+          dimension_scores: { evidence: 0.82, clarity: 0.86 },
+          judge_failed: false,
+          round_duration_ms: 18,
+          rounds_completed: 2,
+        }),
+      },
+    ]);
+    expect(emitted.find((entry) => entry.event === "run_completed")?.payload).toMatchObject({
+      completed_generations: 2,
+      best_score: 0.84,
+    });
+  });
+
+  it("does not start a dangling generation when an unchanged revision ends the solve", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+
+    await executeAgentTaskCustomStartRun({
+      runId: "run_task_unchanged_revision",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 2,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      controller: new LoopController(),
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
+        },
+      } as never,
+      deps: {
+        executeAgentTaskSolve: vi.fn(
+          async (solveOpts: { onProgress?: (progress: AgentTaskSolveProgress) => void }) => {
+            solveOpts.onProgress?.({ phase: "draft", status: "started" });
+            solveOpts.onProgress?.({ phase: "draft", status: "completed" });
+            solveOpts.onProgress?.({ phase: "evaluation", status: "started", round: 1 });
+            solveOpts.onProgress?.({
+              phase: "evaluation",
+              status: "completed",
+              round: 1,
+              bestScore: 0.61,
+              roundResult: {
+                roundNumber: 1,
+                output: "unchanged response",
+                score: 0.61,
+                reasoning: "The revision should preserve this response.",
+                dimensionScores: { quality: 0.61 },
+                evaluatorEpoch: null,
+                isRevision: false,
+                judgeFailed: false,
+                roundDurationMs: 10,
+              },
+            });
+            solveOpts.onProgress?.({ phase: "revision", status: "started", round: 1 });
+            solveOpts.onProgress?.({ phase: "revision", status: "completed", round: 1 });
+            return {
+              progress: 1,
+              result: {
+                best_score: 0.61,
+                scenario_name: "saved_task",
+                termination_reason: "unchanged_output",
+              },
+            };
+          },
+        ) as never,
+      },
+    });
+
+    const starts = emitted
+      .filter((entry) => entry.event === "generation_started")
+      .map((entry) => entry.payload.generation);
+    const completions = emitted
+      .filter((entry) => entry.event === "generation_completed")
+      .map((entry) => entry.payload.generation);
+
+    expect(starts).toEqual([1]);
+    expect(completions).toEqual(starts);
+    expect(starts).not.toContain(2);
+    expect(emitted.find((entry) => entry.event === "run_completed")?.payload).toMatchObject({
+      completed_generations: 1,
+      best_score: 0.61,
+    });
+  });
+
+  it("persists saved task rounds and projects the retained output as an artifact", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    const migrate = vi.fn();
+    const createRun = vi.fn();
+    const updateRunStatus = vi.fn();
+    const upsertGeneration = vi.fn();
+    const appendAgentOutput = vi.fn();
+    const close = vi.fn();
+    const now = vi.fn().mockReturnValueOnce(1_000).mockReturnValueOnce(2_500);
+    const createStore = vi.fn(() => ({
+      migrate,
+      createRun,
+      updateRunStatus,
+      upsertGeneration,
+      appendAgentOutput,
+      close,
+    }));
+
+    await executeAgentTaskCustomStartRun({
+      runId: "run_saved_artifact",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 1,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      persistence: {
+        dbPath: "/tmp/agent-task.db",
+        migrationsDir: "/tmp/migrations",
+        agentProvider: "anthropic",
+      },
+      controller: new LoopController(),
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
+        },
+      } as never,
+      deps: {
+        now,
+        createStore: createStore as never,
+        executeAgentTaskSolve: vi.fn(
+          async (solveOpts: { onProgress?: (progress: AgentTaskSolveProgress) => void }) => {
+            solveOpts.onProgress?.({ phase: "evaluation", status: "started", round: 1 });
+            solveOpts.onProgress?.({
+              phase: "evaluation",
+              status: "completed",
+              round: 1,
+              bestScore: 0.84,
+              roundResult: {
+                roundNumber: 1,
+                output: "# Final recommendation\n\nShip the grounded change.",
+                score: 0.84,
+                reasoning: "The recommendation is grounded and actionable.",
+                dimensionScores: { grounding: 0.82, actionability: 0.86 },
+                evaluatorEpoch: "epoch-4",
+                isRevision: false,
+                judgeFailed: false,
+                roundDurationMs: 120,
+              },
+            });
+            return {
+              progress: 1,
+              result: {
+                scenario_name: "saved_task",
+                best_score: 0.84,
+                best_strategy: { best_round: 1 },
+                example_outputs: [
+                  {
+                    output: "# Final recommendation\n\nShip the grounded change.",
+                    score: 0.84,
+                    reasoning: "The recommendation is grounded and actionable.",
+                  },
+                ],
+                playbook: "Retain grounded claims and explicit next steps.",
+              },
+            };
+          },
+        ) as never,
+      },
+    });
+
+    expect(createStore).toHaveBeenCalledWith("/tmp/agent-task.db");
+    expect(migrate).toHaveBeenCalledWith("/tmp/migrations");
+    expect(createRun).toHaveBeenCalledWith(
+      "run_saved_artifact",
+      "saved_task",
+      1,
+      "agent_task",
+      "anthropic",
+    );
+    expect(upsertGeneration).toHaveBeenCalledWith(
+      "run_saved_artifact",
+      1,
+      expect.objectContaining({
+        meanScore: 0.84,
+        bestScore: 0.84,
+        status: "completed",
+        durationSeconds: 1.5,
+        dimensionSummaryJson: JSON.stringify({ grounding: 0.82, actionability: 0.86 }),
+        scoringBackend: "agent_task",
+        evaluatorEpoch: "epoch-4",
+      }),
+    );
+    expect(appendAgentOutput.mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          "run_saved_artifact",
+          1,
+          "competitor",
+          "# Final recommendation\n\nShip the grounded change.",
+        ],
+        ["run_saved_artifact", 1, "analyst", "The recommendation is grounded and actionable."],
+        ["run_saved_artifact", 1, "coach", "Retain grounded claims and explicit next steps."],
+      ]),
+    );
+    expect(updateRunStatus).toHaveBeenCalledWith("run_saved_artifact", "completed");
+    expect(close).toHaveBeenCalledOnce();
+    expect(emitted.find((entry) => entry.event === "generation_timing")?.payload).toMatchObject({
+      generation: 1,
+      elapsed_seconds: 1.5,
+    });
+    expect(emitted.find((entry) => entry.event === "action_detail")?.payload).toMatchObject({
+      action_id: "agent-final-result",
+      status: "completed",
+      generation: 1,
+      output: {
+        score: 0.84,
+        _autowork: {
+          artifacts: [
+            expect.objectContaining({
+              id: "agent-final-output",
+              previewKind: "markdown",
+              preview: "# Final recommendation\n\nShip the grounded change.",
+              previewTruncated: false,
+            }),
+          ],
+        },
+      },
+      artifacts: [
+        expect.objectContaining({
+          id: "agent-final-output",
+          name: "Final result.md",
+          media_type: "text/markdown",
+        }),
+      ],
+    });
+    expect(
+      emitted.filter((entry) => entry.event === "agent_progress_note").at(-1)?.payload
+        .evidence_targets,
+    ).toEqual([
+      {
+        kind: "artifact",
+        action_id: "agent-final-result",
+        artifact_id: "agent-final-output",
+      },
+    ]);
+    expect(lastIndexOfEvent(emitted, "action_detail")).toBeLessThan(
+      emitted.findIndex((entry) => entry.event === "run_completed"),
+    );
   });
 
   it("publishes saved task evaluation and revision progress as a semantic replan", async () => {
@@ -519,7 +956,7 @@ describe("run start workflow", () => {
             solveOpts.onProgress?.({ phase: "evaluation", status: "completed", round: 1 });
             solveOpts.onProgress?.({ phase: "revision", status: "started", round: 1 });
             solveOpts.onProgress?.({ phase: "revision", status: "completed", round: 1 });
-            solveOpts.onProgress?.({ phase: "finalization", status: "started" });
+            solveOpts.onProgress?.({ phase: "finalization", status: "started", round: 1 });
             return {
               progress: 1,
               result: { best_score: 0.9, scenario_name: "saved_task" },
@@ -540,7 +977,7 @@ describe("run start workflow", () => {
     ).toMatchObject({
       plan_revision: 2,
       active_step_id: "improve_response",
-      summary: "Refining the response after evaluation round 1.",
+      summary: "Revising the response after evaluation round 1.",
     });
     expect(planEvents.at(-1)?.payload).toMatchObject({
       update_kind: "progress",
@@ -555,13 +992,20 @@ describe("run start workflow", () => {
       "intent",
       "discovery",
       "discovery",
+      "verification",
       "discovery",
       "decision",
-      "verification",
-      "verification",
+      "discovery",
+      "decision",
+      "decision",
     ]);
-    expect(progressNotes.at(3)?.payload.text).toContain("Evaluation round 1");
-    expect(progressNotes.at(4)?.payload.text).toContain("revision approach");
+    expect(progressNotes.at(3)?.payload.text).toContain("Evaluating the current response");
+    expect(progressNotes.at(4)?.payload.text).toContain("Evaluation round 1");
+    expect(progressNotes.at(5)?.payload.text).toContain("Revising the response");
+    expect(progressNotes.at(7)?.payload).toMatchObject({
+      generation: 1,
+      text: "Packaging the best scored response for retention.",
+    });
     expect(lastIndexOfEvent(emitted, "agent_progress_note")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_completed"),
     );
@@ -637,7 +1081,7 @@ describe("run start workflow", () => {
       const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
       expect(progressNotes.map((entry) => entry.payload.kind)).toEqual([
         "intent",
-        "verification",
+        "decision",
         "blocker",
       ]);
       expect(JSON.stringify(progressNotes)).not.toContain("completion policy rejected");
@@ -855,13 +1299,8 @@ describe("run start workflow", () => {
         }),
       ).rejects.toThrow("agent task failed");
 
-      expect(readLifecycleEventNames()).toEqual([
-        "run_start",
-        "generation_start",
-        "generation_end",
-        "run_end",
-      ]);
-      expect(readLifecycleStatuses()).toEqual(["", "", "failed", "failed"]);
+      expect(readLifecycleEventNames()).toEqual(["run_start", "run_end"]);
+      expect(readLifecycleStatuses()).toEqual(["", "failed"]);
     } finally {
       vi.unstubAllGlobals();
       rmSync(root, { recursive: true, force: true });
@@ -933,13 +1372,8 @@ describe("run start workflow", () => {
         commandId: "stop-task-hooks-1",
       });
 
-      expect(readLifecycleEventNames()).toEqual([
-        "run_start",
-        "generation_start",
-        "generation_end",
-        "run_end",
-      ]);
-      expect(readLifecycleStatuses()).toEqual(["", "", "stopped", "stopped"]);
+      expect(readLifecycleEventNames()).toEqual(["run_start", "run_end"]);
+      expect(readLifecycleStatuses()).toEqual(["", "stopped"]);
     } finally {
       vi.unstubAllGlobals();
       rmSync(root, { recursive: true, force: true });

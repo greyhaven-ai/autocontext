@@ -508,37 +508,40 @@ async function createGenericScenarioFromDescription(
       spec = JSON.parse(text);
     }
   } catch {
-    // Fallback: use the description directly
+    // Preserve the operator mission only as the executable task prompt. Keep
+    // preview and judge metadata bounded when scenario-design JSON is invalid.
     spec = {
       taskPrompt: description,
-      rubric: `Evaluate the quality of the response to: ${description}`,
-      description: `Custom scenario: ${description}`,
+      rubric:
+        "Evaluate task completion, evidence coverage, factual grounding, and adherence to the requested output requirements.",
+      description: "Custom scenario created from the operator's mission request.",
     };
   }
 
-  // Ensure required fields
+  // Ensure required fields without copying an evidence-heavy prompt into
+  // evaluation or preview metadata.
   if (!spec.taskPrompt) spec.taskPrompt = description;
-  if (!spec.rubric) spec.rubric = "Evaluate the quality of the response.";
-  if (!spec.description) spec.description = `Custom scenario: ${description}`;
+  if (!spec.rubric) {
+    spec.rubric =
+      "Evaluate task completion, evidence coverage, factual grounding, and adherence to the requested output requirements.";
+  }
+  if (!spec.description) {
+    spec.description = "Custom scenario created from the operator's mission request.";
+  }
   const name = typeof spec.name === "string" && spec.name.trim() ? spec.name.trim() : defaultName;
   const resolvedFamily =
     typeof spec.family === "string" && isScenarioFamilyName(spec.family)
       ? spec.family
       : defaultFamily;
   const { name: _ignoredName, family: _ignoredFamily, ...specFields } = spec;
-  const family = fallbackCodegenFamilyToAgentTask(
-    resolvedFamily,
-    specFields as Record<string, unknown>,
-  );
+  const family = fallbackCodegenFamilyToAgentTask(resolvedFamily, specFields);
+  const executableSpec =
+    family === "agent_task" ? { ...specFields, taskPrompt: description } : specFields;
 
   return {
     name,
     family,
-    spec: healSpec(
-      specFields as Record<string, unknown>,
-      family,
-      description,
-    ) as CreatedScenarioResult["spec"],
+    spec: healSpec(executableSpec, family, description) as CreatedScenarioResult["spec"],
   };
 }
 
@@ -586,7 +589,12 @@ export async function createScenarioFromDescription(
   }
 
   return {
-    ...(await createGenericScenarioFromDescription(description, provider, defaultName, defaultFamily)),
+    ...(await createGenericScenarioFromDescription(
+      description,
+      provider,
+      defaultName,
+      defaultFamily,
+    )),
     llmClassifierFallbackUsed: detection.llmClassifierFallbackUsed,
   };
 }

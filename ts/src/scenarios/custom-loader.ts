@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { ScenarioFamilyName } from "./families.js";
 import type { AgentTaskInterface, LLMProvider } from "../types/index.js";
 import { createAgentTask } from "./agent-task-factory.js";
-import { parseRawSpec, type AgentTaskSpec } from "./agent-task-spec.js";
+import { AgentTaskSpecSchema, parseRawSpec, type AgentTaskSpec } from "./agent-task-spec.js";
 import { hasCodegen } from "./codegen/index.js";
 import { readScenarioFamily } from "./codegen/loader.js";
 import { customScenarioDirectory } from "./codegen/executor.js";
@@ -31,15 +31,22 @@ export interface ResolvedCustomAgentTask {
 export const CUSTOM_SCENARIO_REGISTRY = new Map<string, CustomScenarioEntry>();
 export const CUSTOM_AGENT_TASK_REGISTRY: Record<string, () => AgentTaskInterface> = {};
 
+function readOptionalNullableString(value: unknown): string | null | undefined {
+  return typeof value === "string" || value === null ? value : undefined;
+}
+
 function normalizeAgentTaskSpec(spec: Record<string, unknown>): AgentTaskSpec {
   if ("taskPrompt" in spec && "judgeRubric" in spec) {
     return {
+      improvementTaskContractVersion: spec.improvementTaskContractVersion === 1 ? 1 : undefined,
+      taskDataSources: AgentTaskSpecSchema.shape.taskDataSources.parse(spec.taskDataSources),
       taskPrompt: String(spec.taskPrompt ?? ""),
       judgeRubric: String(spec.judgeRubric ?? ""),
       outputFormat: String(spec.outputFormat ?? "free_text") as AgentTaskSpec["outputFormat"],
       judgeModel: String(spec.judgeModel ?? ""),
       difficultyTiers: (spec.difficultyTiers as AgentTaskSpec["difficultyTiers"]) ?? undefined,
       referenceContext: (spec.referenceContext as string | null | undefined) ?? undefined,
+      evaluationContext: readOptionalNullableString(spec.evaluationContext),
       referenceSources: (spec.referenceSources as string[] | null | undefined) ?? undefined,
       requiredConcepts: (spec.requiredConcepts as string[] | null | undefined) ?? undefined,
       calibrationExamples:
@@ -70,6 +77,9 @@ export function renderAgentTaskPrompt(spec: AgentTaskSpec): string {
   let prompt = spec.taskPrompt;
   if (spec.sampleInput) {
     prompt += `\n\n## Input Data\n${spec.sampleInput}`;
+  }
+  if (spec.referenceContext) {
+    prompt += `\n\n## Reference Context\n${spec.referenceContext}`;
   }
   return prompt;
 }

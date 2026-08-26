@@ -1,19 +1,49 @@
 import type { GenerationAttempt } from "./generation-attempt-state.js";
 
-export const DEFAULT_COMPETITOR_STRATEGY = {
-  aggression: 0.5,
-  defense: 0.5,
-  path_bias: 0.5,
-} as const;
+export const COMPETITOR_REPAIR_MAX_OUTPUT_TOKENS = 1_024;
+const COMPETITOR_REPAIR_CONTEXT_MAX_CHARS = 8_000;
+const COMPETITOR_REPAIR_OUTPUT_MAX_CHARS = 4_000;
+
+export class CompetitorStrategyParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompetitorStrategyParseError";
+  }
+}
 
 export function parseCompetitorStrategyResult(
   competitorResultText: string,
 ): Record<string, unknown> {
+  let parsed: unknown;
   try {
-    return JSON.parse(competitorResultText) as Record<string, unknown>;
+    parsed = JSON.parse(competitorResultText);
   } catch {
-    return { ...DEFAULT_COMPETITOR_STRATEGY };
+    throw new CompetitorStrategyParseError("Competitor returned invalid strategy JSON");
   }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new CompetitorStrategyParseError("Competitor strategy must be a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+export function buildCompetitorStrategyRepairPrompt(opts: {
+  competitorPrompt: string;
+  invalidOutput: string;
+}): string {
+  const boundedContext = opts.competitorPrompt.slice(0, COMPETITOR_REPAIR_CONTEXT_MAX_CHARS);
+  const boundedOutput = opts.invalidOutput.slice(0, COMPETITOR_REPAIR_OUTPUT_MAX_CHARS);
+  return [
+    "Repair the invalid competitor strategy below.",
+    "Return one valid JSON object only: no Markdown fences, commentary, or extra text.",
+    "The object must use the exact fields and constraints from the strategy interface.",
+    "This is the only repair attempt; if the output is not valid JSON, the generation will fail.",
+    "",
+    "## Bounded strategy context",
+    boundedContext,
+    "",
+    "## Invalid output",
+    boundedOutput,
+  ].join("\n");
 }
 
 export interface TournamentExecutionPlan {
@@ -43,8 +73,6 @@ export function createTournamentExecutionPlan(opts: {
   };
 }
 
-export function buildGenerationAttemptCandidate(
-  attempt: GenerationAttempt,
-): GenerationAttempt {
+export function buildGenerationAttemptCandidate(attempt: GenerationAttempt): GenerationAttempt {
   return attempt;
 }

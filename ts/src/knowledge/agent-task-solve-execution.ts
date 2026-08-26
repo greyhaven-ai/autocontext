@@ -3,14 +3,16 @@ import {
   type ImprovementLoopProgressObserver,
 } from "../execution/improvement-loop.js";
 import { createAgentTask } from "../scenarios/agent-task-factory.js";
+import { completeAgentTaskArtifact } from "../scenarios/agent-task-artifact-completion.js";
 import { AgentTaskSpecSchema, type AgentTaskSpec } from "../scenarios/agent-task-spec.js";
 import { SolveGenerationBudget } from "./solve-generation-budget.js";
 import type {
   AgentTaskInterface,
   ImprovementResult,
   LLMProvider,
+  RoundResult,
 } from "../types/index.js";
-import { completeWithProviderHooks, type HookBus } from "../extensions/index.js";
+import type { HookBus } from "../extensions/index.js";
 import type { SerializedSkillPackageDict } from "./package.js";
 import { buildAgentTaskSolvePackage } from "./solve-workflow.js";
 
@@ -72,13 +74,22 @@ export function buildAgentTaskSolveSpec(
   fallbackRounds: number,
 ): AgentTaskSpec {
   const outputFormat = readString(rawSpec, "outputFormat", "output_format");
+  const improvementTaskContractVersion =
+    rawSpec.improvementTaskContractVersion === 1 || rawSpec.improvement_task_contract_version === 1
+      ? 1
+      : undefined;
   return AgentTaskSpecSchema.parse({
+    improvementTaskContractVersion,
+    taskDataSources: rawSpec.taskDataSources ?? rawSpec.task_data_sources,
     taskPrompt: readString(rawSpec, "taskPrompt", "task_prompt") ?? "",
-    judgeRubric: readString(rawSpec, "judgeRubric", "judge_rubric", "rubric") ?? "Evaluate the response.",
-    outputFormat: outputFormat === "json_schema" || outputFormat === "code" ? outputFormat : "free_text",
+    judgeRubric:
+      readString(rawSpec, "judgeRubric", "judge_rubric", "rubric") ?? "Evaluate the response.",
+    outputFormat:
+      outputFormat === "json_schema" || outputFormat === "code" ? outputFormat : "free_text",
     judgeModel: readString(rawSpec, "judgeModel", "judge_model") ?? "",
     difficultyTiers: readRecordArray(rawSpec, "difficultyTiers", "difficulty_tiers"),
     referenceContext: readString(rawSpec, "referenceContext", "reference_context"),
+    evaluationContext: readString(rawSpec, "evaluationContext", "evaluation_context"),
     referenceSources: readStringArray(rawSpec, "referenceSources", "reference_sources"),
     requiredConcepts: readStringArray(rawSpec, "requiredConcepts", "required_concepts"),
     calibrationExamples: readRecordArray(rawSpec, "calibrationExamples", "calibration_examples"),
@@ -100,6 +111,10 @@ export interface AgentTaskSolveProgress {
   phase: "context_preparation" | "draft" | "evaluation" | "revision" | "finalization";
   status: "started" | "completed";
   round?: number;
+  /** Finalized per-round result, present on completed evaluations. */
+  roundResult?: RoundResult;
+  /** Best score retained after the completed evaluation. */
+  bestScore?: number;
 }
 
 export interface AgentTaskSolveLoop {
@@ -207,9 +222,7 @@ export async function executeAgentTaskSolve(opts: {
     ? await task.prepareContext(task.initialState())
     : task.initialState();
   timeBudget.check("context preparation");
-  const contextErrors = task.validateContext
-    ? task.validateContext(initialState)
-    : [];
+  const contextErrors = task.validateContext ? task.validateContext(initialState) : [];
   timeBudget.check("context validation");
   if (contextErrors.length > 0) {
     throw new Error(`agent_task context preparation failed: ${contextErrors.join("; ")}`);
@@ -221,10 +234,11 @@ export async function executeAgentTaskSolve(opts: {
 
   timeBudget.check("initial generation");
   reportSolveProgress(opts.onProgress, { phase: "draft", status: "started" });
-  const initialOutput = await completeWithProviderHooks({
+  const initialOutput = await completeAgentTaskArtifact({
     hookBus: opts.hookBus ?? null,
     provider: opts.provider,
     role: "agent_task_initial",
+    artifactLabel: "initial response",
     systemPrompt: "You are a helpful assistant.",
     userPrompt: task.getTaskPrompt(initialState),
   });
@@ -240,7 +254,11 @@ export async function executeAgentTaskSolve(opts: {
   });
   timeBudget.check("improvement loop");
 
-  reportSolveProgress(opts.onProgress, { phase: "finalization", status: "started" });
+  reportSolveProgress(opts.onProgress, {
+    phase: "finalization",
+    status: "started",
+    round: result.totalRounds,
+  });
   const bestRound = result.rounds.find((round) => round.roundNumber === result.bestRound);
   const executionResult = {
     progress: result.totalRounds,
@@ -263,6 +281,10 @@ export async function executeAgentTaskSolve(opts: {
       contextPreparation: spec.contextPreparation ?? null,
     }),
   };
-  reportSolveProgress(opts.onProgress, { phase: "finalization", status: "completed" });
+  reportSolveProgress(opts.onProgress, {
+    phase: "finalization",
+    status: "completed",
+    round: result.totalRounds,
+  });
   return executionResult;
 }

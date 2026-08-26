@@ -826,13 +826,27 @@ export class InteractiveServer {
         return;
       }
       case "create_scenario":
+      case "create_task":
       case "confirm_scenario":
       case "revise_scenario":
       case "cancel_scenario": {
+        const startsScenarioGeneration =
+          msg.type === "create_scenario" ||
+          msg.type === "create_task" ||
+          msg.type === "revise_scenario";
+        if (startsScenarioGeneration) {
+          this.#send(ws, {
+            type: "scenario_generating",
+            name: msg.type === "create_task" ? "improvement_task" : "custom_scenario",
+          });
+        }
         for (const response of await executeInteractiveScenarioCommand({
           command: msg,
           runManager: this.#runManager,
         })) {
+          if (startsScenarioGeneration && response.type === "scenario_generating") {
+            continue;
+          }
           this.#send(ws, response);
         }
         return;
@@ -1295,6 +1309,7 @@ function interactiveMessageUsesExpensiveSlot(message: ClientMessage): boolean {
   switch (message.type) {
     case "chat_agent":
     case "create_scenario":
+    case "create_task":
     case "confirm_scenario":
     case "revise_scenario":
     case "login":

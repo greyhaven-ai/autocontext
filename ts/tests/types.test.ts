@@ -117,4 +117,12 @@ describe("ProviderError", () => {
     expect(e.message).toBe("test");
     expect(e instanceof Error).toBe(true);
   });
+
+  it("preserves a supplied error cause", () => {
+    const cause = new TypeError("socket closed");
+    const error = new ProviderError("provider failed", { input: 3 }, { cause });
+
+    expect(error.cause).toBe(cause);
+    expect(error.usage).toEqual({ input: 3 });
+  });
 });

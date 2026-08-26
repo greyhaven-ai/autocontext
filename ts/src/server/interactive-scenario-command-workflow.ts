@@ -25,11 +25,22 @@ export function buildScenarioReadyMessage(ready: ScenarioReadyInfo): ServerMessa
 export async function executeInteractiveScenarioCommand(opts: {
   command: Extract<
     ClientMessage,
-    { type: "create_scenario" | "revise_scenario" | "confirm_scenario" | "cancel_scenario" }
+    {
+      type:
+        | "create_scenario"
+        | "create_task"
+        | "revise_scenario"
+        | "confirm_scenario"
+        | "cancel_scenario";
+    }
   >;
   runManager: Pick<
     typeof import("./run-manager.js").RunManager.prototype,
-    "createScenario" | "reviseScenario" | "confirmScenario" | "cancelScenario"
+    | "createScenario"
+    | "createTask"
+    | "reviseScenario"
+    | "confirmScenario"
+    | "cancelScenario"
   >;
 }): Promise<ServerMessage[]> {
   switch (opts.command.type) {
@@ -37,6 +48,16 @@ export async function executeInteractiveScenarioCommand(opts: {
       const preview = await opts.runManager.createScenario(opts.command.description);
       return [
         { type: "scenario_generating", name: "custom_scenario" },
+        buildScenarioPreviewMessage(preview),
+      ];
+    }
+    case "create_task": {
+      const preview = await opts.runManager.createTask(
+        opts.command.contract,
+        opts.command.source_contents,
+      );
+      return [
+        { type: "scenario_generating", name: "improvement_task" },
         buildScenarioPreviewMessage(preview),
       ];
     }

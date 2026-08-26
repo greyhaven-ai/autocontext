@@ -26,6 +26,7 @@ describe("materialize artifact persistence", () => {
       family: "agent_task",
       agentTaskFamily: "agent_task",
       agentTaskSpec: {
+        improvementTaskContractVersion: 1,
         taskPrompt: "Do work",
         judgeRubric: "Judge work",
         outputFormat: "free_text",
@@ -40,7 +41,10 @@ describe("materialize artifact persistence", () => {
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
     expect(existsSync(join(scenarioDir, "agent_task_spec.json"))).toBe(true);
     expect(existsSync(join(scenarioDir, "scenario.js"))).toBe(false);
-    expect(JSON.parse(readFileSync(join(scenarioDir, "agent_task_spec.json"), "utf-8"))).toMatchObject({
+    expect(
+      JSON.parse(readFileSync(join(scenarioDir, "agent_task_spec.json"), "utf-8")),
+    ).toMatchObject({
+      improvement_task_contract_version: 1,
       task_prompt: "Do work",
       judge_rubric: "Judge work",
     });

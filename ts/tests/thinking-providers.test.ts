@@ -487,6 +487,51 @@ describe("Anthropic deep_think", () => {
     });
   });
 
+  it("preserves partial usage and the provider cause when a later tool turn fails", async () => {
+    const responseText = vi.fn(async () => "do not surface this response body");
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okJson({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu-before-failure",
+              name: "deep_think",
+              input: { thoughts: "captured before failure" },
+            },
+          ],
+          model: "claude-stub",
+          usage: { input_tokens: 5, output_tokens: 7 },
+          stop_reason: "tool_use",
+        }),
+      )
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        headers: { get: () => null },
+        text: responseText,
+      });
+    vi.stubGlobal("fetch", mockFetch);
+    const provider = createAnthropicProvider({ apiKey: "test" });
+
+    let caught: unknown;
+    try {
+      await provider.completeWithThinking!({ systemPrompt: "s", userPrompt: "u" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ProviderError);
+    expect((caught as ProviderError).usage).toEqual({ input: 5, output: 7 });
+    const requestFailure = (caught as ProviderError).cause;
+    expect(requestFailure).toBeInstanceOf(ProviderError);
+    expect((requestFailure as ProviderError).cause).toMatchObject({ status: 401 });
+    expect((caught as ProviderError).message).not.toContain("response body");
+    expect(responseText).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("fails closed on malformed tool input", async () => {
     vi.stubGlobal(
       "fetch",
