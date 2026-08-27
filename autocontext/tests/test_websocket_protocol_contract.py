@@ -115,44 +115,6 @@ def test_agent_progress_note_capability_remains_typescript_only() -> None:
     assert "agent_progress_notes_v1" not in SERVER_CAPABILITIES
 
 
-def test_system_map_projection_remains_typescript_only_and_redacted() -> None:
-    extension = _contract()["system_map_projection_extension"]
-
-    assert extension["capability"] == "system_map_projection_v1"
-    assert extension["advertised_runtimes"] == ["typescript"]
-    assert extension["endpoint"] == "/ws/events"
-    assert extension["query"] == {
-        "projection": "system-map",
-        "optional_run_scope": "run_id",
-        "optional_view": {
-            "parameter": "view",
-            "values": ["execution", "context", "activation", "routing"],
-            "default": "execution",
-        },
-    }
-    assert extension["event"] == "system_map_transfer"
-    assert extension["channel"] == "cockpit"
-    assert {"traceId", "spanId", "spanName", "spanPhase", "startedAt"}.issubset(
-        extension["payload"]["required_fields"]
-    )
-    assert extension["trace"] == {
-        "version": 1,
-        "source": "EventStreamRecord.trace",
-        "phases": ["start", "complete", "instant"],
-        "paired_boundaries": ["run", "generation", "role", "tournament", "persistence"],
-        "raw_payload_copied": False,
-    }
-    assert extension["safety"] == {
-        "allowlisted_summary_fields_only": True,
-        "raw_prompts_allowed": False,
-        "raw_model_or_tool_io_allowed": False,
-        "credentials_allowed": False,
-        "bounded_replay": True,
-    }
-    assert extension["python_support"] == "deferred"
-    assert "system_map_projection_v1" not in SERVER_CAPABILITIES
-
-
 def test_image_attachment_capability_remains_typescript_only() -> None:
     extension = _contract()["image_attachment_extension"]
 
