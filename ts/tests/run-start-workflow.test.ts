@@ -883,6 +883,7 @@ describe("run start workflow", () => {
     const migrate = vi.fn();
     const createRun = vi.fn();
     const updateRunStatus = vi.fn();
+    const saveAgentTaskOutcome = vi.fn();
     const upsertGeneration = vi.fn();
     const appendAgentOutput = vi.fn();
     const close = vi.fn();
@@ -891,6 +892,7 @@ describe("run start workflow", () => {
       migrate,
       createRun,
       updateRunStatus,
+      saveAgentTaskOutcome,
       upsertGeneration,
       appendAgentOutput,
       close,
@@ -944,6 +946,26 @@ describe("run start workflow", () => {
             });
             return {
               progress: 1,
+              outcome: {
+                schema_version: 1,
+                termination_reason: "max_rounds",
+                quality_threshold: 0.9,
+                met_threshold: false,
+                completed_iterations: 1,
+                max_iterations: 1,
+                best_iteration: 1,
+                best_score: 0.84,
+                generations: [
+                  {
+                    generation: 1,
+                    score: 0.84,
+                    reasoning: "The recommendation is grounded and actionable.",
+                    dimension_scores: { grounding: 0.82, actionability: 0.86 },
+                    judge_failed: false,
+                    evaluator_epoch: "epoch-4",
+                  },
+                ],
+              },
               result: {
                 scenario_name: "saved_task",
                 best_score: 0.84,
@@ -998,6 +1020,29 @@ describe("run start workflow", () => {
       ]),
     );
     expect(updateRunStatus).toHaveBeenCalledWith("run_saved_artifact", "completed");
+    expect(saveAgentTaskOutcome).toHaveBeenCalledWith(
+      "run_saved_artifact",
+      JSON.stringify({
+        schema_version: 1,
+        termination_reason: "max_rounds",
+        quality_threshold: 0.9,
+        met_threshold: false,
+        completed_iterations: 1,
+        max_iterations: 1,
+        best_iteration: 1,
+        best_score: 0.84,
+        generations: [
+          {
+            generation: 1,
+            score: 0.84,
+            reasoning: "The recommendation is grounded and actionable.",
+            dimension_scores: { grounding: 0.82, actionability: 0.86 },
+            judge_failed: false,
+            evaluator_epoch: "epoch-4",
+          },
+        ],
+      }),
+    );
     expect(close).toHaveBeenCalledOnce();
     expect(emitted.find((entry) => entry.event === "generation_timing")?.payload).toMatchObject({
       generation: 1,
@@ -1041,6 +1086,18 @@ describe("run start workflow", () => {
     expect(lastIndexOfEvent(emitted, "action_detail")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_completed"),
     );
+    expect(emitted.find((entry) => entry.event === "run_completed")?.payload).toMatchObject({
+      agent_task_outcome: {
+        schema_version: 1,
+        termination_reason: "max_rounds",
+        quality_threshold: 0.9,
+        met_threshold: false,
+        completed_iterations: 1,
+        max_iterations: 1,
+        best_iteration: 1,
+        best_score: 0.84,
+      },
+    });
   });
 
   it("publishes saved task evaluation and revision progress as a semantic replan", async () => {

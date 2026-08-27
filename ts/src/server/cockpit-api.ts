@@ -22,6 +22,10 @@ import type { NotebookApiRoutes } from "./notebook-api.js";
 import {
   runtimeSessionDiscoveryForRun,
 } from "./runtime-session-api.js";
+import {
+  AgentTaskOutcomeV1Schema,
+  type AgentTaskOutcomeV1,
+} from "../knowledge/agent-task-outcome.js";
 
 export interface CockpitApiResponse {
   status: number;
@@ -173,6 +177,7 @@ export function buildCockpitApiRoutes(opts: {
           best_generation: bestGeneration ? formatGenerationStatus(bestGeneration) : null,
           latest_outputs: outputs(latestGeneration),
           best_outputs: outputs(bestGeneration),
+          agent_task_outcome: readAgentTaskOutcome(store, runId),
           progress_report: readProgressReportReference(opts.knowledgeRoot, run),
           ...runtimeSessionDiscoveryForRun(runtimeStore, runId),
           artifact_discovery: {
@@ -291,6 +296,16 @@ export function buildCockpitApiRoutes(opts: {
       return { status: 200, body: store.getConsultationsForRun(runId) };
     }),
   };
+}
+
+function readAgentTaskOutcome(store: SQLiteStore, runId: string): AgentTaskOutcomeV1 | null {
+  const row = store.getAgentTaskOutcome(runId);
+  if (!row) return null;
+  try {
+    return AgentTaskOutcomeV1Schema.parse(JSON.parse(row.outcome_json));
+  } catch {
+    return null;
+  }
 }
 
 function readProgressReportReference(

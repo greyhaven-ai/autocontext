@@ -49,7 +49,7 @@ describe("websocket session bootstrap", () => {
       {
         type: "hello",
         protocol_version: 2,
-        capabilities: ["structured_task_creation_v1"],
+        capabilities: ["structured_task_creation_v1", "agent_task_outcome_v1"],
       },
       {
         type: "environments",
@@ -81,6 +81,7 @@ describe("websocket session bootstrap", () => {
           "agent_task_plan_v1",
           "agent_progress_notes_v1",
           "structured_task_creation_v1",
+          "agent_task_outcome_v1",
         ],
       },
       {

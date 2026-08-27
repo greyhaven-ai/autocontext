@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "termination_reason": "threshold_met",
+  "quality_threshold": 0.9,
+  "met_threshold": true,
+  "completed_iterations": 2,
+  "max_iterations": 4,
+  "best_iteration": 2,
+  "best_score": 0.93,
+  "generations": [
+    {
+      "generation": 1,
+      "score": 0.71,
+      "reasoning": "The response is accurate but its recommendation is not yet actionable.",
+      "dimension_scores": {
+        "accuracy": 0.9,
+        "actionability": 0.52
+      },
+      "judge_failed": false,
+      "evaluator_epoch": "judge-v1"
+    },
+    {
+      "generation": 2,
+      "score": 0.93,
+      "reasoning": "The revision preserves the evidence and adds a concrete recommendation.",
+      "dimension_scores": {
+        "accuracy": 0.94,
+        "actionability": 0.92
+      },
+      "judge_failed": false,
+      "evaluator_epoch": "judge-v1"
+    }
+  ]
+}

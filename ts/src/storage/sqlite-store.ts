@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 
 import type { DbPath } from "../domain/ids.js";
 import type {
+  AgentTaskOutcomeRow,
   AgentOutputRow,
   ConsultationRow,
   GenerationRow,
@@ -28,6 +29,10 @@ import type {
   UpsertNotebookOpts,
   UpsertGenerationOpts,
 } from "./storage-contracts.js";
+import {
+  getAgentTaskOutcomeRecord,
+  saveAgentTaskOutcomeRecord,
+} from "./agent-task-outcome-store.js";
 import {
   completeStoreTask,
   countPendingStoreTasks,
@@ -331,6 +336,14 @@ export class SQLiteStore {
 
   updateRunStatus(runId: string, status: string): void {
     updateStoreRunStatus(this.#db, runId, status);
+  }
+
+  saveAgentTaskOutcome(runId: string, outcomeJson: string): void {
+    saveAgentTaskOutcomeRecord(this.#db, runId, outcomeJson);
+  }
+
+  getAgentTaskOutcome(runId: string): AgentTaskOutcomeRow | null {
+    return getAgentTaskOutcomeRecord(this.#db, runId);
   }
 
   upsertGeneration(runId: string, generationIndex: number, opts: UpsertGenerationOpts): void {

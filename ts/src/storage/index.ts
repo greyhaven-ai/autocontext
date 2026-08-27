@@ -1,4 +1,5 @@
 export type {
+  AgentTaskOutcomeRow,
   AgentOutputRow,
   ConsultationRow,
   GenerationRow,
@@ -25,5 +26,10 @@ export type {
   UpsertNotebookOpts,
   UpsertGenerationOpts,
 } from "./storage-contracts.js";
+
+export {
+  getAgentTaskOutcomeRecord,
+  saveAgentTaskOutcomeRecord,
+} from "./agent-task-outcome-store.js";
 
 export { SQLiteStore } from "./sqlite-store.js";

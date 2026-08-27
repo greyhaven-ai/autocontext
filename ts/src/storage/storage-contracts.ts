@@ -40,6 +40,13 @@ export interface RunRow {
   updated_at: string;
 }
 
+export interface AgentTaskOutcomeRow {
+  run_id: string;
+  outcome_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface GenerationRow {
   run_id: string;
   generation_index: number;

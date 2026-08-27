@@ -19,6 +19,39 @@
     "setup_failure": "invalid or unpersistable tasks terminate with an actionable error and never advertise scenario_ready",
     "python_support": "deferred"
   },
+  "agent_task_outcome_extension": {
+    "capability": "agent_task_outcome_v1",
+    "schema_version": 1,
+    "advertised_runtimes": ["typescript"],
+    "applies_to": "completed saved agent_task runs",
+    "terminal_event": "run_completed",
+    "terminal_payload_field": "agent_task_outcome",
+    "terminal_receipt_fields": [
+      "schema_version",
+      "termination_reason",
+      "quality_threshold",
+      "met_threshold",
+      "completed_iterations",
+      "max_iterations",
+      "best_iteration",
+      "best_score"
+    ],
+    "evaluation_event": "generation_completed",
+    "evaluation_fields": [
+      "generation",
+      "mean_score",
+      "reasoning",
+      "dimension_scores",
+      "judge_failed",
+      "evaluator_epoch"
+    ],
+    "inspection_path": "/api/cockpit/runs/:run_id/inspection",
+    "inspection_field": "agent_task_outcome",
+    "durability": "the terminal receipt and per-generation evaluator evidence are retained in the transcript; the complete versioned outcome is retained in SQLite and returned by Cockpit inspection",
+    "derivation": "directly from ImprovementResult and AgentTaskSpec; no generated-package parsing or additional model synthesis",
+    "package_fixture": "protocol-fixtures/agent-task-outcome-v1.json",
+    "python_support": "deferred"
+  },
   "transcript_extension": {
     "capability": "run_transcript_v1",
     "transcript_protocol_version": 1,

@@ -1016,6 +1016,7 @@ describe("HTTP API — cockpit", () => {
       best_outputs: [
         { role: "competitor", content: '{"aggression": 0.6}', generation: 1 },
       ],
+      agent_task_outcome: null,
       progress_report: {
         run_id: "test-run-1",
         best_score: 0.7,
@@ -1029,6 +1030,71 @@ describe("HTTP API — cockpit", () => {
       },
     });
     expectTestRunRuntimeSessionDiscovery(body);
+  });
+
+  it("GET /api/cockpit/runs/:run_id/inspection returns a durable agent-task outcome", async () => {
+    const { SQLiteStore } = await import("../src/storage/index.js");
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
+    store.createRun("agent-task-run", "custom_agent_task", 2, "agent_task");
+    store.saveAgentTaskOutcome("agent-task-run", JSON.stringify({
+      schema_version: 1,
+      termination_reason: "threshold_met",
+      quality_threshold: 0.9,
+      met_threshold: true,
+      completed_iterations: 2,
+      max_iterations: 2,
+      best_iteration: 2,
+      best_score: 0.94,
+      generations: [
+        {
+          generation: 1,
+          score: 0.72,
+          reasoning: "The recommendation is still vague.",
+          dimension_scores: { actionability: 0.5 },
+          judge_failed: false,
+          evaluator_epoch: "judge-v1",
+        },
+        {
+          generation: 2,
+          score: 0.94,
+          reasoning: "The revision adds a concrete next step.",
+          dimension_scores: { actionability: 0.95 },
+          judge_failed: false,
+          evaluator_epoch: "judge-v1",
+        },
+      ],
+    }));
+    store.close();
+
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runs/agent-task-run/inspection`,
+    );
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      agent_task_outcome: {
+        schema_version: 1,
+        termination_reason: "threshold_met",
+        quality_threshold: 0.9,
+        met_threshold: true,
+        completed_iterations: 2,
+        max_iterations: 2,
+        best_iteration: 2,
+        best_score: 0.94,
+        generations: [
+          expect.objectContaining({
+            generation: 1,
+            reasoning: "The recommendation is still vague.",
+            dimension_scores: { actionability: 0.5 },
+          }),
+          expect.objectContaining({
+            generation: 2,
+            reasoning: "The revision adds a concrete next step.",
+            evaluator_epoch: "judge-v1",
+          }),
+        ],
+      },
+    });
   });
 
   it("GET /api/cockpit/runs/:run_id/inspection distinguishes a missing run", async () => {
