@@ -10,6 +10,8 @@ import { isTerminalRunPhase } from "./run-state-workflow.js";
 export function buildQueuedRunStatePatch(opts: {
   runId: string;
   scenario: string;
+  minimumGenerations?: number;
+  targetGenerations?: number;
   paused: boolean;
 }): Partial<RunManagerState> {
   return {
@@ -17,6 +19,12 @@ export function buildQueuedRunStatePatch(opts: {
     paused: opts.paused,
     runId: opts.runId,
     scenario: opts.scenario,
+    ...(opts.minimumGenerations === undefined
+      ? {}
+      : { minimumGenerations: opts.minimumGenerations }),
+    ...(opts.targetGenerations === undefined
+      ? {}
+      : { targetGenerations: opts.targetGenerations }),
     generation: null,
     phase: "queued",
   };

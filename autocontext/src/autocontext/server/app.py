@@ -383,11 +383,17 @@ def create_app(
                                     rid = run_manager.start_run(
                                         scenario,
                                         generations,
+                                        minimum_generations=start_cmd.minimum_generations,
                                         require_playbook_approval=start_cmd.require_playbook_approval,
                                         client_run_id=start_cmd.client_run_id,
                                     )
                                     await websocket.send_json(
-                                        RunAcceptedMsg(run_id=rid, scenario=scenario, generations=generations).model_dump()
+                                        RunAcceptedMsg(
+                                            run_id=rid,
+                                            scenario=scenario,
+                                            minimum_generations=start_cmd.minimum_generations or 1,
+                                            generations=generations,
+                                        ).model_dump()
                                     )
                                 except (ValueError, RuntimeError) as exc:
                                     await websocket.send_json(ErrorMsg(message=str(exc)).model_dump())

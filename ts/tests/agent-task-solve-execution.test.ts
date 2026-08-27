@@ -15,6 +15,7 @@ describe("agent-task solve execution", () => {
         task_prompt: "Summarize incident reports",
         rubric: "Evaluate completeness",
         output_format: "free_text",
+        min_rounds: "2",
         max_rounds: "3",
         quality_threshold: "0.85",
         reference_context: "PagerDuty timeline",
@@ -27,11 +28,87 @@ describe("agent-task solve execution", () => {
     expect(spec.taskPrompt).toBe("Summarize incident reports");
     expect(spec.improvementTaskContractVersion).toBe(1);
     expect(spec.judgeRubric).toBe("Evaluate completeness");
+    expect(spec.minRounds).toBe(2);
     expect(spec.maxRounds).toBe(3);
     expect(spec.qualityThreshold).toBe(0.85);
     expect(spec.referenceContext).toBe("PagerDuty timeline");
     expect(spec.evaluationContext).toBe("Hidden evaluator case");
     expect(spec.requiredConcepts).toEqual(["severity", "owner"]);
+  });
+
+  it("lets an explicit runtime minimum override the persisted task floor", async () => {
+    const provider: LLMProvider = {
+      name: "candidate",
+      defaultModel: () => "candidate-model",
+      complete: async () => ({ text: "Candidate response", usage: {} }),
+    };
+    const task = {
+      name: "override_floor",
+      spec: buildAgentTaskSolveSpec({
+        taskPrompt: "Improve this response.",
+        judgeRubric: "Evaluate it.",
+        minRounds: 3,
+        maxRounds: 3,
+      }, 3),
+      getTaskPrompt: () => "Improve this response.",
+      getRubric: () => "Evaluate it.",
+      describeTask: () => "Improve this response.",
+      initialState: () => ({}),
+      evaluateOutput: async () => ({
+        score: 0.95,
+        reasoning: "Complete.",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      }),
+    };
+
+    await executeAgentTaskSolve({
+      provider,
+      created: {
+        name: task.name,
+        spec: {
+          taskPrompt: "Improve this response.",
+          judgeRubric: "Evaluate it.",
+          minRounds: 3,
+          maxRounds: 3,
+        },
+      },
+      minimumGenerations: 1,
+      generations: 3,
+      deps: {
+        createTask: () => task,
+        createLoop: (opts) => {
+          expect(opts.minRounds).toBe(1);
+          return {
+            run: async ({ initialOutput }) => ({
+              rounds: [{
+                roundNumber: 1,
+                output: initialOutput,
+                score: 0.95,
+                reasoning: "Complete.",
+                dimensionScores: {},
+                evaluatorEpoch: null,
+                isRevision: false,
+                judgeFailed: false,
+              }],
+              bestOutput: initialOutput,
+              bestScore: 0.95,
+              bestRound: 1,
+              totalRounds: 1,
+              metThreshold: true,
+              judgeFailures: 0,
+              terminationReason: "threshold_met",
+              dimensionTrajectory: {},
+              totalInternalRetries: 0,
+              durationMs: 1,
+              judgeCalls: 1,
+              evaluatorEpoch: null,
+            }),
+          };
+        },
+      },
+    });
   });
 
   it("uses and closes an owned no-tools isolate for an evaluator-bearing initial draft", async () => {
@@ -142,6 +219,7 @@ describe("agent-task solve execution", () => {
           taskPrompt: "Summarize incident reports",
           rubric: "Evaluate completeness",
           description: "Incident triage task",
+          minRounds: 2,
           maxRounds: 2,
           qualityThreshold: 0.9,
         },
@@ -197,6 +275,7 @@ describe("agent-task solve execution", () => {
           taskPrompt: "Summarize incident reports",
           rubric: "Evaluate completeness",
           description: "Incident triage task",
+          minRounds: 2,
           maxRounds: 2,
           qualityThreshold: 0.9,
         },
@@ -209,6 +288,7 @@ describe("agent-task solve execution", () => {
       deps: {
         createTask: () => task,
         createLoop: (opts) => {
+          expect(opts.minRounds).toBe(2);
           expect(opts.timeBudget).toBeDefined();
           return {
             run: vi.fn(async () => {

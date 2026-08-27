@@ -4,6 +4,7 @@ export interface RunStartedPayload {
   [key: string]: unknown;
   run_id: string;
   scenario: string;
+  minimum_generations?: number;
   target_generations: number;
 }
 
@@ -68,11 +69,15 @@ export interface RunFailedPayload {
 export function buildRunStartedPayload(opts: {
   runId: string;
   scenarioName: string;
+  minimumGenerations?: number;
   targetGenerations: number;
 }): RunStartedPayload {
   return {
     run_id: opts.runId,
     scenario: opts.scenarioName,
+    ...((opts.minimumGenerations ?? 1) > 1
+      ? { minimum_generations: opts.minimumGenerations }
+      : {}),
     target_generations: opts.targetGenerations,
   };
 }

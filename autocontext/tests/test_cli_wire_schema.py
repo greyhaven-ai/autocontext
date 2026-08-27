@@ -20,3 +20,12 @@ def test_python_run_wire_helpers_match_shared_fixtures() -> None:
 
     assert run_status_wire_payload(status["run"], [status["latest_generation"]]) == status
     assert run_show_wire_payload(show["run"], show["generation"]) == show
+
+
+def test_python_run_wire_helpers_expose_non_default_minimum() -> None:
+    status = _json(FIXTURE_ROOT / "run-status-v1.json")
+    run = {**status["run"], "minimum_generations": 2}
+
+    payload = run_status_wire_payload(run, [status["latest_generation"]])
+
+    assert payload["run"]["minimum_generations"] == 2

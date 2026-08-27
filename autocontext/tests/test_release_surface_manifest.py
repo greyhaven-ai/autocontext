@@ -72,6 +72,7 @@ def test_core_package_versions_can_advance_independently() -> None:
     assert "autocontext==1.2.3" in root
     assert "autoctx@4.5.6" in root
     assert "What's New in 7.8.9" in root
+    assert "`autoctx@0.17.2` is a TypeScript-only patch release" in root
 
 
 def test_pi_version_syncs_install_snippets() -> None:

@@ -1,4 +1,4 @@
-import { AgentTaskSpecSchema, type AgentTaskSpec } from "./agent-task-spec.js";
+import { AgentTaskSpecObjectSchema, type AgentTaskSpec } from "./agent-task-spec.js";
 import {
   getNumberValue,
   getRecordArrayValue,
@@ -142,7 +142,7 @@ export function normalizeAgentTaskHealSpec(spec: Record<string, unknown>): Agent
       spec.improvementTaskContractVersion === 1 || spec.improvement_task_contract_version === 1
         ? 1
         : undefined,
-    taskDataSources: AgentTaskSpecSchema.shape.taskDataSources.parse(
+    taskDataSources: AgentTaskSpecObjectSchema.shape.taskDataSources.parse(
       spec.taskDataSources ?? spec.task_data_sources,
     ),
     taskPrompt: getStringValue(spec, "taskPrompt", "task_prompt") ?? "",
@@ -159,6 +159,7 @@ export function normalizeAgentTaskHealSpec(spec: Record<string, unknown>): Agent
     calibrationExamples: getRecordArrayValue(spec, "calibrationExamples", "calibration_examples"),
     contextPreparation: getStringValue(spec, "contextPreparation", "context_preparation"),
     requiredContextKeys: getStringArrayValue(spec, "requiredContextKeys", "required_context_keys"),
+    minRounds: getNumberValue(spec, "minRounds", "min_rounds") ?? 1,
     maxRounds: getNumberValue(spec, "maxRounds", "max_rounds") ?? 1,
     qualityThreshold: getNumberValue(spec, "qualityThreshold", "quality_threshold") ?? 0.9,
     revisionPrompt: getStringValue(spec, "revisionPrompt", "revision_prompt"),
@@ -175,6 +176,7 @@ export function applyHealedAgentTaskSpec(
     "task_prompt" in healed ||
     "judge_rubric" in healed ||
     "output_format" in healed ||
+    "min_rounds" in healed ||
     "max_rounds" in healed ||
     "quality_threshold" in healed ||
     "sample_input" in healed;
@@ -190,6 +192,7 @@ export function applyHealedAgentTaskSpec(
     healed.judge_rubric = healedTask.judgeRubric;
     healed.output_format = healedTask.outputFormat;
     healed.judge_model = healedTask.judgeModel;
+    healed.min_rounds = healedTask.minRounds ?? 1;
     healed.max_rounds = healedTask.maxRounds;
     healed.quality_threshold = healedTask.qualityThreshold;
     healed.sample_input = healedTask.sampleInput ?? null;
@@ -215,6 +218,7 @@ export function applyHealedAgentTaskSpec(
   healed.judgeRubric = healedTask.judgeRubric;
   healed.outputFormat = healedTask.outputFormat;
   healed.judgeModel = healedTask.judgeModel;
+  healed.minRounds = healedTask.minRounds ?? 1;
   healed.maxRounds = healedTask.maxRounds;
   healed.qualityThreshold = healedTask.qualityThreshold;
   healed.sampleInput = healedTask.sampleInput ?? null;

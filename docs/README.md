@@ -50,11 +50,13 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [Interactive WebSocket protocol contract](websocket-protocol-contract.json)
 
 The contract pins the TypeScript-only `agent_progress_notes_v1`,
-`structured_task_creation_v1`, and `agent_task_outcome_v1` extensions. It covers
+`structured_task_creation_v1`, and `agent_task_outcome_v1` extensions, plus the
+shared `minimum_iterations_v1` extension. It covers
 Autowork-compatible fixtures, strict source roles and integrity checks,
 evaluator-only privacy, ordered setup states, bounded continuation, versioned
-terminal outcomes, exact durable replay, and finite retention. Python
-intentionally does not advertise these extensions until its equivalent
+terminal outcomes, exact durable replay, and finite retention. Python and
+TypeScript both advertise the minimum-iteration contract; Python intentionally
+does not advertise the TypeScript-only extensions until its equivalent
 contracts are available.
 
 - [Core/control package split](internal/core-control-package-split.md)

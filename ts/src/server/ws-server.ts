@@ -1479,6 +1479,10 @@ function legacyRunMessage(message: ServerMessage): ServerMessage {
         type: "state",
         paused: message.paused,
         ...(message.generation === undefined ? {} : { generation: message.generation }),
+        ...(message.minimum_generations === undefined
+          ? {}
+          : { minimum_generations: message.minimum_generations }),
+        ...(message.generations === undefined ? {} : { generations: message.generations }),
         ...(message.phase === undefined ? {} : { phase: message.phase }),
       };
     case "run_accepted":
@@ -1486,6 +1490,7 @@ function legacyRunMessage(message: ServerMessage): ServerMessage {
         type: "run_accepted",
         run_id: message.run_id,
         scenario: message.scenario,
+        minimum_generations: message.minimum_generations,
         generations: message.generations,
       };
     case "ack":

@@ -307,7 +307,7 @@ export class ImprovementLoop {
 
       this.reportCompletedEvaluation(roundResult, bestScore);
 
-      if (stopForRepeatedCachedFailure) {
+      if (stopForRepeatedCachedFailure && roundNum >= this.#minRounds) {
         terminationReason = "unchanged_output";
         break;
       }
@@ -369,8 +369,14 @@ export class ImprovementLoop {
         this.reportProgress({ phase: "revision", status: "completed", round: roundNum });
         const cleaned = cleanRevisionOutput(revised);
         if (cleaned === currentOutput) {
-          terminationReason = "unchanged_output";
-          break;
+          if (roundNum >= this.#minRounds) {
+            terminationReason = "unchanged_output";
+            break;
+          }
+          // Re-evaluate the unchanged artifact from cache until the minimum
+          // round floor is satisfied. This is a normal convergence signal,
+          // not a safety exit.
+          continue;
         }
         currentOutput = cleaned;
       }

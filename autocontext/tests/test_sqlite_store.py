@@ -22,6 +22,24 @@ def test_connect_applies_sqlite_tuning(tmp_path: Path) -> None:
     assert busy_timeout == SQLITE_BUSY_TIMEOUT_MS
 
 
+def test_run_minimum_generations_survives_reopen(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    store.create_run(
+        "run-floor",
+        "grid_ctf",
+        5,
+        "local",
+        minimum_generations=3,
+    )
+
+    reopened = SQLiteStore(tmp_path / "test.sqlite3")
+    row = reopened.get_run("run-floor")
+
+    assert row is not None
+    assert row["minimum_generations"] == 3
+    assert row["target_generations"] == 5
+
+
 def test_append_generation_agent_activity_batches_outputs_and_metrics(tmp_path: Path) -> None:
     store = _make_store(tmp_path)
     store.create_run("run-1", "grid_ctf", 1, "local")

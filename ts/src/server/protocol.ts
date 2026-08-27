@@ -72,9 +72,11 @@ export const TRANSCRIPT_PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
 export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);
 export const STRUCTURED_TASK_CREATION_CAPABILITY = "structured_task_creation_v1";
+export const MINIMUM_ITERATIONS_CAPABILITY = "minimum_iterations_v1";
 export const BASE_SERVER_CAPABILITIES = [
   STRUCTURED_TASK_CREATION_CAPABILITY,
   AGENT_TASK_OUTCOME_CAPABILITY,
+  MINIMUM_ITERATIONS_CAPABILITY,
 ] as const;
 export const TRANSCRIPT_SERVER_CAPABILITIES = [
   "run_transcript_v1",
@@ -237,6 +239,8 @@ export const StateMsgSchema = protocolObject({
   paused: z.boolean(),
   scenario: z.string().optional().nullable(),
   generation: z.number().int().optional(),
+  minimum_generations: z.number().int().positive().optional(),
+  generations: z.number().int().positive().optional(),
   phase: z.string().optional(),
   ...RunMessageMetadataSchema,
 });
@@ -263,6 +267,7 @@ export const RunAcceptedMsgSchema = protocolObject({
   ...RunMessageMetadataSchema,
   run_id: z.string(),
   scenario: z.string(),
+  minimum_generations: z.number().int().positive().optional(),
   generations: z.number().int(),
   command_id: z.string().min(1).max(200).optional(),
 });
@@ -388,12 +393,26 @@ export const ChatAgentCmdSchema = protocolObject({
   ...RunCommandMetadataSchema,
 });
 
-export const StartRunCmdSchema = protocolObject({
+const StartRunCmdObjectSchema = protocolObject({
   type: z.literal("start_run"),
   scenario: z.string(),
+  minimum_generations: z.number().int().positive().optional().nullable(),
   generations: z.number().int().positive(),
   require_playbook_approval: z.boolean().default(false),
   ...RunCommandMetadataSchema,
+});
+
+export const StartRunCmdSchema = StartRunCmdObjectSchema.superRefine((command, ctx) => {
+  if (
+    command.minimum_generations != null &&
+    command.minimum_generations > command.generations
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minimum_generations"],
+      message: "minimum_generations must not exceed generations",
+    });
+  }
 });
 
 export const ResumeRunCmdSchema = protocolObject({
@@ -476,14 +495,14 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   AuthStatusMsgSchema,
 ]);
 
-export const ClientMessageSchema = z.discriminatedUnion("type", [
+const ClientMessageUnionSchema = z.discriminatedUnion("type", [
   PauseCmdSchema,
   ResumeCmdSchema,
   StopCmdSchema,
   InjectHintCmdSchema,
   OverrideGateCmdSchema,
   ChatAgentCmdSchema,
-  StartRunCmdSchema,
+  StartRunCmdObjectSchema,
   ListScenariosCmdSchema,
   CreateScenarioCmdSchema,
   CreateTaskCmdSchema,
@@ -496,6 +515,20 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SwitchProviderCmdSchema,
   WhoamiCmdSchema,
 ]);
+
+export const ClientMessageSchema = ClientMessageUnionSchema.superRefine((message, ctx) => {
+  if (
+    message.type === "start_run" &&
+    message.minimum_generations != null &&
+    message.minimum_generations > message.generations
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minimum_generations"],
+      message: "minimum_generations must not exceed generations",
+    });
+  }
+});
 
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;

@@ -13,7 +13,11 @@ export interface InteractiveControlRunManager {
     imageAttachments?: readonly ValidatedImageAttachment[],
     expectedRunId?: string | null,
   ): void;
-  getState?(): { runId: string | null };
+  getState?(): {
+    runId: string | null;
+    minimumGenerations?: number | null;
+    targetGenerations?: number | null;
+  };
   overrideGate(
     decision: "advance" | "retry" | "rollback",
     expectedRunId?: string | null,
@@ -21,7 +25,7 @@ export interface InteractiveControlRunManager {
   startRun(
     scenario: string,
     generations: number,
-    opts?: { requirePlaybookApproval?: boolean },
+    opts?: { requirePlaybookApproval?: boolean; minimumGenerations?: number },
   ): Promise<string>;
   getEnvironmentInfo(): {
     scenarios: Array<{ name: string; description: string }>;
@@ -36,12 +40,16 @@ export function buildRunAcceptedMessage(opts: {
   commandId?: string;
   runId: string;
   scenario: string;
+  minimumGenerations?: number;
   generations: number;
 }): ServerMessage {
   return {
     type: "run_accepted",
     run_id: opts.runId,
     scenario: opts.scenario,
+    ...(opts.minimumGenerations !== undefined && opts.minimumGenerations > 1
+      ? { minimum_generations: opts.minimumGenerations }
+      : {}),
     generations: opts.generations,
     ...(opts.clientRunId ? { client_run_id: opts.clientRunId } : {}),
     ...(opts.commandId ? { command_id: opts.commandId } : {}),
@@ -106,14 +114,22 @@ export async function executeInteractiveControlCommand(opts: {
         opts.command.generations,
         {
           requirePlaybookApproval: opts.command.require_playbook_approval,
+          ...(opts.command.minimum_generations == null
+            ? {}
+            : { minimumGenerations: opts.command.minimum_generations }),
         },
       );
+      const minimumGenerations =
+        opts.runManager.getState?.().minimumGenerations ??
+        opts.command.minimum_generations ??
+        1;
       return [
         buildRunAcceptedMessage({
           clientRunId: opts.command.client_run_id,
           commandId: opts.command.command_id,
           runId,
           scenario: opts.command.scenario,
+          minimumGenerations,
           generations: opts.command.generations,
         }),
       ];

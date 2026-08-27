@@ -17,6 +17,7 @@ const scenario = {
   initialState() {
     return {
       outputFormat: __OUTPUT_FORMAT__,
+      minRounds: __MIN_ROUNDS__,
       maxRounds: __MAX_ROUNDS__,
       qualityThreshold: __QUALITY_THRESHOLD__,
       currentRound: 0,

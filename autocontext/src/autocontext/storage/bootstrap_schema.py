@@ -56,6 +56,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS runs (
             run_id TEXT PRIMARY KEY,
             scenario TEXT NOT NULL,
+            minimum_generations INTEGER NOT NULL DEFAULT 1,
             target_generations INTEGER NOT NULL,
             executor_mode TEXT NOT NULL,
             status TEXT NOT NULL,

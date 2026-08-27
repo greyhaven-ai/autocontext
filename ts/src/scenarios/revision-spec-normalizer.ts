@@ -130,6 +130,7 @@ export function normalizeScenarioRevisionSpec(
         calibration_examples: pick(spec, "calibration_examples", "calibrationExamples") ?? null,
         context_preparation: pick(spec, "context_preparation", "contextPreparation") ?? null,
         required_context_keys: pick(spec, "required_context_keys", "requiredContextKeys") ?? null,
+        min_rounds: pick(spec, "min_rounds", "minRounds") ?? 1,
         max_rounds: pick(spec, "max_rounds", "maxRounds") ?? 1,
         quality_threshold: pick(spec, "quality_threshold", "qualityThreshold") ?? 0.9,
         revision_prompt: pick(spec, "revision_prompt", "revisionPrompt") ?? null,

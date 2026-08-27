@@ -8,7 +8,7 @@ from typing import Any
 
 def run_wire_payload(run: Mapping[str, Any], *, run_id: str | None = None) -> dict[str, Any]:
     """Return the stable cross-runtime Run projection used by CLI JSON."""
-    return {
+    payload: dict[str, Any] = {
         "run_id": str(run.get("run_id") or run_id or ""),
         "scenario": str(run.get("scenario") or ""),
         "target_generations": int(run.get("target_generations") or 0),
@@ -18,6 +18,10 @@ def run_wire_payload(run: Mapping[str, Any], *, run_id: str | None = None) -> di
         "created_at": _nullable_string(run.get("created_at")),
         "updated_at": _nullable_string(run.get("updated_at")),
     }
+    minimum_generations = int(run.get("minimum_generations") or 1)
+    if minimum_generations > 1:
+        payload["minimum_generations"] = minimum_generations
+    return payload
 
 
 def generation_wire_payload(row: Mapping[str, Any]) -> dict[str, Any]:

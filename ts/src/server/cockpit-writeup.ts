@@ -14,6 +14,7 @@ export function buildWriteup(store: SQLiteStore, run: RunRow, knowledgeRoot: str
     `# Run Summary: ${run.run_id}`,
     "",
     `- **Scenario**: ${run.scenario}`,
+    `- **Minimum generations**: ${run.minimum_generations}`,
     `- **Target generations**: ${run.target_generations}`,
     `- **Status**: ${run.status}`,
     `- **Created**: ${run.created_at}`,

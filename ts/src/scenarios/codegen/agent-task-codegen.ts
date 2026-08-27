@@ -16,6 +16,7 @@ export function generateAgentTaskSource(
   );
   const description = String(spec.description ?? `Agent task: ${name}`);
   const outputFormat = String(spec.outputFormat ?? spec.output_format ?? "free_text");
+  const minRounds = Number(spec.minRounds ?? spec.min_rounds ?? 1);
   const maxRounds = Number(spec.maxRounds ?? spec.max_rounds ?? 1);
   const qualityThreshold = Number(spec.qualityThreshold ?? spec.quality_threshold ?? 0.9);
 
@@ -26,6 +27,7 @@ export function generateAgentTaskSource(
     __JUDGE_RUBRIC__: JSON.stringify(judgeRubric),
     __DESCRIPTION__: JSON.stringify(description),
     __OUTPUT_FORMAT__: JSON.stringify(outputFormat),
+    __MIN_ROUNDS__: String(minRounds),
     __MAX_ROUNDS__: String(maxRounds),
     __QUALITY_THRESHOLD__: String(qualityThreshold),
   });

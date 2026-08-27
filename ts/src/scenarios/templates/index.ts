@@ -28,6 +28,7 @@ export interface TemplateSpec {
   taskPrompt: string;
   judgeRubric: string;
   outputFormat: string;
+  minRounds?: number;
   maxRounds: number;
   qualityThreshold: number;
   judgeModel?: string;
@@ -213,6 +214,7 @@ export class TemplateLoader {
           judge_rubric: merged.judgeRubric,
           output_format: merged.outputFormat,
           judge_model: merged.judgeModel ?? "",
+          min_rounds: merged.minRounds ?? 1,
           max_rounds: merged.maxRounds,
           quality_threshold: merged.qualityThreshold,
           revision_prompt: merged.revisionPrompt ?? null,
