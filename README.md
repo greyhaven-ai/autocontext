@@ -29,7 +29,7 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 | ------------------- | ------------------------------------- |
 | Python CLI          | `uv tool install autocontext==0.17.0` |
 | Python library/dev  | `uv pip install autocontext==0.17.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.17.1`           |
+| TypeScript/Node CLI | `bun add -g autoctx@0.17.2`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -142,9 +142,9 @@ Python owns the full control-plane package; TypeScript owns several operator-fac
 - **Stronger learning evidence across runtimes:** Python and TypeScript share context-bundle, attribution, and negative-result contracts, while Python training adds replayable adaptive confirmation and minimum-effect promotion artifacts.
 <!-- autocontext-whats-new:end -->
 
-### npm 0.17.1 structured task creation
+### npm 0.17.2 structured tasks and durable outcomes
 
-`autoctx@0.17.1` is a TypeScript-only patch release; the Python package remains
+`autoctx@0.17.2` is a TypeScript-only patch release; the Python package remains
 at `autocontext==0.17.0`. The npm package adds:
 
 - **Structured desktop missions:** protocol-v2 servers advertise
@@ -158,6 +158,10 @@ at `autocontext==0.17.0`. The npm package adds:
 - **Bounded artifact continuation:** truncated initial or revised task outputs
   can continue within explicit segment and total-size limits; exhausted or
   non-growing continuation fails closed before evaluation.
+- **Durable task outcomes:** completed saved agent tasks advertise
+  `agent_task_outcome_v1`, retain a compact terminal receipt and per-generation
+  evaluator evidence, and expose the complete versioned outcome through
+  SQLite-backed Cockpit inspection.
 
 The package also carries the TypeScript-first runtime work introduced in 0.16.0
 and hardened in 0.16.1:
@@ -175,8 +179,8 @@ and hardened in 0.16.1:
   priority controls, bounded WebSocket resources, credential redaction, and
   terminal-control sanitization are enforced across the interactive path.
 
-Python parity for structured task creation, the pi-tui client, and image
-attachments remains deferred.
+Python parity for structured task creation and outcomes, the pi-tui client, and
+image attachments remains deferred.
 See the [TypeScript guide](ts/README.md), [runtime composition
 contracts](docs/internal/runtime-component-graph.md), and the full
 [changelog](CHANGELOG.md) for details.

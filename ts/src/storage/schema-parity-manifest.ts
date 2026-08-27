@@ -26,6 +26,12 @@ export const SCHEMA_PARITY_PYTHON_ONLY_TABLES = [
   },
 ] as const;
 
-export const SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES = [] as const;
+export const SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES = [
+  {
+    table: "agent_task_outcomes",
+    reason:
+      "TypeScript-only structured agent-task outcome contract; Python does not advertise structured tasks.",
+  },
+] as const;
 
 export const SCHEMA_PARITY_LEDGER_TABLES = ["schema_migrations", "schema_version"] as const;

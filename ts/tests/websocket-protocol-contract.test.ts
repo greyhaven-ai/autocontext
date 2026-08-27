@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { buildEventStreamEnvelope } from "../src/server/event-stream-envelope.js";
 import { compileResolvedImprovementTaskContract } from "../src/scenarios/improvement-task-contract.js";
 import {
+  AGENT_TASK_OUTCOME_CAPABILITY,
+  AgentTaskOutcomeV1Schema,
   AGENT_PROGRESS_NOTE_CAPABILITY,
   AckMsgSchema,
   AgentProgressNotePayloadSchema,
@@ -53,6 +55,23 @@ type EventStreamEnvelopeContract = {
 };
 
 type WebSocketProtocolContract = {
+  agent_task_outcome_extension: {
+    advertised_runtimes: ["typescript"];
+    applies_to: string;
+    capability: "agent_task_outcome_v1";
+    derivation: string;
+    durability: string;
+    evaluation_event: "generation_completed";
+    evaluation_fields: string[];
+    inspection_field: "agent_task_outcome";
+    inspection_path: "/api/cockpit/runs/:run_id/inspection";
+    package_fixture: "protocol-fixtures/agent-task-outcome-v1.json";
+    python_support: "deferred";
+    schema_version: 1;
+    terminal_event: "run_completed";
+    terminal_payload_field: "agent_task_outcome";
+    terminal_receipt_fields: string[];
+  };
   image_attachment_extension: {
     advertised_runtimes: ["typescript"];
     additive_commands: ["chat_agent", "inject_hint"];
@@ -338,6 +357,37 @@ describe("WebSocket protocol shared contract", () => {
     expect(() =>
       compileResolvedImprovementTaskContract(message.contract, message.source_contents),
     ).not.toThrow();
+  });
+
+  it("advertises and ships the versioned agent-task outcome contract", () => {
+    expect(CONTRACT.agent_task_outcome_extension).toMatchObject({
+      advertised_runtimes: ["typescript"],
+      capability: AGENT_TASK_OUTCOME_CAPABILITY,
+      schema_version: 1,
+      terminal_event: "run_completed",
+      terminal_payload_field: "agent_task_outcome",
+      evaluation_event: "generation_completed",
+      inspection_field: "agent_task_outcome",
+      python_support: "deferred",
+    });
+    expect(SERVER_CAPABILITIES).toContain(AGENT_TASK_OUTCOME_CAPABILITY);
+
+    const fixture = JSON.parse(
+      readFileSync(
+        join(
+          import.meta.dirname,
+          "..",
+          CONTRACT.agent_task_outcome_extension.package_fixture,
+        ),
+        "utf-8",
+      ),
+    );
+    expect(AgentTaskOutcomeV1Schema.parse(fixture)).toMatchObject({
+      schema_version: 1,
+      termination_reason: "threshold_met",
+      completed_iterations: 2,
+      best_iteration: 2,
+    });
   });
 
   it("forbids unknown top-level client fields like the Python protocol", () => {

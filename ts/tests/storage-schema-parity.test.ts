@@ -12,11 +12,7 @@ import {
 } from "../src/storage/schema-parity-manifest.js";
 import { migrateDatabase } from "../src/storage/storage-migration-workflow.js";
 
-/**
- * SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES is currently the empty tuple, so its element type is
- * `never`. Widening both manifests to their declared entry shape keeps the assertions below
- * readable and keeps this test honest when an entry is added.
- */
+/** Widen both manifests to a shared entry shape for readable parity assertions. */
 type ParityTableEntry = { readonly table: string; readonly reason: string };
 const pythonOnlyManifest: readonly ParityTableEntry[] = SCHEMA_PARITY_PYTHON_ONLY_TABLES;
 const typescriptOnlyManifest: readonly ParityTableEntry[] = SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES;

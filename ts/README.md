@@ -284,7 +284,7 @@ operator-control, and chat commands. Run-scoped responses then include stable
 
 #### Structured task creation
 
-TypeScript protocol-v2 servers in `autoctx@0.17.1` advertise
+TypeScript protocol-v2 servers in `autoctx@0.17.2` advertise
 `structured_task_creation_v1` only with the complete `create_task` handler and
 schema available. The command compiles a versioned improvement objective,
 deliverable, evaluation contract, and at most eight bounded inline sources
@@ -306,6 +306,22 @@ The package includes a copyable, integrity-valid command at
 [`protocol-fixtures/structured-task-create-v1.json`](protocol-fixtures/structured-task-create-v1.json).
 The [machine-readable WebSocket contract](../docs/websocket-protocol-contract.json)
 defines the exact TypeScript-only extension. Python does not advertise it.
+
+#### Structured agent-task outcomes
+
+Completed saved agent tasks expose `agent_task_outcome_v1`. The
+`run_completed.agent_task_outcome` receipt reports the termination reason,
+configured quality threshold, whether it was met, completed/max/best iteration,
+and best score. Each `generation_completed` event carries that evaluation's
+reasoning, dimension scores, judge-failure flag, and evaluator epoch. Transcript
+retention preserves the compact terminal receipt plus those per-generation
+events; Cockpit run inspection returns the complete versioned outcome from
+SQLite as `agent_task_outcome`.
+
+The outcome is derived directly from the improvement loop result and task spec.
+It does not parse the generated skill package or run an additional synthesis
+pass. A complete example ships at
+[`protocol-fixtures/agent-task-outcome-v1.json`](protocol-fixtures/agent-task-outcome-v1.json).
 
 Reconnect with:
 

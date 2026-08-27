@@ -427,7 +427,7 @@ describe("structured task live server", () => {
       expect(hello).toEqual({
         type: "hello",
         protocol_version: 2,
-        capabilities: ["structured_task_creation_v1"],
+        capabilities: ["structured_task_creation_v1", "agent_task_outcome_v1"],
       });
       await socket.waitFor((message) => message.type === "state");
 

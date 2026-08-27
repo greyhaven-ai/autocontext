@@ -20,6 +20,20 @@ All notable changes to this project will be documented in this file.
   use the Authorization header, and the TUI authenticates both HTTP and WebSocket
   traffic from `AUTOCONTEXT_SERVER_TOKEN` without credential-bearing URLs.
 
+## [0.17.2] - 2026-08-27
+
+This TypeScript-only patch release adds a durable, versioned outcome contract
+for structured agent tasks. Python remains at `autocontext==0.17.0`, and Pi
+remains on its separate `0.10.0` package line.
+
+### Added
+
+- TypeScript structured agent-task runs now advertise `agent_task_outcome_v1`.
+  Terminal events retain a versioned receipt with termination and threshold
+  mechanics, per-generation transcript frames retain evaluator evidence, and
+  Cockpit inspection returns the complete SQLite-backed outcome without an
+  additional model synthesis pass.
+
 ## [0.17.1] - 2026-08-26
 
 This TypeScript-only patch release adds a strict, capability-negotiated

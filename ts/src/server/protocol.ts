@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { AGENT_PROGRESS_NOTE_CAPABILITY } from "../loop/agent-progress-note.js";
 import { AGENT_TASK_PLAN_CAPABILITY } from "../loop/agent-task-plan.js";
+import { AGENT_TASK_OUTCOME_CAPABILITY } from "../knowledge/agent-task-outcome.js";
 import { ImprovementTaskContractSchema } from "../scenarios/improvement-task-contract.js";
 import { TaskDataSourceContentListSchema } from "../scenarios/task-data-source.js";
 import { ImageAttachmentListSchema } from "../types/image-attachments.js";
@@ -45,6 +46,21 @@ export {
   AgentTaskPlanStepStatusSchema,
   MAX_RETAINED_AGENT_TASK_PLAN_BYTES,
 } from "../loop/agent-task-plan.js";
+export {
+  AGENT_TASK_OUTCOME_CAPABILITY,
+  AGENT_TASK_OUTCOME_SCHEMA_VERSION,
+  AgentTaskOutcomeGenerationV1Schema,
+  AgentTaskOutcomeReceiptV1Schema,
+  AgentTaskOutcomeV1Schema,
+  AgentTaskTerminationReasonSchema,
+  agentTaskOutcomeReceiptV1,
+} from "../knowledge/agent-task-outcome.js";
+export type {
+  AgentTaskOutcomeGenerationV1,
+  AgentTaskOutcomeReceiptV1,
+  AgentTaskOutcomeV1,
+  AgentTaskTerminationReason,
+} from "../knowledge/agent-task-outcome.js";
 export type {
   AgentTaskPlanPayload,
   AgentTaskPlanStep,
@@ -56,7 +72,10 @@ export const TRANSCRIPT_PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
 export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);
 export const STRUCTURED_TASK_CREATION_CAPABILITY = "structured_task_creation_v1";
-export const BASE_SERVER_CAPABILITIES = [STRUCTURED_TASK_CREATION_CAPABILITY] as const;
+export const BASE_SERVER_CAPABILITIES = [
+  STRUCTURED_TASK_CREATION_CAPABILITY,
+  AGENT_TASK_OUTCOME_CAPABILITY,
+] as const;
 export const TRANSCRIPT_SERVER_CAPABILITIES = [
   "run_transcript_v1",
   "safe_run_stop_v1",
