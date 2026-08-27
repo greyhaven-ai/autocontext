@@ -131,6 +131,14 @@ runtime (`python` or `typescript`).
 
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 
+HTTP and WebSocket control planes bind to loopback by default. A non-loopback
+bind fails closed unless `AUTOCONTEXT_SERVER_TOKEN` contains a random value of
+at least 32 characters. Send it as an `Authorization: Bearer` value; browser
+WebSocket clients use the `autocontext.bearer.<base64url-token>` subprotocol.
+Tokens in endpoint URLs are rejected. See the
+[persistent-host security model](autocontext/docs/persistent-host.md#trust-and-credential-boundary)
+before exposing a server beyond one trusted operator.
+
 <!-- autocontext-whats-new:start -->
 ## What's New in 0.17.0
 

@@ -144,12 +144,19 @@ autoctx tui
 Attach the same client to an existing TypeScript `autoctx serve` endpoint:
 
 ```bash
+export AUTOCONTEXT_SERVER_TOKEN="$(openssl rand -hex 32)"
 autoctx tui --connect https://host.example
 ```
 
 Non-loopback attach endpoints must use HTTPS/WSS. Credentials are never sent
 over a remote plaintext WebSocket, and URL userinfo or sensitive query values
-are redacted from the terminal and its preserved transcript.
+are rejected. A non-loopback server bind also requires
+`AUTOCONTEXT_SERVER_TOKEN` to contain at least 32 characters. The TUI reads the
+same token from its environment and authenticates HTTP with a bearer header and
+browser-compatible WebSockets with the
+`autocontext.bearer.<base64url-token>` subprotocol. The shared token is intended
+for a single trusted operator; use TLS, an authenticated reverse proxy, and
+external authorization for broader access.
 
 Local and remote mode use the same WebSocket transport, durable transcript
 view model, command registry, and HTTP cockpit read models. The renderer never
