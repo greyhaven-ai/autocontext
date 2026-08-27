@@ -125,6 +125,7 @@ export function buildCockpitApiRoutes(opts: {
         body: {
           run_id: run.run_id,
           scenario_name: run.scenario,
+          minimum_generations: run.minimum_generations,
           target_generations: run.target_generations,
           executor_mode: run.executor_mode,
           agent_provider: run.agent_provider,
@@ -165,6 +166,7 @@ export function buildCockpitApiRoutes(opts: {
           run: {
             run_id: run.run_id,
             scenario: run.scenario,
+            minimum_generations: run.minimum_generations,
             target_generations: run.target_generations,
             executor_mode: run.executor_mode,
             status: run.status,
@@ -497,6 +499,8 @@ function summarizeRun(store: SQLiteStore, run: RunRow): Record<string, unknown> 
   return {
     run_id: run.run_id,
     scenario_name: run.scenario,
+    minimum_generations: run.minimum_generations,
+    target_generations: run.target_generations,
     generations_completed: generations.length,
     best_score: bestScore,
     best_elo: bestElo,

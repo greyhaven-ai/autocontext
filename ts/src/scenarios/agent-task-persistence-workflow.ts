@@ -33,6 +33,7 @@ export function buildPersistedAgentTaskSpecData(spec: AgentTaskSpec): Record<str
   if (spec.calibrationExamples) specData.calibration_examples = spec.calibrationExamples;
   if (spec.contextPreparation) specData.context_preparation = spec.contextPreparation;
   if (spec.requiredContextKeys) specData.required_context_keys = spec.requiredContextKeys;
+  if (spec.minRounds !== undefined) specData.min_rounds = spec.minRounds;
   if (spec.maxRounds !== 1) specData.max_rounds = spec.maxRounds;
   if (spec.qualityThreshold !== 0.9) specData.quality_threshold = spec.qualityThreshold;
   if (spec.revisionPrompt) specData.revision_prompt = spec.revisionPrompt;

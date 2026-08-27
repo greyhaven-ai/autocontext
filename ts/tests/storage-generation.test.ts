@@ -49,6 +49,7 @@ describe("createRun", () => {
     expect(run).toBeDefined();
     expect(run!.run_id).toBe("run-1");
     expect(run!.scenario).toBe("grid_ctf");
+    expect(run!.minimum_generations).toBe(1);
     expect(run!.target_generations).toBe(5);
     expect(run!.executor_mode).toBe("local");
     expect(run!.status).toBe("running");
@@ -62,9 +63,21 @@ describe("createRun", () => {
   });
 
   it("should accept optional agent_provider", () => {
-    store.createRun("run-2", "othello", 3, "local", "deterministic");
+    store.createRun("run-2", "othello", 3, "local", "deterministic", 2);
     const run = store.getRun("run-2");
     expect(run!.agent_provider).toBe("deterministic");
+    expect(run!.minimum_generations).toBe(2);
+  });
+
+  it("retains the minimum generation floor after reopening the database", () => {
+    store.createRun("run-restart", "grid_ctf", 5, "local", "deterministic", 3);
+    store.close();
+    store = createStore(dir);
+
+    expect(store.getRun("run-restart")).toMatchObject({
+      minimum_generations: 3,
+      target_generations: 5,
+    });
   });
 });
 

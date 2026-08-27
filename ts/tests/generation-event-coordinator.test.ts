@@ -22,6 +22,7 @@ describe("generation event coordinator", () => {
     ).toEqual({
       run_id: "run-1",
       scenario: "grid_ctf",
+      minimum_generations: 1,
       target_generations: 3,
     });
 

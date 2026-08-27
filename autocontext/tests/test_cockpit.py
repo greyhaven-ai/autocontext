@@ -37,7 +37,7 @@ def _make_artifacts(tmp_path: Path) -> ArtifactStore:
 
 def _seed_run(store: SQLiteStore, run_id: str = "run1", scenario: str = "grid_ctf", gens: int = 3) -> None:
     """Create a run with completed generations for testing."""
-    store.create_run(run_id, scenario, gens, "local")
+    store.create_run(run_id, scenario, gens, "local", minimum_generations=2)
     store.upsert_generation(run_id, 1, 0.40, 0.50, 1000.0, 2, 1, "advance", "completed", 30.0)
     store.upsert_generation(run_id, 2, 0.55, 0.65, 1050.0, 3, 0, "advance", "completed", 45.0)
     store.upsert_generation(run_id, 3, 0.70, 0.80, 1100.0, 4, 1, "advance", "completed", 60.0)
@@ -351,6 +351,8 @@ class TestCockpitRunsEndpoint:
         run = data[0]
         assert run["run_id"] == "run1"
         assert run["scenario_name"] == "grid_ctf"
+        assert run["minimum_generations"] == 2
+        assert run["target_generations"] == 3
         assert run["generations_completed"] == 3
         assert run["best_score"] == 0.80
         assert run["status"] == "completed"
@@ -369,6 +371,8 @@ class TestCockpitRunStatus:
         data = resp.json()
         assert data["run_id"] == "run1"
         assert data["scenario_name"] == "grid_ctf"
+        assert data["minimum_generations"] == 2
+        assert data["target_generations"] == 3
         assert isinstance(data["generations"], list)
         assert len(data["generations"]) == 3
         gen1 = data["generations"][0]

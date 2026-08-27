@@ -40,6 +40,8 @@ describe("websocket session bootstrap", () => {
       paused: false,
       scenario: null,
       generation: undefined,
+      minimum_generations: undefined,
+      generations: undefined,
       phase: undefined,
     });
   });
@@ -49,7 +51,11 @@ describe("websocket session bootstrap", () => {
       {
         type: "hello",
         protocol_version: 2,
-        capabilities: ["structured_task_creation_v1", "agent_task_outcome_v1"],
+        capabilities: [
+          "structured_task_creation_v1",
+          "agent_task_outcome_v1",
+          "minimum_iterations_v1",
+        ],
       },
       {
         type: "environments",
@@ -64,6 +70,8 @@ describe("websocket session bootstrap", () => {
         paused: false,
         scenario: null,
         generation: undefined,
+        minimum_generations: undefined,
+        generations: undefined,
         phase: undefined,
       },
     ]);
@@ -82,6 +90,7 @@ describe("websocket session bootstrap", () => {
           "agent_progress_notes_v1",
           "structured_task_creation_v1",
           "agent_task_outcome_v1",
+          "minimum_iterations_v1",
         ],
       },
       {
@@ -97,6 +106,8 @@ describe("websocket session bootstrap", () => {
         paused: false,
         scenario: null,
         generation: undefined,
+        minimum_generations: undefined,
+        generations: undefined,
         phase: undefined,
       },
     ]);

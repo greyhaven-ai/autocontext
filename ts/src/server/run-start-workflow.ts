@@ -317,7 +317,7 @@ interface StartRunStoreLike {
 }
 
 interface StartRunRunnerLike {
-  run(runId: string, generations: number): Promise<unknown>;
+  run(runId: string, generations: number, minimumGenerations?: number): Promise<unknown>;
 }
 
 export interface BuiltInGameStartRunDeps {
@@ -329,6 +329,7 @@ export interface BuiltInGameStartRunDeps {
 export async function executeBuiltInGameStartRun(opts: {
   runId: string;
   scenarioName: string;
+  minimumGenerations?: number;
   generations: number;
   requirePlaybookApproval?: boolean;
   settings: AppSettings;
@@ -438,7 +439,7 @@ export async function executeBuiltInGameStartRun(opts: {
         runtimeSession: opts.providerBundle.runtimeSession,
       });
 
-    await runner.run(asRunId(opts.runId), opts.generations);
+    await runner.run(asRunId(opts.runId), opts.generations, opts.minimumGenerations ?? 1);
   } finally {
     store.close();
     opts.providerBundle.close?.();
@@ -502,6 +503,7 @@ export async function executeAgentTaskCustomStartRun(opts: {
   runId: string;
   scenarioName: string;
   entry: CustomScenarioEntry;
+  minimumGenerations?: number;
   generations: number;
   provider: LLMProvider;
   settings?: AppSettings;
@@ -515,6 +517,15 @@ export async function executeAgentTaskCustomStartRun(opts: {
   deps?: AgentTaskCustomStartRunDeps;
 }): Promise<void> {
   const executeTask = opts.deps?.executeAgentTaskSolve ?? executeAgentTaskSolve;
+  const minimumGenerations =
+    opts.minimumGenerations ?? readSpecMinimumGenerations(opts.entry.spec);
+  if (
+    !Number.isInteger(minimumGenerations) ||
+    minimumGenerations < 1 ||
+    minimumGenerations > opts.generations
+  ) {
+    throw new Error("minimum_generations must be between 1 and generations");
+  }
   const now = opts.deps?.now ?? Date.now;
   const { hookBus, loadedExtensions } = opts.settings
     ? await initializeHookBus({
@@ -526,6 +537,7 @@ export async function executeAgentTaskCustomStartRun(opts: {
   emitHook(hookBus, HookEvents.RUN_START, {
     run_id: opts.runId,
     scenario: opts.scenarioName,
+    minimum_generations: minimumGenerations,
     target_generations: opts.generations,
     family: "agent_task",
     saved_custom: true,
@@ -535,6 +547,7 @@ export async function executeAgentTaskCustomStartRun(opts: {
   opts.events.emit("run_started", {
     run_id: opts.runId,
     scenario: opts.scenarioName,
+    minimum_generations: minimumGenerations,
     target_generations: opts.generations,
     family: "agent_task",
     saved_custom: true,
@@ -772,6 +785,7 @@ export async function executeAgentTaskCustomStartRun(opts: {
           opts.generations,
           "agent_task",
           opts.persistence.agentProvider ?? opts.provider.name ?? "",
+          minimumGenerations,
         );
         storedRun = true;
       }
@@ -781,6 +795,7 @@ export async function executeAgentTaskCustomStartRun(opts: {
           name: opts.scenarioName,
           spec: opts.entry.spec,
         },
+        minimumGenerations,
         generations: opts.generations,
         ...(hookBus ? { hookBus } : {}),
         onProgress: (progress) => {
@@ -1062,11 +1077,26 @@ function resolveEntryMaxSteps(entry: CustomScenarioEntry): number | undefined {
   return undefined;
 }
 
+function readSpecMinimumGenerations(spec: Record<string, unknown>): number {
+  const raw = spec.minRounds ?? spec.min_rounds;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return 1;
+}
+
 export async function executeGeneratedCustomStartRun(opts: {
   runId: string;
   scenarioName: string;
   entry: CustomScenarioEntry;
   family: ScenarioFamilyName;
+  minimumGenerations?: number;
   generations: number;
   knowledgeRoot: string;
   controller: LoopController;
@@ -1080,6 +1110,7 @@ export async function executeGeneratedCustomStartRun(opts: {
   opts.events.emit("run_started", {
     run_id: opts.runId,
     scenario: opts.scenarioName,
+    minimum_generations: opts.minimumGenerations ?? 1,
     target_generations: opts.generations,
     family: opts.family,
     generated_custom: true,

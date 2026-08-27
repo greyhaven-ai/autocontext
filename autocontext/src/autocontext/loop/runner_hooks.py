@@ -38,6 +38,7 @@ def emit_run_start(
     *,
     run_id: str,
     scenario: str,
+    minimum_generations: int = 1,
     target_generations: int,
 ) -> None:
     event = ensure_hook_bus(runner).emit(
@@ -45,6 +46,7 @@ def emit_run_start(
         {
             "run_id": run_id,
             "scenario": scenario,
+            "minimum_generations": minimum_generations,
             "target_generations": target_generations,
             "loaded_extensions": loaded_extensions(runner),
         },

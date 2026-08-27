@@ -326,8 +326,17 @@ export class SQLiteStore {
     generations: number,
     executorMode: string,
     agentProvider = "",
+    minimumGenerations = 1,
   ): void {
-    createStoreRun(this.#db, runId, scenario, generations, executorMode, agentProvider);
+    createStoreRun(
+      this.#db,
+      runId,
+      scenario,
+      generations,
+      executorMode,
+      agentProvider,
+      minimumGenerations,
+    );
   }
 
   getRun(runId: string): RunRow | null {

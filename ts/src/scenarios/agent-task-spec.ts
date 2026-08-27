@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { MAX_TASK_DATA_SOURCES, TaskDataSourceSchema } from "./task-data-source.js";
 
-export const AgentTaskSpecSchema = z.object({
+export const AgentTaskSpecObjectSchema = z.object({
   improvementTaskContractVersion: z.literal(1).optional(),
   taskDataSources: z
     .array(TaskDataSourceSchema)
@@ -27,10 +27,21 @@ export const AgentTaskSpecSchema = z.object({
   calibrationExamples: z.array(z.record(z.unknown())).nullable().optional(),
   contextPreparation: z.string().min(1, "context_preparation, if provided, must not be empty").nullable().optional(),
   requiredContextKeys: z.array(z.string().min(1)).min(1, "required_context_keys, if provided, must not be empty").nullable().optional(),
+  minRounds: z.number().int().min(1, "min_rounds must be >= 1").optional(),
   maxRounds: z.number().int().min(1, "max_rounds must be >= 1").default(1),
   qualityThreshold: z.number().gt(0).lte(1, "quality_threshold must be between 0.0 (exclusive) and 1.0 (inclusive)").default(0.9),
   revisionPrompt: z.string().min(1, "revision_prompt, if provided, must not be empty").nullable().optional(),
   sampleInput: z.string().min(1, "sample_input, if provided, must not be empty").nullable().optional(),
+});
+
+export const AgentTaskSpecSchema = AgentTaskSpecObjectSchema.superRefine((spec, ctx) => {
+  if ((spec.minRounds ?? 1) > spec.maxRounds) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minRounds"],
+      message: "min_rounds must not exceed max_rounds",
+    });
+  }
 });
 
 export type AgentTaskSpec = z.infer<typeof AgentTaskSpecSchema>;
@@ -56,6 +67,7 @@ export function parseRawSpec(data: Record<string, unknown>): AgentTaskSpec {
     calibrationExamples: data.calibration_examples ?? null,
     contextPreparation: data.context_preparation ?? null,
     requiredContextKeys: data.required_context_keys ?? null,
+    minRounds: data.min_rounds,
     maxRounds: data.max_rounds ?? 1,
     qualityThreshold: data.quality_threshold ?? 0.9,
     revisionPrompt: data.revision_prompt ?? null,

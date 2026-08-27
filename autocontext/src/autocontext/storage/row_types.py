@@ -14,6 +14,7 @@ class RunRow(TypedDict):
 
     run_id: str
     scenario: str
+    minimum_generations: int
     target_generations: int
     executor_mode: str
     status: str

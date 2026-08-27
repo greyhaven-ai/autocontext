@@ -58,6 +58,8 @@ const STRUCTURED_AGENT_TASK_EXECUTION_KEYS = new Set([
   "context_preparation",
   "requiredContextKeys",
   "required_context_keys",
+  "minRounds",
+  "min_rounds",
   "maxRounds",
   "max_rounds",
   "qualityThreshold",

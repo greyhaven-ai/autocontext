@@ -36,8 +36,17 @@ export function createStoreRun(
   generations: number,
   executorMode: string,
   agentProvider = "",
+  minimumGenerations = 1,
 ): void {
-  createRunRecord(db, runId, scenario, generations, executorMode, agentProvider);
+  createRunRecord(
+    db,
+    runId,
+    scenario,
+    generations,
+    executorMode,
+    agentProvider,
+    minimumGenerations,
+  );
 }
 
 export function getStoreRun(

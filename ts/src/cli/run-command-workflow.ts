@@ -114,6 +114,7 @@ type AgentTaskSolveExecutor = (opts: {
   provider: unknown;
   created: { name: string; spec: Record<string, unknown> };
   generations: number;
+  minimumGenerations?: number;
   hookBus?: HookBus | null;
 }) => Promise<{ progress: number; result: Record<string, unknown> }>;
 
@@ -125,6 +126,7 @@ export interface AgentTaskRunStore {
     generations: number,
     executorMode: string,
     agentProvider?: string,
+    minimumGenerations?: number,
   ): void;
   updateRunStatus(runId: string, status: string): void;
   upsertGeneration(
@@ -162,6 +164,7 @@ export async function executeAgentTaskRunCommandWorkflow<
   createStore?: (dbPath: string) => AgentTaskRunStore;
 }): Promise<RunCommandResult> {
   const provider = opts.providerBundle.defaultConfig.providerType;
+  const minimumGenerations = readMinimumGenerations(opts.spec);
   const migrationsDir = opts.migrationsDir;
   const store =
     opts.createStore && opts.dbPath && opts.migrationsDir ? opts.createStore(opts.dbPath) : null;
@@ -176,6 +179,7 @@ export async function executeAgentTaskRunCommandWorkflow<
       opts.plan.gens,
       "agent_task",
       provider,
+      minimumGenerations,
     );
 
     const result = await opts.executeAgentTaskSolve({
@@ -185,6 +189,7 @@ export async function executeAgentTaskRunCommandWorkflow<
         spec: opts.spec,
       },
       generations: opts.plan.gens,
+      minimumGenerations,
       ...(opts.hookBus ? { hookBus: opts.hookBus } : {}),
     });
     const bestScore = typeof result.result.best_score === "number" ? result.result.best_score : 0;
@@ -220,6 +225,11 @@ export async function executeAgentTaskRunCommandWorkflow<
     store?.close();
     opts.providerBundle.close?.();
   }
+}
+
+function readMinimumGenerations(spec: Record<string, unknown>): number {
+  const value = spec.minRounds ?? spec.min_rounds;
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : 1;
 }
 
 export async function planRunCommand(

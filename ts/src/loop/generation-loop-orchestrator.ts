@@ -46,6 +46,7 @@ export interface GenerationLoopOrchestration {
 export function createGenerationLoopOrchestration(opts: {
   runId: string;
   scenarioName: string;
+  minimumGenerations?: number;
   targetGenerations: number;
   startedAtMs: number;
 }): GenerationLoopOrchestration {
@@ -63,6 +64,7 @@ export function createGenerationLoopOrchestration(opts: {
       runStarted: buildRunStartedPayload({
         runId: opts.runId,
         scenarioName: opts.scenarioName,
+        minimumGenerations: opts.minimumGenerations ?? 1,
         targetGenerations: opts.targetGenerations,
       }),
     },

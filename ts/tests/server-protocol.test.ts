@@ -62,6 +62,8 @@ const LegacyRunMessageSchema = z.discriminatedUnion("type", [
       run_id: z.string().optional().nullable(),
       scenario: z.string().optional().nullable(),
       generation: z.number().int().optional(),
+      minimum_generations: z.number().int().optional(),
+      generations: z.number().int().optional(),
       phase: z.string().optional(),
     })
     .strict(),
@@ -71,6 +73,7 @@ const LegacyRunMessageSchema = z.discriminatedUnion("type", [
       run_id: z.string(),
       scenario: z.string(),
       generations: z.number().int(),
+      minimum_generations: z.number().int().optional(),
     })
     .strict(),
   z
@@ -1486,6 +1489,7 @@ describe("InteractiveServer", () => {
           "agent_progress_notes_v1",
           "structured_task_creation_v1",
           "agent_task_outcome_v1",
+          "minimum_iterations_v1",
         ],
       });
       await socket.waitFor((msg) => msg.type === "environments");

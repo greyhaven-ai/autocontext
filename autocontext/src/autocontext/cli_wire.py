@@ -11,6 +11,7 @@ def run_wire_payload(run: Mapping[str, Any], *, run_id: str | None = None) -> di
     return {
         "run_id": str(run.get("run_id") or run_id or ""),
         "scenario": str(run.get("scenario") or ""),
+        "minimum_generations": int(run.get("minimum_generations") or 1),
         "target_generations": int(run.get("target_generations") or 0),
         "executor_mode": str(run.get("executor_mode") or ""),
         "status": str(run.get("status") or ""),

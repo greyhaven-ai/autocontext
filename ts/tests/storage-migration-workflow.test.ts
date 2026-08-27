@@ -60,6 +60,8 @@ describe("storage migration workflow", () => {
       .all() as Array<{ filename: string }>;
     expect(versions.length).toBeGreaterThan(0);
     expect(new Set(versions.map((row) => row.filename)).size).toBe(versions.length);
+    expect(Array.from(columnNames(db, "runs"))).toContain("minimum_generations");
+    expect(columnDefault(db, "runs", "minimum_generations")).toBe("1");
   });
 
   it("seeds the Python migration ledger for shared TypeScript baselines", () => {

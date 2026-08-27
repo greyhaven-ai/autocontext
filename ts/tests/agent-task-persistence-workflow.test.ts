@@ -53,6 +53,7 @@ describe("agent task persistence workflow", () => {
       evaluationContext: "PRIVATE_EVALUATOR_SENTINEL",
       referenceSources: ["https://example.com/rlm"],
       requiredConcepts: ["context folding"],
+      minRounds: 2,
       maxRounds: 3,
       qualityThreshold: 0.95,
       revisionPrompt: "Improve the draft",
@@ -66,6 +67,7 @@ describe("agent task persistence workflow", () => {
       output_format: "free_text",
       judge_model: "gpt-5.6-luna",
       reference_context: "RLM = Recursive Language Model",
+      min_rounds: 2,
       max_rounds: 3,
       quality_threshold: 0.95,
       revision_prompt: "Improve the draft",
@@ -89,6 +91,7 @@ describe("agent task persistence workflow", () => {
       improvement_task_contract_version: 1,
       task_prompt: "Write about RLMs",
       required_concepts: ["context folding"],
+      min_rounds: 2,
       evaluation_context_ref: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     });
     const publicSpec = readFileSync(join(scenarioDir, "agent_task_spec.json"), "utf-8");
@@ -96,6 +99,7 @@ describe("agent task persistence workflow", () => {
     expect(resolveCustomAgentTask(dir, "recursive_language_models")?.spec.evaluationContext).toBe(
       "PRIVATE_EVALUATOR_SENTINEL",
     );
+    expect(resolveCustomAgentTask(dir, "recursive_language_models")?.spec.minRounds).toBe(2);
   });
 
   it("canonically removes stale public refs and private records on eval-to-none overwrite", () => {

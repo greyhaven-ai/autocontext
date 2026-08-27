@@ -24,6 +24,7 @@ export const TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES: Record<string, readonly s
   "015_generation_quarantined.sql": ["017_generation_quarantined.sql"],
   "016_generation_score_revisions.sql": ["018_generation_score_revisions.sql"],
   "017_task_queue_attempts.sql": ["019_task_queue_attempts.sql"],
+  "019_run_minimum_generations.sql": ["020_run_minimum_generations.sql"],
 };
 
 const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[]> = {

@@ -323,7 +323,7 @@ describe("run command workflow", () => {
         defaultProvider: { name: "provider" },
         defaultConfig: { providerType: "deterministic" },
       },
-      spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+      spec: { taskPrompt: "Do work", judgeRubric: "Do it well", minRounds: 2 },
       executeAgentTaskSolve,
       dbPath: "/tmp/run.db",
       migrationsDir: "/tmp/migrations",
@@ -340,9 +340,10 @@ describe("run command workflow", () => {
       provider: { name: "provider" },
       created: {
         name: "saved_task",
-        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well", minRounds: 2 },
       },
       generations: 2,
+      minimumGenerations: 2,
     });
     expect(result).toEqual({
       runId: "run-task",
@@ -382,7 +383,7 @@ describe("run command workflow", () => {
         defaultConfig: { providerType: "deterministic" },
         close: closeProviderBundle,
       },
-      spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+      spec: { taskPrompt: "Do work", judgeRubric: "Do it well", minRounds: 2 },
       executeAgentTaskSolve: vi.fn(async () => ({
         progress: 2,
         result: { scenario_name: "saved_task", best_score: 0.91 },
@@ -399,6 +400,7 @@ describe("run command workflow", () => {
       2,
       "agent_task",
       "deterministic",
+      2,
     );
     expect(store.upsertGeneration).toHaveBeenCalledTimes(2);
     expect(store.upsertGeneration).toHaveBeenNthCalledWith(2, "run-task", 2, {

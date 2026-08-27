@@ -59,6 +59,7 @@ const EXAMPLE_SPEC = {
         "    return unique[1]",
     },
   ],
+  min_rounds: 1,
   max_rounds: 1,
   quality_threshold: 0.9,
   revision_prompt: null,
@@ -88,6 +89,7 @@ ${SPEC_END}
   "sample_input": "Realistic sample input data for data-dependent tasks (optional, null if not needed)",
   "context_preparation": "Instructions for gathering context before generation (optional)",
   "required_context_keys": ["state keys that must be present after context preparation (optional)"],
+  "min_rounds": 1,
   "max_rounds": 1,
   "quality_threshold": 0.9,
   "revision_prompt": "Instructions for revising output based on judge feedback (optional)"
@@ -103,7 +105,8 @@ ${SPEC_END}
 - \`output_format\` must be one of: free_text, json_schema, code
 - \`judge_model\` should be a valid model identifier
 - \`calibration_examples\` — You MUST include at least 2 calibration examples: one low-quality output (~0.3 score) and one high-quality output (~0.9 score). Each example must have \`human_score\`, \`human_notes\`, and \`agent_output\` fields. These anchor the judge's scoring scale and are critical for consistent evaluation.
-- \`max_rounds\` (optional, default 1) — maximum improvement rounds
+- \`min_rounds\` (optional, default 1) — minimum scored rounds before normal convergence may stop
+- \`max_rounds\` (optional, default 1) — maximum improvement rounds; must be at least min_rounds
 - \`quality_threshold\` (optional, default 0.9) — stop improving when score >= this
 
 ## Example

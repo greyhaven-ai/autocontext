@@ -181,6 +181,7 @@ describe("ImprovementTaskContract", () => {
       dataSources: sources,
       criteria: "Reward factual support, clear reasoning, and actionable recommendations.",
       qualityThreshold: 0.82,
+      minimumIterations: 3,
       iterations: 4,
       revisionPrompt: "Address the evaluator's weakest dimension first.",
     });
@@ -192,6 +193,7 @@ describe("ImprovementTaskContract", () => {
     );
     expect(spec.judgeRubric).toContain("Reward factual support");
     expect(spec.outputFormat).toBe("free_text");
+    expect(spec.minRounds).toBe(3);
     expect(spec.maxRounds).toBe(4);
     expect(spec.qualityThreshold).toBe(0.82);
     expect(spec.revisionPrompt).toContain("weakest dimension");
@@ -201,6 +203,24 @@ describe("ImprovementTaskContract", () => {
       "blob:sha256:input",
       "blob:sha256:reference",
     ]);
+  });
+
+  it("defaults the minimum to one and rejects a floor above the maximum", () => {
+    const base = {
+      objective: "Improve the answer.",
+      target: "Current answer",
+      deliverable: { description: "A better answer", outputFormat: "free_text" as const },
+      criteria: "Prefer complete answers.",
+      iterations: 3,
+    };
+
+    expect(compileImprovementTaskContract(base).minRounds).toBe(1);
+    expect(() =>
+      ImprovementTaskContractSchema.parse({
+        ...base,
+        minimumIterations: 4,
+      }),
+    ).toThrow(/minimumIterations must not exceed iterations/);
   });
 
   it("keeps evaluator-only sources outside the candidate-facing spec", () => {

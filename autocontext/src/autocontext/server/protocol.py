@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 PROTOCOL_VERSION = 2
 
-SERVER_CAPABILITIES = ["safe_run_stop_v1"]
+SERVER_CAPABILITIES = ["safe_run_stop_v1", "minimum_iterations_v1"]
 
 
 def _is_none(value: object) -> bool:
@@ -127,6 +127,8 @@ class StateMsg(RunMessageMetadata):
     type: Literal["state"] = "state"
     paused: bool
     generation: int = 0
+    minimum_generations: int | None = Field(default=None, ge=1, exclude_if=_is_none)
+    generations: int | None = Field(default=None, ge=1, exclude_if=_is_none)
     phase: str = ""
 
 
@@ -155,6 +157,7 @@ class RunAcceptedMsg(RunMessageMetadata):
     type: Literal["run_accepted"] = "run_accepted"
     run_id: str
     scenario: str
+    minimum_generations: int = Field(default=1, ge=1)
     generations: int
     command_id: str | None = Field(default=None, exclude_if=_is_none)
 
@@ -296,8 +299,15 @@ class StartRunCmd(RunCommandMetadata):
 
     type: Literal["start_run"] = "start_run"
     scenario: str
+    minimum_generations: int | None = Field(default=None, ge=1)
     generations: int = Field(gt=0)
     require_playbook_approval: bool = False
+
+    @model_validator(mode="after")
+    def validate_iteration_range(self) -> StartRunCmd:
+        if self.minimum_generations is not None and self.minimum_generations > self.generations:
+            raise ValueError("minimum_generations must not exceed generations")
+        return self
 
 
 class ListScenariosCmd(BaseModel):
@@ -359,6 +369,7 @@ class RunStartedPayload(BaseModel):
 
     run_id: str
     scenario: str
+    minimum_generations: int = Field(default=1, ge=1)
     target_generations: int
 
 

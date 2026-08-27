@@ -122,9 +122,15 @@ class RunManager:
         generations: int,
         run_id: str | None = None,
         *,
+        minimum_generations: int | None = None,
         require_playbook_approval: bool = False,
         client_run_id: str | None = None,
     ) -> str:
+        effective_minimum_generations = 1 if minimum_generations is None else minimum_generations
+        if effective_minimum_generations < 1:
+            raise ValueError("minimum_generations must be a positive integer")
+        if effective_minimum_generations > generations:
+            raise ValueError("minimum_generations must not exceed generations")
         if scenario not in SCENARIO_REGISTRY:
             supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
             raise ValueError(f"Unknown scenario '{scenario}'. Available: {supported}")
@@ -155,6 +161,7 @@ class RunManager:
                     scenario_name=scenario,
                     generations=generations,
                     run_id=actual_run_id,
+                    minimum_generations=effective_minimum_generations,
                     require_playbook_approval=require_playbook_approval,
                 )
                 logger.info("Run %s completed: best_score=%.4f", summary.run_id, summary.best_score)

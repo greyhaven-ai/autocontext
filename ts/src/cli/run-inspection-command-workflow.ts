@@ -46,6 +46,7 @@ Examples:
 export interface RunInspectionRun {
   run_id: string;
   scenario: string;
+  minimum_generations?: number;
   target_generations: number;
   executor_mode: string;
   status: string;

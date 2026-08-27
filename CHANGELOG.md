@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.3] - 2026-08-27
+
+This TypeScript patch release adds a capability-negotiated minimum iteration
+floor for structured agent tasks. The Python package version remains unchanged.
+
+### Added
+
+- Interactive servers advertise `minimum_iterations_v1`. `start_run` accepts
+  optional `minimum_generations` with `1 <= minimum_generations <= generations`,
+  and structured task contracts accept optional `minimumIterations` persisted
+  as `minRounds`.
+- The effective floor is retained in accepted, started, live-status,
+  transcript, and SQLite-backed Cockpit history so clients stay synchronized
+  across restart.
+
+### Changed
+
+- Quality-threshold, plateau, unchanged-output, and cached-verdict convergence
+  cannot finish a structured task below its minimum. Cancellation, provider or
+  evaluator failure, and time/token safety exits remain immediate.
+
 ## [0.17.2] - 2026-08-27
 
 This TypeScript-only patch release adds a durable, versioned outcome contract

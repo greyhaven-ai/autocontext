@@ -80,3 +80,23 @@ def test_start_run_without_client_id_is_addressable_by_run_id(tmp_path: Path) ->
     store = SQLiteStore(settings.db_path)
     run = store.get_run(run_id)
     assert run is not None and run["status"] == "stopped"
+
+
+def test_start_run_rejects_a_minimum_above_the_maximum(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path)
+    manager = RunManager(
+        LoopController(),
+        EventStreamEmitter(settings.event_stream_path),
+        settings,
+    )
+
+    try:
+        manager.start_run(
+            "grid_ctf",
+            generations=2,
+            minimum_generations=3,
+        )
+    except ValueError as exc:
+        assert str(exc) == "minimum_generations must not exceed generations"
+    else:
+        raise AssertionError("expected minimum generation validation to fail")

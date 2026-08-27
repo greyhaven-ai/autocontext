@@ -25,6 +25,8 @@ export function buildStateMessage(state: RunManagerState): ServerMessage {
     paused: state.paused,
     scenario: state.scenario,
     generation: state.generation ?? undefined,
+    minimum_generations: state.minimumGenerations ?? undefined,
+    generations: state.targetGenerations ?? undefined,
     phase: state.phase ?? undefined,
   };
 }
