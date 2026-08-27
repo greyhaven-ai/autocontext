@@ -164,12 +164,17 @@ export async function executeAgentTaskRunCommandWorkflow<
   createStore?: (dbPath: string) => AgentTaskRunStore;
 }): Promise<RunCommandResult> {
   const provider = opts.providerBundle.defaultConfig.providerType;
-  const minimumGenerations = readMinimumGenerations(opts.spec);
   const migrationsDir = opts.migrationsDir;
-  const store =
-    opts.createStore && opts.dbPath && opts.migrationsDir ? opts.createStore(opts.dbPath) : null;
+  let store: AgentTaskRunStore | null = null;
 
   try {
+    const minimumGenerations = readMinimumGenerations(opts.spec);
+    if (minimumGenerations > opts.plan.gens) {
+      throw new Error("minimum_generations must not exceed generations");
+    }
+    store = opts.createStore && opts.dbPath && opts.migrationsDir
+      ? opts.createStore(opts.dbPath)
+      : null;
     if (store && migrationsDir) {
       store.migrate(migrationsDir);
     }
@@ -228,8 +233,17 @@ export async function executeAgentTaskRunCommandWorkflow<
 }
 
 function readMinimumGenerations(spec: Record<string, unknown>): number {
-  const value = spec.minRounds ?? spec.min_rounds;
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : 1;
+  const raw = spec.minRounds ?? spec.min_rounds;
+  if (raw === undefined || raw === null) return 1;
+  const value = typeof raw === "number"
+    ? raw
+    : typeof raw === "string" && raw.trim().length > 0
+      ? Number(raw)
+      : Number.NaN;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error("minimum_generations must be a positive integer");
+  }
+  return value;
 }
 
 export async function planRunCommand(

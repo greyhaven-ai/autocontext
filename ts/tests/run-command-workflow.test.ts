@@ -323,7 +323,7 @@ describe("run command workflow", () => {
         defaultProvider: { name: "provider" },
         defaultConfig: { providerType: "deterministic" },
       },
-      spec: { taskPrompt: "Do work", judgeRubric: "Do it well", minRounds: 2 },
+      spec: { taskPrompt: "Do work", judgeRubric: "Do it well", minRounds: "2" },
       executeAgentTaskSolve,
       dbPath: "/tmp/run.db",
       migrationsDir: "/tmp/migrations",
@@ -340,7 +340,7 @@ describe("run command workflow", () => {
       provider: { name: "provider" },
       created: {
         name: "saved_task",
-        spec: { taskPrompt: "Do work", judgeRubric: "Do it well", minRounds: 2 },
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well", minRounds: "2" },
       },
       generations: 2,
       minimumGenerations: 2,
@@ -357,6 +357,33 @@ describe("run command workflow", () => {
       },
       synthetic: true,
     });
+  });
+
+  it("rejects an invalid task floor before creating a run record", async () => {
+    const createStore = vi.fn();
+    const closeProviderBundle = vi.fn();
+    await expect(executeAgentTaskRunCommandWorkflow({
+      plan: {
+        scenarioName: "saved_task",
+        gens: 2,
+        runId: "run-invalid-floor",
+        providerType: "deterministic",
+        matches: 1,
+        json: true,
+      },
+      providerBundle: {
+        defaultProvider: { name: "provider" },
+        defaultConfig: { providerType: "deterministic" },
+        close: closeProviderBundle,
+      },
+      spec: { taskPrompt: "Do work", judgeRubric: "Do it well", min_rounds: 3 },
+      executeAgentTaskSolve: vi.fn(),
+      dbPath: "/tmp/run.db",
+      migrationsDir: "/tmp/migrations",
+      createStore,
+    })).rejects.toThrow("minimum_generations must not exceed generations");
+    expect(createStore).not.toHaveBeenCalled();
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
   });
 
   it("persists saved agent-task runs and completed generations", async () => {

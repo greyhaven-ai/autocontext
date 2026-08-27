@@ -9,6 +9,7 @@
     "accepted_field": "minimum_generations",
     "started_event_field": "minimum_generations",
     "default": 1,
+    "default_wire_representation": "the field may be omitted when the effective minimum is one so existing strict protocol-v2 clients remain compatible",
     "validation": "1 <= minimum_generations <= generations",
     "structured_task_contract_field": "minimumIterations",
     "persisted_agent_task_spec_field": "min_rounds",

@@ -250,6 +250,11 @@ class TestClientMessageParsing:
                 }
             )
 
+    def test_default_run_acceptance_omits_the_additive_minimum_field(self) -> None:
+        message = RunAcceptedMsg(run_id="r1", scenario="grid_ctf", generations=2)
+        assert "minimum_generations" not in message.model_dump()
+        assert message.minimum_generations == 1
+
     @pytest.mark.parametrize(
         "raw",
         [

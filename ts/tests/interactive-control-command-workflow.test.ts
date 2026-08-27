@@ -17,7 +17,6 @@ describe("interactive control command workflow", () => {
       type: "run_accepted",
       run_id: "run_1",
       scenario: "grid_ctf",
-      minimum_generations: 1,
       generations: 3,
     });
   });
@@ -112,7 +111,6 @@ describe("interactive control command workflow", () => {
         type: "run_accepted",
         run_id: "run_1",
         scenario: "grid_ctf",
-        minimum_generations: 1,
         generations: 3,
       },
     ]);
@@ -178,7 +176,6 @@ describe("interactive control command workflow", () => {
         type: "run_accepted",
         run_id: "engine-run-1",
         scenario: "grid_ctf",
-        minimum_generations: 1,
         generations: 1,
         client_run_id: "client-run-1",
         command_id: "command-start-1",
@@ -225,6 +222,39 @@ describe("interactive control command workflow", () => {
     expect(startRun).toHaveBeenCalledWith("saved_task", 6, {
       requirePlaybookApproval: false,
       minimumGenerations: 3,
+    });
+  });
+
+  it("treats a canonical null minimum as the default floor", async () => {
+    const startRun = vi.fn(async () => "run_3");
+    await expect(
+      executeInteractiveControlCommand({
+        command: {
+          type: "start_run",
+          scenario: "grid_ctf",
+          minimum_generations: null,
+          generations: 2,
+          require_playbook_approval: false,
+        },
+        runManager: {
+          pause: vi.fn(),
+          resume: vi.fn(),
+          injectHint: vi.fn(),
+          overrideGate: vi.fn(),
+          startRun,
+          getEnvironmentInfo: vi.fn(),
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        type: "run_accepted",
+        run_id: "run_3",
+        scenario: "grid_ctf",
+        generations: 2,
+      },
+    ]);
+    expect(startRun).toHaveBeenCalledWith("grid_ctf", 2, {
+      requirePlaybookApproval: false,
     });
   });
 });

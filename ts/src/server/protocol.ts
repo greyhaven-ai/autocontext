@@ -396,7 +396,7 @@ export const ChatAgentCmdSchema = protocolObject({
 const StartRunCmdObjectSchema = protocolObject({
   type: z.literal("start_run"),
   scenario: z.string(),
-  minimum_generations: z.number().int().positive().optional(),
+  minimum_generations: z.number().int().positive().optional().nullable(),
   generations: z.number().int().positive(),
   require_playbook_approval: z.boolean().default(false),
   ...RunCommandMetadataSchema,
@@ -404,7 +404,7 @@ const StartRunCmdObjectSchema = protocolObject({
 
 export const StartRunCmdSchema = StartRunCmdObjectSchema.superRefine((command, ctx) => {
   if (
-    command.minimum_generations !== undefined &&
+    command.minimum_generations != null &&
     command.minimum_generations > command.generations
   ) {
     ctx.addIssue({
@@ -519,7 +519,7 @@ const ClientMessageUnionSchema = z.discriminatedUnion("type", [
 export const ClientMessageSchema = ClientMessageUnionSchema.superRefine((message, ctx) => {
   if (
     message.type === "start_run" &&
-    message.minimum_generations !== undefined &&
+    message.minimum_generations != null &&
     message.minimum_generations > message.generations
   ) {
     ctx.addIssue({

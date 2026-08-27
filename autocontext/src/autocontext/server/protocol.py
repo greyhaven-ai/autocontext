@@ -157,7 +157,10 @@ class RunAcceptedMsg(RunMessageMetadata):
     type: Literal["run_accepted"] = "run_accepted"
     run_id: str
     scenario: str
-    minimum_generations: int = Field(default=1, ge=1)
+    # Preserve protocol-v2 compatibility for the default behavior. Older
+    # strict clients do not know this additive field, while capable clients
+    # can infer the documented default when it is absent.
+    minimum_generations: int = Field(default=1, ge=1, exclude_if=lambda value: value == 1)
     generations: int
     command_id: str | None = Field(default=None, exclude_if=_is_none)
 

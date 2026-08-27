@@ -47,7 +47,9 @@ export function buildRunAcceptedMessage(opts: {
     type: "run_accepted",
     run_id: opts.runId,
     scenario: opts.scenario,
-    minimum_generations: opts.minimumGenerations ?? 1,
+    ...(opts.minimumGenerations !== undefined && opts.minimumGenerations > 1
+      ? { minimum_generations: opts.minimumGenerations }
+      : {}),
     generations: opts.generations,
     ...(opts.clientRunId ? { client_run_id: opts.clientRunId } : {}),
     ...(opts.commandId ? { command_id: opts.commandId } : {}),
@@ -112,7 +114,7 @@ export async function executeInteractiveControlCommand(opts: {
         opts.command.generations,
         {
           requirePlaybookApproval: opts.command.require_playbook_approval,
-          ...(opts.command.minimum_generations === undefined
+          ...(opts.command.minimum_generations == null
             ? {}
             : { minimumGenerations: opts.command.minimum_generations }),
         },

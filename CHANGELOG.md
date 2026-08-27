@@ -24,6 +24,9 @@ floor for structured agent tasks. The Python package version remains unchanged.
 - Quality-threshold, plateau, unchanged-output, and cached-verdict convergence
   cannot finish a structured task below its minimum. Cancellation, provider or
   evaluator failure, and time/token safety exits remain immediate.
+- The default floor remains implicit on existing protocol-v2 response shapes,
+  and an explicit JSON `null` is treated as the default, preserving strict
+  0.17.2 client compatibility for runs that do not opt into a higher floor.
 
 ## [0.17.2] - 2026-08-27
 

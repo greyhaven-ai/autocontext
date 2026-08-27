@@ -40,9 +40,25 @@ describe("websocket session bootstrap", () => {
       paused: false,
       scenario: null,
       generation: undefined,
-      minimum_generations: undefined,
-      generations: undefined,
       phase: undefined,
+    });
+  });
+
+  it("omits the default floor for protocol-v2 compatibility and exposes non-default floors", () => {
+    expect(buildStateMessage({
+      ...state,
+      active: true,
+      minimumGenerations: 1,
+      targetGenerations: 4,
+    })).not.toHaveProperty("minimum_generations");
+    expect(buildStateMessage({
+      ...state,
+      active: true,
+      minimumGenerations: 2,
+      targetGenerations: 4,
+    })).toMatchObject({
+      minimum_generations: 2,
+      generations: 4,
     });
   });
 
@@ -70,8 +86,6 @@ describe("websocket session bootstrap", () => {
         paused: false,
         scenario: null,
         generation: undefined,
-        minimum_generations: undefined,
-        generations: undefined,
         phase: undefined,
       },
     ]);
@@ -106,8 +120,6 @@ describe("websocket session bootstrap", () => {
         paused: false,
         scenario: null,
         generation: undefined,
-        minimum_generations: undefined,
-        generations: undefined,
         phase: undefined,
       },
     ]);

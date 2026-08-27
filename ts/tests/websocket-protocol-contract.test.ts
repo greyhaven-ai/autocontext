@@ -60,6 +60,7 @@ type WebSocketProtocolContract = {
     advertised_runtimes: ["python", "typescript"];
     capability: "minimum_iterations_v1";
     default: 1;
+    default_wire_representation: string;
     validation: string;
   };
   agent_task_outcome_extension: {
@@ -314,6 +315,13 @@ describe("WebSocket protocol shared contract", () => {
       default: 1,
     });
     expect(SERVER_CAPABILITIES).toContain(MINIMUM_ITERATIONS_CAPABILITY);
+    expect(CONTRACT.minimum_iterations_extension.default_wire_representation).toContain("omitted");
+    expect(parseClientMessage({
+      type: "start_run",
+      scenario: "saved_task",
+      minimum_generations: null,
+      generations: 4,
+    })).toMatchObject({ minimum_generations: null, generations: 4 });
     expect(parseClientMessage({
       type: "start_run",
       scenario: "saved_task",
