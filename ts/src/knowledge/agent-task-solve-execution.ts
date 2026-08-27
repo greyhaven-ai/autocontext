@@ -21,6 +21,10 @@ import type { HookBus } from "../extensions/index.js";
 import type { SerializedSkillPackageDict } from "./package.js";
 import { buildAgentTaskSolvePackage } from "./solve-workflow.js";
 import { assertAgentTaskOutputFormat } from "../scenarios/agent-task-output-format.js";
+import {
+  buildAgentTaskOutcomeV1,
+  type AgentTaskOutcomeV1,
+} from "./agent-task-outcome.js";
 
 function readString(spec: Record<string, unknown>, ...keys: string[]): string | null {
   for (const key of keys) {
@@ -153,6 +157,7 @@ export interface AgentTaskSolveExecutionDeps {
 export interface AgentTaskSolveExecutionResult {
   progress: number;
   result: SerializedSkillPackageDict;
+  outcome: AgentTaskOutcomeV1;
 }
 
 function defaultCreateLoop(opts: {
@@ -294,6 +299,11 @@ export async function executeAgentTaskSolve(opts: {
   const bestRound = result.rounds.find((round) => round.roundNumber === result.bestRound);
   const executionResult = {
     progress: result.totalRounds,
+    outcome: buildAgentTaskOutcomeV1({
+      result,
+      qualityThreshold: spec.qualityThreshold,
+      maxIterations: spec.maxRounds,
+    }),
     result: buildAgentTaskSolvePackage({
       scenarioName: opts.created.name,
       description: String(opts.created.spec.description ?? `Agent task: ${opts.created.name}`),

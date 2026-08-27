@@ -28,6 +28,11 @@ import type { ScenarioFamilyName } from "../scenarios/families.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import { SQLiteStore } from "../storage/index.js";
 import type { LLMProvider, RoundResult } from "../types/index.js";
+import {
+  AgentTaskOutcomeV1Schema,
+  agentTaskOutcomeReceiptV1,
+  type AgentTaskOutcomeV1,
+} from "../knowledge/agent-task-outcome.js";
 
 const SAVED_AGENT_TASK_PLAN_STEPS = [
   { id: "prepare_context", label: "Prepare task context" },
@@ -448,7 +453,13 @@ export interface AgentTaskCustomStartRunDeps {
 
 type SavedAgentTaskRunStore = Pick<
   SQLiteStore,
-  "migrate" | "createRun" | "updateRunStatus" | "upsertGeneration" | "appendAgentOutput" | "close"
+  | "migrate"
+  | "createRun"
+  | "updateRunStatus"
+  | "saveAgentTaskOutcome"
+  | "upsertGeneration"
+  | "appendAgentOutput"
+  | "close"
 >;
 
 function readBestScore(result: Record<string, unknown>, fallback = 0): number {
@@ -458,6 +469,16 @@ function readBestScore(result: Record<string, unknown>, fallback = 0): number {
 
 function normalizeCompletedGenerations(progress: number): number {
   return Number.isFinite(progress) ? Math.max(0, Math.floor(progress)) : 0;
+}
+
+function readAgentTaskOutcome(
+  result: Awaited<ReturnType<typeof executeAgentTaskSolve>>,
+): AgentTaskOutcomeV1 | null {
+  // Some downstream embedders inject a legacy solve implementation in tests or
+  // during a rolling upgrade. A present outcome is strict; an absent outcome
+  // preserves that compatibility boundary without fabricating contract fields.
+  const rawOutcome: unknown = result.outcome;
+  return rawOutcome === undefined ? null : AgentTaskOutcomeV1Schema.parse(rawOutcome);
 }
 
 function hasTruncatedStructuredTaskData(spec: Record<string, unknown>): boolean {
@@ -829,8 +850,11 @@ export async function executeAgentTaskCustomStartRun(opts: {
       });
       throw error;
     }
-    const finalBestScore = readBestScore(result.result, bestScore ?? 0);
-    const finalCompletedGenerations = normalizeCompletedGenerations(result.progress);
+    const agentTaskOutcome = readAgentTaskOutcome(result);
+    const finalBestScore = agentTaskOutcome?.best_score
+      ?? readBestScore(result.result, bestScore ?? 0);
+    const finalCompletedGenerations = agentTaskOutcome?.completed_iterations
+      ?? normalizeCompletedGenerations(result.progress);
 
     // Legacy/injected solvers may only return a final progress count and best
     // score. Fill any lifecycle gaps after completion without duplicating the
@@ -859,7 +883,7 @@ export async function executeAgentTaskCustomStartRun(opts: {
       typeof bestStrategy.best_round === "number"
         ? bestStrategy.best_round
         : completedGenerations;
-    const retainedBestRound = Math.max(
+    const retainedBestRound = agentTaskOutcome?.best_iteration ?? Math.max(
       1,
       Math.min(completedGenerations || 1, Math.floor(rawBestRound)),
     );
@@ -893,6 +917,9 @@ export async function executeAgentTaskCustomStartRun(opts: {
       completedGenerations,
       bestScore,
     });
+    if (store && storedRun && agentTaskOutcome) {
+      store.saveAgentTaskOutcome(opts.runId, JSON.stringify(agentTaskOutcome));
+    }
     const completedPayload = {
       run_id: opts.runId,
       completed_generations: completedGenerations,
@@ -902,6 +929,9 @@ export async function executeAgentTaskCustomStartRun(opts: {
       dead_ends_found: 0,
       family: "agent_task",
       saved_custom: true,
+      ...(agentTaskOutcome
+        ? { agent_task_outcome: agentTaskOutcomeReceiptV1(agentTaskOutcome) }
+        : {}),
     };
     emitHook(hookBus, HookEvents.RUN_END, {
       ...completedPayload,

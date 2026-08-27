@@ -51,6 +51,7 @@
       "types": "./dist/server/run-manager.d.ts"
     },
     "./protocol-fixtures/structured-task-create-v1.json": "./protocol-fixtures/structured-task-create-v1.json",
+    "./protocol-fixtures/agent-task-outcome-v1.json": "./protocol-fixtures/agent-task-outcome-v1.json",
     "./control-plane/runtime": {
       "import": "./dist/control-plane/runtime/index.js",
       "types": "./dist/control-plane/runtime/index.d.ts"

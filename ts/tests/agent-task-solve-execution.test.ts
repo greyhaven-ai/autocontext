@@ -234,6 +234,26 @@ describe("agent-task solve execution", () => {
     expect(result.result.scenario_name).toBe("incident_triage");
     expect(result.result.best_score).toBe(0.93);
     expect(result.result.skill_markdown).toContain("Best round: 1");
+    expect(result.outcome).toEqual({
+      schema_version: 1,
+      termination_reason: "threshold_met",
+      quality_threshold: 0.9,
+      met_threshold: true,
+      completed_iterations: 1,
+      max_iterations: 2,
+      best_iteration: 1,
+      best_score: 0.93,
+      generations: [
+        {
+          generation: 1,
+          score: 0.93,
+          reasoning: "Added owner assignment and severity classification.",
+          dimension_scores: { completeness: 0.93 },
+          judge_failed: false,
+          evaluator_epoch: null,
+        },
+      ],
+    });
     expect(progressEvents).toEqual([
       { phase: "context_preparation", status: "started" },
       { phase: "context_preparation", status: "completed" },
@@ -493,7 +513,16 @@ describe("agent-task solve execution", () => {
           expect(maxRounds).toBe(3);
           return {
             run: vi.fn(async (): Promise<ImprovementResult> => ({
-              rounds: [],
+              rounds: [1, 2, 3].map((roundNumber) => ({
+                roundNumber,
+                output: "Initial response",
+                score: 0.5,
+                reasoning: "The response is acceptable but below threshold.",
+                dimensionScores: {},
+                isRevision: roundNumber > 1,
+                judgeFailed: false,
+                evaluatorEpoch: null,
+              })),
               bestOutput: "Initial response",
               bestScore: 0.5,
               bestRound: 1,

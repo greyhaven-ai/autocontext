@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- TypeScript structured agent-task runs now advertise `agent_task_outcome_v1`.
+  Terminal events retain a versioned receipt with termination and threshold
+  mechanics, per-generation transcript frames retain evaluator evidence, and
+  Cockpit inspection returns the complete SQLite-backed outcome without an
+  additional model synthesis pass.
+
 ## [0.17.1] - 2026-08-26
 
 This TypeScript-only patch release adds a strict, capability-negotiated
