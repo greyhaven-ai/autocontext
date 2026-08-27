@@ -27,6 +27,7 @@ from typing import Any
 
 DEFAULT_MAX_MEMORY_MB = 256
 DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
+DEFAULT_MAX_CHILD_TASKS = 64
 _ERROR_MESSAGE_LIMIT = 2_000
 _PROTOCOL_VERSION = 1
 
@@ -302,7 +303,12 @@ def _apply_resource_limits(
             requested.append((limit, memory_bytes))
     process_limit = getattr(resource, "RLIMIT_NPROC", None)
     if process_limit is not None:
-        requested.append((process_limit, 0))
+        # RLIMIT_NPROC also counts pthreads on Linux.  A zero limit therefore
+        # broke supported injected capabilities such as ``llm_batch`` before
+        # they could start their bounded helper pool.  Keep a small ceiling as
+        # defense in depth; this is a per-UID kernel limit, not a substitute for
+        # the per-cgroup/process isolation required for hostile multi-tenant code.
+        requested.append((process_limit, DEFAULT_MAX_CHILD_TASKS))
 
     for resource_id, value in requested:
         try:

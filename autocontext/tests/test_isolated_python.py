@@ -77,7 +77,7 @@ def test_output_limit_kills_term_resistant_descendants(
 
     def no_resource_limits(**_kwargs: object) -> None:
         # This regression intentionally permits one descendant so cleanup can
-        # be verified. Production children retain RLIMIT_NPROC=0.
+        # be verified independently of the production child-task ceiling.
         return None
 
     monkeypatch.setattr(isolation_module, "_apply_resource_limits", no_resource_limits)
@@ -173,6 +173,19 @@ def test_child_result_is_json_not_pickle(tmp_path: Path) -> None:
     with pytest.raises(IsolatedExecutionError, match="not JSON-compatible"):
         run_isolated_json(lambda: PickleOnlyPayload(), timeout_seconds=1.0)
     assert not marker.exists()
+
+
+def test_child_can_start_a_bounded_helper_thread() -> None:
+    """Supported injected capabilities may use a small helper thread pool."""
+
+    def run_helper() -> bool:
+        completed: list[bool] = []
+        helper = threading.Thread(target=lambda: completed.append(True))
+        helper.start()
+        helper.join(timeout=1.0)
+        return not helper.is_alive() and completed == [True]
+
+    assert run_isolated_json(run_helper, timeout_seconds=2.0) is True
 
 
 def test_worker_thread_fails_closed_without_starting_child() -> None:
