@@ -143,11 +143,16 @@ describe("TUI auth credential operations", () => {
     expect(status.authenticated).toBe(true);
   });
 
-  it("handleTuiLogin validates key format and returns result", async () => {
+  it("handleTuiLogin refuses to persist a key that fails validation", async () => {
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { CREDENTIALS_FILE } = await import("../src/config/credentials.js");
     const { handleTuiLogin } = await import("../src/server/tui-auth.js");
-    const result = await handleTuiLogin(dir, "anthropic", "bad-key");
-    expect(result.saved).toBe(true);
-    expect(result.validationWarning).toBeDefined();
+
+    await expect(handleTuiLogin(dir, "anthropic", "bad-key")).rejects.toThrow(
+      /refusing to persist credentials.*invalid anthropic API key format/i,
+    );
+    expect(existsSync(join(dir, CREDENTIALS_FILE))).toBe(false);
   });
 });
 

@@ -8,6 +8,7 @@ Run the HTTP API and queue worker as separate long-lived processes against the s
 export AUTOCONTEXT_DB_PATH=/srv/autoctx/runs/autocontext.sqlite3
 export AUTOCONTEXT_RUNS_ROOT=/srv/autoctx/runs
 export AUTOCONTEXT_KNOWLEDGE_ROOT=/srv/autoctx/knowledge
+export AUTOCONTEXT_SERVER_TOKEN="$(openssl rand -hex 32)"
 
 uv run autoctx serve --host 0.0.0.0 --port 8000
 uv run autoctx worker --poll-interval 5 --concurrency 2
@@ -28,9 +29,15 @@ If the selected provider/runtime is stateful and persistent, for example persist
 
 This persistent-host shape is single-tenant or trusted-org infrastructure. Treat the API process, worker process, SQLite DB, runs root, knowledge root, mounted repository, service account, and environment file as one trust boundary. It is suitable for a developer machine, a CI worker, or one trusted organization; it is not a hosted multi-tenant SaaS control plane.
 
-If `autoctx serve` binds beyond loopback, put it behind TLS, authentication, and authorization before exposing it to other users. Provider keys, SCM credentials, sandbox API keys, and webhook secrets may be supplied through the host environment for this single-tenant shape, but they must not be baked into images or written into prompts, runtime-session timelines, background-session summaries, lifecycle hook payloads, or outcome metadata.
+If `autoctx serve` binds beyond loopback, a unique `AUTOCONTEXT_SERVER_TOKEN` of at least 32 characters is mandatory. This is enforced by the CLI and by the HTTP/WebSocket application boundary for non-loopback peers, including direct ASGI launches. HTTP clients send it as an `Authorization: Bearer` value. Native WebSocket clients may use the same header; browser clients encode it in the `autocontext.bearer.<base64url-token>` subprotocol, which the server must echo. Credential-bearing WebSocket query parameters are rejected because URLs are routinely captured in proxy logs and shell history. The TypeScript TUI reads the token from the environment for both transports and rejects credentials embedded in `--connect` URLs. Still put the service behind TLS, authentication, and authorization before exposing it to other users. A loopback reverse proxy is seen as a local peer, so configure the application token even when the proxy itself enforces identity. Provider keys, SCM credentials, sandbox API keys, and webhook secrets may be supplied through the host environment for this single-tenant shape, but they must not be baked into images or written into prompts, runtime-session timelines, background-session summaries, lifecycle hook payloads, or outcome metadata.
 
 Shared GitHub App credentials or bot tokens for branch/PR workflows are acceptable only inside one tenant or trusted organization with explicit admin consent. Cross-customer hosted PR creation requires a product adapter with per-tenant GitHub App installations or user OAuth tokens, scoped credential brokering, audit, and revocation. See [Background execution trust boundaries and credential model](../../docs/background-execution-trust-boundaries.md) before claiming hosted or multi-tenant safety.
+
+## Interactive Server Resource Limits
+
+The Python interactive server applies fixed per-process safety limits. HTTP request bodies are capped at 4 MiB before FastAPI buffers or parses them. WebSocket messages are capped at 64 KiB before JSON parsing and oversized senders are closed with code `1009`; Uvicorn also retains no more than 16 pending messages per connection. One global cap allows 32 WebSocket connections across the interactive and event endpoints. The server allows four active blocking chat/scenario operations plus 16 pending operations, and buffers at most 256 outbound events per interactive client before closing an overloaded connection with code `1013`.
+
+Interactive text fields are capped at 16,384 characters, role and scenario names at 128 characters, and correlation ids at 200 characters. A WebSocket `start_run` request accepts 1–100 generations. Replay responses refuse files larger than 16 MiB with HTTP `413`. The event endpoint tails at most 256 KiB per poll, drops individual lines over 64 KiB, rejects symlink targets, and consumes disconnects so closed clients do not leave zombie readers. These process-level guards reduce accidental memory/provider-spend amplification; they are not tenant quotas, rate limits, slow-client protection, or a substitute for an authenticated reverse proxy.
 
 ## Durable State
 

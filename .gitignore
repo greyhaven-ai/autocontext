@@ -30,6 +30,7 @@ node_modules/
 autocontext/.claude/skills/
 .pi/
 .pi-lens/
+.firecrawl/
 /superpowers/
 docs/superpowers/
 

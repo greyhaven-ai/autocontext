@@ -9,7 +9,16 @@ import { SUPPORTED_PROVIDER_TYPES } from "../providers/supported-provider-types.
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 
 const require = createRequire(import.meta.url);
-const pkg = require("../../package.json") as { version: string };
+const packageMetadata: unknown = require("../../package.json");
+
+function packageVersion(value: unknown): string {
+  if (typeof value === "object" && value !== null && "version" in value && typeof value.version === "string") {
+    return value.version;
+  }
+  throw new Error("package metadata is missing a version");
+}
+
+const currentPackageVersion = packageVersion(packageMetadata);
 
 export interface Capabilities {
   version: string;
@@ -22,7 +31,7 @@ export interface Capabilities {
 
 export function getCapabilities(): Capabilities {
   return {
-    version: pkg.version,
+    version: currentPackageVersion,
     scenarios: Object.keys(SCENARIO_REGISTRY).sort(),
     providers: [...SUPPORTED_PROVIDER_TYPES],
     features: [

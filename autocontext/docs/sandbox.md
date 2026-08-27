@@ -7,6 +7,73 @@ autocontext supports three shipped execution modes for game scenarios, plus judg
 - `monty` executor: runs strategies in a pydantic-monty interpreter sandbox with external function callbacks and configurable timeout/call limits.
 - **Agent task evaluation**: Agent task scenarios bypass match execution entirely. `JudgeExecutor` delegates to `AgentTaskInterface.evaluate_output()`, which may use `LLMJudge` for LLM-based scoring against a rubric.
 
+## Executable policy and harness containment
+
+`PolicyExecutor` policies and `HarnessLoader` validators do not execute in the
+long-lived autocontext process on supported local platforms. Each load or call
+runs in a fresh, killable POSIX child process. The parent enforces the wall
+timeout, terminates the child process group, and accepts only bounded JSON over
+the result pipe. Pickle is never used across this trust boundary. Before code
+runs, the child receives an empty environment, a private working directory,
+closed inherited file descriptors, and best-effort CPU, address-space, data,
+file-size, open-file, and process-count limits. Results default to a 1 MiB cap
+and child memory defaults to 256 MiB.
+
+The same boundary is used when `HarnessTester` evaluates synthesized harnesses
+and when staged validation loads or invokes a code candidate's
+`choose_action`. These paths deliberately serialize local child launches:
+forking from a thread is rejected, so `HarnessTester.parallel_workers` does not
+cause an unsafe threaded fallback.
+
+Generated simulation and investigation scenarios, agent-task execution
+validation, and each command handled by the legacy `rlm_backend=exec` REPL use
+the same boundary. The exec REPL sends only bounded, tagged plain built-in data
+back to its parent. Candidate-created functions, classes, generators, and
+instances become metadata-only placeholders and are not executable in later
+commands. A timeout kills the child process group; it never abandons a Python
+thread that can continue mutating the parent. Before execution, the REPL uses
+the same import, dunder, dynamic-introspection, and exception-handling AST
+denials as policy/harness code. Its builtins are a positive allowlist, and
+`json`, `math`, `statistics`, `collections`, `re`, and `time` are exposed as
+fresh immutable facades containing only named operations—not full module
+objects with paths to `__builtins__`.
+
+This boundary is defense in depth around the existing AST checks and restricted
+builtins; it is not a host sandbox:
+
+- POSIX resource-limit behavior varies by kernel. In particular, address-space
+  and data limits are best effort and are not a portable hard memory guarantee.
+- The child runs as the invoking OS user. If Python restrictions are bypassed,
+  it may still address host filesystem paths or create network connections.
+- Restricted Python and module facades reduce known interpreter escape paths;
+  they are not a kernel-enforced filesystem or egress boundary, and future
+  runtime gadgets must be treated as a residual risk.
+- Setting `PolicyExecutor(..., safe_builtins=False)` intentionally weakens the
+  interpreter restriction and is suitable only for trusted local policies.
+- Local policy/harness execution fails closed on non-POSIX platforms, POSIX
+  platforms without `waitid`/`WNOWAIT`, and when invoked from a Python worker
+  thread, where the current fork-based boundary is unavailable. No in-process
+  fallback is used.
+
+Other executable-code features retain separate trust classifications. Loading
+a persisted custom scenario through `scenarios.custom.loader`, the custom
+registry, or the verbatim-solve registration path returns a live Python class
+and therefore imports that module in the control-plane process. Those are
+**trusted local plugin activation** paths, not validation sandboxes. Their
+source generators perform structural validation and literal-safe emission, but
+operators must not point their knowledge root at tenant-writable content or
+load an artifact whose provenance they do not trust. Moving those loaders to a
+child requires a scenario RPC/proxy design rather than returning a Python class
+across the JSON boundary. User extension modules and autoresearch
+`register_import` hooks are also explicitly trusted operator code and run
+in-process.
+
+Use Monty for compatible interpreter-sandboxed strategy code, or a configured
+remote/container/microVM adapter with read-only mounts and denied egress when
+code authors are mutually untrusted. A Gondolin adapter remains the intended
+boundary for deployments that require enforceable filesystem, network, secret,
+and memory isolation.
+
 ## Gondolin Boundary
 
 Gondolin is reserved as an optional microVM sandbox backend for deployments that need stronger isolation, secret policy, and egress policy than the local/Monty paths provide. It is not a hosted scheduler or background-worker control plane by itself.

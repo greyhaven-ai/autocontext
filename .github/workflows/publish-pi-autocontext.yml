@@ -14,12 +14,8 @@ permissions:
   contents: read
 
 jobs:
-  publish-npm:
+  build-npm:
     runs-on: ubuntu-latest
-    environment: publish-pi-autocontext
-    permissions:
-      contents: read
-      id-token: write
     env:
       # Delay fresh npm versions during publish workflow dependency installs.
       NPM_CONFIG_MIN_RELEASE_AGE: "7"
@@ -27,8 +23,8 @@ jobs:
       run:
         working-directory: pi
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
@@ -49,6 +45,8 @@ jobs:
           # Its transitive dependencies remain subject to the seven-day policy.
           NPM_CONFIG_MIN_RELEASE_AGE_EXCLUDE: "autoctx"
         run: npm ci --ignore-scripts
+      - name: Audit production lock
+        run: npm audit --omit=dev --audit-level=moderate
       - name: Show npm version
         run: npm --version
       - name: Lint package
@@ -57,5 +55,35 @@ jobs:
         run: npm test
       - name: Build package
         run: npm run build
-      - name: Publish to npm
-        run: npm publish --ignore-scripts --access public --provenance
+      - name: Generate CycloneDX SBOM
+        run: npm sbom --omit=dev --sbom-format cyclonedx > pi-autocontext.cdx.json
+      - name: Pack immutable publish artifact
+        run: npm pack --ignore-scripts
+      - name: Upload package and SBOM
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: pi-package
+          path: |
+            pi/*.tgz
+            pi/pi-autocontext.cdx.json
+          retention-days: 7
+
+  publish-npm:
+    needs: build-npm
+    runs-on: ubuntu-latest
+    environment: publish-pi-autocontext
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Download verified package artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: pi-package
+          path: dist
+      - name: Publish to npm with provenance
+        run: npm publish dist/*.tgz --ignore-scripts --access public --provenance

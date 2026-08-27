@@ -81,6 +81,7 @@ describe("generation attempt workflow", () => {
     expect(
       workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event),
     ).toEqual([
+      "role_started",
       "role_completed",
       "tournament_started",
       "match_completed",
@@ -93,6 +94,7 @@ describe("generation attempt workflow", () => {
       decision: "retry",
       delta: 0.001,
       threshold: 0.005,
+      attempt: 1,
     });
   });
 
@@ -115,6 +117,7 @@ describe("generation attempt workflow", () => {
     expect(
       workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event),
     ).toEqual([
+      "role_started",
       "role_completed",
       "tournament_started",
       "match_completed",

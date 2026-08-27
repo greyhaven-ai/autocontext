@@ -20,10 +20,12 @@ export interface GenerationLifecycleWorkflow {
   orchestration: GenerationLoopOrchestration;
   curatorEnabled: boolean;
   maxRetries: number;
+  onEvent?: (event: GenerationLoopEventSequenceItem) => void;
   runAttempt: (input: {
     attemptOrchestration: GenerationAttemptOrchestration;
     runId: string;
     generation: number;
+    onEvent?: (event: GenerationLoopEventSequenceItem) => void;
   }) => Promise<{
     attemptOrchestration: GenerationAttemptOrchestration;
     events: GenerationLoopEventSequenceItem[];
@@ -68,12 +70,14 @@ export async function runGenerationLifecycleWorkflow(
       payload: orchestration.events.agentsStarted!,
     },
   ];
+  for (const event of events) workflow.onEvent?.(event);
 
   while (canContinueGenerationPhase(phaseState, workflow.maxRetries)) {
     const attemptResult = await workflow.runAttempt({
       attemptOrchestration,
       runId: orchestration.runState.runId,
       generation,
+      onEvent: workflow.onEvent,
     });
     attemptOrchestration = attemptResult.attemptOrchestration;
     phaseState = attemptOrchestration.phaseState;

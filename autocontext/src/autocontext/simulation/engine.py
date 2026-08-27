@@ -6,18 +6,21 @@ executes trajectories/sweeps, and returns structured findings.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import logging
 import re
-import sys
 import uuid
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.types import LlmFn
+from autocontext.execution.isolated_python import DEFAULT_MAX_MEMORY_MB, DEFAULT_MAX_OUTPUT_BYTES
 from autocontext.simulation import schema_evolution as schema_evolution_sim
+from autocontext.simulation.generated_execution import (
+    DEFAULT_SIMULATION_TIMEOUT_SECONDS,
+    execute_generated_simulation,
+)
 from autocontext.simulation.helpers import (
     aggregate_contract_signal_counts,
     apply_behavioral_contract,
@@ -47,9 +50,20 @@ def _derive_name(description: str) -> str:
 class SimulationEngine:
     """Plain-language simulation engine with sweep/replay/compare."""
 
-    def __init__(self, llm_fn: LlmFn, knowledge_root: Path) -> None:
+    def __init__(
+        self,
+        llm_fn: LlmFn,
+        knowledge_root: Path,
+        *,
+        execution_timeout_seconds: float = DEFAULT_SIMULATION_TIMEOUT_SECONDS,
+        max_memory_mb: int = DEFAULT_MAX_MEMORY_MB,
+        max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+    ) -> None:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
+        self._execution_timeout_seconds = execution_timeout_seconds
+        self._max_memory_mb = max_memory_mb
+        self._max_output_bytes = max_output_bytes
 
     # ------------------------------------------------------------------
     # Run
@@ -399,69 +413,17 @@ class SimulationEngine:
         return sim_dir
 
     def _execute_single(self, source: str, name: str, seed: int, max_steps: int | None = None) -> dict[str, Any]:
-        mod_name = f"autocontext._sim_gen.{name}_{seed}"
-        spec = importlib.util.spec_from_loader(mod_name, loader=None)
-        assert spec is not None
-        mod = importlib.util.module_from_spec(spec)
-        exec(source, mod.__dict__)  # noqa: S102
-        sys.modules[mod_name] = mod
-
-        # Find the scenario class (skip abstract classes — AC-520)
-        cls = find_scenario_class(mod)
-        if cls is None:
-            return {"score": 0, "reasoning": "No scenario class found", "dimension_scores": {}}
-
-        instance = cls()
-        from autocontext.scenarios.operator_loop import OperatorLoopInterface
-
-        if isinstance(instance, OperatorLoopInterface):
-            return self._execute_operator_loop_single(instance, seed, max_steps)
-
-        state = instance.initial_state(seed)
-        limit = max_steps or getattr(instance, "max_steps", lambda: 20)()
-        records: list[dict[str, Any]] = []
-
-        from autocontext.scenarios.simulation import Action, ActionRecord, ActionResult, ActionTrace
-
-        step_num = 0
-        for _ in range(limit):
-            if instance.is_terminal(state):
-                break
-            actions = instance.get_available_actions(state)
-            if not actions:
-                break
-            action = Action(name=actions[0].name, parameters={})
-            state_before = dict(state)
-            result, state = instance.execute_action(state, action)
-            step_num += 1
-            records.append(
-                {
-                    "step": step_num,
-                    "action": action.name,
-                    "success": result.success,
-                    "state_before": state_before,
-                    "state_after": dict(state),
-                }
-            )
-
-        trace = ActionTrace(
-            records=[
-                ActionRecord(
-                    step=r["step"],
-                    action=Action(name=r["action"], parameters={}),
-                    result=ActionResult(success=r["success"], output="", state_changes={}),
-                    state_before=r["state_before"],
-                    state_after=r["state_after"],
-                )
-                for r in records
-            ]
+        """Execute generated scenario code only inside a killable child."""
+        return execute_generated_simulation(
+            source=source,
+            name=name,
+            seed=seed,
+            max_steps=max_steps,
+            execute_operator_loop=self._execute_operator_loop_single,
+            timeout_seconds=self._execution_timeout_seconds,
+            max_memory_mb=self._max_memory_mb,
+            max_output_bytes=self._max_output_bytes,
         )
-        eval_result = instance.evaluate_trace(trace, state)
-        return {
-            "score": round(eval_result.score, 4),
-            "reasoning": eval_result.reasoning,
-            "dimension_scores": eval_result.dimension_scores,
-        }
 
     def _execute_operator_loop_single(
         self,

@@ -54,6 +54,7 @@ import {
 } from "./run-simulation-read-workflow.js";
 import type { HttpRouteContext } from "./routes/http-route-context.js";
 import { tryRootRoutes } from "./routes/root-routes.js";
+import { trySystemMapRoutes } from "./routes/system-map-routes.js";
 import { tryNotebookRoutes } from "./routes/notebook-routes.js";
 import { tryMonitorRoutes } from "./routes/monitor-routes.js";
 import { tryOpenClawRoutes } from "./routes/openclaw-routes.js";
@@ -83,15 +84,28 @@ import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
 import type { LLMProvider } from "../types/index.js";
 import { MAX_IMAGE_AGGREGATE_ENCODED_BYTES } from "../types/image-attachments.js";
+import {
+  projectSystemMapTransfer,
+  readSystemMapView,
+  SYSTEM_MAP_PROJECTION,
+  SYSTEM_MAP_TRANSFER_EVENT,
+} from "./system-map.js";
+import {
+  assertSecureServerBind,
+  isServerRequestAuthorized,
+  resolveServerAuthToken,
+  selectServerAuthSubprotocol,
+} from "./server-auth.js";
 
 export const MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES =
   MAX_IMAGE_AGGREGATE_ENCODED_BYTES + 1024 * 1024;
 export const MAX_GLOBAL_INTERACTIVE_MESSAGE_BYTES =
   MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES;
 export const MAX_CONCURRENT_INTERACTIVE_MESSAGE_HANDLERS = 2;
-export const MAX_INTERACTIVE_WEBSOCKET_CONNECTIONS = 4;
+export const MAX_INTERACTIVE_WEBSOCKET_CONNECTIONS = 10;
 export const MAX_INTERACTIVE_WEBSOCKET_BUFFERED_BYTES =
   MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES;
+export const MAX_HTTP_JSON_BODY_BYTES = 1024 * 1024;
 const MAX_PENDING_INTERACTIVE_MESSAGES = 32;
 const MAX_PENDING_PRIORITY_CONTROL_MESSAGES = 8;
 const MAX_GLOBAL_PRIORITY_CONTROL_BYTES = 64 * 1024;
@@ -100,6 +114,7 @@ export interface InteractiveServerOpts {
   runManager: RunManager;
   port?: number;
   host?: string;
+  authToken?: string;
 }
 
 export class PortInUseError extends Error {
@@ -115,12 +130,23 @@ export class PortInUseError extends Error {
   }
 }
 
+class HttpRequestError extends Error {
+  readonly statusCode: number;
+
+  constructor(statusCode: number, message: string) {
+    super(message);
+    this.name = "HttpRequestError";
+    this.statusCode = statusCode;
+  }
+}
+
 export class InteractiveServer {
   readonly #runManager: RunManager;
   readonly #missionManager: MissionManager;
   readonly #campaignManager: CampaignManager;
   readonly #missionEvents: MissionEventEmitter;
   readonly #host: string;
+  readonly #authToken: string | null;
   readonly #requestedPort: number;
   readonly #runTranscripts: RunTranscriptStore;
   readonly #interactiveClients = new Set<WebSocket>();
@@ -164,6 +190,8 @@ export class InteractiveServer {
     });
     this.#campaignManager = new CampaignManager(this.#missionManager);
     this.#host = opts.host ?? "127.0.0.1";
+    this.#authToken = resolveServerAuthToken(opts.authToken);
+    assertSecureServerBind(this.#host, this.#authToken);
     this.#requestedPort = opts.port ?? 8000;
     this.#runTranscripts = new RunTranscriptStore(
       join(this.#runManager.getRunsRoot(), "_interactive", "run-transcript.ndjson"),
@@ -186,9 +214,13 @@ export class InteractiveServer {
 
     const httpServer = createServer((req, res) => {
       void this.#handleHttpRequest(req, res).catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
+        const statusCode = err instanceof HttpRequestError ? err.statusCode : 500;
+        const message =
+          err instanceof HttpRequestError
+            ? err.message
+            : "Internal server error";
         if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
+          res.writeHead(statusCode, { "Content-Type": "application/json" });
         }
         res.end(JSON.stringify({ error: message }, null, 2));
       });
@@ -197,9 +229,22 @@ export class InteractiveServer {
     const wsServer = new WebSocketServer({
       noServer: true,
       maxPayload: MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES,
+      handleProtocols: (protocols) =>
+        selectServerAuthSubprotocol(protocols, this.#authToken) ?? false,
     });
     httpServer.on("upgrade", (req, socket, head) => {
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
+      if (!isServerRequestAuthorized({
+        authToken: this.#authToken,
+        authorizationHeader: req.headers.authorization,
+        websocketProtocolHeader: req.headers["sec-websocket-protocol"],
+      })) {
+        socket.write(
+          'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Bearer realm="autocontext"\r\nConnection: close\r\n\r\n',
+        );
+        socket.destroy();
+        return;
+      }
       if (!isTrustedWebSocketOrigin(req.headers.origin, this.#host, this.#boundPort)) {
         socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
         socket.destroy();
@@ -224,7 +269,12 @@ export class InteractiveServer {
       }
       if (requestUrl.pathname === "/ws/events") {
         wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-          this.#attachEventStreamClient(ws);
+          this.#attachEventStreamClient(
+            ws,
+            requestUrl.searchParams.get("projection"),
+            requestUrl.searchParams.get("run_id"),
+            requestUrl.searchParams.get("view"),
+          );
         });
         return;
       }
@@ -261,6 +311,35 @@ export class InteractiveServer {
     const url = requestUrl.pathname;
     const method = req.method ?? "GET";
     const settings = loadSettings();
+
+    if (
+      !["GET", "HEAD", "OPTIONS"].includes(method) &&
+      req.headers.origin !== undefined &&
+      !isTrustedLocalOrigin(
+        req.headers.origin,
+        this.#host,
+        this.#boundPort || this.#requestedPort,
+      )
+    ) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Forbidden origin" }));
+      return;
+    }
+
+    if (
+      method !== "OPTIONS" &&
+      !isServerRequestAuthorized({
+        authToken: this.#authToken,
+        authorizationHeader: req.headers.authorization,
+      })
+    ) {
+      res.writeHead(401, {
+        "Content-Type": "application/json",
+        "WWW-Authenticate": 'Bearer realm="autocontext"',
+      });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
 
     // Shared per-request closures (AC-852): built once, reused across every
     // route builder below instead of repeating `() => this.#openStore()` and
@@ -340,7 +419,7 @@ export class InteractiveServer {
     );
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
 
     if (method === "OPTIONS") {
       res.writeHead(204);
@@ -386,6 +465,7 @@ export class InteractiveServer {
     };
 
     if (tryRootRoutes(ctx)) return;
+    if (await trySystemMapRoutes(ctx, { eventsPath: this.#runManager.events.path })) return;
     if (await tryNotebookRoutes(ctx, notebookApi)) return;
     if (await tryMonitorRoutes(ctx, monitorApi)) return;
     if (await tryOpenClawRoutes(ctx, openClawApi)) return;
@@ -467,14 +547,38 @@ export class InteractiveServer {
   }
 
   async #readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+    const declaredLength = req.headers["content-length"];
+    if (declaredLength !== undefined) {
+      const parsedLength = Number(declaredLength);
+      if (!Number.isSafeInteger(parsedLength) || parsedLength < 0) {
+        throw new HttpRequestError(400, "Invalid Content-Length");
+      }
+      if (parsedLength > MAX_HTTP_JSON_BODY_BYTES) {
+        throw new HttpRequestError(413, "JSON request body exceeds the 1 MiB limit");
+      }
+    }
+
     const chunks: Buffer[] = [];
+    let receivedBytes = 0;
     for await (const chunk of req) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      receivedBytes += bytes.length;
+      if (receivedBytes > MAX_HTTP_JSON_BODY_BYTES) {
+        throw new HttpRequestError(413, "JSON request body exceeds the 1 MiB limit");
+      }
+      chunks.push(bytes);
     }
     if (chunks.length === 0) {
       return {};
     }
-    return JSON.parse(Buffer.concat(chunks).toString("utf-8")) as Record<string, unknown>;
+    try {
+      return JSON.parse(Buffer.concat(chunks, receivedBytes).toString("utf-8")) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      throw new HttpRequestError(400, "Invalid JSON request body");
+    }
   }
 
   #buildMissionProgress(
@@ -678,9 +782,16 @@ export class InteractiveServer {
     });
   }
 
-  #attachEventStreamClient(ws: WebSocket): void {
+  #attachEventStreamClient(
+    ws: WebSocket,
+    projection: string | null,
+    requestedRunId: string | null,
+    requestedView: string | null,
+  ): void {
     this.#eventStreamClients.add(ws);
     let sequence = 0;
+    const runId = requestedRunId?.trim() ?? "";
+    const systemMapView = readSystemMapView(requestedView);
     const nextSequence = () => {
       sequence += 1;
       return sequence;
@@ -691,6 +802,18 @@ export class InteractiveServer {
         return;
       }
       if (ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      if (projection === SYSTEM_MAP_PROJECTION) {
+        const transfer = record ? projectSystemMapTransfer(record, systemMapView) : null;
+        if (!transfer || (runId && transfer.runId !== runId)) return;
+        this.#sendWire(ws, JSON.stringify(buildEventStreamEnvelope({
+          channel: "cockpit",
+          event: SYSTEM_MAP_TRANSFER_EVENT,
+          payload: transfer,
+          seq: nextSequence(),
+          timestamp: transfer.timestamp,
+        })));
         return;
       }
       this.#sendWire(ws, JSON.stringify(buildEventStreamEnvelope({
@@ -709,6 +832,7 @@ export class InteractiveServer {
       buildMissionProgress: (missionId, latestStep) =>
         this.#buildMissionProgress(missionId, latestStep),
       onProgress: (progress) => {
+        if (projection === SYSTEM_MAP_PROJECTION) return;
         if (ws.readyState !== WebSocket.OPEN) {
           return;
         }
@@ -1347,18 +1471,25 @@ function resolveCorsOrigin(
   port: number,
 ): string {
   const requestedOrigin = Array.isArray(origin) ? origin[0] : origin;
-  if (requestedOrigin && isTrustedLocalOrigin(requestedOrigin, host)) {
+  if (requestedOrigin && isTrustedLocalOrigin(requestedOrigin, host, port)) {
     return requestedOrigin;
   }
   const displayHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
   return `http://${displayHost}:${port}`;
 }
 
-function isTrustedLocalOrigin(origin: string, host: string): boolean {
+function isTrustedLocalOrigin(origin: string, host: string, port: number): boolean {
   try {
     const parsed = new URL(origin);
-    const allowedHosts = new Set(["localhost", "127.0.0.1", "::1", host]);
-    return parsed.protocol === "http:" && allowedHosts.has(parsed.hostname);
+    const requestedHost = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    const configuredHost = host.toLowerCase().replace(/^\[|\]$/g, "");
+    const allowedHosts = new Set(["localhost", "127.0.0.1", "::1", configuredHost]);
+    const requestedPort = parsed.port ? Number(parsed.port) : 80;
+    return (
+      parsed.protocol === "http:" &&
+      requestedPort === port &&
+      allowedHosts.has(requestedHost)
+    );
   } catch {
     return false;
   }

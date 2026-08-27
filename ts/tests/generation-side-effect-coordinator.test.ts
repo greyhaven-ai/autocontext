@@ -47,6 +47,7 @@ describe("generation side-effect coordinator", () => {
       role: "competitor",
       latency_ms: 145,
       tokens: 7,
+      model: "test-model",
     });
   });
 

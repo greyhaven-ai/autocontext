@@ -1,4 +1,4 @@
-"""HarnessTester — validates candidate harness code against sample states in parallel.
+"""HarnessTester — validates candidate harness code against sample states.
 
 Runs each harness function (``enumerate_legal_actions``, ``is_legal_action``,
 ``validate_strategy``) against a collection of :class:`SampleState` objects,
@@ -10,13 +10,20 @@ import ast
 import json
 import logging
 import time
-from concurrent.futures import Future, ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from autocontext.execution.ast_safety import check_ast_safety
 from autocontext.execution.harness_loader import _SAFE_BUILTINS, _exec_harness_source
+from autocontext.execution.isolated_python import (
+    DEFAULT_MAX_MEMORY_MB,
+    DEFAULT_MAX_OUTPUT_BYTES,
+    IsolatedExecutionError,
+    IsolatedExecutionTimeout,
+    IsolationUnavailableError,
+    run_isolated_json,
+)
 from autocontext.execution.sample_states import SampleState
 
 logger = logging.getLogger(__name__)
@@ -52,7 +59,8 @@ class HarnessTester:
     Parameters
     ----------
     parallel_workers:
-        Number of threads for parallel test execution (default 10).
+        Compatibility setting retained for callers. Local isolated executions
+        are serialized because the child boundary refuses to fork from threads.
     timeout_per_test:
         Max seconds per individual test invocation (default 2.0).
     max_failures_reported:
@@ -66,10 +74,14 @@ class HarnessTester:
         parallel_workers: int = 10,
         timeout_per_test: float = 2.0,
         max_failures_reported: int = 5,
+        max_memory_mb: int = DEFAULT_MAX_MEMORY_MB,
+        max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
     ) -> None:
         self._parallel_workers = parallel_workers
         self._timeout_per_test = timeout_per_test
         self._max_failures_reported = max_failures_reported
+        self._max_memory_mb = max_memory_mb
+        self._max_output_bytes = max_output_bytes
 
     def test_harness(
         self,
@@ -119,11 +131,28 @@ class HarnessTester:
                 execution_time_ms=elapsed_ms,
             )
 
-        # ── Load harness into a namespace ────────────────────────────────
-        namespace: dict[str, Any] = {"__builtins__": dict(_SAFE_BUILTINS)}
+        # ── Load harness only inside the killable child boundary ────────
         try:
-            _exec_harness_source(harness_source, namespace)
-        except Exception as exc:
+            callable_names = run_isolated_json(
+                lambda: _inspect_harness_callables(harness_source),
+                timeout_seconds=self._timeout_per_test,
+                max_memory_mb=self._max_memory_mb,
+                max_output_bytes=self._max_output_bytes,
+            )
+        except IsolatedExecutionTimeout:
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            failures = self._make_blanket_failures(
+                sample_states, "load", "harness load timed out",
+            )
+            return HarnessTestReport(
+                total_tests=len(sample_states),
+                passed=0,
+                failed=len(sample_states),
+                accuracy=0.0,
+                failures=failures,
+                execution_time_ms=elapsed_ms,
+            )
+        except (IsolationUnavailableError, IsolatedExecutionError) as exc:
             logger.debug("execution.harness_tester: caught Exception", exc_info=True)
             elapsed_ms = (time.monotonic() - t0) * 1000
             failures = self._make_blanket_failures(
@@ -138,17 +167,24 @@ class HarnessTester:
                 execution_time_ms=elapsed_ms,
             )
 
-        # Extract callable functions
-        fn_enumerate = namespace.get("enumerate_legal_actions")
-        fn_is_legal = namespace.get("is_legal_action")
-        fn_validate = namespace.get("validate_strategy")
-        callables: dict[str, Any] = {
-            "enumerate_legal_actions": fn_enumerate if callable(fn_enumerate) else None,
-            "is_legal_action": fn_is_legal if callable(fn_is_legal) else None,
-            "validate_strategy": fn_validate if callable(fn_validate) else None,
-        }
+        if not isinstance(callable_names, list) or not all(
+            isinstance(name, str) for name in callable_names
+        ):
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            failures = self._make_blanket_failures(
+                sample_states, "load", "harness load error: invalid callable metadata",
+            )
+            return HarnessTestReport(
+                total_tests=len(sample_states),
+                passed=0,
+                failed=len(sample_states),
+                accuracy=0.0,
+                failures=failures,
+                execution_time_ms=elapsed_ms,
+            )
+        available = set(callable_names)
 
-        missing = [name for name in (required_functions or []) if callables.get(name) is None]
+        missing = [name for name in (required_functions or []) if name not in available]
         if missing:
             elapsed_ms = (time.monotonic() - t0) * 1000
             failures = self._make_blanket_failures(
@@ -165,28 +201,30 @@ class HarnessTester:
                 execution_time_ms=elapsed_ms,
             )
 
-        # ── Run tests in parallel ────────────────────────────────────────
+        # ── Run each state in a fresh child ─────────────────────────────
+        # ``parallel_workers`` remains an accepted compatibility knob.  The
+        # current local isolation primitive may only fork from the main thread,
+        # so calls are serialized rather than falling back to unsafe threads.
         all_failures: list[HarnessTestFailure] = []
         passed = 0
-
-        pool = ThreadPoolExecutor(max_workers=self._parallel_workers)
-        futures: dict[Future[HarnessTestFailure | None], SampleState] = {
-            pool.submit(
-                _test_single_state,
-                sample,
-                fn_enumerate=callables["enumerate_legal_actions"],
-                fn_is_legal=callables["is_legal_action"],
-                fn_validate=callables["validate_strategy"],
-                scenario=scenario,
-            ): sample
-            for sample in sample_states
-        }
-
-        for future in futures:
+        for sample in sample_states:
             try:
-                result = future.result(timeout=self._timeout_per_test)
-            except FuturesTimeoutError:
-                sample = futures[future]
+                def _run_sample(current: SampleState = sample) -> dict[str, Any] | None:
+                    return _test_single_state_from_source(
+                        harness_source,
+                        available,
+                        current,
+                        scenario,
+                    )
+
+                raw_result = run_isolated_json(
+                    _run_sample,
+                    timeout_seconds=self._timeout_per_test,
+                    max_memory_mb=self._max_memory_mb,
+                    max_output_bytes=self._max_output_bytes,
+                )
+                result = _failure_from_wire(raw_result)
+            except IsolatedExecutionTimeout:
                 all_failures.append(HarnessTestFailure(
                     state=sample.state,
                     function_name="(overall)",
@@ -196,9 +234,8 @@ class HarnessTester:
                     state_description=sample.description,
                 ))
                 continue
-            except Exception as exc:
+            except (IsolationUnavailableError, IsolatedExecutionError, ValueError) as exc:
                 logger.debug("execution.harness_tester: caught Exception", exc_info=True)
-                sample = futures[future]
                 all_failures.append(HarnessTestFailure(
                     state=sample.state,
                     function_name="(overall)",
@@ -213,9 +250,6 @@ class HarnessTester:
                 passed += 1
             else:
                 all_failures.append(result)
-
-        # Shut down without waiting for hung threads (daemon threads will die with process)
-        pool.shutdown(wait=False, cancel_futures=True)
 
         failed = len(all_failures)
         total = len(sample_states)
@@ -308,6 +342,82 @@ class HarnessTester:
             for s in states
         ]
         return self._sample_diverse_failures(all_failures)
+
+
+_TESTER_CALLABLES = (
+    "enumerate_legal_actions",
+    "is_legal_action",
+    "validate_strategy",
+)
+
+
+def _inspect_harness_callables(source: str) -> list[str]:
+    """Load candidate source in the child and return supported entry points."""
+    namespace: dict[str, Any] = {"__builtins__": dict(_SAFE_BUILTINS)}
+    _exec_harness_source(source, namespace)
+    return [name for name in _TESTER_CALLABLES if callable(namespace.get(name))]
+
+
+def _test_single_state_from_source(
+    source: str,
+    available: set[str],
+    sample: SampleState,
+    scenario: Any | None,
+) -> dict[str, Any] | None:
+    """Load and test one sample entirely inside an isolated child."""
+    namespace: dict[str, Any] = {"__builtins__": dict(_SAFE_BUILTINS)}
+    _exec_harness_source(source, namespace)
+    result = _test_single_state(
+        sample,
+        fn_enumerate=namespace.get("enumerate_legal_actions")
+        if "enumerate_legal_actions" in available
+        else None,
+        fn_is_legal=namespace.get("is_legal_action")
+        if "is_legal_action" in available
+        else None,
+        fn_validate=namespace.get("validate_strategy")
+        if "validate_strategy" in available
+        else None,
+        scenario=scenario,
+    )
+    return _failure_to_wire(result) if result is not None else None
+
+
+def _failure_to_wire(failure: HarnessTestFailure) -> dict[str, Any]:
+    return {
+        "state": failure.state,
+        "function_name": failure.function_name,
+        "expected": failure.expected,
+        "actual": failure.actual,
+        "error": failure.error,
+        "state_description": failure.state_description,
+    }
+
+
+def _failure_from_wire(raw: Any) -> HarnessTestFailure | None:
+    """Validate one JSON-only child result before returning it to callers."""
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValueError("isolated harness test result must be an object")
+    state = raw.get("state")
+    function_name = raw.get("function_name")
+    error = raw.get("error")
+    state_description = raw.get("state_description")
+    if not isinstance(state, dict):
+        raise ValueError("isolated harness test returned invalid state")
+    if not isinstance(function_name, str) or not isinstance(error, str):
+        raise ValueError("isolated harness test returned invalid failure fields")
+    if not isinstance(state_description, str):
+        raise ValueError("isolated harness test returned invalid state description")
+    return HarnessTestFailure(
+        state=state,
+        function_name=function_name,
+        expected=raw.get("expected"),
+        actual=raw.get("actual"),
+        error=error,
+        state_description=state_description,
+    )
 
 
 def _test_single_state(

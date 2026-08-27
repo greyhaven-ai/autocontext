@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import shlex
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -100,6 +102,138 @@ def test_local_workspace_executes_commands_inside_virtual_cwd(tmp_path: Path) ->
     assert result.stdout == "autoctx"
     assert result.stderr == ""
     assert result.exit_code == 0
+
+
+def test_local_workspace_fallback_shell_does_not_inherit_host_secrets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AUTOCTX_HOST_SECRET", "host-secret")
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    code = "import os; print(os.environ.get('AUTOCTX_HOST_SECRET', ''), end='')"
+
+    result = env.exec(f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}")
+
+    assert result == type(result)(stdout="", stderr="", exit_code=0)
+
+
+def test_local_workspace_fallback_shell_accepts_explicit_env(tmp_path: Path) -> None:
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    code = "import os; print(os.environ.get('EXPLICIT_VALUE', ''), end='')"
+
+    result = env.exec(
+        f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}",
+        options=RuntimeExecOptions(env={"EXPLICIT_VALUE": "allowed"}),
+    )
+
+    assert result.stdout == "allowed"
+    assert result.exit_code == 0
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups are required")
+def test_local_workspace_kills_term_resistant_descendants_on_timeout(tmp_path: Path) -> None:
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    env.write_file(
+        "timeout-descendant.py",
+        """\
+import signal
+import time
+from pathlib import Path
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+Path("timeout-descendant-ready.txt").write_text("ready", encoding="utf-8")
+time.sleep(0.9)
+Path("timeout-descendant-escaped.txt").write_text("escaped", encoding="utf-8")
+""",
+    )
+    env.write_file(
+        "timeout-parent.py",
+        """\
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+subprocess.Popen(
+    [sys.executable, "timeout-descendant.py"],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+while not Path("timeout-descendant-ready.txt").exists():
+    time.sleep(0.01)
+while True:
+    time.sleep(1)
+""",
+    )
+
+    result = env.exec(
+        f"{shlex.quote(sys.executable)} timeout-parent.py",
+        options=RuntimeExecOptions(timeout_ms=300),
+    )
+
+    assert result.exit_code == 124
+    assert result.stderr == "Command timed out"
+    assert env.exists("timeout-descendant-ready.txt")
+    time.sleep(0.7)
+    assert not env.exists("timeout-descendant-escaped.txt")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups are required")
+def test_local_workspace_caps_output_and_kills_term_resistant_descendants(tmp_path: Path) -> None:
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    env.write_file(
+        "output-descendant.py",
+        """\
+import signal
+import time
+from pathlib import Path
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+Path("output-descendant-ready.txt").write_text("ready", encoding="utf-8")
+time.sleep(0.9)
+Path("output-descendant-escaped.txt").write_text("escaped", encoding="utf-8")
+""",
+    )
+    env.write_file(
+        "output-parent.py",
+        """\
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+subprocess.Popen(
+    [sys.executable, "output-descendant.py"],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+while not Path("output-descendant-ready.txt").exists():
+    time.sleep(0.01)
+sys.stdout.buffer.write(b"x" * (2 * 1024 * 1024))
+sys.stdout.buffer.flush()
+while True:
+    time.sleep(1)
+""",
+    )
+
+    result = env.exec(f"{shlex.quote(sys.executable)} output-parent.py")
+
+    assert result.exit_code == 125
+    assert len(result.stdout.encode()) == 1024 * 1024
+    assert "output exceeded" in result.stderr
+    assert env.exists("output-descendant-ready.txt")
+    time.sleep(0.7)
+    assert not env.exists("output-descendant-escaped.txt")
 
 
 def test_local_workspace_rejects_exec_cwd_symlink_escape_for_grants(tmp_path: Path) -> None:
@@ -299,6 +433,26 @@ def test_local_command_grants_do_not_inherit_host_env_by_default(tmp_path: Path,
 
     assert result.stdout == ""
     assert "host-secret" not in repr([event.to_dict() for event in observed])
+
+
+def test_local_command_grants_cap_process_output(tmp_path: Path) -> None:
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    scoped = env.scope(
+        commands=[
+            create_local_runtime_command_grant(
+                "noisy-python",
+                sys.executable,
+                args=["-c", "import sys; sys.stdout.write('x' * (2 * 1024 * 1024))"],
+            )
+        ]
+    )
+
+    result = scoped.exec("noisy-python")
+
+    assert result.exit_code == 125
+    assert len(result.stdout.encode()) == 1024 * 1024
+    assert "output exceeded" in result.stderr
 
 
 def test_local_command_grants_apply_call_site_timeout(tmp_path: Path) -> None:

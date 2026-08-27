@@ -1,5 +1,11 @@
 import { Buffer } from "node:buffer";
 
+import {
+  assertPublicHttpUrl,
+  createSafeOutboundFetch,
+  type OutboundFetch,
+  type OutboundHostResolver,
+} from "../security/outbound-url-policy.js";
 import { registerRuntimeToolGrantSecrets } from "./workspace-env.js";
 import type { RuntimeEffectDeclaration } from "./effect-policy.js";
 import type {
@@ -21,6 +27,9 @@ export interface ConnectMcpRuntimeToolsOptions {
   clientName?: string;
   clientVersion?: string;
   clientFactory?: McpRuntimeToolClientFactory;
+  fetch?: OutboundFetch;
+  resolveHostname?: OutboundHostResolver;
+  maxRedirects?: number;
   effect?: RuntimeEffectDeclaration;
 }
 
@@ -95,13 +104,20 @@ interface McpSdkClientLike {
   close(): Promise<void>;
 }
 
-const MAX_MCP_TOOL_DISCOVERY_PAGES = 100;
-const MAX_MCP_TOOL_DISCOVERY_TOOLS = 10_000;
+const DEFAULT_MCP_TOOL_DISCOVERY_TIMEOUT_MS = 30_000;
+const MAX_MCP_TOOL_DISCOVERY_TIMEOUT_MS = 10 * 60_000;
+const MAX_MCP_TOOL_DISCOVERY_PAGES = 32;
+const MAX_MCP_TOOL_DISCOVERY_TOOLS = 512;
+const MAX_MCP_TOOL_DISCOVERY_BYTES = 2 * 1024 * 1024;
+const MAX_MCP_TOOL_NAME_BYTES = 256;
+const MAX_MCP_TOOL_DESCRIPTION_BYTES = 16 * 1024;
+const MAX_MCP_TOOL_SCHEMA_BYTES = 64 * 1024;
+const MAX_MCP_CURSOR_BYTES = 4 * 1024;
 
 export async function connectMcpRuntimeTools(
   options: ConnectMcpRuntimeToolsOptions,
 ): Promise<McpRuntimeToolSet> {
-  const url = normalizeMcpUrl(options.url);
+  const url = assertPublicHttpUrl(options.url);
   const headers = { ...(options.headers ?? {}) };
   const client = options.clientFactory
     ? await options.clientFactory({
@@ -117,6 +133,9 @@ export async function connectMcpRuntimeTools(
         timeoutMs: options.timeoutMs,
         clientName: options.clientName,
         clientVersion: options.clientVersion,
+        fetch: options.fetch,
+        resolveHostname: options.resolveHostname,
+        maxRedirects: options.maxRedirects,
       });
   let tools: McpToolDescription[];
   try {
@@ -263,30 +282,53 @@ async function createStreamableHttpMcpRuntimeToolClient(options: {
   timeoutMs?: number;
   clientName?: string;
   clientVersion?: string;
+  fetch?: OutboundFetch;
+  resolveHostname?: OutboundHostResolver;
+  maxRedirects?: number;
 }): Promise<McpRuntimeToolClient> {
   const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
     import("@modelcontextprotocol/sdk/client/index.js"),
     import("@modelcontextprotocol/sdk/client/streamableHttp.js"),
   ]);
+  const safeFetch = createSafeOutboundFetch({
+    fetch: options.fetch,
+    resolveHostname: options.resolveHostname,
+    maxRedirects: options.maxRedirects,
+    requestTimeoutMs: options.timeoutMs,
+    maxResponseBytes: MAX_MCP_TOOL_DISCOVERY_BYTES,
+    allowedResponseContentTypes: [
+      "application/json",
+      "application/*+json",
+      "text/event-stream",
+    ],
+  });
   const transport = new StreamableHTTPClientTransport(options.url, {
     requestInit: { headers: options.headers },
+    fetch: safeFetch,
   });
   const client = new Client({
     name: options.clientName ?? "autoctx-runtime-tools",
     version: options.clientVersion ?? "0.5.0",
   });
-  await client.connect(transport, requestOptionsFromRuntime({
-    signal: options.signal,
-    timeoutMs: options.timeoutMs,
-  }));
-  return new SdkMcpRuntimeToolClient(client);
+  try {
+    await client.connect(transport, requestOptionsFromRuntime({
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+    }));
+  } catch (error) {
+    await safeFetch.close?.();
+    throw error;
+  }
+  return new SdkMcpRuntimeToolClient(client, safeFetch.close);
 }
 
 class SdkMcpRuntimeToolClient implements McpRuntimeToolClient {
   #client: McpSdkClientLike;
+  #closeFetch: (() => Promise<void>) | undefined;
 
-  constructor(client: McpSdkClientLike) {
+  constructor(client: McpSdkClientLike, closeFetch?: () => Promise<void>) {
     this.#client = client;
+    this.#closeFetch = closeFetch;
   }
 
   async listTools(
@@ -304,8 +346,12 @@ class SdkMcpRuntimeToolClient implements McpRuntimeToolClient {
     return response as McpToolCallResponse;
   }
 
-  close(): Promise<void> {
-    return this.#client.close();
+  async close(): Promise<void> {
+    try {
+      await this.#client.close();
+    } finally {
+      await this.#closeFetch?.();
+    }
   }
 }
 
@@ -313,22 +359,52 @@ async function listAllMcpTools(
   client: McpRuntimeToolClient,
   context: RuntimeToolCallContext,
 ): Promise<McpToolDescription[]> {
+  const timeoutMs = context.timeoutMs ?? DEFAULT_MCP_TOOL_DISCOVERY_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_MCP_TOOL_DISCOVERY_TIMEOUT_MS) {
+    throw new Error(
+      `MCP tool discovery timeout must be an integer between 1 and ${MAX_MCP_TOOL_DISCOVERY_TIMEOUT_MS} ms`,
+    );
+  }
+  const deadline = Date.now() + timeoutMs;
   const tools: McpToolDescription[] = [];
   const seenCursors = new Set<string>();
+  let retainedBytes = 0;
   let cursor: string | undefined;
   for (let pageCount = 0; pageCount < MAX_MCP_TOOL_DISCOVERY_PAGES; pageCount += 1) {
-    const page = await client.listTools(
-      cursor ? { cursor } : undefined,
-      requestOptionsFromRuntime(context),
+    const remainingMs = deadline - Date.now();
+    if (remainingMs < 1) {
+      throw new Error(`MCP tool discovery exceeded its ${timeoutMs} ms deadline`);
+    }
+    const page = await awaitMcpDiscoveryPage(
+      client.listTools(
+        cursor ? { cursor } : undefined,
+        requestOptionsFromRuntime({ ...context, timeoutMs: remainingMs }),
+      ),
+      remainingMs,
+      context.signal,
     );
-    tools.push(...page.tools);
-    if (tools.length > MAX_MCP_TOOL_DISCOVERY_TOOLS) {
-      throw new Error(
-        `MCP tool discovery exceeded ${MAX_MCP_TOOL_DISCOVERY_TOOLS} tools`,
-      );
+    if (!page || !Array.isArray(page.tools)) {
+      throw new Error("MCP tool discovery returned an invalid tools page");
+    }
+    for (const tool of page.tools) {
+      retainedBytes += validateMcpToolDescription(tool);
+      if (retainedBytes > MAX_MCP_TOOL_DISCOVERY_BYTES) {
+        throw new Error(
+          `MCP tool discovery exceeded ${MAX_MCP_TOOL_DISCOVERY_BYTES} retained bytes`,
+        );
+      }
+      tools.push(tool);
+      if (tools.length > MAX_MCP_TOOL_DISCOVERY_TOOLS) {
+        throw new Error(
+          `MCP tool discovery exceeded ${MAX_MCP_TOOL_DISCOVERY_TOOLS} tools`,
+        );
+      }
     }
     const nextCursor = page.nextCursor;
     if (!nextCursor) return tools;
+    if (typeof nextCursor !== "string" || Buffer.byteLength(nextCursor, "utf8") > MAX_MCP_CURSOR_BYTES) {
+      throw new Error("MCP tool discovery returned an invalid pagination cursor");
+    }
     if (seenCursors.has(nextCursor)) {
       throw new Error(`MCP tool discovery returned a repeated cursor: ${nextCursor}`);
     }
@@ -336,6 +412,77 @@ async function listAllMcpTools(
     cursor = nextCursor;
   }
   throw new Error(`MCP tool discovery exceeded ${MAX_MCP_TOOL_DISCOVERY_PAGES} pages`);
+}
+
+function validateMcpToolDescription(tool: McpToolDescription): number {
+  if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
+    throw new Error("MCP tool discovery returned an invalid tool description");
+  }
+  if (
+    typeof tool.name !== "string"
+    || tool.name.length === 0
+    || Buffer.byteLength(tool.name, "utf8") > MAX_MCP_TOOL_NAME_BYTES
+  ) {
+    throw new Error("MCP tool discovery returned an invalid tool name");
+  }
+  if (
+    tool.description !== undefined
+    && (
+      typeof tool.description !== "string"
+      || Buffer.byteLength(tool.description, "utf8") > MAX_MCP_TOOL_DESCRIPTION_BYTES
+    )
+  ) {
+    throw new Error("MCP tool discovery returned an oversized tool description");
+  }
+  if (!tool.inputSchema || typeof tool.inputSchema !== "object" || Array.isArray(tool.inputSchema)) {
+    throw new Error("MCP tool discovery returned an invalid tool input schema");
+  }
+  const schemaBytes = serializedUtf8Bytes(tool.inputSchema);
+  if (schemaBytes > MAX_MCP_TOOL_SCHEMA_BYTES) {
+    throw new Error("MCP tool discovery returned an oversized tool input schema");
+  }
+  return Buffer.byteLength(tool.name, "utf8")
+    + Buffer.byteLength(tool.description ?? "", "utf8")
+    + schemaBytes;
+}
+
+function serializedUtf8Bytes(value: unknown): number {
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    throw new Error("MCP tool discovery returned a non-serializable tool input schema");
+  }
+  if (serialized === undefined) {
+    throw new Error("MCP tool discovery returned a non-serializable tool input schema");
+  }
+  return Buffer.byteLength(serialized, "utf8");
+}
+
+async function awaitMcpDiscoveryPage<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal?.aborted) throw signal.reason;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  let abortHandler: (() => void) | undefined;
+  const deadlinePromise = new Promise<never>((_resolve, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new Error("MCP tool discovery exceeded its overall deadline")),
+      timeoutMs,
+    );
+    if (signal) {
+      abortHandler = () => reject(signal.reason);
+      signal.addEventListener("abort", abortHandler, { once: true });
+    }
+  });
+  try {
+    return await Promise.race([promise, deadlinePromise]);
+  } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
+  }
 }
 
 function trustedHeaderSecrets(headers: Record<string, string>): string[] {
@@ -417,14 +564,6 @@ function embeddedResourceToText(resource: Record<string, unknown>): string {
 
 function base64Bytes(value: string): number {
   return Buffer.from(value, "base64").byteLength;
-}
-
-function normalizeMcpUrl(value: string | URL): URL {
-  const url = value instanceof URL ? value : new URL(value);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("MCP runtime tool URL must use http: or https:");
-  }
-  return url;
 }
 
 function publicMcpUrl(url: URL): string {

@@ -13,10 +13,10 @@ import inspect
 import json
 import logging
 import os
-import shlex
+import re
 import subprocess
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
@@ -24,6 +24,12 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkabl
 from pydantic import BaseModel, Field
 
 from autocontext.offline import require_runtime_available
+from autocontext.security.confined_files import (
+    ConfinedPathError,
+    atomic_write_confined_text,
+    list_confined_regular_files,
+    read_confined_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +42,10 @@ class DistillJobError(Exception):
 
 
 DistillJobStatus = Literal["pending", "running", "completed", "failed"]
+_DISTILL_JOB_ID_PATTERN = re.compile(r"[0-9a-f]{32}\Z")
+_DISTILL_JOB_DIRECTORY = "_openclaw_distill_jobs"
+_MAX_DISTILL_JOB_BYTES = 1024 * 1024
+_MAX_DISTILL_JOBS = 10_000
 
 # Valid state transitions: source → set of allowed targets
 _VALID_TRANSITIONS: dict[str, set[str]] = {
@@ -49,7 +59,7 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
 class DistillJob(BaseModel):
     """Full lifecycle model for a distillation job."""
 
-    job_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    job_id: str = Field(default_factory=lambda: uuid.uuid4().hex, pattern=r"^[0-9a-f]{32}$")
     scenario: str
     status: DistillJobStatus = "pending"
     source_artifact_ids: list[str] = Field(default_factory=list)
@@ -76,17 +86,25 @@ class DistillSidecarProtocol(Protocol):
 
 
 class CommandDistillSidecar:
-    """Launches an external sidecar command and relies on API callbacks for progress."""
+    """Launch an argv-configured sidecar and rely on callbacks for progress."""
 
-    def __init__(self, command_template: str, *, cwd: Path) -> None:
-        self._command_template = command_template
+    def __init__(self, command_argv: Sequence[str], *, cwd: Path) -> None:
+        self._command_argv = _validate_command_argv(command_argv)
         self._cwd = cwd
 
     def launch(self, job_id: str, scenario: str, config: dict[str, Any]) -> None:
         require_runtime_available("openclaw-cli")
-        command = shlex.split(
-            self._command_template.format(job_id=job_id, scenario=scenario),
-        )
+        if "\x00" in job_id or "\x00" in scenario:
+            raise DistillJobError("distill job values must not contain NUL bytes")
+        if (
+            ("{job_id}" in self._command_argv and job_id.lstrip().startswith("-"))
+            or ("{scenario}" in self._command_argv and scenario.lstrip().startswith("-"))
+        ):
+            raise DistillJobError("distill job placeholder values must not be option-shaped")
+        command = [
+            job_id if argument == "{job_id}" else scenario if argument == "{scenario}" else argument
+            for argument in self._command_argv
+        ]
         env = os.environ.copy()
         env["AUTOCONTEXT_DISTILL_JOB_ID"] = job_id
         env["AUTOCONTEXT_DISTILL_SCENARIO"] = scenario
@@ -104,6 +122,40 @@ class CommandDistillSidecar:
     def poll(self, job_id: str) -> dict[str, Any]:
         del job_id
         return {}
+
+
+_DISTILL_COMMAND_PLACEHOLDERS = frozenset({"{job_id}", "{scenario}"})
+
+
+def _validate_command_argv(command_argv: Sequence[str]) -> tuple[str, ...]:
+    if isinstance(command_argv, (str, bytes)) or not command_argv:
+        raise DistillJobError("distill sidecar command must be a non-empty JSON argv array")
+    validated: list[str] = []
+    for index, argument in enumerate(command_argv):
+        if not isinstance(argument, str) or not argument or "\x00" in argument:
+            raise DistillJobError("distill sidecar argv entries must be non-empty strings without NUL bytes")
+        if ("{" in argument or "}" in argument) and argument not in _DISTILL_COMMAND_PLACEHOLDERS:
+            raise DistillJobError(
+                "distill sidecar placeholders must be whole argv entries and may only be {job_id} or {scenario}",
+            )
+        if index == 0 and argument in _DISTILL_COMMAND_PLACEHOLDERS:
+            raise DistillJobError("distill sidecar executable must be a fixed argv entry, not a placeholder")
+        validated.append(argument)
+    return tuple(validated)
+
+
+def _parse_command_argv(raw_command: str) -> tuple[str, ...]:
+    try:
+        parsed = json.loads(raw_command)
+    except json.JSONDecodeError as exc:
+        raise DistillJobError(
+            "AUTOCONTEXT_OPENCLAW_DISTILL_SIDECAR_COMMAND must be a JSON argv array; shell command strings are not allowed",
+        ) from exc
+    if not isinstance(parsed, list):
+        raise DistillJobError(
+            "AUTOCONTEXT_OPENCLAW_DISTILL_SIDECAR_COMMAND must be a JSON argv array",
+        )
+    return _validate_command_argv(parsed)
 
 
 def _load_factory(factory_path: str) -> Callable[..., object]:
@@ -139,9 +191,9 @@ def load_distill_sidecar(settings: AppSettings, *, cwd: Path | None = None) -> D
             )
         return sidecar
 
-    command_template = settings.openclaw_distill_sidecar_command.strip()
-    if command_template:
-        return CommandDistillSidecar(command_template, cwd=cwd or settings.knowledge_root.parent)
+    command_spec = settings.openclaw_distill_sidecar_command.strip()
+    if command_spec:
+        return CommandDistillSidecar(_parse_command_argv(command_spec), cwd=cwd or settings.knowledge_root.parent)
     return None
 
 
@@ -149,27 +201,46 @@ class DistillJobManager:
     """Manages distillation job persistence and lifecycle transitions."""
 
     def __init__(self, knowledge_root: Path) -> None:
-        self._jobs_dir = knowledge_root / "_openclaw_distill_jobs"
+        self._knowledge_root = knowledge_root
+        self._jobs_dir = knowledge_root / _DISTILL_JOB_DIRECTORY
 
-    def _ensure_dir(self) -> None:
-        self._jobs_dir.mkdir(parents=True, exist_ok=True)
-
-    def _job_path(self, job_id: str) -> Path:
-        return self._jobs_dir / f"{job_id}.json"
+    @staticmethod
+    def _validated_job_id(job_id: str) -> str | None:
+        if isinstance(job_id, str) and _DISTILL_JOB_ID_PATTERN.fullmatch(job_id) is not None:
+            return job_id
+        return None
 
     def _write_job(self, job: DistillJob) -> None:
-        self._ensure_dir()
-        self._job_path(job.job_id).write_text(
-            job.model_dump_json(indent=2), encoding="utf-8",
-        )
+        safe_job_id = self._validated_job_id(job.job_id)
+        if safe_job_id is None:
+            raise DistillJobError("invalid distill job id")
+        try:
+            atomic_write_confined_text(
+                self._knowledge_root,
+                (_DISTILL_JOB_DIRECTORY,),
+                f"{safe_job_id}.json",
+                job.model_dump_json(indent=2),
+                max_bytes=_MAX_DISTILL_JOB_BYTES,
+            )
+        except (ConfinedPathError, OSError) as exc:
+            raise DistillJobError("distill job store is unavailable") from exc
 
     def _read_job(self, job_id: str) -> DistillJob | None:
-        path = self._job_path(job_id)
-        if not path.exists():
+        safe_job_id = self._validated_job_id(job_id)
+        if safe_job_id is None:
             return None
         try:
-            return DistillJob.model_validate_json(path.read_text(encoding="utf-8"))
-        except Exception:
+            raw = read_confined_text(
+                self._knowledge_root,
+                (_DISTILL_JOB_DIRECTORY,),
+                f"{safe_job_id}.json",
+                max_bytes=_MAX_DISTILL_JOB_BYTES,
+            )
+            if raw is None:
+                return None
+            job = DistillJob.model_validate_json(raw)
+            return job if job.job_id == safe_job_id else None
+        except (ConfinedPathError, FileNotFoundError, OSError, ValueError):
             logger.debug("openclaw.distill: caught Exception", exc_info=True)
             return None
 
@@ -194,17 +265,20 @@ class DistillJobManager:
 
     def list_jobs(self, scenario: str | None = None) -> list[DistillJob]:
         """List all jobs, optionally filtered by scenario."""
-        if not self._jobs_dir.exists():
+        try:
+            names = list_confined_regular_files(
+                self._knowledge_root,
+                (_DISTILL_JOB_DIRECTORY,),
+                suffix=".json",
+                max_entries=_MAX_DISTILL_JOBS,
+            )
+        except (ConfinedPathError, FileNotFoundError, OSError):
             return []
         jobs: list[DistillJob] = []
-        for path in sorted(self._jobs_dir.glob("*.json")):
-            try:
-                job = DistillJob.model_validate_json(path.read_text(encoding="utf-8"))
-                if scenario is None or job.scenario == scenario:
-                    jobs.append(job)
-            except Exception:
-                logger.debug("openclaw.distill: caught Exception", exc_info=True)
-                continue
+        for name in names:
+            job = self._read_job(name.removesuffix(".json"))
+            if job is not None and (scenario is None or job.scenario == scenario):
+                jobs.append(job)
         return jobs
 
     def transition(

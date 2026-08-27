@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -270,6 +271,60 @@ class TestDistillJobManager:
 
         assert mgr.active_job_count() == 2  # 1 pending + 1 running
 
+    def test_job_id_traversal_cannot_read_or_overwrite_outside_store(self, tmp_path: Path) -> None:
+        from autocontext.openclaw.distill import DistillJob, DistillJobManager
+
+        mgr = DistillJobManager(tmp_path / "knowledge")
+        outside = tmp_path / "outside.json"
+        outside.write_text(
+            DistillJob(job_id="a" * 32, scenario="secret", status="pending").model_dump_json(),
+            encoding="utf-8",
+        )
+
+        assert mgr.get_job("../../outside") is None
+        assert mgr.transition("../../outside", "running") is None
+        assert '"status":"pending"' in outside.read_text(encoding="utf-8")
+
+    def test_job_store_rejects_final_symlink_and_embedded_id_mismatch(self, tmp_path: Path) -> None:
+        from autocontext.openclaw.distill import DistillJob, DistillJobManager
+
+        mgr = DistillJobManager(tmp_path / "knowledge")
+        jobs_dir = tmp_path / "knowledge" / "_openclaw_distill_jobs"
+        jobs_dir.mkdir(parents=True)
+        requested_id = "a" * 32
+        outside = tmp_path / "outside.json"
+        outside.write_text(
+            DistillJob(job_id=requested_id, scenario="secret").model_dump_json(),
+            encoding="utf-8",
+        )
+        (jobs_dir / f"{requested_id}.json").symlink_to(outside)
+
+        assert mgr.get_job(requested_id) is None
+        assert mgr.transition(requested_id, "running") is None
+        assert '"status":"pending"' in outside.read_text(encoding="utf-8")
+
+        (jobs_dir / f"{requested_id}.json").unlink()
+        mismatched_id = "b" * 32
+        (jobs_dir / f"{requested_id}.json").write_text(
+            DistillJob(job_id=mismatched_id, scenario="wrong").model_dump_json(),
+            encoding="utf-8",
+        )
+        assert mgr.get_job(requested_id) is None
+
+    def test_job_store_rejects_symlinked_directory(self, tmp_path: Path) -> None:
+        from autocontext.openclaw.distill import DistillJobError, DistillJobManager
+
+        knowledge = tmp_path / "knowledge"
+        outside = tmp_path / "outside"
+        knowledge.mkdir()
+        outside.mkdir()
+        (knowledge / "_openclaw_distill_jobs").symlink_to(outside, target_is_directory=True)
+        mgr = DistillJobManager(knowledge)
+
+        with pytest.raises(DistillJobError, match="unavailable"):
+            mgr.create_job("grid_ctf")
+        assert list(outside.iterdir()) == []
+
 
 # ---------------------------------------------------------------------------
 # TestDistillSidecarProtocol
@@ -289,6 +344,93 @@ class TestDistillSidecarProtocol:
 
         sidecar = MySidecar()
         assert isinstance(sidecar, DistillSidecarProtocol)
+
+
+class TestCommandDistillSidecarSecurity:
+    def test_launch_preserves_untrusted_values_as_single_argv_entries(self, tmp_path: Path) -> None:
+        from autocontext.openclaw.distill import CommandDistillSidecar
+
+        sidecar = CommandDistillSidecar(
+            ["distill-worker", "--job", "{job_id}", "--scenario", "{scenario}"],
+            cwd=tmp_path,
+        )
+        hostile_scenario = "grid; touch /tmp/not-created $(id) --extra-flag"
+
+        with patch("autocontext.openclaw.distill.subprocess.Popen") as popen:
+            sidecar.launch("job-123", hostile_scenario, {"epochs": 2})
+
+        command = popen.call_args.args[0]
+        assert command == [
+            "distill-worker",
+            "--job",
+            "job-123",
+            "--scenario",
+            hostile_scenario,
+        ]
+        assert popen.call_args.kwargs.get("shell") is None
+
+    @pytest.mark.parametrize(
+        "raw_command",
+        [
+            "distill-worker --scenario {scenario}",
+            '"distill-worker"',
+            '["distill-worker", "prefix-{scenario}"]',
+            '["distill-worker", "{unknown}"]',
+            '["distill-worker", ""]',
+            '["{scenario}", "--run"]',
+            '["{job_id}", "--run"]',
+        ],
+    )
+    def test_load_rejects_shell_strings_and_unsafe_placeholder_grammar(
+        self,
+        tmp_path: Path,
+        raw_command: str,
+    ) -> None:
+        from autocontext.openclaw.distill import DistillJobError, load_distill_sidecar
+
+        settings = _settings(tmp_path)
+        settings.openclaw_distill_sidecar_command = raw_command
+
+        with pytest.raises(DistillJobError):
+            load_distill_sidecar(settings)
+
+    def test_load_accepts_json_argv_without_shell_parsing(self, tmp_path: Path) -> None:
+        from autocontext.openclaw.distill import CommandDistillSidecar, load_distill_sidecar
+
+        settings = _settings(tmp_path)
+        settings.openclaw_distill_sidecar_command = json.dumps(
+            ["distill worker", "--scenario", "{scenario}"],
+        )
+
+        sidecar = load_distill_sidecar(settings)
+
+        assert isinstance(sidecar, CommandDistillSidecar)
+
+    def test_launch_rejects_nul_in_placeholder_value_before_process_creation(self, tmp_path: Path) -> None:
+        from autocontext.openclaw.distill import CommandDistillSidecar, DistillJobError
+
+        sidecar = CommandDistillSidecar(["distill-worker", "{scenario}"], cwd=tmp_path)
+
+        with (
+            patch("autocontext.openclaw.distill.subprocess.Popen") as popen,
+            pytest.raises(DistillJobError, match="NUL"),
+        ):
+            sidecar.launch("job-123", "bad\x00scenario", {})
+
+        popen.assert_not_called()
+
+    def test_launch_rejects_option_shaped_placeholder_value(self, tmp_path: Path) -> None:
+        from autocontext.openclaw.distill import CommandDistillSidecar, DistillJobError
+
+        sidecar = CommandDistillSidecar(["distill-worker", "{scenario}"], cwd=tmp_path)
+
+        with (
+            patch("autocontext.openclaw.distill.subprocess.Popen") as popen,
+            pytest.raises(DistillJobError, match="option-shaped"),
+        ):
+            sidecar.launch("job-123", "  --output=/tmp/attacker-controlled", {})
+
+        popen.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

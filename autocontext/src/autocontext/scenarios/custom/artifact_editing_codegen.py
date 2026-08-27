@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import re
-
 from autocontext.scenarios.custom.artifact_editing_spec import ArtifactEditingSpec
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 
 
 def _class_name(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", name)
-    return "".join(part.capitalize() for part in parts if part) + "ArtifactEditing"
+    return generated_class_name(name, "ArtifactEditing")
 
 
 def generate_artifact_editing_class(spec: ArtifactEditingSpec, name: str) -> str:

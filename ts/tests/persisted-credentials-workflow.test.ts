@@ -64,7 +64,7 @@ describe("persisted credentials workflow", () => {
     expect(loadPersistedCredentials(dir, "missing")).toBeNull();
   });
 
-  it("loads legacy single-provider credentials and resolves shell-command api keys", () => {
+  it("fails closed on command-shaped API keys in legacy credential files", () => {
     writeFileSync(join(dir, CREDENTIALS_FILE), JSON.stringify({
       provider: "anthropic",
       apiKey: "!printf 'sk-shell'",
@@ -72,12 +72,9 @@ describe("persisted credentials workflow", () => {
       savedAt: "2026-04-10T00:00:00Z",
     }));
 
-    expect(loadPersistedCredentials(dir, "anthropic")).toEqual({
-      provider: "anthropic",
-      apiKey: "sk-shell",
-      model: "claude-opus",
-      savedAt: "2026-04-10T00:00:00Z",
-    });
+    expect(() => loadPersistedCredentials(dir, "anthropic")).toThrow(
+      /command-based API key values are not supported/i,
+    );
   });
 
   it("normalizes trimmed stored credential entries", () => {

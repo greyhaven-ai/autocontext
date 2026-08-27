@@ -17,6 +17,7 @@ import {
   executeTournamentSideEffect,
   type GenerationLoopEventSequenceItem,
 } from "./generation-side-effect-coordinator.js";
+import { buildGenerationTournamentStartedEvent } from "./generation-tournament-event-sequencing.js";
 
 export interface GenerationAttemptWorkflow {
   attemptOrchestration: GenerationAttemptOrchestration;
@@ -27,6 +28,12 @@ export interface GenerationAttemptWorkflow {
   matchesPerGeneration: number;
   currentElo: number;
   executeCompetitor: () => Promise<CompletionResult>;
+  roleMetadata?: {
+    provider?: string;
+    model?: string;
+    inputBytes?: number;
+  };
+  onEvent?: (event: GenerationLoopEventSequenceItem) => void;
   beforeTournament?: () => Promise<void>;
   executeTournament: (input: {
     strategy: Record<string, unknown>;
@@ -58,17 +65,55 @@ export async function runGenerationAttemptWorkflow(
   attempt: ReturnType<typeof buildGenerationAttemptCandidate>;
   events: GenerationLoopEventSequenceItem[];
 }> {
+  const events: GenerationLoopEventSequenceItem[] = [];
+  const publish = (event: GenerationLoopEventSequenceItem) => {
+    events.push(event);
+    workflow.onEvent?.(event);
+  };
+  const attemptNumber = workflow.attemptOrchestration.phaseState.attemptState.retryCount + 1;
   let attemptOrchestration = awaitGenerationCompetitorResult(
     workflow.attemptOrchestration,
   );
 
-  const competitorCompletion = await executeRoleCompletionSideEffect({
-    runId: workflow.runId,
-    generation: workflow.generation,
-    role: "competitor",
-    execute: workflow.executeCompetitor,
+  publish({
+    event: "role_started",
+    payload: {
+      run_id: workflow.runId,
+      generation: workflow.generation,
+      role: "competitor",
+      attempt: attemptNumber,
+      ...(workflow.roleMetadata?.provider ? { provider: workflow.roleMetadata.provider } : {}),
+      ...(workflow.roleMetadata?.model ? { model: workflow.roleMetadata.model } : {}),
+      ...(workflow.roleMetadata?.inputBytes === undefined
+        ? {}
+        : { input_bytes: workflow.roleMetadata.inputBytes }),
+    },
   });
+  let competitorCompletion: Awaited<ReturnType<typeof executeRoleCompletionSideEffect>>;
+  try {
+    competitorCompletion = await executeRoleCompletionSideEffect({
+      runId: workflow.runId,
+      generation: workflow.generation,
+      role: "competitor",
+      execute: workflow.executeCompetitor,
+      metadata: { ...workflow.roleMetadata, attempt: attemptNumber },
+    });
+  } catch (error) {
+    publish({
+      event: "role_failed",
+      payload: {
+        run_id: workflow.runId,
+        generation: workflow.generation,
+        role: "competitor",
+        attempt: attemptNumber,
+        status: "failed",
+        reason: error instanceof Error ? error.name : "provider_failure",
+      },
+    });
+    throw error;
+  }
   const competitorResult = competitorCompletion.result;
+  publish({ event: "role_completed", payload: competitorCompletion.roleCompletedPayload });
   const strategy = parseCompetitorStrategyResult(competitorResult.text);
 
   attemptOrchestration = awaitGenerationTournamentResult(attemptOrchestration);
@@ -80,6 +125,12 @@ export async function runGenerationAttemptWorkflow(
     matchesPerGeneration: workflow.matchesPerGeneration,
     currentElo: workflow.currentElo,
   });
+  publish(buildGenerationTournamentStartedEvent(
+    workflow.runId,
+    workflow.generation,
+    workflow.matchesPerGeneration,
+    attemptNumber,
+  ));
   const tournamentExecution = executeTournamentSideEffect({
     runId: workflow.runId,
     generation: workflow.generation,
@@ -87,7 +138,9 @@ export async function runGenerationAttemptWorkflow(
     executionPlan: tournamentPlan,
     strategy,
     executeTournament: workflow.executeTournament,
+    attempt: attemptNumber,
   });
+  for (const event of tournamentExecution.events.slice(1)) publish(event);
 
   const gateDecision = workflow.decideGate({
     attemptOrchestration,
@@ -111,22 +164,20 @@ export async function runGenerationAttemptWorkflow(
       metadata: gateDecision.metadata,
     },
   );
+  const gateEvent = {
+    event: "gate_decided",
+    payload: {
+      ...attemptOrchestration.events.gateDecided!,
+      attempt: attemptNumber,
+    },
+  } satisfies GenerationLoopEventSequenceItem;
+  publish(gateEvent);
 
   return {
     attemptOrchestration,
     competitorResult,
     tournamentResult: tournamentExecution.tournamentResult,
     attempt,
-    events: [
-      {
-        event: "role_completed",
-        payload: competitorCompletion.roleCompletedPayload,
-      },
-      ...tournamentExecution.events,
-      {
-        event: "gate_decided",
-        payload: attemptOrchestration.events.gateDecided!,
-      },
-    ],
+    events,
   };
 }

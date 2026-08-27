@@ -15,8 +15,6 @@ permissions:
 env:
   # Delay fresh npm versions in CI during supply-chain incidents.
   NPM_CONFIG_MIN_RELEASE_AGE: "7"
-  # Match autocontext/uv.lock so `uv sync --locked` does not re-resolve.
-  UV_EXCLUDE_NEWER: "2026-06-20T00:00:00Z"
 
 jobs:
   lint:
@@ -25,16 +23,21 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install
         run: uv sync --locked --group dev
+      - name: Verify container dependency locks
+        run: |
+          uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file ../infra/docker/requirements.lock
+          uv pip compile ../infra/docker/build-requirements.in --generate-hashes --exclude-newer 2026-06-20T00:00:00Z --output-file ../infra/docker/build-requirements.lock
+          git diff --exit-code -- ../infra/docker/requirements.lock ../infra/docker/build-requirements.lock
       - name: Ruff
         run: uv run ruff check src tests
       - name: Mypy
@@ -48,12 +51,12 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install
@@ -62,7 +65,7 @@ jobs:
         run: uv run pytest --cov=src/autocontext --cov-report=html:htmlcov -m "not live"
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: coverage-report
           path: autocontext/htmlcov/
@@ -75,12 +78,12 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install
@@ -97,15 +100,15 @@ jobs:
   package-boundaries:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install Python deps
@@ -131,6 +134,42 @@ jobs:
         working-directory: ts
         run: uv run --frozen --project ../autocontext -- npm run check:schemas
 
+  dependency-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.0"
+      - name: Install uv
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          enable-cache: false
+      - name: Install pinned Python audit tool
+        working-directory: autocontext
+        run: uv sync --locked --group dev
+      - name: Audit every Python dependency group and extra
+        working-directory: autocontext
+        run: |
+          uv export --quiet --locked --all-groups --all-extras --no-emit-project --format requirements-txt --output-file /tmp/autocontext-all-requirements.lock
+          uv run --frozen pip-audit -r /tmp/autocontext-all-requirements.lock --disable-pip --strict
+      - name: Audit TypeScript npm lock
+        working-directory: ts
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit TypeScript Bun lock
+        working-directory: ts
+        run: bun audit --prod --audit-level=moderate
+      - name: Audit Pi npm lock
+        working-directory: pi
+        run: npm audit --omit=dev --audit-level=moderate
+
   # AC-909: the TypeScript type gate. Without this the 833-file clean test
   # suite has no ratchet: tsconfig.json excludes tests/, so a drifting test
   # only surfaces here. `npm run lint` is tsc --noEmit + check:test-types
@@ -142,8 +181,8 @@ jobs:
       run:
         working-directory: ts
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: ts/.nvmrc
       - name: Install TypeScript deps
@@ -164,11 +203,11 @@ jobs:
       run:
         working-directory: ts
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: ts/.nvmrc
       - name: Reuse setup-node headers for native addons
@@ -177,9 +216,11 @@ jobs:
           nodedir="$(dirname "$(dirname "$(command -v node)")")"
           test -d "$nodedir/include/node"
           echo "npm_config_nodedir=$nodedir" >> "$GITHUB_ENV"
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.0"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install Python parity deps
@@ -225,12 +266,12 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install
@@ -276,12 +317,12 @@ jobs:
     env:
       OPENAI_VERSION: ${{ matrix.openai-version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install base deps
@@ -303,11 +344,11 @@ jobs:
     env:
       OPENAI_VERSION: ${{ matrix.openai-version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
       - name: Reuse setup-node headers for native addons
@@ -317,7 +358,7 @@ jobs:
           test -d "$nodedir/include/node"
           echo "npm_config_nodedir=$nodedir" >> "$GITHUB_ENV"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install Python parity deps
@@ -350,12 +391,12 @@ jobs:
     env:
       ANTHROPIC_VERSION: ${{ matrix.anthropic-version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install base deps
@@ -377,15 +418,15 @@ jobs:
     env:
       ANTHROPIC_VERSION: ${{ matrix.anthropic-version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install Python parity deps
@@ -399,6 +440,7 @@ jobs:
         run: npm test -- --run --reporter=verbose tests/integrations/ tests/control-plane/instrument/
 
   primeintellect-live:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -407,12 +449,12 @@ jobs:
       AUTOCONTEXT_PRIMEINTELLECT_API_KEY: ${{ secrets.AUTOCONTEXT_PRIMEINTELLECT_API_KEY }}
       AUTOCONTEXT_ANTHROPIC_API_KEY: ${{ secrets.AUTOCONTEXT_ANTHROPIC_API_KEY }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
       - name: Install

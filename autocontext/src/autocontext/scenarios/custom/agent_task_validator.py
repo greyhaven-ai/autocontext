@@ -9,6 +9,14 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from autocontext.execution.isolated_python import (
+    DEFAULT_MAX_MEMORY_MB,
+    DEFAULT_MAX_OUTPUT_BYTES,
+    IsolatedExecutionError,
+    IsolatedExecutionTimeout,
+    IsolationUnavailableError,
+    run_isolated_json,
+)
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 
 logger = logging.getLogger(__name__)
@@ -519,8 +527,35 @@ def validate_syntax(source: str) -> list[str]:
     return errors
 
 
-def validate_execution(source: str) -> list[str]:
-    """Validate by importing and instantiating the generated class."""
+def validate_execution(
+    source: str,
+    *,
+    timeout_seconds: float = 10.0,
+    max_memory_mb: int = DEFAULT_MAX_MEMORY_MB,
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+) -> list[str]:
+    """Validate generated code only inside a fresh killable child."""
+    try:
+        raw_errors = run_isolated_json(
+            lambda: _validate_execution_in_child(source),
+            timeout_seconds=timeout_seconds,
+            max_memory_mb=max_memory_mb,
+            max_output_bytes=max_output_bytes,
+        )
+    except IsolatedExecutionTimeout:
+        return ["execution validation timed out"]
+    except IsolationUnavailableError:
+        return ["execution validation isolation is unavailable"]
+    except IsolatedExecutionError:
+        logger.debug("scenarios.custom.agent_task_validator: isolated validation failed", exc_info=True)
+        return ["execution validation failed in isolation"]
+    if not isinstance(raw_errors, list) or not all(isinstance(error, str) for error in raw_errors):
+        return ["execution validation returned an invalid result"]
+    return raw_errors
+
+
+def _validate_execution_in_child(source: str) -> list[str]:
+    """Import and exercise the generated class in the isolated child."""
     errors: list[str] = []
     try:
         tree = ast.parse(source)

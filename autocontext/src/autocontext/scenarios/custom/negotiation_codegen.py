@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import re
-
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 from autocontext.scenarios.custom.negotiation_spec import NegotiationSpec
 
 
 def _class_name(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", name)
-    return "".join(part.capitalize() for part in parts if part) + "Negotiation"
+    return generated_class_name(name, "Negotiation")
 
 
 def generate_negotiation_class(spec: NegotiationSpec, name: str) -> str:
@@ -67,7 +65,7 @@ class {class_name}(NegotiationInterface):
             "seed": seed or 0,
             "step": 0,
             "round": 0,
-            "max_rounds": {spec.max_rounds},
+            "max_rounds": {spec.max_rounds!r},
             "rounds": [],
             "completed_actions": [],
             "failed_actions": [],
@@ -134,7 +132,7 @@ class {class_name}(NegotiationInterface):
         if action.name == "accept":
             next_state["deal_closed"] = True
             # Compute simple deal value from round count
-            max_r = state.get("max_rounds", {spec.max_rounds})
+            max_r = state.get("max_rounds", {spec.max_rounds!r})
             rounds_used = next_state["round"]
             prefs = self._hidden_prefs_spec
             reservation = prefs.get("reservation_value", 0.0)
@@ -160,8 +158,8 @@ class {class_name}(NegotiationInterface):
         return (
             state.get("deal_closed", False)
             or required.issubset(completed)
-            or state.get("round", 0) >= state.get("max_rounds", {spec.max_rounds})
-            or state.get("step", 0) >= {spec.max_steps}
+            or state.get("round", 0) >= state.get("max_rounds", {spec.max_rounds!r})
+            or state.get("step", 0) >= {spec.max_steps!r}
         )
 
     def get_hidden_preferences(
@@ -204,7 +202,7 @@ class {class_name}(NegotiationInterface):
         prefs = self.get_hidden_preferences(state)
         deal_value = state.get("deal_value") or 0.0
         rounds_used = state.get("round", 0)
-        max_rounds = state.get("max_rounds", {spec.max_rounds})
+        max_rounds = state.get("max_rounds", {spec.max_rounds!r})
 
         # Deal quality: how much above reservation?
         surplus = prefs.aspiration_value - prefs.reservation_value
@@ -306,5 +304,5 @@ class {class_name}(NegotiationInterface):
         )
 
     def max_steps(self) -> int:
-        return {spec.max_steps}
+        return {spec.max_steps!r}
 '''

@@ -1,6 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { validateApiKeyValue } from "./credential-validation.js";
+import { readPrivateTextFile, writePrivateTextFile } from "./private-file.js";
 
 export const CREDENTIALS_FILE = "credentials.json";
 
@@ -24,17 +23,12 @@ export interface CredentialStore {
 }
 
 export function resolveApiKeyValue(value: string): string {
-  if (!value || !value.startsWith("!")) {
-    return value;
+  if (value.trimStart().startsWith("!")) {
+    throw new Error(
+      "Command-based API key values are not supported; store a literal API key instead",
+    );
   }
-
-  const command = value.slice(1).trim();
-  const result = execFileSync("/bin/sh", ["-c", command], {
-    encoding: "utf-8",
-    timeout: 10_000,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  return result.trim();
+  return value;
 }
 
 function isLegacyCredentialStore(
@@ -49,7 +43,7 @@ function readLegacyProviderCredentials(
   const provider = data.provider.trim();
   const credentials: ProviderCredentials = {};
   if (typeof data.apiKey === "string" && data.apiKey.trim()) {
-    credentials.apiKey = data.apiKey.trim();
+    credentials.apiKey = resolveApiKeyValue(data.apiKey.trim());
   }
   if (typeof data.model === "string" && data.model.trim()) {
     credentials.model = data.model.trim();
@@ -69,7 +63,9 @@ function normalizeMultiProviderStore(data: Record<string, unknown>): CredentialS
 
   for (const [name, entry] of Object.entries(rawProviders)) {
     const credentials: ProviderCredentials = {};
-    if (typeof entry.apiKey === "string") credentials.apiKey = entry.apiKey;
+    if (typeof entry.apiKey === "string") {
+      credentials.apiKey = resolveApiKeyValue(entry.apiKey);
+    }
     if (typeof entry.model === "string") credentials.model = entry.model;
     if (typeof entry.baseUrl === "string") credentials.baseUrl = entry.baseUrl;
     if (typeof entry.savedAt === "string") credentials.savedAt = entry.savedAt;
@@ -80,12 +76,9 @@ function normalizeMultiProviderStore(data: Record<string, unknown>): CredentialS
 }
 
 export function readCredentialStore(configDir: string): CredentialStore {
-  const filePath = join(configDir, CREDENTIALS_FILE);
-  if (!existsSync(filePath)) {
-    return { providers: {} };
-  }
-
-  const raw = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+  const content = readPrivateTextFile(configDir, CREDENTIALS_FILE);
+  if (content === null) return { providers: {} };
+  const raw = JSON.parse(content) as Record<string, unknown>;
   if (isLegacyCredentialStore(raw)) {
     return readLegacyProviderCredentials(raw);
   }
@@ -97,10 +90,7 @@ export function writeCredentialStore(
   configDir: string,
   store: CredentialStore,
 ): void {
-  mkdirSync(configDir, { recursive: true });
-  const filePath = join(configDir, CREDENTIALS_FILE);
-  writeFileSync(filePath, JSON.stringify(store, null, 2), "utf-8");
-  chmodSync(filePath, 0o600);
+  writePrivateTextFile(configDir, CREDENTIALS_FILE, JSON.stringify(store, null, 2));
 }
 
 export function saveProviderCredentials(
@@ -108,6 +98,13 @@ export function saveProviderCredentials(
   provider: string,
   credentials: Omit<ProviderCredentials, "savedAt">,
 ): void {
+  const apiKey = resolveApiKeyValue(credentials.apiKey ?? "");
+  const validation = validateApiKeyValue(provider, apiKey);
+  if (!validation.valid) {
+    throw new Error(
+      `Refusing to persist credentials for ${provider}: ${validation.error ?? "invalid API key"}`,
+    );
+  }
   const store = readCredentialStore(configDir);
   store.providers[provider] = {
     ...credentials,

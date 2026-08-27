@@ -10,6 +10,12 @@ export interface ValidatedOpenClawArtifact {
 }
 
 const SAFE_FILE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const MAX_ARTIFACT_ID_CHARS = 128;
+const MAX_SCENARIO_ID_CHARS = 128;
+const MAX_NAME_CHARS = 512;
+const MAX_SOURCE_BYTES = 1024 * 1024;
+const MAX_LIST_ITEMS = 1_000;
+const MAX_LIST_ITEM_CHARS = 512;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -47,7 +53,14 @@ function optionalStringList(body: Record<string, unknown>, key: string): string[
   if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
     throw new Error(`${key} must be a list of strings`);
   }
-  return value.map((entry) => entry.trim()).filter(Boolean);
+  if (value.length > MAX_LIST_ITEMS) {
+    throw new Error(`${key} exceeds ${MAX_LIST_ITEMS} item limit`);
+  }
+  const normalized = value.map((entry) => entry.trim()).filter(Boolean);
+  if (normalized.some((entry) => entry.length > MAX_LIST_ITEM_CHARS)) {
+    throw new Error(`${key} entries exceed ${MAX_LIST_ITEM_CHARS} character limit`);
+  }
+  return normalized;
 }
 
 function optionalRecord(body: Record<string, unknown>, key: string): Record<string, unknown> {
@@ -80,7 +93,7 @@ function validateProvenance(value: unknown): Record<string, unknown> {
 }
 
 export function ensureSafeArtifactId(artifactId: string): string {
-  if (!SAFE_FILE_ID.test(artifactId)) {
+  if (artifactId.length > MAX_ARTIFACT_ID_CHARS || !SAFE_FILE_ID.test(artifactId)) {
     throw new Error(`invalid artifact id: ${artifactId}`);
   }
   return artifactId;
@@ -96,10 +109,17 @@ export function validateOpenClawArtifactPayload(body: Record<string, unknown>): 
   const artifactType = rawArtifactType;
   const artifactId = ensureSafeArtifactId(requireString(body, "id"));
   const scenario = assertSafeScenarioId(requireString(body, "scenario"));
+  if (scenario.length > MAX_SCENARIO_ID_CHARS) {
+    throw new Error(`scenario exceeds ${MAX_SCENARIO_ID_CHARS} character limit`);
+  }
+  const name = requireString(body, "name");
+  if (name.length > MAX_NAME_CHARS) {
+    throw new Error(`name exceeds ${MAX_NAME_CHARS} character limit`);
+  }
   const data: Record<string, unknown> = {
     ...body,
     id: artifactId,
-    name: requireString(body, "name"),
+    name,
     artifact_type: artifactType,
     scenario,
     version: requireInteger(body, "version", 1),
@@ -112,7 +132,11 @@ export function validateOpenClawArtifactPayload(body: Record<string, unknown>): 
   };
 
   if (artifactType === "harness" || artifactType === "policy") {
-    data.source_code = requireSourceText(body, "source_code");
+    const sourceCode = requireSourceText(body, "source_code");
+    if (Buffer.byteLength(sourceCode, "utf-8") > MAX_SOURCE_BYTES) {
+      throw new Error(`source_code exceeds ${MAX_SOURCE_BYTES} byte limit`);
+    }
+    data.source_code = sourceCode;
   } else {
     data.architecture = requireString(body, "architecture");
     data.parameter_count = requireInteger(body, "parameter_count", 1);

@@ -2,7 +2,15 @@
  * Tests for HarnessStore and SkillPackage harness support (AC-95).
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  existsSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HarnessStore } from "../src/knowledge/harness-store.js";
@@ -73,12 +81,77 @@ describe("HarnessStore", () => {
       expect(store.getVersions()).toEqual({});
     });
 
-    it.each(["", "../escape", "bad/name", "contains space", "123abc"])(
+    it.each(["", "../escape", "bad/name", "contains space", "123abc", "__proto__", "constructor"])(
       "rejects invalid harness name %s",
       (name) => {
         expect(() => store.writeVersioned(name, "code", 1)).toThrow("invalid harness name");
       },
     );
+
+    it("rejects a symbolic-link knowledge root", () => {
+      const container = mkdtempSync(join(tmpdir(), "autocontext-harness-root-link-"));
+      const outside = join(container, "outside");
+      mkdirSync(outside);
+      const linkedRoot = join(container, "knowledge");
+      symlinkSync(outside, linkedRoot, "dir");
+
+      expect(() => new HarnessStore(linkedRoot, "grid_ctf")
+        .writeVersioned("validate_move", "safe", 1)).toThrow("symbolic-link");
+      expect(existsSync(join(outside, "grid_ctf"))).toBe(false);
+    });
+
+    it("rejects symbolic-link scenario and harness directory components", () => {
+      const outside = mkdtempSync(join(tmpdir(), "autocontext-harness-outside-"));
+      symlinkSync(outside, join(knowledgeRoot, "grid_ctf"), "dir");
+      expect(() => store.writeVersioned("validate_move", "safe", 1)).toThrow("symbolic-link");
+      expect(readdirSync(outside)).toEqual([]);
+
+      const secondRoot = mkdtempSync(join(tmpdir(), "autocontext-harness-root-"));
+      const scenario = join(secondRoot, "grid_ctf");
+      mkdirSync(scenario);
+      symlinkSync(outside, join(scenario, "harness"), "dir");
+      expect(() => new HarnessStore(secondRoot, "grid_ctf")
+        .writeVersioned("validate_move", "safe", 1)).toThrow("symbolic-link");
+      expect(readdirSync(outside)).toEqual([]);
+    });
+
+    it("rejects symbolic-link archive directories without changing the current source", () => {
+      store.writeVersioned("validate_move", "v1", 1);
+      const outside = mkdtempSync(join(tmpdir(), "autocontext-harness-archive-outside-"));
+      const harnessDir = join(knowledgeRoot, "grid_ctf", "harness");
+      symlinkSync(outside, join(harnessDir, "_archive"), "dir");
+
+      expect(() => store.writeVersioned("validate_move", "v2", 2)).toThrow("symbolic-link");
+      expect(store.read("validate_move")).toBe("v1");
+      expect(readdirSync(outside)).toEqual([]);
+    });
+
+    it("rejects symbolic-link harness and archive file targets", () => {
+      const harnessDir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(harnessDir, { recursive: true });
+      const outsideFile = join(knowledgeRoot, "outside.py");
+      writeFileSync(outsideFile, "sentinel", "utf-8");
+      symlinkSync(outsideFile, join(harnessDir, "validate_move.py"));
+
+      expect(() => store.writeVersioned("validate_move", "replacement", 1)).toThrow("symbolic-link");
+      expect(readFileSync(outsideFile, "utf-8")).toBe("sentinel");
+
+      const secondRoot = mkdtempSync(join(tmpdir(), "autocontext-harness-archive-file-"));
+      const secondStore = new HarnessStore(secondRoot, "grid_ctf");
+      secondStore.writeVersioned("validate_move", "v1", 1);
+      const archiveDir = join(secondRoot, "grid_ctf", "harness", "_archive");
+      mkdirSync(archiveDir);
+      symlinkSync(outsideFile, join(archiveDir, "v1_validate_move.py"));
+      expect(() => secondStore.writeVersioned("validate_move", "v2", 2)).toThrow("symbolic-link");
+      expect(secondStore.read("validate_move")).toBe("v1");
+      expect(readFileSync(outsideFile, "utf-8")).toBe("sentinel");
+    });
+
+    it("rejects source larger than the bounded harness limit", () => {
+      expect(() => store.writeVersioned("validate_move", "x".repeat(1024 * 1024 + 1), 1))
+        .toThrow("source exceeds");
+      expect(store.read("validate_move")).toBeNull();
+    });
   });
 
   describe("rollback", () => {

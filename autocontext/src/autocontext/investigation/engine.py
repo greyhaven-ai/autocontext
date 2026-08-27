@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import dataclasses
-import importlib.util
 import json
 import re
-import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,14 +14,18 @@ from autocontext.investigation.browser_context import (
     build_browser_evidence_summary,
     render_investigation_browser_context,
 )
+from autocontext.investigation.generated_execution import (
+    ExecutedInvestigation as _ExecutedInvestigation,
+)
+from autocontext.investigation.generated_execution import (
+    execute_generated_investigation as _execute_generated_investigation,
+)
 from autocontext.scenarios.custom.family_pipeline import validate_for_family, validate_source_for_family
 from autocontext.scenarios.custom.investigation_codegen import generate_investigation_class
 from autocontext.scenarios.custom.investigation_spec import InvestigationSpec
 from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel
 from autocontext.scenarios.families import get_family_marker
 from autocontext.scenarios.investigation import EvidenceItem
-from autocontext.scenarios.simulation import Action
-from autocontext.simulation.helpers import find_scenario_class
 from autocontext.util.json_io import write_json
 
 
@@ -111,13 +113,6 @@ class InvestigationResult:
             artifacts=artifacts,
             error=str(data["error"]) if data.get("error") is not None else None,
         )
-
-
-@dataclass(slots=True)
-class _ExecutedInvestigation:
-    steps_executed: int
-    collected_evidence: list[EvidenceItem]
-    final_state: dict[str, Any]
 
 
 def derive_investigation_name(description: str) -> str:
@@ -264,62 +259,6 @@ def _persist_investigation_artifacts(
     (investigation_dir / "scenario.py").write_text(source, encoding="utf-8")
     (investigation_dir / "scenario_type.txt").write_text(get_family_marker("investigation"), encoding="utf-8")
     return investigation_dir
-
-
-def _execute_generated_investigation(
-    *,
-    source: str,
-    name: str,
-    max_steps: int | None,
-) -> _ExecutedInvestigation:
-    mod_name = f"autocontext._investigation_gen.{name}_{uuid.uuid4().hex}"
-    spec = importlib.util.spec_from_loader(mod_name, loader=None)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    exec(source, module.__dict__)  # noqa: S102
-    sys.modules[mod_name] = module
-
-    scenario_class = find_scenario_class(module)
-    if scenario_class is None:
-        raise ValueError("No investigation scenario class found")
-
-    instance = scenario_class()
-    state = instance.initial_state(42)
-    limit = max_steps or getattr(instance, "max_steps", lambda: 8)()
-    steps = 0
-
-    while steps < limit:
-        if instance.is_terminal(state):
-            break
-        actions = instance.get_available_actions(state)
-        if not actions:
-            break
-
-        next_action: Action | None = None
-        for candidate in actions:
-            action = Action(name=candidate.name, parameters={})
-            valid, _reason = instance.validate_action(state, action)
-            if valid:
-                next_action = action
-                break
-        if next_action is None:
-            break
-
-        result, next_state = instance.execute_action(state, next_action)
-        state = next_state
-        if result.success:
-            steps += 1
-        else:
-            break
-
-    evidence_pool = {item.id: item for item in instance.get_evidence_pool(state)}
-    collected_ids = [str(item) for item in state.get("collected_evidence_ids", [])]
-    collected = [evidence_pool[item_id] for item_id in collected_ids if item_id in evidence_pool]
-    return _ExecutedInvestigation(
-        steps_executed=steps,
-        collected_evidence=collected,
-        final_state=state,
-    )
 
 
 def _normalize_text(text: str) -> str:

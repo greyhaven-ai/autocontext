@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autocontext — live system map</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(#fafafa, #09090b);
+    --panel: light-dark(#ffffff, #0c0c0f);
+    --fg: light-dark(#18181b, #f4f4f5);
+    --muted: light-dark(#71717a, #a1a1aa);
+    --line: light-dark(#d4d4d8, #3f3f46);
+    --line-soft: light-dark(#e4e4e7, #27272a);
+    --flow-line: light-dark(#71717a, #71717a);
+    --face-top: light-dark(#e4e4e7, #27272f);
+    --face-left: light-dark(#d4d4d8, #1d1d24);
+    --face-right: light-dark(#c4c4ca, #15151b);
+    --blue: light-dark(#2563eb, #4f7cff);
+    --blue-soft: light-dark(#dbeafe, #14234d);
+    --orange: light-dark(#c2410c, #fb923c);
+    --red: light-dark(#b91c1c, #f87171);
+    --green: light-dark(#047857, #34d399);
+    --category-blue: light-dark(#1d4ed8, #60a5fa);
+    --category-purple: light-dark(#7e22ce, #c084fc);
+    --category-amber: light-dark(#a16207, #fbbf24);
+    --category-green: light-dark(#047857, #34d399);
+    --category-pink: light-dark(#be185d, #f472b6);
+    --category-cyan: light-dark(#0e7490, #22d3ee);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--mono); }
+  button { font: inherit; color: inherit; }
+  a { color: inherit; }
+  .system-map-shell { display: grid; grid-template-rows: 72px minmax(0, 1fr) 64px; width: 100%; height: 100%; }
+  .topbar { display: grid; grid-template-columns: minmax(270px, 1.35fr) repeat(3, minmax(120px, .65fr)) minmax(390px, 1.4fr); border: 1px solid var(--line); background: var(--panel); }
+  .metric { min-width: 0; padding: 12px 14px; border-right: 1px solid var(--line); }
+  .metric:last-child { border-right: 0; }
+  .eyebrow { color: var(--muted); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
+  .metric strong { display: block; margin-top: 7px; overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .lens-links { display: flex; align-items: center; gap: 12px; margin-top: 7px; white-space: nowrap; }
+  .lens-link { border-bottom: 1px solid transparent; color: var(--muted); font-size: 11px; letter-spacing: .04em; text-decoration: none; }
+  .lens-link:hover { color: var(--fg); }
+  .lens-link.active { border-bottom-color: var(--blue); color: var(--fg); }
+  .controls { display: flex; align-items: center; justify-content: flex-end; gap: 7px; padding: 10px; }
+  .controls button { border: 1px solid var(--line); border-radius: 0; background: transparent; padding: 8px 10px; cursor: pointer; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+  .controls button:hover { border-color: var(--blue); }
+  .content { display: grid; grid-template-columns: 200px minmax(0, 1fr) 330px; min-height: 0; border-inline: 1px solid var(--line); }
+  .legend, .inspector { min-height: 0; background: var(--panel); }
+  .legend { overflow: auto; border-right: 1px solid var(--line); padding: 16px 12px; }
+  .inspector { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--line); }
+  .panel-title { margin: 0 0 14px; color: var(--muted); font-size: 10px; font-weight: 400; letter-spacing: .16em; text-transform: uppercase; }
+  .legend-group { margin-bottom: 18px; }
+  .legend-group h2 { margin: 0 0 7px; border-left: 2px solid var(--district, var(--line)); padding-left: 7px; color: var(--district, var(--muted)); font-size: 10px; font-weight: 400; letter-spacing: .1em; text-transform: uppercase; }
+  .legend-item { display: grid; grid-template-columns: 26px 1fr; align-items: center; width: 100%; margin-bottom: 5px; border: 1px solid var(--line-soft); background: transparent; padding: 7px; text-align: left; cursor: pointer; }
+  .legend-item:hover, .legend-item.selected { border-color: var(--blue); background: var(--blue-soft); }
+  .legend-code { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+  .legend-label { font-size: 11px; }
+  .map-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg); }
+  .map-header { position: absolute; z-index: 4; top: 18px; left: 18px; pointer-events: none; }
+  .map-header h1 { margin: 5px 0 0; font-size: 17px; font-weight: 500; }
+  #system-map-svg { display: block; width: 100%; height: 100%; }
+  .component-event-layer { position: absolute; z-index: 5; inset: 0; overflow: hidden; pointer-events: none; }
+  .component-activity { position: absolute; width: 28px; height: 20px; opacity: .72; pointer-events: none; transition: left .18s, opacity .16s, top .18s; }
+  .component-activity:not(.has-events) { display: none; }
+  .component-activity:hover, .component-activity.expanded, .component-activity.just-active { z-index: 12; opacity: 1; }
+  .activity-stack-trigger { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 28px; min-height: 20px; border: 1px solid color-mix(in srgb, var(--district, var(--line)) 62%, var(--line)); border-radius: 0; background: color-mix(in srgb, var(--panel) 96%, var(--district, var(--line))); padding: 4px 5px; color: var(--fg); box-shadow: 0 4px 12px color-mix(in srgb, var(--bg) 70%, transparent); cursor: pointer; pointer-events: auto; text-align: left; transition: border-color .16s, filter .16s, transform .16s, width .16s; }
+  .activity-stack-trigger::before, .activity-stack-trigger::after { position: absolute; z-index: -1; inset: 2px -3px -3px 3px; border: 1px solid color-mix(in srgb, var(--district, var(--line)) 38%, var(--line)); background: var(--panel); content: ''; }
+  .activity-stack-trigger::after { inset: 4px -5px -5px 5px; opacity: .65; }
+  .activity-stack-trigger:hover, .component-activity.expanded .activity-stack-trigger { border-color: var(--district, var(--blue)); filter: drop-shadow(0 0 5px color-mix(in srgb, var(--district, var(--blue)) 35%, transparent)); }
+  .activity-stack-trigger strong { display: none; min-width: 0; overflow: hidden; font-size: 9px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .activity-count { align-self: center; justify-self: center; color: var(--district, var(--muted)); font-size: 8px; }
+  .activity-direction { display: none; grid-column: 1 / -1; margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+  .component-activity.just-active .activity-stack-trigger { width: 132px; }
+  .component-activity.just-active .activity-stack-trigger strong, .component-activity.just-active .activity-direction { display: block; }
+  .component-activity.just-active .activity-count { justify-self: auto; margin-left: 5px; }
+  .component-activity.live-source.just-active .activity-stack-trigger { transform: translate(-104px, -9px); }
+  .component-activity.live-target.just-active .activity-stack-trigger { transform: translate(-104px, 9px); }
+  .component-activity.callout-right.live-source.just-active .activity-stack-trigger { transform: translateY(-30px); }
+  .component-activity.callout-right.live-target.just-active .activity-stack-trigger { transform: translateY(30px); }
+  .component-activity.just-active .activity-stack-trigger { animation: activity-arrive .48s ease-out both; }
+  .activity-leader { position: absolute; z-index: -1; display: none; height: 1px; background: color-mix(in srgb, var(--district, var(--line)) 68%, transparent); pointer-events: none; transform-origin: left center; }
+  .component-activity.expanded .activity-leader { display: block; }
+  .activity-stack-panel { position: absolute; width: 224px; border: 1px solid var(--district, var(--line)); background: color-mix(in srgb, var(--panel) 97%, var(--district, var(--line))); box-shadow: 0 12px 32px color-mix(in srgb, var(--bg) 78%, transparent); padding: 8px; pointer-events: auto; }
+  .activity-stack-panel[hidden] { display: none; }
+  .activity-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line-soft); padding: 1px 1px 7px; }
+  .activity-panel-head strong { overflow: hidden; font-size: 9px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .activity-panel-head button { border: 0; background: transparent; padding: 0 2px; color: var(--muted); cursor: pointer; font-size: 13px; }
+  .activity-card-list { display: grid; max-height: 172px; gap: 4px; overflow: auto; padding-top: 6px; }
+  .activity-card { display: grid; grid-template-columns: 15px minmax(0, 1fr) auto; gap: 5px; align-items: start; width: 100%; border: 0; border-left: 2px solid var(--district, var(--line)); background: transparent; padding: 6px; color: var(--fg); cursor: pointer; text-align: left; }
+  .activity-card:hover { background: color-mix(in srgb, var(--district, var(--blue)) 9%, transparent); }
+  .activity-card.failed, .activity-card.retry { border-left-color: var(--red); }
+  .activity-card .direction { color: var(--district, var(--muted)); font-size: 10px; }
+  .activity-card strong { display: block; overflow: hidden; font-size: 9px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .activity-card span { display: block; margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+  .activity-card time { color: var(--muted); font-size: 7px; white-space: nowrap; }
+  .district-color-blue { --district: var(--category-blue); }
+  .district-color-purple { --district: var(--category-purple); }
+  .district-color-amber { --district: var(--category-amber); }
+  .district-color-green { --district: var(--category-green); }
+  .district-color-pink { --district: var(--category-pink); }
+  .district-color-cyan { --district: var(--category-cyan); }
+  .district { pointer-events: none; }
+  .district-zone { fill: color-mix(in srgb, var(--district, var(--line)) 7%, transparent); stroke: color-mix(in srgb, var(--district, var(--line)) 72%, var(--line)); stroke-width: 1.35; stroke-dasharray: 6 4; opacity: .88; vector-effect: non-scaling-stroke; transition: fill .16s, filter .16s, opacity .16s, stroke-width .16s; }
+  .district-label { fill: var(--district, var(--muted)); stroke: var(--bg); stroke-width: 3px; paint-order: stroke; font-size: 10.5px; font-weight: 500; letter-spacing: .13em; pointer-events: none; }
+  .district.selected .district-zone { fill: color-mix(in srgb, var(--district, var(--blue)) 15%, transparent); stroke: var(--district, var(--blue)); stroke-width: 2.2; opacity: 1; }
+  .district.active .district-zone { stroke-width: 2.2; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--signal, var(--district, var(--blue))) 55%, transparent)); animation: district-breathe 1.1s ease-in-out infinite; }
+  .grid-line { stroke: var(--line-soft); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .flow-edge { fill: none; stroke: var(--flow-line); stroke-width: 1.55; opacity: .72; vector-effect: non-scaling-stroke; transition: opacity .16s, stroke .16s, stroke-width .16s; }
+  .flow-edge.feedback { stroke-dasharray: 5 5; }
+  .flow-edge.active { stroke: var(--signal, var(--blue)); stroke-width: 2.6; opacity: 1; }
+  .map-stage.timeline-focused .flow-edge:not(.timeline-context):not(.timeline-current) { opacity: .12; }
+  .map-stage.timeline-focused .building:not(.timeline-context):not(.timeline-current) { opacity: .22; }
+  .flow-edge.timeline-context { stroke: color-mix(in srgb, var(--timeline-signal, var(--blue)) 68%, var(--flow-line)); stroke-width: 2; opacity: .72; }
+  .flow-edge.timeline-current { stroke: var(--timeline-signal, var(--blue)); stroke-width: 3; opacity: 1; }
+  .building.timeline-context { opacity: .82; }
+  .building.timeline-current { filter: drop-shadow(0 0 8px color-mix(in srgb, var(--timeline-signal, var(--blue)) 58%, transparent)); opacity: 1; }
+  .timeline-signal-blue { --timeline-signal: var(--blue); }
+  .timeline-signal-orange { --timeline-signal: var(--orange); }
+  .timeline-signal-red { --timeline-signal: var(--red); }
+  .timeline-signal-green { --timeline-signal: var(--green); }
+  .signal-blue { --signal: var(--blue); }
+  .signal-orange { --signal: var(--orange); }
+  .signal-red { --signal: var(--red); }
+  .signal-green { --signal: var(--green); }
+  .face-top { fill: var(--face-top); stroke: var(--line); }
+  .face-left { fill: var(--face-left); stroke: var(--line); }
+  .face-right { fill: var(--face-right); stroke: var(--line); }
+  .building { cursor: pointer; opacity: .92; transition: filter .16s, opacity .16s; }
+  .building:hover, .building.active, .building.selected { filter: drop-shadow(0 0 8px color-mix(in srgb, var(--blue) 55%, transparent)); opacity: 1; }
+  .building.failed { filter: drop-shadow(0 0 8px color-mix(in srgb, var(--red) 60%, transparent)); }
+  .building text, .building-label-base { fill: var(--fg); stroke: var(--face-top); stroke-width: 3px; paint-order: stroke; font-size: 12px; font-weight: 500; letter-spacing: .015em; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+  .building-label-base { stroke: var(--bg); stroke-width: 4.5px; font-weight: 600; }
+  .building-beacon { fill: var(--bg); stroke: var(--muted); stroke-width: 1.4; opacity: .6; pointer-events: none; vector-effect: non-scaling-stroke; }
+  .building.sending .building-beacon, .building.receiving .building-beacon { fill: var(--signal, var(--blue)); stroke: var(--bg); opacity: 1; animation: beacon-breathe .82s ease-in-out infinite; }
+  .building.receiving .building-beacon { stroke-width: 2.2; }
+  .packet { color: var(--blue); cursor: pointer; vector-effect: non-scaling-stroke; }
+  .packet-halo { fill: currentColor; opacity: .2; animation: packet-breathe .78s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .packet-ring { fill: var(--bg); stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .packet-core { fill: currentColor; stroke: var(--bg); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .packet.validation, .packet.evaluation { color: var(--orange); }
+  .packet.retry, .packet.failed { color: var(--red); }
+  .packet.persistence, .packet.knowledge { color: var(--green); }
+  .inspector-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
+  .inspector-tabs button { border: 0; border-right: 1px solid var(--line); background: transparent; padding: 12px 8px; color: var(--muted); cursor: pointer; font-size: 10px; letter-spacing: .12em; text-align: center; text-transform: uppercase; }
+  .inspector-tabs button:last-child { border-right: 0; }
+  .inspector-tabs button:hover { color: var(--fg); }
+  .inspector-tabs .active { background: var(--fg); color: var(--bg); }
+  .inspector-body { min-height: 0; overflow: hidden; padding: 17px 15px; }
+  .inspector-pane[hidden] { display: none; }
+  .inspector-pane:not([hidden]) { height: 100%; overflow: auto; }
+  .log-pane:not([hidden]) { display: grid; grid-template-rows: auto auto auto auto auto minmax(0, 1fr); min-height: 100%; overflow: hidden; }
+  .inspector-body h2 { margin: 7px 0 10px; font-size: 18px; font-weight: 500; }
+  .inspector-body p { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+  .detail-list { margin: 0; border-top: 1px solid var(--line); }
+  .detail-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line-soft); font-size: 11px; }
+  .detail-row dt { color: var(--muted); }
+  .detail-row dd { margin: 0; overflow-wrap: anywhere; }
+  .log-filter { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; border-bottom: 1px solid var(--line-soft); padding-bottom: 9px; }
+  .log-filter strong { overflow: hidden; font-size: 10px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .log-filter button { flex: 0 0 auto; border: 1px solid var(--line); background: transparent; padding: 4px 6px; color: var(--muted); cursor: pointer; font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
+  .log-filter button:hover { border-color: var(--blue); color: var(--fg); }
+  .queue-status { margin: 0 0 12px; border-block: 1px solid var(--line-soft); padding: 8px 0; color: var(--muted); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+  .event-log { display: grid; min-height: 0; align-content: start; gap: 5px; overflow: auto; padding-right: 3px; }
+  .event-log::before { content: 'Waiting for matching component activity'; padding: 10px 0; color: var(--muted); font-size: 10px; }
+  .event-log.has-events::before { display: none; }
+  .event-row { width: 100%; border: 0; border-left: 2px solid var(--line); background: transparent; padding: 8px; text-align: left; cursor: pointer; }
+  .event-row:hover { border-left-color: var(--blue); background: var(--blue-soft); }
+  .event-row.failed, .event-row.retry { border-left-color: var(--red); }
+  .event-row.persistence, .event-row.knowledge { border-left-color: var(--green); }
+  .event-row.validation, .event-row.evaluation { border-left-color: var(--orange); }
+  .event-row strong { display: block; overflow: hidden; font-size: 10px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .event-row span { display: block; margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+  .event-row em { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; font-style: normal; letter-spacing: .07em; text-transform: uppercase; }
+  .timeline-shell { display: grid; grid-template-columns: 200px minmax(0, 1fr) 330px; min-height: 0; border: 1px solid var(--line); background: var(--panel); }
+  .timeline-context, .timeline-readout { min-width: 0; padding: 10px 12px; }
+  .timeline-context { border-right: 1px solid var(--line); }
+  .timeline-context strong, .timeline-readout strong { display: block; margin-top: 5px; overflow: hidden; font-size: 10px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .timeline-main { display: grid; grid-template-rows: minmax(0, 1fr) 14px; min-width: 0; padding: 7px 10px 5px; }
+  .timeline-groups { display: flex; min-width: 0; overflow: hidden; }
+  .timeline-empty { align-self: center; color: var(--muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+  .timeline-group { display: grid; grid-template-rows: 12px minmax(0, 1fr); min-width: 18px; border-left: 1px solid var(--line-soft); }
+  .timeline-group:last-child { border-right: 1px solid var(--line-soft); }
+  .timeline-group-label { overflow: hidden; padding-left: 4px; color: var(--muted); font-size: 8px; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+  .timeline-markers { display: flex; align-items: center; gap: 1px; min-width: 0; padding: 0 3px; }
+  .timeline-marker { flex: 1 1 2px; min-width: 2px; height: 10px; border: 0; background: var(--line); padding: 0; cursor: pointer; opacity: .52; }
+  .timeline-marker:hover { background: var(--blue); opacity: 1; }
+  .timeline-marker.past { opacity: .88; }
+  .timeline-marker.validation, .timeline-marker.evaluation { background: var(--orange); }
+  .timeline-marker.persistence, .timeline-marker.knowledge { background: var(--green); }
+  .timeline-marker.failed, .timeline-marker.retry { background: var(--red); }
+  .timeline-marker.current { background: var(--fg); box-shadow: 0 0 7px color-mix(in srgb, var(--blue) 60%, transparent); opacity: 1; transform: scaleY(1.55); }
+  .timeline-scrubber { width: 100%; height: 12px; margin: 0; accent-color: var(--blue); cursor: pointer; }
+  .timeline-scrubber:disabled { cursor: default; opacity: .32; }
+  .timeline-readout { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; border-left: 1px solid var(--line); }
+  .timeline-readout-copy { min-width: 0; }
+  .timeline-follow { border: 1px solid var(--blue); background: transparent; padding: 6px 7px; color: var(--fg); cursor: pointer; font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
+  .timeline-follow[hidden] { display: none; }
+  .status-dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--orange); }
+  .status-dot.live { background: var(--green); box-shadow: 0 0 8px color-mix(in srgb, var(--green) 55%, transparent); animation: status-breathe 2.2s ease-in-out infinite; }
+  @keyframes district-breathe { 50% { fill-opacity: .34; stroke-opacity: .45; } }
+  @keyframes beacon-breathe { 50% { opacity: .35; } }
+  @keyframes packet-breathe { 50% { opacity: .08; transform: scale(.72); } }
+  @keyframes status-breathe { 50% { box-shadow: 0 0 3px color-mix(in srgb, var(--green) 35%, transparent); opacity: .72; } }
+  @keyframes activity-arrive { 0% { opacity: .42; filter: brightness(.72); } 100% { opacity: 1; filter: brightness(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    .district.active .district-zone, .building.sending .building-beacon, .building.receiving .building-beacon, .packet-halo, .status-dot.live, .component-activity.just-active .activity-stack-trigger { animation: none; }
+  }
+  @media (max-width: 1120px) {
+    .topbar { grid-template-columns: minmax(240px, 1.4fr) repeat(2, minmax(100px, .6fr)) minmax(330px, 1.4fr); }
+    .topbar .hide-mid { display: none; }
+    .content { grid-template-columns: 170px minmax(0, 1fr) 285px; }
+    .timeline-shell { grid-template-columns: 170px minmax(0, 1fr) 285px; }
+  }
+  @media (max-width: 820px) {
+    .topbar { grid-template-columns: minmax(210px, 1fr) minmax(310px, 1.4fr); }
+    .topbar .compact-hide { display: none; }
+    .content { grid-template-columns: minmax(0, 1fr) 260px; }
+    .legend { display: none; }
+    .timeline-shell { grid-template-columns: minmax(0, 1fr) 260px; }
+    .timeline-context { display: none; }
+  }
+  @media (max-width: 620px) {
+    html, body { overflow: auto; }
+    .system-map-shell { min-width: 520px; }
+    .content { grid-template-columns: 1fr; }
+    .inspector { display: none; }
+    .timeline-shell { grid-template-columns: 1fr; }
+    .timeline-readout { display: none; }
+  }
+</style>
+</head>
+<body>
+<main class="system-map-shell">
+  <header class="topbar">
+    <div class="metric">
+      <span class="eyebrow">system map</span>
+      <nav class="lens-links" aria-label="System map lens">
+        <a id="execution-lens" class="lens-link" href="/system-map">Execution</a>
+        <a id="context-lens" class="lens-link" href="/system-map/context">Context lineage</a>
+        <a id="activation-lens" class="lens-link" href="/system-map/activation">Activation</a>
+        <a id="routing-lens" class="lens-link" href="/system-map/routing">Routing</a>
+      </nav>
+    </div>
+    <div class="metric compact-hide"><span class="eyebrow">topology</span><strong id="node-count">0 modules</strong></div>
+    <div class="metric hide-mid compact-hide"><span class="eyebrow">transfers</span><strong id="transfer-count">0 received</strong></div>
+    <div class="metric compact-hide"><span class="eyebrow">connection</span><strong><span id="connection-dot" class="status-dot"></span><span id="connection-state">connecting</span></strong></div>
+    <div class="controls">
+      <button id="pause-button" type="button">Pause flow</button>
+      <button id="step-button" type="button">Trace one step</button>
+      <button id="reset-button" type="button">Reset view</button>
+    </div>
+  </header>
+  <section class="content">
+    <aside class="legend" aria-label="System map legend">
+      <h1 class="panel-title">the system</h1>
+      <div id="legend-content"></div>
+    </aside>
+    <section class="map-stage" aria-label="Live autocontext system map">
+      <div class="map-header"><span id="map-kicker" class="eyebrow">live execution topology</span><h1 id="map-heading">Recursive harness</h1></div>
+      <svg id="system-map-svg" viewBox="0 0 1000 720" role="img" aria-labelledby="map-title map-desc">
+        <title id="map-title">Live recursive harness system map</title>
+        <desc id="map-desc">An isometric map where redacted execution transfers trace real harness paths.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--line)"></path>
+          </marker>
+        </defs>
+        <g id="district-layer"></g>
+        <g id="grid-layer"></g>
+        <g id="edge-layer"></g>
+        <g id="building-layer"></g>
+        <g id="district-label-layer"></g>
+        <g id="building-label-layer"></g>
+        <g id="packet-layer"></g>
+      </svg>
+      <div id="component-event-layer" class="component-event-layer" aria-label="Component activity stacks"></div>
+    </section>
+    <aside class="inspector" aria-label="Transfer inspector">
+      <div class="inspector-tabs" role="tablist" aria-label="System map inspector">
+        <button id="details-tab" type="button" role="tab" aria-controls="details-pane" aria-selected="false">Trace details</button>
+        <button id="log-tab" class="active" type="button" role="tab" aria-controls="log-pane" aria-selected="true">Live log</button>
+      </div>
+      <div class="inspector-body">
+        <section id="details-pane" class="inspector-pane" role="tabpanel" aria-labelledby="details-tab" hidden>
+          <span id="detail-kicker" class="eyebrow">selected transfer</span>
+          <h2 id="detail-title">Waiting for activity</h2>
+          <p id="detail-summary">Live events are projected into redacted transfers and routed along the same edges shown on the map.</p>
+          <dl id="detail-list" class="detail-list"></dl>
+        </section>
+        <section id="log-pane" class="inspector-pane log-pane" role="tabpanel" aria-labelledby="log-tab">
+          <span class="eyebrow">activity stream</span>
+          <h2 id="log-title">Live system log</h2>
+          <p id="log-summary">Events appear as harness boundaries emit them. Packets follow the matching route one at a time so the process remains readable.</p>
+          <div class="log-filter">
+            <strong id="log-filter-label">All components</strong>
+            <button id="clear-log-filter" type="button" hidden>Show all</button>
+          </div>
+          <div id="queue-status" class="queue-status">connecting · 0 queued · 0 traced</div>
+          <div id="event-log" class="event-log" role="log" aria-live="polite" aria-relevant="additions"></div>
+        </section>
+      </div>
+    </aside>
+  </section>
+  <section class="timeline-shell" aria-label="Observed transfer timeline">
+    <div class="timeline-context">
+      <span id="timeline-label" class="eyebrow">execution timeline</span>
+      <strong id="timeline-mode">Following latest</strong>
+    </div>
+    <div class="timeline-main">
+      <div id="timeline-groups" class="timeline-groups"><span class="timeline-empty">Waiting for trace events</span></div>
+      <input id="timeline-scrubber" class="timeline-scrubber" type="range" min="0" max="0" value="0" aria-label="Scrub observed transfer timeline" disabled>
+    </div>
+    <div class="timeline-readout">
+      <div class="timeline-readout-copy"><span class="eyebrow">current step</span><strong id="timeline-current">No events</strong></div>
+      <button id="timeline-follow" class="timeline-follow" type="button" hidden>Follow latest</button>
+    </div>
+  </section>
+</main>
+<script>
+const topology = __AUTOCONTEXT_SYSTEM_MAP_TOPOLOGY__;
+const projection = __AUTOCONTEXT_SYSTEM_MAP_PROJECTION__;
+const mapView = topology.view || 'execution';
+const usesBaseLabels = mapView === 'activation' || mapView === 'routing';
+const defaultLogTitle = mapView === 'context'
+  ? 'Live lineage log'
+  : mapView === 'activation'
+    ? 'Live activation log'
+    : mapView === 'routing'
+      ? 'Live routing log'
+      : 'Live harness log';
+const defaultLogSummary = topology.description + ' Packets follow the matching route one at a time so the process remains readable.';
+const svgNs = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('system-map-svg');
+const districtLayer = document.getElementById('district-layer');
+const gridLayer = document.getElementById('grid-layer');
+const edgeLayer = document.getElementById('edge-layer');
+const buildingLayer = document.getElementById('building-layer');
+const districtLabelLayer = document.getElementById('district-label-layer');
+const buildingLabelLayer = document.getElementById('building-label-layer');
+const packetLayer = document.getElementById('packet-layer');
+const componentEventLayer = document.getElementById('component-event-layer');
+const mapStage = document.querySelector('.map-stage');
+const eventLog = document.getElementById('event-log');
+const logTitle = document.getElementById('log-title');
+const logSummary = document.getElementById('log-summary');
+const logFilterLabel = document.getElementById('log-filter-label');
+const clearLogFilterButton = document.getElementById('clear-log-filter');
+const queueStatus = document.getElementById('queue-status');
+const detailsTab = document.getElementById('details-tab');
+const logTab = document.getElementById('log-tab');
+const detailsPane = document.getElementById('details-pane');
+const logPane = document.getElementById('log-pane');
+const detailKicker = document.getElementById('detail-kicker');
+const detailTitle = document.getElementById('detail-title');
+const detailSummary = document.getElementById('detail-summary');
+const detailList = document.getElementById('detail-list');
+const connectionState = document.getElementById('connection-state');
+const connectionDot = document.getElementById('connection-dot');
+const pauseButton = document.getElementById('pause-button');
+const stepButton = document.getElementById('step-button');
+const resetButton = document.getElementById('reset-button');
+const transferCount = document.getElementById('transfer-count');
+const timelineGroups = document.getElementById('timeline-groups');
+const timelineScrubber = document.getElementById('timeline-scrubber');
+const timelineMode = document.getElementById('timeline-mode');
+const timelineCurrent = document.getElementById('timeline-current');
+const timelineFollowButton = document.getElementById('timeline-follow');
+const timelineLabel = document.getElementById('timeline-label');
+const executionLens = document.getElementById('execution-lens');
+const contextLens = document.getElementById('context-lens');
+const activationLens = document.getElementById('activation-lens');
+const routingLens = document.getElementById('routing-lens');
+const mapKicker = document.getElementById('map-kicker');
+const mapHeading = document.getElementById('map-heading');
+const mapTitle = document.getElementById('map-title');
+const mapDescription = document.getElementById('map-desc');
+const params = new URLSearchParams(window.location.search);
+const selectedRunId = params.get('run_id') || '';
+const nodeById = new Map(topology.nodes.map(function(node) { return [node.id, node]; }));
+const edgeById = new Map(topology.edges.map(function(edge) { return [edge.id, edge]; }));
+const edgeElements = new Map();
+const buildingElements = new Map();
+const buildingLabelElements = new Map();
+const legendElements = new Map();
+const districtElements = new Map();
+const componentActivityElements = new Map();
+const componentActivityRecords = new Map();
+let observedTransfers = 0;
+let displayedTransfers = 0;
+let paused = false;
+let pendingTransfers = [];
+let playbackActive = false;
+let selectedNodeId = '';
+let selectedNodeLabel = '';
+let expandedNodeId = '';
+let timelineTransfers = [];
+let timelineCurrentIndex = -1;
+let timelineLatestTracedIndex = -1;
+let timelineFollowing = true;
+let websocket = null;
+let reconnectTimer = null;
+
+function el(name, attrs) {
+  const node = document.createElementNS(svgNs, name);
+  Object.entries(attrs || {}).forEach(function(entry) { node.setAttribute(entry[0], String(entry[1])); });
+  return node;
+}
+
+function configureLens() {
+  const runSuffix = selectedRunId ? '?run_id=' + encodeURIComponent(selectedRunId) : '';
+  executionLens.href = '/system-map' + runSuffix;
+  contextLens.href = '/system-map/context' + runSuffix;
+  activationLens.href = '/system-map/activation' + runSuffix;
+  routingLens.href = '/system-map/routing' + runSuffix;
+  executionLens.classList.toggle('active', mapView === 'execution');
+  contextLens.classList.toggle('active', mapView === 'context');
+  activationLens.classList.toggle('active', mapView === 'activation');
+  routingLens.classList.toggle('active', mapView === 'routing');
+  executionLens.setAttribute('aria-current', mapView === 'execution' ? 'page' : 'false');
+  contextLens.setAttribute('aria-current', mapView === 'context' ? 'page' : 'false');
+  activationLens.setAttribute('aria-current', mapView === 'activation' ? 'page' : 'false');
+  routingLens.setAttribute('aria-current', mapView === 'routing' ? 'page' : 'false');
+  document.title = 'autocontext — ' + topology.title.toLowerCase();
+  mapKicker.textContent = mapView === 'context'
+    ? 'live knowledge lineage'
+    : mapView === 'activation'
+      ? 'live activation topology'
+      : mapView === 'routing'
+        ? 'live provider routing'
+        : 'live execution topology';
+  mapHeading.textContent = topology.title;
+  mapTitle.textContent = 'Live ' + topology.title + ' system map';
+  mapDescription.textContent = topology.description;
+  timelineLabel.textContent = topology.timelineLabel;
+  detailSummary.textContent = topology.description;
+  logTitle.textContent = defaultLogTitle;
+  logSummary.textContent = defaultLogSummary;
+}
+
+function activateInspectorTab(name) {
+  const showDetails = name === 'details';
+  detailsTab.classList.toggle('active', showDetails);
+  detailsTab.setAttribute('aria-selected', String(showDetails));
+  detailsPane.hidden = !showDetails;
+  logTab.classList.toggle('active', !showDetails);
+  logTab.setAttribute('aria-selected', String(!showDetails));
+  logPane.hidden = showDetails;
+}
+
+function updateQueueStatus() {
+  const queued = pendingTransfers.length;
+  const matching = Array.from(eventLog.children).filter(function(row) { return !row.hidden; }).length;
+  const scopedQueued = selectedNodeId
+    ? pendingTransfers.filter(function(transfer) { return transfer.from === selectedNodeId || transfer.to === selectedNodeId; }).length
+    : queued;
+  transferCount.textContent = observedTransfers + ' received' + (queued > 0 ? ' · ' + queued + ' queued' : '');
+  queueStatus.textContent = connectionState.textContent
+    + (selectedNodeId ? ' · ' + matching + ' matching' : '')
+    + ' · ' + scopedQueued + ' queued · ' + displayedTransfers + ' total traced'
+    + (playbackActive ? ' · tracing' : '');
+}
+
+function effectiveTimelineGeneration(transfer) {
+  if (transfer.generation !== undefined) return transfer.generation;
+  const matching = timelineTransfers.find(function(candidate) {
+    return candidate.runId === transfer.runId && candidate.generation !== undefined;
+  });
+  return matching ? matching.generation : null;
+}
+
+function timelineGroupLabel(transfer) {
+  const runIds = Array.from(new Set(timelineTransfers.map(function(candidate) { return candidate.runId; })));
+  const runNumber = runIds.indexOf(transfer.runId) + 1;
+  const generation = effectiveTimelineGeneration(transfer);
+  return 'R' + runNumber + (generation === null ? '' : ' · G' + generation);
+}
+
+function timelineGroupKey(transfer) {
+  return transfer.runId + ':generation:' + String(effectiveTimelineGeneration(transfer));
+}
+
+function timelineTransferLabel(transfer) {
+  const attempt = transfer.attempt === undefined ? '' : ' · A' + transfer.attempt;
+  return timelineGroupLabel(transfer) + attempt + ' · ' + transfer.event + ' · ' + transfer.from + ' → ' + transfer.to;
+}
+
+function recordTimelineTransfer(transfer, origin) {
+  if (timelineTransfers.some(function(candidate) { return candidate.id === transfer.id; })) return;
+  timelineTransfers.push(transfer);
+  if (timelineTransfers.length > 160) {
+    timelineTransfers.shift();
+    timelineCurrentIndex = Math.max(-1, timelineCurrentIndex - 1);
+    timelineLatestTracedIndex = Math.max(-1, timelineLatestTracedIndex - 1);
+  }
+  if (origin === 'replay') {
+    timelineCurrentIndex = timelineTransfers.length - 1;
+    timelineLatestTracedIndex = timelineCurrentIndex;
+  }
+  renderTimeline();
+}
+
+function renderTimeline() {
+  timelineGroups.replaceChildren();
+  timelineScrubber.disabled = timelineTransfers.length === 0;
+  timelineScrubber.max = String(Math.max(0, timelineTransfers.length - 1));
+  if (timelineTransfers.length === 0) {
+    const empty = document.createElement('span');
+    empty.className = 'timeline-empty';
+    empty.textContent = 'Waiting for trace events';
+    timelineGroups.append(empty);
+    updateTimelineSelection();
+    return;
+  }
+  const groups = [];
+  timelineTransfers.forEach(function(transfer, index) {
+    const key = timelineGroupKey(transfer);
+    let group = groups[groups.length - 1];
+    if (!group || group.key !== key) {
+      group = { key: key, transfer: transfer, entries: [] };
+      groups.push(group);
+    }
+    group.entries.push({ transfer: transfer, index: index });
+  });
+  groups.forEach(function(group) {
+    const section = document.createElement('section');
+    section.className = 'timeline-group';
+    section.style.flexGrow = String(group.entries.length);
+    section.style.flexBasis = '0';
+    const label = document.createElement('span');
+    label.className = 'timeline-group-label';
+    label.textContent = timelineGroupLabel(group.transfer);
+    const markers = document.createElement('div');
+    markers.className = 'timeline-markers';
+    group.entries.forEach(function(entry) {
+      const marker = document.createElement('button');
+      marker.type = 'button';
+      marker.className = 'timeline-marker ' + entry.transfer.kind + ' ' + entry.transfer.status;
+      marker.dataset.timelineIndex = String(entry.index);
+      marker.setAttribute('aria-label', timelineTransferLabel(entry.transfer));
+      marker.addEventListener('click', function() { scrubTimelineTo(entry.index); });
+      markers.append(marker);
+    });
+    section.append(label, markers);
+    timelineGroups.append(section);
+  });
+  updateTimelineSelection();
+}
+
+function updateTimelineSelection() {
+  timelineScrubber.value = String(Math.max(0, timelineCurrentIndex));
+  timelineGroups.querySelectorAll('.timeline-marker').forEach(function(marker) {
+    const index = Number(marker.dataset.timelineIndex);
+    marker.classList.toggle('current', index === timelineCurrentIndex);
+    marker.classList.toggle('past', index <= timelineCurrentIndex);
+  });
+  const transfer = timelineTransfers[timelineCurrentIndex];
+  timelineCurrent.textContent = transfer ? timelineTransferLabel(transfer) : 'No events';
+  timelineMode.textContent = timelineFollowing ? 'Following latest' : 'Inspecting history';
+  timelineFollowButton.hidden = timelineFollowing;
+}
+
+function timelineSignalClass(transfer) {
+  if (transfer.status === 'failed' || transfer.status === 'retry') return 'timeline-signal-red';
+  if (transfer.kind === 'validation' || transfer.kind === 'evaluation') return 'timeline-signal-orange';
+  if (transfer.kind === 'persistence' || transfer.kind === 'knowledge') return 'timeline-signal-green';
+  return 'timeline-signal-blue';
+}
+
+function clearTimelineFocus() {
+  mapStage.classList.remove('timeline-focused');
+  edgeElements.forEach(function(edge) {
+    edge.classList.remove('timeline-context', 'timeline-current', 'timeline-signal-red', 'timeline-signal-orange', 'timeline-signal-green', 'timeline-signal-blue');
+  });
+  buildingElements.forEach(function(building) {
+    building.classList.remove('timeline-context', 'timeline-current', 'timeline-signal-red', 'timeline-signal-orange', 'timeline-signal-green', 'timeline-signal-blue');
+  });
+}
+
+function causalTimelineTransfers(transfer) {
+  const traceTransfers = timelineTransfers.filter(function(candidate) { return candidate.traceId === transfer.traceId; });
+  const bySpan = new Map();
+  traceTransfers.forEach(function(candidate) { bySpan.set(candidate.spanId, candidate); });
+  const chain = [];
+  const seen = new Set();
+  let current = transfer;
+  while (current && !seen.has(current.spanId)) {
+    chain.unshift(current);
+    seen.add(current.spanId);
+    current = current.parentSpanId ? bySpan.get(current.parentSpanId) : null;
+  }
+  return chain;
+}
+
+function focusTimelineTransfer(transfer) {
+  clearTimelineFocus();
+  mapStage.classList.add('timeline-focused');
+  causalTimelineTransfers(transfer).forEach(function(candidate) {
+    const signalClass = timelineSignalClass(candidate);
+    const edge = edgeElements.get(candidate.edgeId);
+    const source = buildingElements.get(candidate.from);
+    const target = buildingElements.get(candidate.to);
+    if (edge) edge.classList.add('timeline-context', signalClass);
+    if (source) source.classList.add('timeline-context', signalClass);
+    if (target) target.classList.add('timeline-context', signalClass);
+  });
+  const signalClass = timelineSignalClass(transfer);
+  const currentEdge = edgeElements.get(transfer.edgeId);
+  const currentSource = buildingElements.get(transfer.from);
+  const currentTarget = buildingElements.get(transfer.to);
+  if (currentEdge) currentEdge.classList.add('timeline-current', signalClass);
+  if (currentSource) currentSource.classList.add('timeline-current', signalClass);
+  if (currentTarget) currentTarget.classList.add('timeline-current', signalClass);
+}
+
+function scrubTimelineTo(index) {
+  if (timelineTransfers.length === 0) return;
+  timelineCurrentIndex = Math.max(0, Math.min(timelineTransfers.length - 1, Number(index)));
+  timelineFollowing = false;
+  paused = true;
+  pauseButton.textContent = 'Resume flow';
+  const transfer = timelineTransfers[timelineCurrentIndex];
+  updateTimelineSelection();
+  updateQueueStatus();
+  focusTimelineTransfer(transfer);
+  selectTransfer(transfer);
+}
+
+function inspectTimelineTransfer(transfer) {
+  const index = timelineTransfers.findIndex(function(candidate) { return candidate.id === transfer.id; });
+  if (index < 0) {
+    selectTransfer(transfer);
+    return;
+  }
+  scrubTimelineTo(index);
+}
+
+function setTimelineTracedTransfer(transfer) {
+  const index = timelineTransfers.findIndex(function(candidate) { return candidate.id === transfer.id; });
+  if (index < 0) return;
+  timelineLatestTracedIndex = index;
+  if (!timelineFollowing) return;
+  timelineCurrentIndex = index;
+  clearTimelineFocus();
+  updateTimelineSelection();
+}
+
+function followLatestTimeline() {
+  timelineFollowing = true;
+  timelineCurrentIndex = timelineLatestTracedIndex >= 0 ? timelineLatestTracedIndex : timelineTransfers.length - 1;
+  clearTimelineFocus();
+  updateTimelineSelection();
+  paused = false;
+  pauseButton.textContent = 'Pause flow';
+  updateQueueStatus();
+  if (timelineCurrentIndex >= 0) selectTransfer(timelineTransfers[timelineCurrentIndex], false);
+  void drainPlaybackQueue();
+}
+
+function applyLogFilter() {
+  let matching = 0;
+  Array.from(eventLog.children).forEach(function(row) {
+    const visible = !selectedNodeId || row.dataset.from === selectedNodeId || row.dataset.to === selectedNodeId;
+    row.hidden = !visible;
+    if (visible) matching += 1;
+  });
+  eventLog.classList.toggle('has-events', matching > 0);
+  logTitle.textContent = selectedNodeId ? selectedNodeLabel + ' logs' : defaultLogTitle;
+  logSummary.textContent = selectedNodeId
+    ? 'Showing every observed transfer entering or leaving ' + selectedNodeLabel + '.'
+    : defaultLogSummary;
+  logFilterLabel.textContent = selectedNodeId ? 'Component · ' + selectedNodeLabel : 'All components';
+  clearLogFilterButton.hidden = !selectedNodeId;
+  buildingElements.forEach(function(group, nodeId) {
+    const selected = nodeId === selectedNodeId;
+    group.classList.toggle('selected', selected);
+    group.setAttribute('aria-pressed', String(selected));
+  });
+  legendElements.forEach(function(button, nodeId) {
+    const selected = nodeId === selectedNodeId;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  const selectedGroup = selectedNodeId ? nodeById.get(selectedNodeId).group : '';
+  districtElements.forEach(function(group, groupName) {
+    group.classList.toggle('selected', groupName === selectedGroup);
+  });
+  updateQueueStatus();
+}
+
+function clearLogFilter() {
+  selectedNodeId = '';
+  selectedNodeLabel = '';
+  applyLogFilter();
+}
+
+function delay(duration) {
+  return new Promise(function(resolve) { window.setTimeout(resolve, duration); });
+}
+
+const isometricCamera = (function() {
+  const xScale = 27;
+  const yScale = 15.5;
+  const zScale = 11.5;
+  const districts = topology.districts || [];
+  const minimumDelta = Math.min.apply(null, districts.map(function(district) {
+    return district.x - (district.y + district.depth);
+  }));
+  const maximumDelta = Math.max.apply(null, districts.map(function(district) {
+    return district.x + district.width - district.y;
+  }));
+  return {
+    originX: 500 - ((minimumDelta + maximumDelta) / 2) * xScale,
+    originY: 96,
+    xScale: xScale,
+    yScale: yScale,
+    zScale: zScale
+  };
+}());
+
+function projectPoint(x, y, z) {
+  return {
+    x: isometricCamera.originX + (x - y) * isometricCamera.xScale,
+    y: isometricCamera.originY + (x + y) * isometricCamera.yScale - z * isometricCamera.zScale
+  };
+}
+
+function points(values) {
+  return values.map(function(point) { return point.x + ',' + point.y; }).join(' ');
+}
+
+function districtLabelOffsetY(district) {
+  if (mapView === 'activation' && district.id === 'live-state') return -15;
+  if (mapView === 'activation' && district.id === 'rollback-repair') return 6;
+  if (mapView === 'routing' && district.id === 'model-execution') return -9;
+  if (mapView === 'routing' && district.id === 'call-telemetry') return -17;
+  return 3;
+}
+
+function drawDistricts() {
+  (topology.districts || []).forEach(function(district) {
+    const colorClass = 'district-color-' + district.color;
+    const group = el('g', { class: 'district ' + colorClass, 'data-district-id': district.id });
+    const a = projectPoint(district.x, district.y, -.04);
+    const b = projectPoint(district.x + district.width, district.y, -.04);
+    const c = projectPoint(district.x + district.width, district.y + district.depth, -.04);
+    const d = projectPoint(district.x, district.y + district.depth, -.04);
+    group.append(el('polygon', { points: points([a, b, c, d]), class: 'district-zone' }));
+    const labelAt = projectPoint(district.x + .24, district.y + .24, .02);
+    const label = el('text', { x: labelAt.x, y: labelAt.y + districtLabelOffsetY(district), class: 'district-label ' + colorClass });
+    label.textContent = district.label.toUpperCase();
+    districtLabelLayer.append(label);
+    districtLayer.append(group);
+    districtElements.set(district.group, group);
+  });
+}
+
+function drawGrid() {
+  const districts = topology.districts || [];
+  const gridPadding = .5;
+  const minX = Math.floor(Math.min.apply(null, districts.map(function(district) { return district.x; })) - gridPadding);
+  const minY = Math.floor(Math.min.apply(null, districts.map(function(district) { return district.y; })) - gridPadding);
+  const maxX = Math.ceil(Math.max.apply(null, districts.map(function(district) { return district.x + district.width; })) + gridPadding);
+  const maxY = Math.ceil(Math.max.apply(null, districts.map(function(district) { return district.y + district.depth; })) + gridPadding);
+  for (let x = minX; x <= maxX; x += 1) {
+    const a = projectPoint(x, minY, 0);
+    const b = projectPoint(x, maxY, 0);
+    gridLayer.append(el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'grid-line' }));
+  }
+  for (let y = minY; y <= maxY; y += 1) {
+    const c = projectPoint(minX, y, 0);
+    const d = projectPoint(maxX, y, 0);
+    gridLayer.append(el('line', { x1: c.x, y1: c.y, x2: d.x, y2: d.y, class: 'grid-line' }));
+  }
+}
+
+function center(node) {
+  return { x: node.x + node.width / 2, y: node.y + node.depth / 2 };
+}
+
+function edgePath(edge) {
+  const from = center(nodeById.get(edge.from));
+  const to = center(nodeById.get(edge.to));
+  const elbow = { x: to.x, y: from.y };
+  const screen = [projectPoint(from.x, from.y, .1), projectPoint(elbow.x, elbow.y, .1), projectPoint(to.x, to.y, .1)];
+  return 'M ' + screen[0].x + ' ' + screen[0].y + ' L ' + screen[1].x + ' ' + screen[1].y + ' L ' + screen[2].x + ' ' + screen[2].y;
+}
+
+function drawEdges() {
+  topology.edges.forEach(function(edge) {
+    const path = el('path', {
+      id: 'edge-' + edge.id,
+      d: edgePath(edge),
+      class: 'flow-edge' + (edge.feedback ? ' feedback' : ''),
+      'marker-end': 'url(#arrow)'
+    });
+    edgeLayer.append(path);
+    edgeElements.set(edge.id, path);
+  });
+}
+
+function drawBox(parent, node, x, y, width, depth, baseZ, height) {
+  const a = projectPoint(x, y, baseZ);
+  const b = projectPoint(x + width, y, baseZ);
+  const c = projectPoint(x + width, y + depth, baseZ);
+  const d = projectPoint(x, y + depth, baseZ);
+  const at = projectPoint(x, y, baseZ + height);
+  const bt = projectPoint(x + width, y, baseZ + height);
+  const ct = projectPoint(x + width, y + depth, baseZ + height);
+  const dt = projectPoint(x, y + depth, baseZ + height);
+  parent.append(el('polygon', { points: points([d, c, ct, dt]), class: 'face-left' }));
+  parent.append(el('polygon', { points: points([b, c, ct, bt]), class: 'face-right' }));
+  parent.append(el('polygon', { points: points([at, bt, ct, dt]), class: 'face-top' }));
+}
+
+function drawBuilding(node) {
+  const group = el('g', { class: 'building', 'data-node-id': node.id, 'aria-label': node.label + ' component logs', 'aria-pressed': 'false', role: 'button' });
+  if (node.kind === 'rack') {
+    const count = 3;
+    const gap = .12;
+    const rackWidth = (node.width - gap * (count - 1)) / count;
+    for (let i = 0; i < count; i += 1) {
+      drawBox(group, node, node.x + i * (rackWidth + gap), node.y, rackWidth, node.depth, 0, node.height);
+    }
+  } else if (node.kind === 'slab') {
+    for (let i = 0; i < 3; i += 1) {
+      drawBox(group, node, node.x, node.y, node.width, node.depth, i * .58, .28);
+    }
+  } else {
+    drawBox(group, node, node.x, node.y, node.width, node.depth, 0, node.height);
+  }
+  const beaconAt = projectPoint(node.x + node.width * .8, node.y + node.depth * .2, node.height + .22);
+  group.append(el('circle', { cx: beaconAt.x, cy: beaconAt.y, r: 3, class: 'building-beacon', 'aria-hidden': 'true' }));
+  const labelAt = usesBaseLabels
+    ? projectPoint(
+        node.x + node.width / 2 + .52,
+        node.y + node.depth + .52,
+        -.04
+      )
+    : projectPoint(node.x + node.width / 2, node.y + node.depth / 2, node.height + .35);
+  const text = el('text', {
+    x: labelAt.x,
+    y: labelAt.y,
+    class: usesBaseLabels ? 'building-label-base' : 'building-label-roof'
+  });
+  text.textContent = node.label;
+  if (usesBaseLabels) buildingLabelLayer.append(text);
+  else group.append(text);
+  buildingLabelElements.set(node.id, text);
+  group.addEventListener('click', function() { selectNode(node, true); });
+  buildingLayer.append(group);
+  buildingElements.set(node.id, group);
+}
+
+function drawBuildings() {
+  topology.nodes.slice().sort(function(a, b) { return (a.x + a.y) - (b.x + b.y); }).forEach(drawBuilding);
+}
+
+function drawLegend() {
+  const target = document.getElementById('legend-content');
+  const groups = new Map();
+  topology.nodes.forEach(function(node) {
+    if (!groups.has(node.group)) groups.set(node.group, []);
+    groups.get(node.group).push(node);
+  });
+  groups.forEach(function(nodes, groupName) {
+    const section = document.createElement('section');
+    const district = (topology.districts || []).find(function(candidate) { return candidate.group === groupName; });
+    section.className = 'legend-group' + (district ? ' district-color-' + district.color : '');
+    const heading = document.createElement('h2');
+    heading.textContent = groupName;
+    section.append(heading);
+    nodes.forEach(function(node) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'legend-item';
+      button.setAttribute('aria-pressed', 'false');
+      const code = document.createElement('span');
+      code.className = 'legend-code';
+      code.textContent = node.kind.slice(0, 2);
+      const label = document.createElement('span');
+      label.className = 'legend-label';
+      label.textContent = node.label;
+      button.append(code, label);
+      button.addEventListener('click', function() { selectNode(node, true); });
+      section.append(button);
+      legendElements.set(node.id, button);
+    });
+    target.append(section);
+  });
+}
+
+function selectNode(node, revealActivity) {
+  selectedNodeId = node.id;
+  selectedNodeLabel = node.label;
+  detailKicker.textContent = node.group;
+  detailTitle.textContent = node.label;
+  detailSummary.textContent = 'A ' + node.kind + ' representing the runtime boundary anchored at ' + node.source + '.';
+  setDetails({ id: node.id, kind: node.kind, source: node.source, connections: topology.edges.filter(function(edge) { return edge.from === node.id || edge.to === node.id; }).length, log_scope: 'incoming and outgoing transfers' });
+  applyLogFilter();
+  activateInspectorTab('log');
+  if (revealActivity) setExpandedActivity(node.id, true);
+}
+
+function drawComponentActivity() {
+  topology.nodes.forEach(function(node) {
+    const district = (topology.districts || []).find(function(candidate) { return candidate.group === node.group; });
+    const root = document.createElement('section');
+    root.className = 'component-activity' + (district ? ' district-color-' + district.color : '');
+    root.dataset.nodeId = node.id;
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'activity-stack-trigger';
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-label', 'Expand ' + node.label + ' activity');
+    const latest = document.createElement('strong');
+    latest.textContent = 'No activity';
+    latest.className = 'activity-latest';
+    const count = document.createElement('span');
+    count.className = 'activity-count';
+    count.textContent = '0';
+    const direction = document.createElement('span');
+    direction.className = 'activity-direction';
+    direction.textContent = node.label;
+    trigger.append(latest, count, direction);
+    const panel = document.createElement('div');
+    panel.className = 'activity-stack-panel';
+    panel.hidden = true;
+    const head = document.createElement('div');
+    head.className = 'activity-panel-head';
+    const title = document.createElement('strong');
+    title.textContent = node.label + ' · recent activity';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Collapse ' + node.label + ' activity');
+    close.textContent = '×';
+    const list = document.createElement('div');
+    list.className = 'activity-card-list';
+    head.append(title, close);
+    panel.append(head, list);
+    const leader = document.createElement('span');
+    leader.className = 'activity-leader';
+    leader.setAttribute('aria-hidden', 'true');
+    root.append(trigger, leader, panel);
+    trigger.addEventListener('click', function(event) {
+      event.stopPropagation();
+      selectNode(node, false);
+      setExpandedActivity(node.id, expandedNodeId !== node.id);
+    });
+    close.addEventListener('click', function(event) {
+      event.stopPropagation();
+      setExpandedActivity('', false);
+    });
+    componentEventLayer.append(root);
+    componentActivityElements.set(node.id, { root: root, trigger: trigger, latest: latest, count: count, direction: direction, leader: leader, panel: panel, list: list });
+    componentActivityRecords.set(node.id, []);
+  });
+  positionComponentActivity();
+}
+
+function positionComponentActivity() {
+  const stageBounds = mapStage.getBoundingClientRect();
+  topology.nodes.forEach(function(node) {
+    const activity = componentActivityElements.get(node.id);
+    if (!activity) return;
+    const label = buildingLabelElements.get(node.id);
+    if (!label) return;
+    const labelBounds = label.getBoundingClientRect();
+    const rootLeft = labelBounds.left - stageBounds.left - 34;
+    const rootTop = labelBounds.top - stageBounds.top + (labelBounds.height - 20) / 2;
+    const left = rootLeft + 14;
+    const top = rootTop + 10;
+    activity.root.style.left = rootLeft + 'px';
+    activity.root.style.top = rootTop + 'px';
+    activity.root.classList.toggle('callout-right', rootLeft < 116);
+    if (node.id !== expandedNodeId) return;
+    const panelWidth = 224;
+    const panelHeight = activity.panel.offsetHeight || 190;
+    const preferredLeft = left < stageBounds.width / 2 ? left + 34 : left - panelWidth - 34;
+    const panelLeft = Math.max(12, Math.min(stageBounds.width - panelWidth - 12, preferredLeft));
+    const panelTop = Math.max(96, Math.min(stageBounds.height - panelHeight - 12, top - panelHeight / 2));
+    activity.panel.style.left = panelLeft - rootLeft + 'px';
+    activity.panel.style.top = panelTop - rootTop + 'px';
+    const targetX = panelLeft < left ? panelLeft + panelWidth : panelLeft;
+    const targetY = Math.max(panelTop + 12, Math.min(panelTop + panelHeight - 12, top));
+    const dx = targetX - left;
+    const dy = targetY - top;
+    activity.leader.style.left = '14px';
+    activity.leader.style.top = '10px';
+    activity.leader.style.width = Math.hypot(dx, dy) + 'px';
+    activity.leader.style.transform = 'rotate(' + Math.atan2(dy, dx) + 'rad)';
+  });
+}
+
+function setExpandedActivity(nodeId, expanded) {
+  expandedNodeId = expanded ? nodeId : '';
+  componentActivityElements.forEach(function(activity, activityNodeId) {
+    const isExpanded = activityNodeId === expandedNodeId;
+    activity.root.classList.toggle('expanded', isExpanded);
+    activity.trigger.setAttribute('aria-expanded', String(isExpanded));
+    activity.panel.hidden = !isExpanded;
+  });
+  positionComponentActivity();
+}
+
+function recordComponentActivity(transfer, origin) {
+  const nodeIds = transfer.from === transfer.to ? [transfer.from] : [transfer.from, transfer.to];
+  nodeIds.forEach(function(nodeId) {
+    const records = componentActivityRecords.get(nodeId);
+    const activity = componentActivityElements.get(nodeId);
+    if (!records || !activity) return;
+    records.unshift({ transfer: transfer, origin: origin, direction: transfer.from === nodeId ? 'out' : 'in' });
+    if (records.length > 8) records.length = 8;
+    renderComponentActivity(nodeId);
+  });
+}
+
+function setLiveComponentCallouts(transfer, active) {
+  const source = componentActivityElements.get(transfer.from);
+  const target = componentActivityElements.get(transfer.to);
+  if (source) {
+    source.root.classList.toggle('just-active', active);
+    source.root.classList.toggle('live-source', active);
+  }
+  if (target) {
+    target.root.classList.toggle('just-active', active);
+    target.root.classList.toggle('live-target', active);
+  }
+  positionComponentActivity();
+}
+
+function renderComponentActivity(nodeId) {
+  const records = componentActivityRecords.get(nodeId) || [];
+  const activity = componentActivityElements.get(nodeId);
+  if (!activity) return;
+  activity.root.classList.toggle('has-events', records.length > 0);
+  activity.count.textContent = String(records.length);
+  activity.list.replaceChildren();
+  if (records.length === 0) return;
+  const newest = records[0];
+  activity.latest.textContent = newest.transfer.event;
+  activity.direction.textContent = newest.direction === 'out'
+    ? '→ ' + nodeById.get(newest.transfer.to).label
+    : '← ' + nodeById.get(newest.transfer.from).label;
+  records.slice(0, 6).forEach(function(record) {
+    const transfer = record.transfer;
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'activity-card ' + transfer.kind + ' ' + transfer.status;
+    const arrow = document.createElement('span');
+    arrow.className = 'direction';
+    arrow.textContent = record.direction === 'out' ? '→' : '←';
+    const body = document.createElement('span');
+    const title = document.createElement('strong');
+    title.textContent = transfer.event;
+    const route = document.createElement('span');
+    const peerId = record.direction === 'out' ? transfer.to : transfer.from;
+    route.textContent = (nodeById.get(peerId) || { label: peerId }).label + ' · ' + transfer.status;
+    body.append(title, route);
+    const time = document.createElement('time');
+    time.textContent = typeof transfer.timestamp === 'string' ? transfer.timestamp.slice(11, 19) : '—';
+    card.append(arrow, body, time);
+    card.addEventListener('click', function(event) {
+      event.stopPropagation();
+      inspectTimelineTransfer(transfer);
+    });
+    activity.list.append(card);
+  });
+}
+
+function setDetails(values) {
+  detailList.replaceChildren();
+  Object.entries(values).forEach(function(entry) {
+    const row = document.createElement('div');
+    row.className = 'detail-row';
+    const term = document.createElement('dt');
+    term.textContent = entry[0].replaceAll('_', ' ');
+    const value = document.createElement('dd');
+    value.textContent = String(entry[1]);
+    row.append(term, value);
+    detailList.append(row);
+  });
+}
+
+function selectTransfer(transfer, revealDetails) {
+  detailKicker.textContent = 'observed transfer';
+  detailTitle.textContent = transfer.label;
+  detailSummary.textContent = transfer.from + ' → ' + transfer.to + ' · ' + transfer.event;
+  setDetails(Object.assign({
+    run_id: transfer.runId,
+    generation: transfer.generation === undefined ? '—' : transfer.generation,
+    trace_id: transfer.traceId,
+    span_id: transfer.spanId,
+    parent_span: transfer.parentSpanId || '—',
+    span_phase: transfer.spanPhase,
+    started_at: transfer.startedAt,
+    ended_at: transfer.endedAt || '—',
+    status: transfer.status,
+    kind: transfer.kind,
+    sequence: transfer.sourceSequence,
+    duration_ms: transfer.durationMs === undefined ? '—' : transfer.durationMs,
+    payload_bytes: transfer.payloadBytes === undefined ? '—' : transfer.payloadBytes
+  }, transfer.summary || {}));
+  if (revealDetails !== false) activateInspectorTab('details');
+}
+
+function clearBuildingState() {
+  buildingElements.forEach(function(group) {
+    group.classList.remove('active', 'sending', 'receiving', 'failed', 'selected', 'signal-red', 'signal-orange', 'signal-green', 'signal-blue');
+    group.setAttribute('aria-pressed', 'false');
+  });
+  legendElements.forEach(function(button) {
+    button.classList.remove('selected');
+    button.setAttribute('aria-pressed', 'false');
+  });
+  districtElements.forEach(function(group) {
+    group.classList.remove('active', 'selected', 'signal-red', 'signal-orange', 'signal-green', 'signal-blue');
+  });
+}
+
+function recordTransfer(transfer, origin) {
+  observedTransfers += 1;
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'event-row ' + transfer.kind + ' ' + transfer.status;
+  row.dataset.from = transfer.from;
+  row.dataset.to = transfer.to;
+  row.dataset.transferId = transfer.id;
+  const title = document.createElement('strong');
+  title.textContent = transfer.event + ' · ' + transfer.status;
+  const meta = document.createElement('span');
+  meta.textContent = transfer.from + ' → ' + transfer.to + ' · ' + transfer.label;
+  const context = document.createElement('em');
+  const timestamp = typeof transfer.timestamp === 'string' ? transfer.timestamp.slice(11, 23) : 'time unavailable';
+  context.textContent = timestamp + ' · ' + origin + ' · sequence ' + transfer.sourceSequence;
+  row.append(title, meta, context);
+  row.addEventListener('click', function() { inspectTimelineTransfer(transfer); });
+  eventLog.append(row);
+  while (eventLog.children.length > 100) eventLog.firstElementChild.remove();
+  applyLogFilter();
+  eventLog.scrollTop = eventLog.scrollHeight;
+  if (origin === 'replay') recordComponentActivity(transfer, origin);
+  recordTimelineTransfer(transfer, origin);
+}
+
+async function showTransfer(transfer, animate) {
+  const edge = edgeElements.get(transfer.edgeId);
+  if (!edge) return;
+  displayedTransfers += 1;
+  recordComponentActivity(transfer, 'live');
+  setTimelineTracedTransfer(transfer);
+  setLiveComponentCallouts(transfer, true);
+  updateQueueStatus();
+  selectTransfer(transfer, false);
+  const signalClass = transferSignalClass(transfer);
+  edge.classList.add('active', signalClass);
+  const source = buildingElements.get(transfer.from);
+  const target = buildingElements.get(transfer.to);
+  if (source) source.classList.add('active', 'sending', signalClass);
+  if (target) {
+    target.classList.add('active', 'receiving', signalClass);
+    if (transfer.status === 'failed') target.classList.add('failed');
+  }
+  const activeDistricts = new Set([
+    nodeById.get(transfer.from).group,
+    nodeById.get(transfer.to).group
+  ]);
+  activeDistricts.forEach(function(groupName) {
+    const district = districtElements.get(groupName);
+    if (district) district.classList.add('active', signalClass);
+  });
+  if (animate) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) await delay(420);
+    else await animatePacket(edge, transfer);
+  }
+  edge.classList.remove('active', signalClass);
+  if (source) source.classList.remove('active', 'sending', signalClass);
+  if (target) target.classList.remove('active', 'receiving', 'failed', signalClass);
+  activeDistricts.forEach(function(groupName) {
+    const district = districtElements.get(groupName);
+    if (district) district.classList.remove('active', signalClass);
+  });
+  setLiveComponentCallouts(transfer, false);
+}
+
+function transferSignalClass(transfer) {
+  if (transfer.status === 'failed' || transfer.status === 'retry') return 'signal-red';
+  if (transfer.kind === 'validation' || transfer.kind === 'evaluation') return 'signal-orange';
+  if (transfer.kind === 'persistence' || transfer.kind === 'knowledge') return 'signal-green';
+  return 'signal-blue';
+}
+
+function animatePacket(path, transfer) {
+  return new Promise(function(resolve) {
+    const packet = el('g', { class: 'packet ' + transfer.kind + ' ' + transfer.status, 'aria-label': transfer.label });
+    packet.append(
+      el('circle', { r: 10, class: 'packet-halo' }),
+      el('circle', { r: 5.5, class: 'packet-ring' }),
+      el('circle', { r: 3, class: 'packet-core' })
+    );
+    packet.addEventListener('click', function() { selectTransfer(transfer); });
+    packetLayer.append(packet);
+    const length = path.getTotalLength();
+    const observedDuration = Number(transfer.durationMs || 1000);
+    const duration = Math.max(900, Math.min(2400, observedDuration));
+    const started = performance.now();
+    function frame(now) {
+      const phase = Math.min(1, (now - started) / duration);
+      const point = path.getPointAtLength(length * phase);
+      packet.setAttribute('transform', 'translate(' + point.x + ' ' + point.y + ')');
+      packet.setAttribute('opacity', String(Math.min(1, phase * 8, (1 - phase) * 8)));
+      if (phase < 1) requestAnimationFrame(frame);
+      else window.setTimeout(function() {
+        packet.remove();
+        resolve();
+      }, 160);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+function receiveTransfer(transfer) {
+  if (selectedRunId && transfer.runId !== selectedRunId) return;
+  recordTransfer(transfer, 'live');
+  pendingTransfers.push(transfer);
+  updateQueueStatus();
+  void drainPlaybackQueue();
+}
+
+async function drainPlaybackQueue() {
+  if (playbackActive || paused) return;
+  playbackActive = true;
+  try {
+    while (!paused && pendingTransfers.length > 0) {
+      const transfer = pendingTransfers.shift();
+      updateQueueStatus();
+      await showTransfer(transfer, true);
+      if (!paused && pendingTransfers.length > 0) await delay(140);
+    }
+  } finally {
+    playbackActive = false;
+    updateQueueStatus();
+    if (!paused && pendingTransfers.length > 0) void drainPlaybackQueue();
+  }
+}
+
+async function loadReplay() {
+  const replayUrl = new URL('/api/cockpit/system-map/replay', window.location.origin);
+  replayUrl.searchParams.set('limit', '80');
+  if (selectedRunId) replayUrl.searchParams.set('run_id', selectedRunId);
+  if (mapView !== 'execution') replayUrl.searchParams.set('view', mapView);
+  try {
+    const response = await fetch(replayUrl);
+    if (!response.ok) return;
+    const data = await response.json();
+    const transfers = data.transfers || [];
+    transfers.forEach(function(transfer) { recordTransfer(transfer, 'replay'); });
+    if (transfers.length > 0) selectTransfer(transfers[transfers.length - 1], false);
+  } catch (_) {
+    // Live mode remains useful when replay is unavailable.
+  }
+}
+
+function connect() {
+  if (websocket && websocket.readyState < 2) return;
+  const protocolName = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = new URL(protocolName + '//' + window.location.host + '/ws/events');
+  url.searchParams.set('projection', projection);
+  if (selectedRunId) url.searchParams.set('run_id', selectedRunId);
+  if (mapView !== 'execution') url.searchParams.set('view', mapView);
+  websocket = new WebSocket(url);
+  connectionState.textContent = 'connecting';
+  connectionDot.classList.remove('live');
+  updateQueueStatus();
+  websocket.addEventListener('open', function() {
+    connectionState.textContent = 'live';
+    connectionDot.classList.add('live');
+    updateQueueStatus();
+  });
+  websocket.addEventListener('message', function(message) {
+    try {
+      const envelope = JSON.parse(String(message.data));
+      if (envelope.event === 'system_map_transfer' && envelope.payload) receiveTransfer(envelope.payload);
+    } catch (_) {
+      // Ignore malformed or unrelated frames.
+    }
+  });
+  websocket.addEventListener('close', function() {
+    connectionState.textContent = 'reconnecting';
+    connectionDot.classList.remove('live');
+    updateQueueStatus();
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = window.setTimeout(connect, 1500);
+  });
+  websocket.addEventListener('error', function() { websocket.close(); });
+}
+
+detailsTab.addEventListener('click', function() { activateInspectorTab('details'); });
+logTab.addEventListener('click', function() { activateInspectorTab('log'); });
+clearLogFilterButton.addEventListener('click', clearLogFilter);
+timelineScrubber.addEventListener('input', function() { scrubTimelineTo(timelineScrubber.value); });
+timelineFollowButton.addEventListener('click', followLatestTimeline);
+
+pauseButton.addEventListener('click', function() {
+  paused = !paused;
+  pauseButton.textContent = paused ? 'Resume flow' : 'Pause flow';
+  updateQueueStatus();
+  if (!paused && !timelineFollowing) {
+    followLatestTimeline();
+    return;
+  }
+  if (!paused) void drainPlaybackQueue();
+});
+
+stepButton.addEventListener('click', async function() {
+  if (!paused) {
+    paused = true;
+    pauseButton.textContent = 'Resume flow';
+  }
+  if (!timelineFollowing) {
+    timelineFollowing = true;
+    timelineCurrentIndex = timelineLatestTracedIndex;
+    clearTimelineFocus();
+    updateTimelineSelection();
+  }
+  if (playbackActive) {
+    updateQueueStatus();
+    return;
+  }
+  const next = pendingTransfers.shift();
+  updateQueueStatus();
+  if (!next) return;
+  playbackActive = true;
+  try {
+    await showTransfer(next, true);
+  } finally {
+    playbackActive = false;
+    updateQueueStatus();
+  }
+});
+
+resetButton.addEventListener('click', function() {
+  pendingTransfers = [];
+  observedTransfers = 0;
+  displayedTransfers = 0;
+  paused = false;
+  pauseButton.textContent = 'Pause flow';
+  selectedNodeId = '';
+  selectedNodeLabel = '';
+  timelineTransfers = [];
+  timelineCurrentIndex = -1;
+  timelineLatestTracedIndex = -1;
+  timelineFollowing = true;
+  eventLog.replaceChildren();
+  packetLayer.replaceChildren();
+  componentActivityRecords.forEach(function(records, nodeId) {
+    records.length = 0;
+    renderComponentActivity(nodeId);
+  });
+  setExpandedActivity('', false);
+  clearBuildingState();
+  edgeElements.forEach(function(edge) { edge.classList.remove('active', 'signal-red', 'signal-orange', 'signal-green', 'signal-blue'); });
+  detailKicker.textContent = 'selected transfer';
+  detailTitle.textContent = 'Waiting for activity';
+  detailSummary.textContent = topology.description;
+  detailList.replaceChildren();
+  clearTimelineFocus();
+  renderTimeline();
+  activateInspectorTab('log');
+  applyLogFilter();
+});
+
+window.addEventListener('resize', positionComponentActivity);
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') setExpandedActivity('', false);
+});
+
+document.getElementById('node-count').textContent = topology.nodes.length + (mapView === 'context' ? ' stages' : ' modules');
+configureLens();
+drawDistricts();
+drawGrid();
+drawEdges();
+drawBuildings();
+drawLegend();
+drawComponentActivity();
+applyLogFilter();
+void loadReplay().finally(connect);
+</script>
+</body>
+</html>

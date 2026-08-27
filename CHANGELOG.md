@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The TypeScript interactive server now exposes an experimental read-only
+  isometric system map at `/system-map`, with a versioned topology endpoint,
+  bounded replay, run scoping, and a redacted live transfer projection over
+  `/ws/events?projection=system-map`.
+- TypeScript generation events now carry versioned trace/span metadata and
+  publish live role, tournament, and persistence boundaries for the system map.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
@@ -63,6 +69,10 @@ remains deferred, and the Pi extension remains at `0.10.0`.
   control and provider endpoints reject plaintext credential transport, browser
   WebSocket upgrades reject untrusted origins, and displayed endpoints redact
   URL userinfo plus sensitive query and fragment values.
+- Control-plane WebSockets no longer accept bearer credentials in query strings;
+  browser clients use an authenticated, echoed subprotocol, native clients may
+  use the Authorization header, and the TUI authenticates both HTTP and WebSocket
+  traffic from `AUTOCONTEXT_SERVER_TOKEN` without credential-bearing URLs.
 - Cooperative stop, pause, and resume use a separately bounded priority lane,
   so they remain responsive while provider work is stalled or the normal queue
   is saturated. Interactive WebSockets cap connections, frame size, incomplete

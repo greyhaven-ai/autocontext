@@ -21,6 +21,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from autocontext.offline import require_endpoint_available, require_runtime_available
+from autocontext.security.outbound_url import (
+    DEFAULT_JSON_MAX_RESPONSE_BYTES,
+    OutboundUrlPolicy,
+    request_outbound_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +87,15 @@ class OpenClawResponse:
             session_id=data.get("session_id"),
             metadata=metadata,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _HttpJsonResponse:
+    status_code: int
+    body: str
+
+    def json(self) -> Any:
+        return json.loads(self.body)
 
 
 class OpenClawAdapter(ABC):
@@ -230,26 +244,31 @@ def _http_post(
     payload: str,
     timeout: float,
     headers: dict[str, str] | None = None,
+    *,
+    allow_private_networks: bool = False,
+    max_response_bytes: int = DEFAULT_JSON_MAX_RESPONSE_BYTES,
 ) -> Any:
-    """HTTP POST helper — thin wrapper for testability."""
-    import urllib.request
-
+    """Perform a DNS-pinned, non-redirecting, bounded JSON POST."""
     request_headers = {"Content-Type": "application/json"}
     if headers:
         request_headers.update(headers)
-    req = urllib.request.Request(
-        endpoint,
-        data=payload.encode("utf-8"),
-        headers=request_headers,
-        method="POST",
-    )
     require_endpoint_available("call an openclaw endpoint", endpoint)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        body = resp.read().decode("utf-8")
-        return type("Response", (), {
-            "status_code": resp.status,
-            "json": lambda: json.loads(body),
-        })()
+    response = request_outbound_bytes(
+        endpoint,
+        method="POST",
+        body=payload.encode("utf-8"),
+        headers=request_headers,
+        policy=OutboundUrlPolicy(
+            timeout_seconds=timeout,
+            max_response_bytes=max_response_bytes,
+            allow_private_networks=allow_private_networks,
+            allowed_content_types=("application/json", "application/*+json"),
+        ),
+    )
+    return _HttpJsonResponse(
+        status_code=response.status,
+        body=response.body.decode("utf-8"),
+    )
 
 
 class HTTPOpenClawAdapter(OpenClawAdapter):
@@ -260,10 +279,14 @@ class HTTPOpenClawAdapter(OpenClawAdapter):
         endpoint: str,
         timeout: float = 120.0,
         headers: dict[str, str] | None = None,
+        allow_private_networks: bool = False,
+        max_response_bytes: int = DEFAULT_JSON_MAX_RESPONSE_BYTES,
     ) -> None:
         self.endpoint = endpoint
         self.timeout = timeout
         self.headers = headers or {}
+        self.allow_private_networks = allow_private_networks
+        self.max_response_bytes = max_response_bytes
 
     @property
     def runtime_kind(self) -> str:
@@ -276,6 +299,8 @@ class HTTPOpenClawAdapter(OpenClawAdapter):
                 request.to_json(),
                 timeout=request.timeout or self.timeout,
                 headers=self.headers,
+                allow_private_networks=self.allow_private_networks,
+                max_response_bytes=self.max_response_bytes,
             )
         except Exception as exc:
             logger.debug("openclaw.adapters: caught Exception", exc_info=True)

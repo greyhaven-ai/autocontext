@@ -5,11 +5,10 @@ Python namespace that survives generation boundaries; enriched prompts
 describe the variables (name, type, size, summary) instead of inlining
 their contents, so prompt size stays flat as the working set grows.
 
-Trust model: this is lifecycle isolation, NOT a security sandbox. The
-underlying :class:`~autocontext.harness.repl.worker.ReplWorker` restricts
-builtins (no file I/O, os, subprocess, or import machinery), but candidate
-code still runs in-process; treat the workspace as a scoped scratch
-environment for run-owned code, not as a boundary against hostile input.
+Trust model: candidate code runs in a fresh killable local child and only
+plain built-in state returns over bounded JSON. This prevents parent-process
+mutation and runaway-thread survival, but it is not a filesystem or network
+sandbox because the child still has the invoking user's OS identity.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from autocontext.harness.repl.types import ReplCommand, ReplResult
-from autocontext.harness.repl.worker import CodeTimeout, ReplWorker
+from autocontext.harness.repl.worker import CodeTimeout, IsolatedOpaqueValue, ReplWorker
 
 _SUMMARY_MAX_CHARS = 120
 _SUMMARY_MAX_ITEMS = 20
@@ -35,6 +34,9 @@ class _UnsupportedWorkspaceValue(TypeError):
 
 def _type_name(value: Any) -> str:
     """Read a type name without dispatching through a candidate metaclass."""
+    if type(value) is IsolatedOpaqueValue:
+        opaque_name = object.__getattribute__(value, "type_name")
+        return opaque_name if isinstance(opaque_name, str) else "object"
     value_type = type(value)
     try:
         name = type.__getattribute__(value_type, "__name__")
@@ -58,6 +60,8 @@ def _safe_summary(
         return "..."
     budget[0] -= 1
     value_type = type(value)
+    if value_type is IsolatedOpaqueValue:
+        return f"<{object.__getattribute__(value, 'type_name')}>"
     if value_type is str:
         clipped = value[:_SUMMARY_MAX_CHARS]
         return repr(clipped) + ("..." if len(value) > len(clipped) else "")
@@ -185,10 +189,10 @@ class InterpreterWorkspace:
     underscore are treated as private scratch and excluded from
     :meth:`variables`, snapshots, and prompt rendering.
 
-    Caveat: off the main thread, ReplWorker enforces timeouts by abandoning
-    the executing daemon thread; a timed-out candidate may keep mutating
-    the persistent namespace in the background. On the main thread (the
-    normal runner path) timeouts are signal-based and this does not apply.
+    The local child boundary is POSIX-only and may only fork from the process
+    main thread. Unsupported platforms and worker-thread callers fail closed.
+    Candidate-created opaque Python objects are metadata-only in the parent
+    and cannot be used by a later command; plain built-in values persist.
     """
 
     def __init__(

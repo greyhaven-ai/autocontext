@@ -1,12 +1,15 @@
 """Tests for HarnessTester — parallel harness validation against sample states."""
 from __future__ import annotations
 
+import os
 import textwrap
+import threading
 import time
 from unittest.mock import patch
 
 import pytest
 
+import autocontext.execution.harness_tester as harness_tester_module
 from autocontext.execution.harness_tester import HarnessTester, HarnessTestFailure, HarnessTestReport
 from autocontext.execution.sample_states import SampleState
 
@@ -134,6 +137,25 @@ class TestHarnessTestReport:
 
 
 class TestHarnessTesterGoodHarness:
+    def test_candidate_source_executes_only_in_children(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        observed_pids: list[int] = []
+        original_exec = harness_tester_module._exec_harness_source
+
+        def tracking_exec(source: str, namespace: dict[str, object]) -> None:
+            observed_pids.append(os.getpid())
+            original_exec(source, namespace)
+
+        monkeypatch.setattr(harness_tester_module, "_exec_harness_source", tracking_exec)
+
+        report = HarnessTester().test_harness(GOOD_HARNESS, _make_states(2))
+
+        assert report.failed == 0
+        # Child copy-on-write mutations never appear in the parent list.
+        assert observed_pids == []
+
     def test_all_pass(self) -> None:
         tester = HarnessTester()
         states = _make_states(10)
@@ -245,6 +267,22 @@ class TestHarnessTesterParallelism:
 
 
 class TestHarnessTesterTimeout:
+    def test_top_level_infinite_loop_times_out_during_isolated_load(self) -> None:
+        harness = textwrap.dedent("""\
+            while True:
+                pass
+            def validate_strategy(strategy, scenario):
+                return True, []
+        """)
+
+        report = HarnessTester(timeout_per_test=0.1).test_harness(
+            harness,
+            _make_states(1),
+        )
+
+        assert report.failed == report.total_tests
+        assert any("load timed out" in failure.error for failure in report.failures)
+
     def test_slow_harness_times_out(self) -> None:
         """Verify that the timeout mechanism produces failure reports.
 
@@ -273,6 +311,22 @@ class TestHarnessTesterTimeout:
 
 
 class TestHarnessTesterEdgeCases:
+    def test_worker_thread_fails_closed_without_executing_source(self) -> None:
+        reports: list[HarnessTestReport] = []
+        worker = threading.Thread(
+            target=lambda: reports.append(
+                HarnessTester().test_harness(GOOD_HARNESS, _make_states(1))
+            )
+        )
+
+        worker.start()
+        worker.join(timeout=1.0)
+
+        assert not worker.is_alive()
+        assert len(reports) == 1
+        assert reports[0].failed == 1
+        assert any("main thread" in failure.error for failure in reports[0].failures)
+
     def test_empty_states(self) -> None:
         tester = HarnessTester()
         report = tester.test_harness(GOOD_HARNESS, [])

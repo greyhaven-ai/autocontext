@@ -4,17 +4,152 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
+import secrets
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.execution.harness_loader import HarnessLoader
 from autocontext.mcp._base import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
-from autocontext.util.json_io import read_json
 
 logger = logging.getLogger(__name__)
 
+_ARTIFACT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
+_ARTIFACTS_DIR_NAME = "_openclaw_artifacts"
+
 if TYPE_CHECKING:
     pass
+
+
+def _validate_artifact_id(artifact_id: str) -> str:
+    """Return a storage-safe artifact ID or raise ``ValueError``.
+
+    Artifact IDs become filenames, so keep the accepted language deliberately
+    narrower than a generic path segment. In particular, dots, separators,
+    absolute paths, and traversal components are never valid IDs.
+    """
+    if not isinstance(artifact_id, str) or _ARTIFACT_ID_PATTERN.fullmatch(artifact_id) is None:
+        raise ValueError(
+            "artifact id must be 1-128 ASCII letters, digits, underscores, or hyphens and must start with a letter or digit"
+        )
+    return artifact_id
+
+
+def _resolve_canonical(path: Path, *, label: str) -> Path:
+    """Resolve symlinks while converting loops and filesystem errors to validation failures."""
+    try:
+        return path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"unable to resolve {label}") from exc
+
+
+def _canonical_artifacts_dir(ctx: MtsToolContext) -> Path:
+    """Resolve the OpenClaw store and require it to remain under knowledge root."""
+    knowledge_root = _resolve_canonical(ctx.settings.knowledge_root, label="knowledge root")
+    artifacts_dir = _resolve_canonical(knowledge_root / _ARTIFACTS_DIR_NAME, label="OpenClaw artifact store")
+    try:
+        artifacts_dir.relative_to(knowledge_root)
+    except ValueError as exc:
+        raise ValueError("OpenClaw artifact store escapes the configured knowledge root") from exc
+    if artifacts_dir == knowledge_root:
+        raise ValueError("OpenClaw artifact store must be a child of the configured knowledge root")
+    return artifacts_dir
+
+
+def _canonical_artifact_path(ctx: MtsToolContext, artifact_id: str) -> tuple[Path, Path]:
+    """Return ``(store, artifact_path)`` after ID and canonical confinement checks."""
+    safe_id = _validate_artifact_id(artifact_id)
+    artifacts_dir = _canonical_artifacts_dir(ctx)
+    # Keep the final component lexical. Reads use O_NOFOLLOW and writes use an
+    # anchored atomic rename, so resolving it here would turn an in-store
+    # symlink into a cross-artifact overwrite primitive.
+    artifact_path = artifacts_dir / f"{safe_id}.json"
+    try:
+        artifact_path.relative_to(artifacts_dir)
+    except ValueError as exc:
+        raise ValueError("OpenClaw artifact path escapes the artifact store") from exc
+    if artifact_path == artifacts_dir:
+        raise ValueError("OpenClaw artifact path must name a file")
+    if artifact_path.is_symlink():
+        raise ValueError("OpenClaw artifact path must not be a symbolic link")
+    return artifacts_dir, artifact_path
+
+
+def _open_artifacts_directory(artifacts_dir: Path) -> int:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    return os.open(artifacts_dir, flags)
+
+
+def _write_artifact_json(artifacts_dir: Path, artifact_path: Path, content: str) -> None:
+    """Atomically replace an artifact without following a destination symlink."""
+    directory_fd = _open_artifacts_directory(artifacts_dir)
+    temp_name = f".{artifact_path.name}.{secrets.token_hex(8)}.tmp"
+    temp_exists = False
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        file_fd = os.open(temp_name, flags, 0o600, dir_fd=directory_fd)
+        temp_exists = True
+        with os.fdopen(file_fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(
+            temp_name,
+            artifact_path.name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
+        temp_exists = False
+    finally:
+        if temp_exists:
+            try:
+                os.unlink(temp_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+        os.close(directory_fd)
+
+
+def _read_artifact_json(artifacts_dir: Path, artifact_path: Path) -> dict[str, Any]:
+    """Read one artifact relative to an anchored directory without following symlinks."""
+    directory_fd = _open_artifacts_directory(artifacts_dir)
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        file_fd = os.open(artifact_path.name, flags, dir_fd=directory_fd)
+        with os.fdopen(file_fd, encoding="utf-8") as handle:
+            value = json.load(handle)
+    finally:
+        os.close(directory_fd)
+    if not isinstance(value, dict):
+        raise ValueError("artifact JSON must be an object")
+    return value
+
+
+def _iter_safe_artifact_files(ctx: MtsToolContext) -> list[tuple[Path, Path]]:
+    """Return confined artifact files, ignoring unsafe names and symlink escapes."""
+    try:
+        artifacts_dir = _canonical_artifacts_dir(ctx)
+    except ValueError:
+        return []
+    if not artifacts_dir.is_dir():
+        return []
+
+    files: list[tuple[Path, Path]] = []
+    try:
+        candidates = sorted(artifacts_dir.iterdir())
+    except OSError:
+        return []
+    for candidate in candidates:
+        if candidate.suffix != ".json":
+            continue
+        try:
+            safe_id = _validate_artifact_id(candidate.stem)
+            confined_dir, confined_path = _canonical_artifact_path(ctx, safe_id)
+        except ValueError:
+            continue
+        files.append((confined_dir, confined_path))
+    return files
 
 
 def evaluate_strategy(
@@ -80,7 +215,7 @@ def validate_strategy_against_harness(
     harness_errors: list[str] = []
     harness_passed = True
 
-    if valid and ctx is not None:
+    if valid and ctx is not None and ctx.settings.unsafe_openclaw_executable_artifacts_enabled:
         harness_loaded = _sync_published_harness_artifacts(ctx, scenario_name)
         harness_loader = HarnessLoader(
             ctx.artifacts.harness_dir(scenario_name),
@@ -103,15 +238,11 @@ def validate_strategy_against_harness(
 
 def _sync_published_harness_artifacts(ctx: MtsToolContext, scenario_name: str) -> list[str]:
     """Mirror published harness artifacts into the runtime harness directory."""
-    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
-    if not artifacts_dir.exists():
-        return []
-
     synced: list[str] = []
-    for artifact_path in sorted(artifacts_dir.glob("*.json")):
+    for artifacts_dir, artifact_path in _iter_safe_artifact_files(ctx):
         try:
-            artifact_data = read_json(artifact_path)
-        except json.JSONDecodeError:
+            artifact_data = _read_artifact_json(artifacts_dir, artifact_path)
+        except (OSError, ValueError, json.JSONDecodeError):
             continue
         if artifact_data.get("artifact_type") != "harness" or artifact_data.get("scenario") != scenario_name:
             continue
@@ -119,7 +250,13 @@ def _sync_published_harness_artifacts(ctx: MtsToolContext, scenario_name: str) -
         artifact_id = artifact_data.get("id", artifact_path.stem)
         if not isinstance(source_code, str) or not source_code.strip():
             continue
-        module_name = f"openclaw_{str(artifact_id).replace('-', '_')}"
+        try:
+            safe_id = _validate_artifact_id(artifact_id)
+        except ValueError:
+            continue
+        if safe_id != artifact_path.stem:
+            continue
+        module_name = f"openclaw_{safe_id.replace('-', '_')}"
         ctx.artifacts.write_harness(scenario_name, module_name, source_code)
         synced.append(module_name)
     return synced
@@ -141,12 +278,15 @@ def _validate_and_persist_artifact(
     else:
         validated = DistilledModelArtifact.model_validate(artifact_data)
 
-    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
+    artifacts_dir, artifact_path = _canonical_artifact_path(ctx, validated.id)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    artifact_path = artifacts_dir / f"{validated.id}.json"
-    artifact_path.write_text(validated.model_dump_json(indent=2), encoding="utf-8")
+    # Re-resolve after creation to catch a symlink introduced while the store
+    # directory was being established.
+    artifacts_dir, artifact_path = _canonical_artifact_path(ctx, validated.id)
+    _write_artifact_json(artifacts_dir, artifact_path, validated.model_dump_json(indent=2))
     if isinstance(validated, HarnessArtifact):
-        ctx.artifacts.write_harness(validated.scenario, f"openclaw_{validated.id}", validated.source_code)
+        module_name = f"openclaw_{validated.id.replace('-', '_')}"
+        ctx.artifacts.write_harness(validated.scenario, module_name, validated.source_code)
 
     return validated.id, str(artifact_path)
 
@@ -165,6 +305,18 @@ def publish_artifact(
             "error": (
                 f"Invalid or missing artifact_type: {artifact_type!r}. "
                 "Must be harness, policy, or distilled_model."
+            )
+        }
+
+    if (
+        artifact_type in ("harness", "policy")
+        and not ctx.settings.unsafe_openclaw_executable_artifacts_enabled
+    ):
+        return {
+            "error": (
+                "Executable OpenClaw artifacts are disabled because no isolated execution backend is configured. "
+                "Set AUTOCONTEXT_UNSAFE_OPENCLAW_EXECUTABLE_ARTIFACTS_ENABLED=true only for trusted local "
+                "compatibility use."
             )
         }
 
@@ -188,13 +340,16 @@ def fetch_artifact(
 ) -> dict[str, Any]:
     """Fetch a published artifact by its ID."""
 
-    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
-    artifact_path = artifacts_dir / f"{artifact_id}.json"
-    if not artifact_path.exists():
+    try:
+        artifacts_dir, artifact_path = _canonical_artifact_path(ctx, artifact_id)
+    except ValueError as exc:
+        return {"error": f"Invalid artifact id: {exc}"}
+    try:
+        return _read_artifact_json(artifacts_dir, artifact_path)
+    except FileNotFoundError:
         return {"error": f"Artifact '{artifact_id}' not found"}
-
-    data: dict[str, Any] = read_json(artifact_path)
-    return data
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"error": f"Artifact '{artifact_id}' is not a safe JSON artifact"}
 
 
 def list_artifacts(
@@ -204,23 +359,22 @@ def list_artifacts(
 ) -> list[dict[str, Any]]:
     """List published artifacts, optionally filtered by scenario or type."""
 
-    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
-    if not artifacts_dir.exists():
-        return []
-
     results: list[dict[str, Any]] = []
-    for path in sorted(artifacts_dir.glob("*.json")):
+    for artifacts_dir, path in _iter_safe_artifact_files(ctx):
         try:
-            data: dict[str, Any] = read_json(path)
-        except Exception:
+            data = _read_artifact_json(artifacts_dir, path)
+            safe_id = _validate_artifact_id(data.get("id", path.stem))
+        except (OSError, ValueError, json.JSONDecodeError):
             logger.debug("mcp.tools: caught Exception", exc_info=True)
+            continue
+        if safe_id != path.stem:
             continue
         if scenario and data.get("scenario") != scenario:
             continue
         if artifact_type and data.get("artifact_type") != artifact_type:
             continue
         results.append({
-            "id": data.get("id", path.stem),
+            "id": safe_id,
             "name": data.get("name", ""),
             "artifact_type": data.get("artifact_type", ""),
             "scenario": data.get("scenario", ""),

@@ -14,12 +14,8 @@ permissions:
   contents: read
 
 jobs:
-  publish-npm:
+  build-npm:
     runs-on: ubuntu-latest
-    environment: publish-ts
-    permissions:
-      contents: read
-      id-token: write
     env:
       # Delay fresh npm versions during publish workflow dependency installs.
       NPM_CONFIG_MIN_RELEASE_AGE: "7"
@@ -27,11 +23,14 @@ jobs:
       run:
         working-directory: ts
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.0"
       - name: Validate tag matches TypeScript package version
         if: startsWith(github.ref, 'refs/tags/ts-v')
         run: |
@@ -43,9 +42,43 @@ jobs:
           fi
       - name: Install dependencies
         run: npm ci --ignore-scripts
+      - name: Audit npm and Bun production locks
+        run: |
+          npm audit --omit=dev --audit-level=moderate
+          bun audit --prod --audit-level=moderate
       - name: Show npm version
         run: npm --version
       - name: Build package
         run: npm run build
-      - name: Publish to npm
-        run: npm publish --ignore-scripts --access public --provenance
+      - name: Generate CycloneDX SBOM
+        run: npm sbom --omit=dev --sbom-format cyclonedx > autoctx.cdx.json
+      - name: Pack immutable publish artifact
+        run: npm pack --ignore-scripts
+      - name: Upload package and SBOM
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ts-package
+          path: |
+            ts/*.tgz
+            ts/autoctx.cdx.json
+          retention-days: 7
+
+  publish-npm:
+    needs: build-npm
+    runs-on: ubuntu-latest
+    environment: publish-ts
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Download verified package artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ts-package
+          path: dist
+      - name: Publish to npm with provenance
+        run: npm publish dist/*.tgz --ignore-scripts --access public --provenance

@@ -5,9 +5,12 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from autocontext.execution.executors.local import LocalExecutor
 from autocontext.scenarios.base import ExecutionLimits
 from autocontext.scenarios.custom.codegen import generate_scenario_class
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 from autocontext.scenarios.custom.loader import load_custom_scenario
 from autocontext.scenarios.custom.spec import (
     Constraint,
@@ -159,6 +162,34 @@ class TestValidateSpec:
         errors = validate_spec(spec)
         assert any("min_value" in e for e in errors)
 
+    def test_source_shaped_identifiers_are_rejected(self) -> None:
+        payload = 'field"\n    import os\n    #'
+        spec = _make_spec(
+            name=payload,
+            family=payload,
+            strategy_params=[StrategyParam(name=payload, description="unsafe")],
+            constraints=[],
+            environment_variables=[EnvironmentVariable(name=payload, description="unsafe")],
+            scoring_components=[ScoringComponent(name=payload, description="unsafe")],
+            final_score_weights={payload: 1.0},
+        )
+
+        errors = "\n".join(validate_spec(spec))
+
+        assert "name must" in errors
+        assert "family must" in errors
+        assert "strategy_param name" in errors
+        assert "environment_variable name" in errors
+        assert "scoring_component name" in errors
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_generated_numbers_are_rejected(self, value: float) -> None:
+        spec = _make_spec(win_threshold=value)
+
+        assert any("win_threshold" in error for error in validate_spec(spec))
+        with pytest.raises(ValueError, match="finite"):
+            generate_scenario_class(spec)
+
 
 class TestCodegen:
     def test_produces_parseable_python(self) -> None:
@@ -186,6 +217,98 @@ class TestCodegen:
         source = generate_scenario_class(spec)
         assert "from autocontext.scenarios.base import" in source
         assert "import random" in source
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "quote'\"value",
+            "line one\nline two",
+            'value"\n    injected = True\n    #',
+            'value"\n            import os\n            class Injected:\n                pass\n            #',
+        ],
+    )
+    def test_untrusted_values_remain_literals(self, payload: str) -> None:
+        spec = _make_spec(
+            name=payload,
+            family=payload,
+            display_name=payload,
+            description=payload,
+            strategy_interface_description=payload,
+            evaluation_criteria=payload,
+            strategy_params=[
+                StrategyParam(name="alpha", description=payload),
+                StrategyParam(name=payload, description=payload),
+            ],
+            constraints=[
+                Constraint(
+                    expression="alpha",
+                    operator="<=",
+                    threshold=1.0,
+                    description=payload,
+                ),
+            ],
+            environment_variables=[EnvironmentVariable(name=payload, description=payload)],
+            scoring_components=[
+                ScoringComponent(
+                    name=payload,
+                    description=payload,
+                    formula_terms={"alpha": 0.5, payload: 0.5},
+                ),
+            ],
+            final_score_weights={payload: 1.0},
+            observation_constraints=[payload],
+        )
+
+        source = generate_scenario_class(spec)
+        tree = ast.parse(source)
+
+        assert validate_generated_code(source) == []
+        assert payload in {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        scenario_classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+        assert len(scenario_classes) == 1
+        assert not any(
+            isinstance(node, ast.Import | ast.ImportFrom | ast.ClassDef)
+            for node in ast.walk(scenario_classes[0])
+            if node is not scenario_classes[0]
+        )
+        compile(source, "<generated-scenario>", "exec")
+
+    @pytest.mark.parametrize(
+        "class_body",
+        [
+            "    injected = True\n",
+            "    name = 'overridden'\n",
+            "    import os\n",
+            "    class Injected:\n        pass\n",
+        ],
+    )
+    def test_structural_validation_rejects_injected_class_body(self, class_body: str) -> None:
+        source = generate_scenario_class(_make_spec())
+        injected = source.replace(
+            '    name = "test_scenario"\n',
+            '    name = "test_scenario"\n' + class_body,
+            1,
+        )
+
+        assert validate_generated_code(injected)
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "name'\"",
+            "name\nimport os",
+            "name\nclass Injected:\n    pass",
+        ],
+    )
+    def test_generated_class_names_are_safe_identifiers(self, payload: str) -> None:
+        class_name = generated_class_name(payload, "Scenario")
+
+        assert class_name.isidentifier()
+        ast.parse(f"class {class_name}:\n    pass\n")
 
 
 class TestGeneratedScenarioExecution:

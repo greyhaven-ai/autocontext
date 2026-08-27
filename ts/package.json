@@ -156,7 +156,7 @@
     "test:runtime-confluence:sweep": "AUTOCTX_CONFLUENCE_RUNS=500 vitest run tests/runtime-composition-confluence.test.ts tests/runtime-composition-faults.test.ts tests/runtime-composition-observability.test.ts",
     "test:watch": "vitest",
     "check:test-types": "tsc -p tsconfig.test.json",
-    "lint": "npm run check:root-index && tsc --noEmit && npm run check:test-types",
+    "lint": "npm run check:root-index && tsc --noEmit && npm run check:test-types && npm run check:system-map-bundle-size",
     "example:repl": "node examples/run-repl-session.mjs",
     "sync:browser-contract-schemas": "node scripts/sync-python-browser-contract-schemas.mjs",
     "build:production-traces-types": "node scripts/generate-production-traces-types.mjs",
@@ -170,6 +170,7 @@
     "check:schemas": "npm run check:production-traces-schemas && npm run check:browser-contract-schemas && npm run check:instrument-schemas && npm run check:harness-optimization-schemas && npm run check:role-routing-contract",
     "check:sdk-import-discipline": "node scripts/check-sdk-import-discipline.mjs",
     "check:production-traces-sdk-bundle-size": "node scripts/check-production-traces-sdk-bundle-size.mjs",
+    "check:system-map-bundle-size": "node scripts/check-system-map-bundle-size.mjs",
     "check:side-effects": "node scripts/check-side-effects.mjs",
     "check:license-compatibility": "node scripts/check-license-compatibility.mjs",
     "check:no-postinstall-scripts": "node scripts/check-no-postinstall-scripts.mjs",
@@ -206,6 +207,15 @@
       "optional": true
     }
   },
+  "overrides": {
+    "@hono/node-server": "1.19.15",
+    "fast-uri": "3.1.5",
+    "hono": "4.12.34",
+    "ip-address": "10.3.1",
+    "js-yaml": "4.3.1",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.23"
+  },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
     "@apidevtools/json-schema-ref-parser": "^15.3.5",
@@ -234,6 +244,7 @@
     "tree-sitter-typescript": "0.21.2",
     "tsx": "^4.21.0",
     "ulid": "^3.0.2",
+    "undici": "8.9.0",
     "ws": "^8.18.0",
     "zod": "^3.24.0"
   }

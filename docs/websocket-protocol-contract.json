@@ -240,6 +240,69 @@
       "note": "Reconnect-after-terminal replay of the acknowledgement and terminal receipt requires run_transcript_v1 and is TypeScript-only. The base cooperative stop advertised by both runtimes offers live (within-run) idempotency: duplicate or reconnected commands are deduplicated while the run is active, but once the run reaches a terminal state a later command is answered as not-active rather than replayed."
     }
   },
+  "system_map_projection_extension": {
+    "capability": "system_map_projection_v1",
+    "advertised_runtimes": ["typescript"],
+    "endpoint": "/ws/events",
+    "query": {
+      "projection": "system-map",
+      "optional_run_scope": "run_id",
+      "optional_view": {
+        "parameter": "view",
+        "values": ["execution", "context", "activation", "routing"],
+        "default": "execution"
+      }
+    },
+    "event": "system_map_transfer",
+    "channel": "cockpit",
+    "payload": {
+      "version": 1,
+      "required_fields": [
+        "version",
+        "id",
+        "sourceSequence",
+        "timestamp",
+        "runId",
+        "traceId",
+        "spanId",
+        "spanName",
+        "spanPhase",
+        "startedAt",
+        "event",
+        "edgeId",
+        "from",
+        "to",
+        "kind",
+        "label",
+        "status",
+        "summary"
+      ],
+      "optional_fields": [
+        "generation",
+        "attempt",
+        "parentSpanId",
+        "endedAt",
+        "payloadBytes",
+        "durationMs"
+      ],
+      "statuses": ["started", "completed", "retry", "failed"]
+    },
+    "trace": {
+      "version": 1,
+      "source": "EventStreamRecord.trace",
+      "phases": ["start", "complete", "instant"],
+      "paired_boundaries": ["run", "generation", "role", "tournament", "persistence"],
+      "raw_payload_copied": false
+    },
+    "safety": {
+      "allowlisted_summary_fields_only": true,
+      "raw_prompts_allowed": false,
+      "raw_model_or_tool_io_allowed": false,
+      "credentials_allowed": false,
+      "bounded_replay": true
+    },
+    "python_support": "deferred"
+  },
   "endpoints": [
     {
       "path": "/ws/interactive",

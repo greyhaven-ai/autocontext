@@ -1,0 +1,3 @@
+# Keep the PEP 517 backend explicit so the container build can run with
+# --no-build-isolation and never resolve an unpinned build dependency.
+hatchling==1.27.0

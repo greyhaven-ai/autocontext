@@ -10,8 +10,8 @@ Six concerns, each independently testable:
   1. :class:`FixtureManifest` — parse manifest files (``from_json``).
   2. :class:`FixtureCache` — read/write cache files, scenario-scoped paths.
   3. :func:`load_fixtures` — orchestrate fetch + cache + checksum.
-  4. :class:`UrlFetcher` — default fetcher (http(s) via urllib; ``file://``
-     URIs and bare local paths read directly from disk).
+  4. :class:`UrlFetcher` — bounded public HTTP(S) fetcher, with explicit
+     trusted-local opt-ins for private endpoints or local paths.
   5. :func:`render_fixtures` — prompt-block emission.
   6. :func:`apply_to_context` — attach fixtures to a ``GenerationContext``.
 
@@ -31,9 +31,23 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
-from urllib.request import urlopen
 
 from autocontext.offline import require_online
+from autocontext.security.confined_files import (
+    ConfinedPathError,
+    atomic_write_confined_bytes,
+    atomic_write_confined_text,
+    read_confined_bytes,
+    read_confined_text,
+)
+from autocontext.security.outbound_url import (
+    DEFAULT_FIXTURE_CONTENT_TYPES,
+    DEFAULT_FIXTURE_MAX_RESPONSE_BYTES,
+    DEFAULT_OUTBOUND_TIMEOUT_SECONDS,
+    OutboundUrlError,
+    OutboundUrlPolicy,
+    request_outbound_bytes,
+)
 
 # --- Errors ----------------------------------------------------------------
 
@@ -112,27 +126,51 @@ class Fetcher(Protocol):
 
 
 class UrlFetcher:
-    """Default fetcher: urllib for http(s), direct disk read for local paths.
+    """Bounded fetcher for public HTTP(S) fixtures.
 
-    Local-path support (PR #968 review P3): ``file:///abs/path`` URIs and
-    bare absolute/relative paths read from disk via :class:`Path`. http(s)
-    URLs read via ``urllib.request.urlopen``.
+    Private-network targets and local files are denied by default.  Callers
+    that intentionally consume trusted local fixtures must opt in explicitly;
+    cloud metadata targets remain denied even with the private-network escape
+    hatch enabled.
     """
+
+    def __init__(
+        self,
+        *,
+        allow_local_files: bool = False,
+        allow_private_networks: bool = False,
+        timeout_seconds: float = DEFAULT_OUTBOUND_TIMEOUT_SECONDS,
+        max_response_bytes: int = DEFAULT_FIXTURE_MAX_RESPONSE_BYTES,
+        allowed_content_types: tuple[str, ...] = DEFAULT_FIXTURE_CONTENT_TYPES,
+    ) -> None:
+        self._allow_local_files = allow_local_files
+        self._policy = OutboundUrlPolicy(
+            timeout_seconds=timeout_seconds,
+            max_response_bytes=max_response_bytes,
+            allow_private_networks=allow_private_networks,
+            allowed_content_types=allowed_content_types,
+        )
 
     def fetch(self, source: str) -> bytes:
         scheme = urlparse(source).scheme
         if scheme in ("", "file"):
+            if not self._allow_local_files:
+                raise FixtureFetchError("local fixture paths require an explicit trusted-local opt-in")
             local_path = _local_path_for(source)
             try:
-                return local_path.read_bytes()
+                with local_path.open("rb") as fixture_file:
+                    body = fixture_file.read(self._policy.max_response_bytes + 1)
+                if len(body) > self._policy.max_response_bytes:
+                    raise FixtureFetchError(
+                        f"fixture exceeds the {self._policy.max_response_bytes}-byte limit",
+                    )
+                return body
             except OSError as e:
                 raise FixtureFetchError(f"could not read {source}: {e}") from e
         try:
             require_online("download a fixture", detail=str(source))
-            with urlopen(source) as response:
-                body: bytes = response.read()
-                return body
-        except OSError as e:
+            return request_outbound_bytes(source, policy=self._policy).body
+        except (OSError, OutboundUrlError) as e:
             raise FixtureFetchError(f"could not fetch {source}: {e}") from e
 
 
@@ -150,6 +188,7 @@ def _local_path_for(source: str) -> Path:
 # no separators, no `..`, no absolute components — so a malicious manifest
 # or scenario name cannot write outside the cache root.
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._\-]+$")
+_MAX_FIXTURE_PROVENANCE_BYTES = 64 * 1024
 
 
 def _validate_segment(name: str, *, kind: str) -> str:
@@ -175,40 +214,68 @@ class FixtureCache:
     def __init__(self, root: Path) -> None:
         self._root = root
 
-    def _paths(self, scenario: str, key: str) -> tuple[Path, Path]:
+    def _segments(self, scenario: str, key: str) -> tuple[str, str]:
         safe_scen = _validate_segment(scenario, kind="scenario")
         safe_key = _validate_segment(key, kind="key")
-        scen_dir = self._root / safe_scen
-        return scen_dir / f"{safe_key}.bin", scen_dir / f"{safe_key}.provenance.json"
+        return safe_scen, safe_key
 
     def get(self, scenario: str, key: str) -> Fixture | None:
-        bin_path, prov_path = self._paths(scenario, key)
-        if not (bin_path.is_file() and prov_path.is_file()):
+        safe_scen, safe_key = self._segments(scenario, key)
+        try:
+            body = read_confined_bytes(
+                self._root,
+                (safe_scen,),
+                f"{safe_key}.bin",
+                max_bytes=DEFAULT_FIXTURE_MAX_RESPONSE_BYTES,
+            )
+            provenance_text = read_confined_text(
+                self._root,
+                (safe_scen,),
+                f"{safe_key}.provenance.json",
+                max_bytes=_MAX_FIXTURE_PROVENANCE_BYTES,
+            )
+        except (ConfinedPathError, OSError) as exc:
+            raise FixtureFetchError("fixture cache entry is unsafe") from exc
+        if body is None or provenance_text is None:
             return None
-        body = bin_path.read_bytes()
-        prov_data = json.loads(prov_path.read_text(encoding="utf-8"))
-        provenance = FixtureProvenance(
-            source=prov_data["source"],
-            fetched_at=prov_data["fetched_at"],
-            sha256=prov_data["sha256"],
-        )
+        try:
+            prov_data = json.loads(provenance_text)
+            provenance = FixtureProvenance(
+                source=str(prov_data["source"]),
+                fetched_at=str(prov_data["fetched_at"]),
+                sha256=str(prov_data["sha256"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FixtureFetchError("fixture cache provenance is malformed") from exc
         return Fixture(key=key, bytes_=body, provenance=provenance)
 
     def put(self, scenario: str, fixture: Fixture) -> None:
-        bin_path, prov_path = self._paths(scenario, fixture.key)
-        bin_path.parent.mkdir(parents=True, exist_ok=True)
-        bin_path.write_bytes(fixture.bytes_)
-        prov_path.write_text(
-            json.dumps(
-                {
-                    "source": fixture.provenance.source,
-                    "fetched_at": fixture.provenance.fetched_at,
-                    "sha256": fixture.provenance.sha256,
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
+        safe_scen, safe_key = self._segments(scenario, fixture.key)
+        provenance_text = json.dumps(
+            {
+                "source": fixture.provenance.source,
+                "fetched_at": fixture.provenance.fetched_at,
+                "sha256": fixture.provenance.sha256,
+            },
+            indent=2,
         )
+        try:
+            atomic_write_confined_bytes(
+                self._root,
+                (safe_scen,),
+                f"{safe_key}.bin",
+                fixture.bytes_,
+                max_bytes=DEFAULT_FIXTURE_MAX_RESPONSE_BYTES,
+            )
+            atomic_write_confined_text(
+                self._root,
+                (safe_scen,),
+                f"{safe_key}.provenance.json",
+                provenance_text,
+                max_bytes=_MAX_FIXTURE_PROVENANCE_BYTES,
+            )
+        except (ConfinedPathError, OSError) as exc:
+            raise FixtureFetchError("fixture cache entry is unsafe") from exc
 
 
 # --- Orchestration ---------------------------------------------------------

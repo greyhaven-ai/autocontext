@@ -41,6 +41,7 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 
 - [Cross-runtime CLI contract guide](cli-contract.md), [machine-readable contract](cli-contract.json), [wire-output schemas](cli-schemas/), and [shared fixtures](cli-fixtures/)
 - [Interactive WebSocket protocol contract](websocket-protocol-contract.json)
+- [TypeScript live system map](../ts/README.md#live-system-map)
 
 The contract pins the TypeScript-only `agent_progress_notes_v1` extension,
 including its exact Autowork-compatible fixture, safe-copy and size limits,

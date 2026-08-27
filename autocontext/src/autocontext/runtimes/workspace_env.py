@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import os
 import posixpath
 import shlex
 import shutil
 import stat as stat_mode
-import subprocess
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from autocontext.runtimes._workspace_process import default_shell_env, run_bounded_process
 from autocontext.runtimes.workspace_grants import (
     DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES,
     RuntimeGrantEvent,
@@ -425,25 +424,18 @@ class LocalWorkspaceEnv:
         )
         if granted is not None:
             return granted
-        timeout = exec_options.timeout_ms / 1000 if exec_options.timeout_ms is not None else None
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=host_cwd,
-                env={**os.environ, **dict(exec_options.env)},
-                shell=True,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            return RuntimeExecResult(
-                stdout=exc.stdout if isinstance(exc.stdout, str) else "",
-                stderr=exc.stderr if isinstance(exc.stderr, str) and exc.stderr else "Command timed out",
-                exit_code=124,
-            )
-        return RuntimeExecResult(stdout=completed.stdout, stderr=completed.stderr, exit_code=completed.returncode)
+        result = run_bounded_process(
+            command,
+            cwd=host_cwd,
+            env={**default_shell_env(), **dict(exec_options.env)},
+            shell=True,
+            timeout_ms=exec_options.timeout_ms,
+        )
+        return RuntimeExecResult(
+            stdout=result.stdout,
+            stderr=result.stderr,
+            exit_code=result.exit_code,
+        )
 
     def scope(
         self,
@@ -718,22 +710,15 @@ def _run_process(
     env: Mapping[str, str],
     timeout_ms: int | None = None,
 ) -> RuntimeExecResult:
-    timeout = timeout_ms / 1000 if timeout_ms is not None else None
-    try:
-        completed = subprocess.run(
-            [executable, *args],
-            cwd=cwd,
-            env=dict(env),
-            shell=False,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return RuntimeExecResult(
-            stdout=exc.stdout if isinstance(exc.stdout, str) else "",
-            stderr=exc.stderr if isinstance(exc.stderr, str) and exc.stderr else "Command timed out",
-            exit_code=124,
-        )
-    return RuntimeExecResult(stdout=completed.stdout, stderr=completed.stderr, exit_code=completed.returncode)
+    result = run_bounded_process(
+        [executable, *args],
+        cwd=cwd,
+        env=env,
+        shell=False,
+        timeout_ms=timeout_ms,
+    )
+    return RuntimeExecResult(
+        stdout=result.stdout,
+        stderr=result.stderr,
+        exit_code=result.exit_code,
+    )

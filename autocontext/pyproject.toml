@@ -35,7 +35,7 @@ dependencies = [
 [project.optional-dependencies]
 browser = ["httpx>=0.28.1", "websockets>=16.0"]
 primeintellect = ["prime-sandboxes>=0.2.14"]
-mcp = ["mcp>=1.0.0"]
+mcp = ["mcp>=1.28.1"]
 agent-sdk = ["claude-agent-sdk>=0.1.0"]
 monty = ["pydantic-monty>=0.0.7"]
 mlx = ["mlx>=0.30.0", "rustbpe>=0.1.0", "tiktoken>=0.11.0", "safetensors>=0.4.0", "numpy>=1.24.0"]
@@ -46,12 +46,12 @@ mlxlm = ["mlx-lm>=0.20.0"]
 # Previously only torch was here, so autocontext[cuda] hit ModuleNotFoundError on transformers/peft
 # and silently fell back to the frontier client.
 cuda = [
-    "torch>=2.0.0",
+    "torch>=2.13.0",
     "transformers>=4.40.0",
     "peft>=0.10.0",
     "accelerate>=0.29.0",
     "trl>=0.9.0",
-    "datasets>=2.18.0",
+    "datasets>=5.0.1",
     "safetensors>=0.4.0",
 ]
 openai = ["openai>=1.0.0"]
@@ -59,17 +59,25 @@ all = ["autocontext[mcp,agent-sdk,monty,openai,browser,primeintellect]"]
 
 [dependency-groups]
 dev = [
-  "datamodel-code-generator>=0.56.0,<0.57.0",
+  "datamodel-code-generator>=0.64.0,<0.65.0",
   "httpx>=0.28.1",
   "hypothesis>=6.151.12",
   "mypy>=1.16.0",
   "openai>=1.0.0,<2.0",
+  "pip-audit==2.10.1",
   "prime-sandboxes>=0.2.14",
   "pytest>=8.4.0",
   "pytest-asyncio>=1.3.0",
   "pytest-cov>=6.0.0",
   "ruff>=0.12.0",
   "websockets>=16.0",
+]
+
+[tool.uv]
+constraint-dependencies = [
+  "aiohttp>=3.14.3",
+  "cryptography>=50.0.0",
+  "setuptools>=83.0.0",
 ]
 
 [project.scripts]

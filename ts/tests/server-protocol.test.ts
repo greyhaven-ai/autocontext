@@ -91,9 +91,9 @@ const LegacyRunMessageSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 
-async function openSocket(url: string): Promise<BufferedSocket> {
+async function openSocket(url: string, protocols?: string | string[]): Promise<BufferedSocket> {
   const { WebSocket } = await import("ws");
-  const ws = new WebSocket(url);
+  const ws = protocols === undefined ? new WebSocket(url) : new WebSocket(url, protocols);
   const queue: Record<string, unknown>[] = [];
   const waiters: Array<{
     predicate: (msg: Record<string, unknown>) => boolean;
@@ -749,6 +749,135 @@ describe("InteractiveServer", () => {
       }
     } finally {
       hostile.terminate();
+      await server.stop();
+    }
+  });
+
+  it("requires the configured bearer token for HTTP and WebSocket access", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { serverAuthSubprotocol } = await import("../src/server/server-auth.js");
+    const { WebSocket } = await import("ws");
+    const token = "0123456789abcdef0123456789abcdef";
+    const mgr = new RunManager({
+      dbPath: join(dir, "authenticated.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "authenticated-runs"),
+      knowledgeRoot: join(dir, "authenticated-knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0, authToken: token });
+    await server.start();
+    const unauthenticated = new WebSocket(server.url);
+    try {
+      const status = await new Promise<number>((resolve, reject) => {
+        unauthenticated.once("unexpected-response", (_request, response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+        });
+        unauthenticated.once("open", () => reject(new Error("unauthenticated WebSocket opened")));
+        unauthenticated.once("error", () => undefined);
+      });
+      expect(status).toBe(401);
+
+      const queryCredential = new WebSocket(`${server.url}?token=${token}`);
+      const queryStatus = await new Promise<number>((resolve, reject) => {
+        queryCredential.once("unexpected-response", (_request, response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+        });
+        queryCredential.once("open", () => reject(new Error("URL credential unexpectedly authenticated")));
+        queryCredential.once("error", () => undefined);
+      });
+      expect(queryStatus).toBe(401);
+      queryCredential.terminate();
+
+      const authenticated = await openSocket(server.url, serverAuthSubprotocol(token));
+      try {
+        await expect(authenticated.waitFor((message) => message.type === "hello")).resolves.toMatchObject({
+          protocol_version: 1,
+        });
+      } finally {
+        authenticated.close();
+      }
+
+      const httpUrl = server.url.replace(/^ws:/, "http:").replace("/ws/interactive", "/");
+      await expect(fetch(httpUrl)).resolves.toMatchObject({ status: 401 });
+      await expect(fetch(httpUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      })).resolves.toMatchObject({ status: 200 });
+    } finally {
+      unauthenticated.terminate();
+      await server.stop();
+    }
+  });
+
+  it("rejects oversized HTTP JSON bodies before route processing", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { MAX_HTTP_JSON_BODY_BYTES } = await import("../src/server/ws-server.js");
+    const mgr = new RunManager({
+      dbPath: join(dir, "body-limit.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "body-limit-runs"),
+      knowledgeRoot: join(dir, "body-limit-knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    try {
+      const httpUrl = server.url
+        .replace(/^ws:/, "http:")
+        .replace("/ws/interactive", "/api/openclaw/artifacts");
+      const response = await fetch(httpUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ padding: "x".repeat(MAX_HTTP_JSON_BODY_BYTES) }),
+      });
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toEqual({
+        error: "JSON request body exceeds the 1 MiB limit",
+      });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("rejects cross-site browser mutations even without a configured token", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const mgr = new RunManager({
+      dbPath: join(dir, "origin-check.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "origin-check-runs"),
+      knowledgeRoot: join(dir, "origin-check-knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    try {
+      const httpUrl = server.url
+        .replace(/^ws:/, "http:")
+        .replace("/ws/interactive", "/api/openclaw/artifacts");
+      const response = await fetch(httpUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: JSON.stringify({ artifact_type: "harness" }),
+      });
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({ error: "Forbidden origin" });
+
+      const crossPortResponse = await fetch(httpUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: `http://127.0.0.1:${(server.port % 65535) + 1}`,
+        },
+        body: JSON.stringify({ artifact_type: "harness" }),
+      });
+      expect(crossPortResponse.status).toBe(403);
+      await expect(crossPortResponse.json()).resolves.toEqual({ error: "Forbidden origin" });
+    } finally {
       await server.stop();
     }
   });

@@ -11,6 +11,7 @@ from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.scenarios import SCENARIO_REGISTRY
+from autocontext.server.resource_limits import MAX_START_RUN_GENERATIONS
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,8 @@ class RunManager:
         require_playbook_approval: bool = False,
         client_run_id: str | None = None,
     ) -> str:
+        if not 1 <= generations <= MAX_START_RUN_GENERATIONS:
+            raise ValueError(f"generations must be between 1 and {MAX_START_RUN_GENERATIONS}")
         if scenario not in SCENARIO_REGISTRY:
             supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
             raise ValueError(f"Unknown scenario '{scenario}'. Available: {supported}")

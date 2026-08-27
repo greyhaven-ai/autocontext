@@ -54,6 +54,30 @@ class TestCheckAstSafetyImports:
         assert len(violations) == 3
 
 
+class TestCheckAstSafetyExceptionHandling:
+    def test_try_except_is_rejected(self) -> None:
+        violations = check_ast_safety("try:\n    while True: pass\nexcept:\n    pass")
+
+        assert any("exception handling" in violation for violation in violations)
+
+    def test_try_star_is_rejected(self) -> None:
+        violations = check_ast_safety(
+            "try:\n    raise ExceptionGroup('x', [])\nexcept* Exception:\n    pass"
+        )
+
+        assert any("exception-group handling" in violation for violation in violations)
+
+    def test_context_manager_is_rejected(self) -> None:
+        violations = check_ast_safety("with manager:\n    pass")
+
+        assert any("context managers" in violation for violation in violations)
+
+    def test_async_context_manager_is_rejected(self) -> None:
+        violations = check_ast_safety("async def run():\n    async with manager:\n        pass")
+
+        assert any("async context managers" in violation for violation in violations)
+
+
 class TestCheckAstSafetyDunderAttributes:
     def test_class_dunder(self) -> None:
         violations = check_ast_safety("x = obj.__class__")
@@ -86,6 +110,27 @@ class TestCheckAstSafetyDunderAttributes:
     def test_mro_dunder(self) -> None:
         violations = check_ast_safety("x = cls.__mro__")
         assert any("__mro__" in v for v in violations)
+
+    def test_getattribute_dunder(self) -> None:
+        violations = check_ast_safety("x = print.__getattribute__('__self__')")
+        assert any("__getattribute__" in v for v in violations)
+
+    def test_unknown_dunder_attribute_is_rejected(self) -> None:
+        violations = check_ast_safety("x = obj.__reduce_ex__()")
+        assert any("__reduce_ex__" in v for v in violations)
+
+    def test_traceback_frame_chain_is_rejected(self) -> None:
+        violations = check_ast_safety("x = tb.tb_frame.f_back.f_globals")
+
+        assert any("tb_frame" in violation for violation in violations)
+        assert any("f_back" in violation for violation in violations)
+        assert any("f_globals" in violation for violation in violations)
+
+    def test_dunder_function_and_dictionary_key_are_rejected(self) -> None:
+        violations = check_ast_safety("def __exit__():\n    pass\nx = {'__enter__': 1}")
+
+        assert any("dunder function" in violation for violation in violations)
+        assert any("dunder dictionary key" in violation for violation in violations)
 
 
 class TestCheckAstSafetyDeniedNames:
@@ -138,6 +183,11 @@ class TestCheckAstSafetyDeniedNames:
         # The denied-names list includes 'exec'; the checker flags its use
         violations = check_ast_safety("exec('x=1')")
         assert any("exec" in v for v in violations)
+
+    def test_dynamic_type_constructor_blocked(self) -> None:
+        violations = check_ast_safety("Trap = type('Trap', (), {})")
+
+        assert any("type" in violation for violation in violations)
 
 
 class TestCheckAstSafetyNested:

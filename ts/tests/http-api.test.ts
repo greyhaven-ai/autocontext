@@ -4,7 +4,16 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { asDbPath } from "../src/domain/ids.js";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -434,6 +443,15 @@ describe("HTTP API — health", () => {
     expect(endpoints.openclaw).toBe("/api/openclaw");
     expect(endpoints.cockpit).toBe("/api/cockpit");
     expect(endpoints.context_selection).toBe("/api/cockpit/runs/:run_id/context-selection");
+    expect(endpoints.system_map).toMatchObject({
+      view: "/system-map",
+      context_view: "/system-map/context",
+      activation_view: "/system-map/activation",
+      routing_view: "/system-map/routing",
+      topology: "/api/cockpit/system-map/topology",
+      replay: "/api/cockpit/system-map/replay",
+      live: "/ws/events?projection=system-map",
+    });
     expect(endpoints.hub).toBe("/api/hub");
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
@@ -467,6 +485,26 @@ describe("HTTP API — health", () => {
     expect(routeFor("GET", "/dashboard")).toMatchObject({
       status: "aligned",
       python: { support: "supported" },
+      typescript: { support: "supported" },
+    });
+    expect(routeFor("GET", "/system-map")).toMatchObject({
+      status: "python_gap",
+      python: { support: "unsupported" },
+      typescript: { support: "supported" },
+    });
+    expect(routeFor("GET", "/system-map/context")).toMatchObject({
+      status: "python_gap",
+      python: { support: "unsupported" },
+      typescript: { support: "supported" },
+    });
+    expect(routeFor("GET", "/system-map/activation")).toMatchObject({
+      status: "python_gap",
+      python: { support: "unsupported" },
+      typescript: { support: "supported" },
+    });
+    expect(routeFor("GET", "/system-map/routing")).toMatchObject({
+      status: "python_gap",
+      python: { support: "unsupported" },
       typescript: { support: "supported" },
     });
     expect(matrix.routes).toContainEqual(
@@ -560,6 +598,85 @@ describe("HTTP API — health", () => {
         status: "python_gap",
       }),
     );
+  });
+});
+
+describe("HTTP API — live system map", () => {
+  it("serves the explorer, topology, and redacted replay projection", async () => {
+    const page = await fetchText(`${baseUrl}/system-map`);
+    expect(page.status).toBe(200);
+    expect(page.body).toContain("autocontext — live system map");
+    expect(page.body).toContain("Recursive harness");
+
+    const topology = await fetchJson(`${baseUrl}/api/cockpit/system-map/topology`);
+    expect(topology.status).toBe(200);
+    expect(topology.body).toMatchObject({ version: 1, title: "Recursive harness" });
+    expect((topology.body as { nodes: unknown[] }).nodes.length).toBeGreaterThan(10);
+
+    const replay = await fetchJson(`${baseUrl}/api/cockpit/system-map/replay?limit=20`);
+    expect(replay.status).toBe(200);
+    expect(replay.body).toMatchObject({ version: 1 });
+    expect(Array.isArray((replay.body as { transfers: unknown[] }).transfers)).toBe(true);
+
+    const contextPage = await fetchText(`${baseUrl}/system-map/context`);
+    expect(contextPage.status).toBe(200);
+    expect(contextPage.body).toContain("Context + memory lineage");
+
+    const contextTopology = await fetchJson(
+      `${baseUrl}/api/cockpit/system-map/topology?view=context`,
+    );
+    expect(contextTopology.status).toBe(200);
+    expect(contextTopology.body).toMatchObject({
+      version: 1,
+      view: "context",
+      title: "Context + memory lineage",
+    });
+
+    const contextReplay = await fetchJson(
+      `${baseUrl}/api/cockpit/system-map/replay?limit=20&view=context`,
+    );
+    expect(contextReplay.status).toBe(200);
+    expect(contextReplay.body).toMatchObject({ version: 1, view: "context" });
+
+    const activationPage = await fetchText(`${baseUrl}/system-map/activation`);
+    expect(activationPage.status).toBe(200);
+    expect(activationPage.body).toContain("Runtime activation + rollback");
+
+    const activationTopology = await fetchJson(
+      `${baseUrl}/api/cockpit/system-map/topology?view=activation`,
+    );
+    expect(activationTopology.status).toBe(200);
+    expect(activationTopology.body).toMatchObject({
+      version: 1,
+      view: "activation",
+      title: "Runtime activation + rollback",
+    });
+
+    const activationReplay = await fetchJson(
+      `${baseUrl}/api/cockpit/system-map/replay?limit=20&view=activation`,
+    );
+    expect(activationReplay.status).toBe(200);
+    expect(activationReplay.body).toMatchObject({ version: 1, view: "activation" });
+
+    const routingPage = await fetchText(`${baseUrl}/system-map/routing`);
+    expect(routingPage.status).toBe(200);
+    expect(routingPage.body).toContain("Provider + model routing");
+
+    const routingTopology = await fetchJson(
+      `${baseUrl}/api/cockpit/system-map/topology?view=routing`,
+    );
+    expect(routingTopology.status).toBe(200);
+    expect(routingTopology.body).toMatchObject({
+      version: 1,
+      view: "routing",
+      title: "Provider + model routing",
+    });
+
+    const routingReplay = await fetchJson(
+      `${baseUrl}/api/cockpit/system-map/replay?limit=20&view=routing`,
+    );
+    expect(routingReplay.status).toBe(200);
+    expect(routingReplay.body).toMatchObject({ version: 1, view: "routing" });
   });
 });
 
@@ -1844,6 +1961,55 @@ describe("HTTP API — OpenClaw", () => {
     expect((updated.body as Record<string, unknown>).detail).toContain("Invalid transition");
   });
 
+  it("GET/PATCH /api/openclaw/distill/:job_id reject encoded path traversal", async () => {
+    const sentinelPath = join(dir, "knowledge", "sentinel.json");
+    const sentinel = JSON.stringify({
+      job_id: "../sentinel",
+      scenario: "sensitive-scenario",
+      status: "pending",
+      source_artifact_ids: [],
+      training_config: {},
+      training_metrics: {},
+    });
+    writeFileSync(sentinelPath, sentinel, "utf-8");
+    const traversal = "%2e%2e%2fsentinel";
+
+    const fetched = await fetchJson(`${baseUrl}/api/openclaw/distill/${traversal}`);
+    expect(fetched.status).toBe(400);
+    expect(fetched.body).not.toMatchObject({ scenario: "sensitive-scenario" });
+
+    const patched = await patchJson(`${baseUrl}/api/openclaw/distill/${traversal}`, {
+      status: "failed",
+      error_message: "attacker-controlled",
+    });
+    expect(patched.status).toBe(400);
+    expect(readFileSync(sentinelPath, "utf-8")).toBe(sentinel);
+  });
+
+  it("GET/PATCH /api/openclaw/distill/:job_id reject symbolic-link job files", async () => {
+    const triggered = await postJson(`${baseUrl}/api/openclaw/distill`, {
+      scenario: "grid_ctf",
+    });
+    const jobId = readStringProperty(triggered.body, "job_id");
+    const jobPath = join(dir, "knowledge", "_openclaw_distill_jobs", `${jobId}.json`);
+    const sentinelPath = join(dir, "distill-sentinel.json");
+    const sentinel = JSON.stringify({ secret: "must-not-be-read-or-changed" });
+    writeFileSync(sentinelPath, sentinel, "utf-8");
+    unlinkSync(jobPath);
+    symlinkSync(sentinelPath, jobPath);
+
+    const fetched = await fetchJson(`${baseUrl}/api/openclaw/distill/${jobId}`);
+    expect(fetched.status).toBe(400);
+    expect(fetched.body).not.toMatchObject({ secret: "must-not-be-read-or-changed" });
+
+    const patched = await patchJson(`${baseUrl}/api/openclaw/distill/${jobId}`, {
+      status: "failed",
+      error_message: "attacker-controlled",
+    });
+    expect(patched.status).toBe(400);
+    expect(readFileSync(sentinelPath, "utf-8")).toBe(sentinel);
+  });
+
   it("GET /api/openclaw/artifacts/:artifact_id returns 404 for unknown artifacts", async () => {
     const { status, body } = await fetchJson(`${baseUrl}/api/openclaw/artifacts/not-real`);
     expect(status).toBe(404);
@@ -2020,6 +2186,90 @@ describe("HTTP API — dashboard event stream", () => {
     expect(payload.seq).toBe(1);
     expect(payload.channel).toBe("generation");
     expect((payload.payload as Record<string, unknown>).run_id).toBe("ws-test");
+  }, 15000);
+
+  it("projects redacted transfers for the live system map", async () => {
+    const { WebSocket } = await import("ws");
+    const wsUrl = baseUrl.replace(/^http/, "ws") +
+      "/ws/events?projection=system-map&run_id=visual-run";
+
+    const raw = await new Promise<string>((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      ws.once("open", () => {
+        ws.once("message", (data) => {
+          resolve(data.toString());
+          ws.close();
+        });
+        ws.once("error", reject);
+        mgr.events.emit("generation_started", {
+          run_id: "another-run",
+          generation: 1,
+        });
+        mgr.events.emit("generation_started", {
+          run_id: "visual-run",
+          generation: 3,
+          prompt: "must not be projected",
+        });
+      });
+      ws.once("error", reject);
+    });
+
+    const envelope = JSON.parse(raw) as {
+      channel: string;
+      event: string;
+      payload: Record<string, unknown>;
+      v: number;
+    };
+    expect(envelope).toMatchObject({
+      channel: "cockpit",
+      event: "system_map_transfer",
+      v: 1,
+      payload: {
+        runId: "visual-run",
+        generation: 3,
+        edgeId: "runner-knowledge",
+      },
+    });
+    expect(envelope.payload).not.toHaveProperty("prompt");
+  }, 15000);
+
+  it("projects the context-lineage lens over the same live event stream", async () => {
+    const { WebSocket } = await import("ws");
+    const wsUrl = baseUrl.replace(/^http/, "ws") +
+      "/ws/events?projection=system-map&view=context&run_id=context-run";
+
+    const raw = await new Promise<string>((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      ws.once("open", () => {
+        ws.once("message", (data) => {
+          resolve(data.toString());
+          ws.close();
+        });
+        ws.once("error", reject);
+        mgr.events.emit("generation_started", {
+          run_id: "context-run",
+          generation: 4,
+          prompt: "must not be projected",
+        });
+      });
+      ws.once("error", reject);
+    });
+
+    const envelope = JSON.parse(raw) as {
+      event: string;
+      payload: Record<string, unknown>;
+    };
+    expect(envelope).toMatchObject({
+      event: "system_map_transfer",
+      payload: {
+        runId: "context-run",
+        generation: 4,
+        edgeId: "playbook-selection",
+        from: "playbook",
+        to: "selection",
+      },
+    });
+    expect(envelope.payload).not.toHaveProperty("prompt");
   }, 15000);
 
   it("streams runtime-session events over /ws/events", async () => {

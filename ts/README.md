@@ -173,6 +173,62 @@ cleared from the input component before it closes.
 Artifact discovery output uses OSC 8 hyperlinks when the terminal supports
 them, while retaining the full URL as readable fallback text.
 
+## Live System Map
+
+The TypeScript interactive server exposes experimental, read-only isometric
+lenses over the recursive harness. Open `/system-map` for execution topology or
+`/system-map/context` for context and memory lineage, or
+`/system-map/activation` for runtime activation, component reconciliation,
+cutover, rollback, and repair. `/system-map/routing` follows role calls through
+provider and model selection, retries, responses, latency, and token usage.
+Direct links in the header switch lenses without a module dropdown. Optionally
+append `?run_id=<id>` to any path to scope the view to one run.
+
+The page loads a versioned topology from
+`/api/cockpit/system-map/topology`, replays a bounded redacted transfer history
+from `/api/cockpit/system-map/replay`, and then follows live transfers through
+`/ws/events?projection=system-map`. Pass `view=context`, `view=activation`, or
+`view=routing` to those three data surfaces for the corresponding lens;
+execution remains the default. Buildings represent stable harness/runtime
+boundaries; packets follow the exact displayed edge selected by each projected
+event. The live log records each boundary as soon as it arrives, while a paced
+queue moves one packet at a time so bursty runs remain readable; pause and
+single-step controls operate on that same queue. Selecting any building or its
+legend entry scopes the live log to transfers entering or leaving that
+component; **Show all** restores the complete stream. Functional categories
+occupy separate labeled districts, and restrained building beacons plus district
+signals show the source and destination of the transfer currently in motion.
+Each component also keeps a compact badge immediately left of its label for
+recent incoming and outgoing events. The source and destination temporarily
+expand into readable callouts
+while a transfer moves; selecting a building or badge opens one collision-aware
+activity stack connected to its component. Selecting a card opens the full trace
+details in the inspector.
+The bottom timeline groups consecutive transfers by run and generation, with
+retry attempts preserved in the selected-step readout. Its scrubber pauses live
+playback at any observed step, highlights the selected transfer and available
+parent-span chain, and dims unrelated paths;
+**Follow latest** clears that historical focus and resumes the paced queue.
+New TypeScript event records carry versioned trace/span metadata with
+stable parentage, paired start/completion timestamps, latency, token and byte
+counts, and allowlisted provider/model identifiers. Selecting a packet exposes
+that trace context without copying raw prompts, model/tool output, or
+credentials.
+
+The context lens follows allowlisted metadata through run goals, playbook and
+dead-end inputs, context selection, semantic compaction, prompt assembly,
+candidate generation, score evidence, the gate, support-role synthesis,
+curation, approval, durable artifacts, and the next generation. The projection
+never includes prompt text, model/tool output, or arbitrary context content.
+
+The browser surface ships as a dependency-free asset under `dashboard/system-map`
+and is loaded only when `/system-map` is requested. Core topology and redacted
+event projection remain in the server. `npm run check:system-map-bundle-size`
+enforces a 30 KB gzip budget for the dashboard asset and is included in `npm run lint`.
+
+This first slice is TypeScript-only. Python parity is deferred while the
+topology and transfer contract stabilize.
+
 Applications with an in-process component host can pass a
 `RegistryRuntimeActivationController` through the `runtimeActivation` option of
 `runControlPlaneCommand`. In that configuration, `promotion apply` and

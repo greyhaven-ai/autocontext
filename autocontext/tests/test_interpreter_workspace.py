@@ -154,14 +154,17 @@ def test_base_exception_from_candidate_is_contained() -> None:
 
 
 def test_variables_never_invoke_candidate_repr_or_len() -> None:
-    ws = InterpreterWorkspace()
-    result = ws.run(
-        "def explode(self):\n"
-        "    raise SystemExit(7)\n"
-        'Trap = type("Trap", (), {"__repr__": explode, "__len__": explode})\n'
-        "value = Trap()"
-    )
-    assert result.error is None
+    class Trap:
+        def __repr__(self) -> str:
+            raise SystemExit(7)
+
+        def __len__(self) -> int:
+            raise SystemExit(7)
+
+    # Dynamic type construction and dunder definitions are intentionally
+    # rejected in candidate source. Seed a trusted host object to retain the
+    # metadata-rendering regression without weakening the execution policy.
+    ws = InterpreterWorkspace(seed={"value": Trap()})
 
     by_name = {variable.name: variable for variable in ws.variables()}
     assert by_name["value"].type_name == "Trap"
@@ -170,15 +173,11 @@ def test_variables_never_invoke_candidate_repr_or_len() -> None:
 
 
 def test_snapshot_never_invokes_candidate_deepcopy() -> None:
-    ws = InterpreterWorkspace()
-    result = ws.run(
-        "def explode(self, memo):\n"
-        "    raise SystemExit(9)\n"
-        'Trap = type("Trap", (), {"__deepcopy__": explode})\n'
-        "value = Trap()\n"
-        "plain = [[1], [2]]"
-    )
-    assert result.error is None
+    class Trap:
+        def __deepcopy__(self, memo):
+            raise SystemExit(9)
+
+    ws = InterpreterWorkspace(seed={"value": Trap(), "plain": [[1], [2]]})
 
     snapshot = ws.snapshot()
     assert "value" in snapshot.skipped

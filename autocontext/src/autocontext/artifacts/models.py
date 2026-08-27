@@ -26,7 +26,13 @@ class ArtifactProvenance(BaseModel):
 class _ArtifactBase(BaseModel):
     """Shared fields for all artifact types."""
 
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex, description="Unique artifact identifier")
+    id: str = Field(
+        default_factory=lambda: uuid.uuid4().hex,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+        description="Opaque storage-safe artifact identifier (not a filesystem path)",
+    )
     name: str = Field(..., min_length=1, description="Human-readable artifact name")
     version: int = Field(..., ge=1, description="Monotonically increasing version number")
     scenario: str = Field(..., min_length=1, description="Primary scenario this artifact targets")

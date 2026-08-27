@@ -26,6 +26,7 @@ from pydantic import BaseModel
 
 from autocontext.agents.types import LlmFn
 from autocontext.scenarios.base import ScenarioInterface
+from autocontext.scenarios.custom.codegen_security import validate_generated_scenario_name
 from autocontext.scenarios.custom.family_pipeline import (
     validate_for_family,
     validate_source_for_family,
@@ -89,6 +90,8 @@ class GenericScenarioCreator:
 
     def create(self, description: str, name: str) -> ScenarioInterface:
         """Design → validate → codegen → persist → load → register."""
+        validate_generated_scenario_name(name)
+
         # 1. Design the spec
         spec = self.designer_fn(description, self.llm_fn)
 

@@ -18,20 +18,27 @@ export function buildGenerationTournamentEventSequence(opts: {
   generation: number;
   scheduledMatches: number;
   tournamentResult: TournamentResult;
+  attempt?: number;
 }): GenerationLoopEventSequenceItem[] {
   return [
-    buildTournamentStartedEvent(opts.runId, opts.generation, opts.scheduledMatches),
+    buildGenerationTournamentStartedEvent(
+      opts.runId,
+      opts.generation,
+      opts.scheduledMatches,
+      opts.attempt,
+    ),
     ...opts.tournamentResult.matches.map((match, matchIndex) =>
       buildMatchCompletedEvent(opts.runId, opts.generation, matchIndex, match.score, match.winner),
     ),
-    buildTournamentCompletedEvent(opts.runId, opts.generation, opts.tournamentResult),
+    buildTournamentCompletedEvent(opts.runId, opts.generation, opts.tournamentResult, opts.attempt),
   ];
 }
 
-function buildTournamentStartedEvent(
+export function buildGenerationTournamentStartedEvent(
   runId: string,
   generation: number,
   scheduledMatches: number,
+  attempt?: number,
 ): GenerationLoopEventSequenceItem {
   return {
     event: "tournament_started",
@@ -39,6 +46,7 @@ function buildTournamentStartedEvent(
       run_id: runId,
       generation,
       matches: scheduledMatches,
+      ...(attempt === undefined ? {} : { attempt }),
     } as TournamentStartedPayload,
   };
 }
@@ -66,9 +74,13 @@ function buildTournamentCompletedEvent(
   runId: string,
   generation: number,
   tournamentResult: TournamentResult,
+  attempt?: number,
 ): GenerationLoopEventSequenceItem {
   return {
     event: "tournament_completed",
-    payload: buildTournamentCompletedPayload(runId, generation, tournamentResult),
+    payload: {
+      ...buildTournamentCompletedPayload(runId, generation, tournamentResult),
+      ...(attempt === undefined ? {} : { attempt }),
+    },
   };
 }

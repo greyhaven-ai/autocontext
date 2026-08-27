@@ -1,7 +1,9 @@
 """Tests for HarnessLoader, parse_architect_harness_specs, and ArtifactStore harness methods."""
 from __future__ import annotations
 
+import os
 import textwrap
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -9,8 +11,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import autocontext.execution.harness_loader as harness_loader_module
 from autocontext.agents.architect import parse_architect_harness_specs
 from autocontext.execution.harness_loader import _SAFE_BUILTINS, HarnessLoader, HarnessValidationResult
+from autocontext.execution.isolated_python import IsolatedOutputLimitError
+from autocontext.storage.artifact_harness_codegen import MAX_HARNESS_SOURCE_BYTES
 from autocontext.storage.artifacts import ArtifactStore
 
 # ── HarnessLoader ──────────────────────────────────────────────────────────────
@@ -28,6 +33,73 @@ class TestHarnessLoaderLoadEmpty:
         loader = HarnessLoader(tmp_path / "no_such_dir")
         loaded = loader.load()
         assert loaded == []
+
+
+class TestHarnessLoaderFilesystemConfinement:
+    _VALIDATOR = "def validate_strategy(strategy, scenario):\n    return True, []\n"
+
+    def test_scenario_symlink_is_not_followed(self, tmp_path: Path) -> None:
+        knowledge = tmp_path / "knowledge"
+        knowledge.mkdir()
+        outside_harness = tmp_path / "outside" / "harness"
+        outside_harness.mkdir(parents=True)
+        (outside_harness / "outside.py").write_text(self._VALIDATOR, encoding="utf-8")
+        (knowledge / "grid_ctf").symlink_to(outside_harness.parent, target_is_directory=True)
+
+        loader = HarnessLoader(knowledge / "grid_ctf" / "harness")
+
+        assert loader.load() == []
+        assert any("safely" in error for error in loader.load_errors)
+
+    def test_harness_directory_symlink_is_not_followed(self, tmp_path: Path) -> None:
+        scenario = tmp_path / "knowledge" / "grid_ctf"
+        scenario.mkdir(parents=True)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "outside.py").write_text(self._VALIDATOR, encoding="utf-8")
+        (scenario / "harness").symlink_to(outside, target_is_directory=True)
+
+        loader = HarnessLoader(scenario / "harness")
+
+        assert loader.load() == []
+        assert any("safely" in error for error in loader.load_errors)
+
+    def test_final_file_symlink_is_not_loaded(self, tmp_path: Path) -> None:
+        harness = tmp_path / "knowledge" / "grid_ctf" / "harness"
+        harness.mkdir(parents=True)
+        outside = tmp_path / "outside.py"
+        outside.write_text(self._VALIDATOR, encoding="utf-8")
+        (harness / "outside.py").symlink_to(outside)
+
+        loader = HarnessLoader(harness)
+
+        assert loader.load() == []
+        assert not loader.has_callable("outside", "validate_strategy")
+
+    def test_oversized_source_is_not_loaded(self, tmp_path: Path) -> None:
+        harness = tmp_path / "knowledge" / "grid_ctf" / "harness"
+        harness.mkdir(parents=True)
+        (harness / "oversized.py").write_bytes(b"x" * (MAX_HARNESS_SOURCE_BYTES + 1))
+
+        loader = HarnessLoader(harness)
+
+        assert loader.load() == []
+        assert any("could not be read" in error for error in loader.load_errors)
+
+    def test_aggregate_source_limit_stops_loading(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        harness = tmp_path / "knowledge" / "grid_ctf" / "harness"
+        harness.mkdir(parents=True)
+        (harness / "validator.py").write_text(self._VALIDATOR, encoding="utf-8")
+        monkeypatch.setattr(harness_loader_module, "MAX_HARNESS_CONTEXT_BYTES", 1)
+
+        loader = HarnessLoader(harness)
+
+        assert loader.load() == []
+        assert any("aggregate" in error for error in loader.load_errors)
 
 
 class TestHarnessLoaderLoadValid:
@@ -397,6 +469,44 @@ class TestHarnessLoaderSandbox:
         loaded = loader.load()
         return loader, loaded
 
+    def test_harness_source_executes_only_in_children(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        observed_pids: list[int] = []
+        original_exec = harness_loader_module._exec_harness_source
+
+        def tracking_exec(source: str, namespace: dict[str, Any]) -> None:
+            observed_pids.append(os.getpid())
+            original_exec(source, namespace)
+
+        monkeypatch.setattr(harness_loader_module, "_exec_harness_source", tracking_exec)
+        loader, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(strategy, scenario):
+                return True, []
+        """)
+
+        assert loaded == ["test"]
+        assert observed_pids == []
+        assert loader.validate_strategy({}, None).passed
+        assert observed_pids == []
+
+    def test_callable_output_is_bounded(self, tmp_path: Path) -> None:
+        h_dir = tmp_path / "harness"
+        h_dir.mkdir(parents=True)
+        (h_dir / "large.py").write_text(textwrap.dedent("""\
+            def parse_game_state(raw):
+                return "x" * 100000
+        """), encoding="utf-8")
+        loader = HarnessLoader(h_dir, max_output_bytes=1024)
+
+        assert loader.load() == ["large"]
+        fn = loader.get_callable("large", "parse_game_state")
+        assert fn is not None
+        with pytest.raises(IsolatedOutputLimitError):
+            fn("raw")
+
     def test_import_rejected(self, tmp_path: Path) -> None:
         _, loaded = self._write_and_load(tmp_path, """\
             import os
@@ -470,6 +580,41 @@ class TestHarnessLoaderSandbox:
         assert not result.passed
         assert any("timed out" in e for e in result.errors)
         assert elapsed < 3.0  # should be ~0.5s, generous upper bound
+
+    def test_worker_thread_fails_closed_before_executing_harness(self, tmp_path: Path) -> None:
+        h_dir = tmp_path / "harness"
+        h_dir.mkdir(parents=True)
+        (h_dir / "test.py").write_text(
+            "while True:\n    pass\n",
+            encoding="utf-8",
+        )
+        loader = HarnessLoader(h_dir, timeout_seconds=0.1)
+        result: list[list[str]] = []
+        worker = threading.Thread(target=lambda: result.append(loader.load()))
+
+        worker.start()
+        worker.join(timeout=1.0)
+
+        assert not worker.is_alive()
+        assert result == [[]]
+        validation = loader.validate_strategy({}, None)
+        assert not validation.passed
+        assert any("isolation unavailable" in error for error in validation.errors)
+
+    def test_harness_cannot_catch_timeout_signal(self, tmp_path: Path) -> None:
+        loader, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(strategy, scenario):
+                try:
+                    while True:
+                        pass
+                except:
+                    return True, []
+        """, timeout=0.1)
+
+        assert loaded == []
+        result = loader.validate_strategy({}, None)
+        assert not result.passed
+        assert any("exception handling" in error for error in result.errors)
 
     def test_safe_validators_still_work(self, tmp_path: Path) -> None:
         loader, loaded = self._write_and_load(tmp_path, """\

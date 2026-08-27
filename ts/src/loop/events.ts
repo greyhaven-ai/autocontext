@@ -6,6 +6,8 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { EventTraceTracker, type EventTraceSpan } from "./event-trace.js";
+
 export interface EventStreamRecord {
   channel: string;
   event: string;
@@ -13,6 +15,7 @@ export interface EventStreamRecord {
   seq: number;
   ts: string;
   v: 1;
+  trace?: EventTraceSpan;
 }
 
 export type EventCallback = (
@@ -25,9 +28,12 @@ export class EventStreamEmitter {
   readonly path: string;
   #sequence = 0;
   #subscribers: EventCallback[] = [];
+  readonly #traceTracker = new EventTraceTracker();
+  readonly #now: () => Date;
 
-  constructor(path: string) {
+  constructor(path: string, opts: { now?: () => Date } = {}) {
     this.path = path;
+    this.#now = opts.now ?? (() => new Date());
   }
 
   subscribe(callback: EventCallback): void {
@@ -53,13 +59,15 @@ export class EventStreamEmitter {
     const seq = this.#sequence;
     const subscribersCopy = [...this.#subscribers];
 
+    const ts = this.#now().toISOString();
     const line: EventStreamRecord = {
       channel,
       event,
       payload,
       seq,
-      ts: new Date().toISOString(),
+      ts,
       v: 1,
+      trace: this.#traceTracker.trace(event, payload, ts, seq),
     };
 
     appendFileSync(this.path, JSON.stringify(line) + "\n", "utf-8");

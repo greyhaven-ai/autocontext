@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import re
-
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 from autocontext.scenarios.custom.investigation_spec import InvestigationSpec
 
 
 def _class_name(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", name)
-    return "".join(part.capitalize() for part in parts if part) + "Investigation"
+    return generated_class_name(name, "Investigation")
 
 
 def generate_investigation_class(spec: InvestigationSpec, name: str) -> str:
@@ -172,7 +170,7 @@ class {class_name}(InvestigationInterface):
     def is_terminal(self, state: dict[str, Any]) -> bool:
         required = set({required_actions!r})
         completed = set(state.get("completed_actions", []))
-        return bool(state.get("diagnosis")) or required.issubset(completed) or state.get("step", 0) >= {spec.max_steps}
+        return bool(state.get("diagnosis")) or required.issubset(completed) or state.get("step", 0) >= {spec.max_steps!r}
 
     def get_evidence_pool(self, state: dict[str, Any]) -> list[EvidenceItem]:
         del state
@@ -249,5 +247,5 @@ class {class_name}(InvestigationInterface):
         return "Evaluate on evidence quality, red herring avoidance, and diagnosis accuracy."
 
     def max_steps(self) -> int:
-        return {spec.max_steps}
+        return {spec.max_steps!r}
 """

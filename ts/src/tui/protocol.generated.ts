@@ -171,14 +171,14 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [HelloMsgSchema,
 // --- Client -> Server messages ---
 
 export const PauseCmdSchema = z.object({
-  client_run_id: z.string().optional().nullable(),
-  command_id: z.string().optional().nullable(),
+  client_run_id: z.string().min(1).max(200).optional().nullable(),
+  command_id: z.string().min(1).max(200).optional().nullable(),
   type: z.literal("pause"),
 }).strict();
 
 export const ResumeCmdSchema = z.object({
-  client_run_id: z.string().optional().nullable(),
-  command_id: z.string().optional().nullable(),
+  client_run_id: z.string().min(1).max(200).optional().nullable(),
+  command_id: z.string().min(1).max(200).optional().nullable(),
   type: z.literal("resume"),
 }).strict();
 
@@ -189,33 +189,33 @@ export const StopCmdSchema = z.object({
 }).strict();
 
 export const InjectHintCmdSchema = z.object({
-  client_run_id: z.string().optional().nullable(),
-  command_id: z.string().optional().nullable(),
+  client_run_id: z.string().min(1).max(200).optional().nullable(),
+  command_id: z.string().min(1).max(200).optional().nullable(),
   type: z.literal("inject_hint"),
-  text: z.string().min(1),
+  text: z.string().min(1).max(16384),
 }).strict();
 
 export const OverrideGateCmdSchema = z.object({
-  client_run_id: z.string().optional().nullable(),
-  command_id: z.string().optional().nullable(),
+  client_run_id: z.string().min(1).max(200).optional().nullable(),
+  command_id: z.string().min(1).max(200).optional().nullable(),
   type: z.literal("override_gate"),
   decision: z.enum(["advance", "retry", "rollback"]),
 }).strict();
 
 export const ChatAgentCmdSchema = z.object({
-  client_run_id: z.string().optional().nullable(),
-  command_id: z.string().optional().nullable(),
+  client_run_id: z.string().min(1).max(200).optional().nullable(),
+  command_id: z.string().min(1).max(200).optional().nullable(),
   type: z.literal("chat_agent"),
-  role: z.string(),
-  message: z.string().min(1),
+  role: z.string().min(1).max(128),
+  message: z.string().min(1).max(16384),
 }).strict();
 
 export const StartRunCmdSchema = z.object({
-  client_run_id: z.string().optional().nullable(),
-  command_id: z.string().optional().nullable(),
+  client_run_id: z.string().min(1).max(200).optional().nullable(),
+  command_id: z.string().min(1).max(200).optional().nullable(),
   type: z.literal("start_run"),
-  scenario: z.string(),
-  generations: z.number().int().gt(0),
+  scenario: z.string().min(1).max(128),
+  generations: z.number().int().gt(0).lte(100),
   require_playbook_approval: z.boolean().optional(),
 }).strict();
 
@@ -225,7 +225,7 @@ export const ListScenariosCmdSchema = z.object({
 
 export const CreateScenarioCmdSchema = z.object({
   type: z.literal("create_scenario"),
-  description: z.string().min(1),
+  description: z.string().min(1).max(16384),
 }).strict();
 
 export const ConfirmScenarioCmdSchema = z.object({
@@ -234,7 +234,7 @@ export const ConfirmScenarioCmdSchema = z.object({
 
 export const ReviseScenarioCmdSchema = z.object({
   type: z.literal("revise_scenario"),
-  feedback: z.string().min(1),
+  feedback: z.string().min(1).max(16384),
 }).strict();
 
 export const CancelScenarioCmdSchema = z.object({

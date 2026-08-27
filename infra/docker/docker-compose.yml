@@ -1,5 +1,17 @@
+x-runtime-security: &runtime-security
+  cap_drop:
+    - ALL
+  init: true
+  pids_limit: 256
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m
+
 services:
   autocontext:
+    <<: *runtime-security
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile
@@ -16,6 +28,7 @@ services:
       - ../../skills:/workspace/skills
     command: run --scenario grid_ctf --gens 1
   dashboard:
+    <<: *runtime-security
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile
@@ -25,6 +38,7 @@ services:
       AUTOCONTEXT_KNOWLEDGE_ROOT: /workspace/knowledge
       AUTOCONTEXT_SKILLS_ROOT: /workspace/skills
       AUTOCONTEXT_AGENT_PROVIDER: deterministic
+      AUTOCONTEXT_SERVER_TOKEN: ${AUTOCONTEXT_SERVER_TOKEN:?set a random value of at least 32 characters}
     volumes:
       - ../../runs:/workspace/runs
       - ../../knowledge:/workspace/knowledge
@@ -32,4 +46,4 @@ services:
       - ../../autocontext/dashboard:/workspace/dashboard
     command: serve --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"

@@ -70,6 +70,10 @@ class ScenarioCreator:
         return spec
 
     def build_and_validate(self, spec: ScenarioSpec) -> BuildResult:
+        spec_errors = validate_spec(spec)
+        if spec_errors:
+            raise ValueError(f"scenario spec validation failed: {'; '.join(spec_errors)}")
+
         source = generate_scenario_class(spec)
 
         code_errors = validate_generated_code(source)

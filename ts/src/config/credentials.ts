@@ -1,7 +1,7 @@
 /**
  * Credential storage with hardened security (AC-430).
  *
- * Phase 1: Multi-provider store, 0600 perms, shell escape hatch, key validation
+ * Phase 1: Multi-provider store, 0600 perms, literal key enforcement, key validation
  * Phase 2: Known providers registry, expanded validation, selective removal, discovery
  */
 

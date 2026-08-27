@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import re
-
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 from autocontext.scenarios.custom.workflow_spec import WorkflowSpec
 
 
 def _class_name(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", name)
-    return "".join(part.capitalize() for part in parts if part) + "Workflow"
+    return generated_class_name(name, "Workflow")
 
 
 def generate_workflow_class(spec: WorkflowSpec, name: str) -> str:
@@ -318,7 +316,7 @@ class {class_name}(WorkflowInterface):
     def is_terminal(self, state: dict[str, Any]) -> bool:
         required = set({required_actions!r})
         completed = set(state.get("completed_actions", []))
-        return required.issubset(completed) or state.get("step", 0) >= {spec.max_steps}
+        return required.issubset(completed) or state.get("step", 0) >= {spec.max_steps!r}
 
     def execute_step(self, state: dict[str, Any], step: WorkflowStep) -> tuple[ActionResult, dict[str, Any]]:
         return self.execute_action(state, Action(name=step.name, parameters={{}}))
@@ -422,5 +420,5 @@ class {class_name}(WorkflowInterface):
         return "Evaluate on workflow completeness, compensation quality, and side-effect containment."
 
     def max_steps(self) -> int:
-        return {spec.max_steps}
+        return {spec.max_steps!r}
 '''

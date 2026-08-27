@@ -10,6 +10,9 @@
  *   5. Persist to SQLite + artifacts
  */
 
+import { Buffer } from "node:buffer";
+import { join } from "node:path";
+
 import type {
   CompletionResult,
   LLMProvider,
@@ -95,7 +98,6 @@ import {
   queueFreshStartHint,
   type GenerationRunState,
 } from "./generation-run-state.js";
-import { join } from "node:path";
 import type { GenerationRole } from "../providers/index.js";
 import type { RuntimeSession } from "../session/runtime-session.js";
 import {
@@ -351,18 +353,22 @@ export class GenerationRunner {
           orchestration,
           curatorEnabled: this.#curatorEnabled,
           maxRetries: this.#maxRetries,
-          runAttempt: ({ attemptOrchestration, generation }) =>
-            this.runGenerationAttempt(attemptOrchestration, runId, generation),
+          onEvent: (event) => this.emit(event.event, event.payload),
+          runAttempt: ({ attemptOrchestration, generation, onEvent }) =>
+            this.runGenerationAttempt(attemptOrchestration, runId, generation, onEvent),
         }),
       );
       generationBudget.check("generation lifecycle");
       orchestration = lifecycle.orchestration;
       this.#runState = orchestration.runState;
-      for (const event of lifecycle.events) {
-        this.emit(event.event, event.payload);
-      }
-
+      const persistenceStartedAt = Date.now();
+      this.emit("persistence_started", { run_id: runId, generation: lifecycle.generation });
       this.#journal.persistGeneration(runId, lifecycle.generation, lifecycle.finalizedAttempt);
+      this.emit("persistence_completed", {
+        run_id: runId,
+        generation: lifecycle.generation,
+        duration_ms: Date.now() - persistenceStartedAt,
+      });
       generationBudget.check("generation persistence");
       await this.#controller?.waitAtBoundary();
       await this.runSupportRoles(runId, lifecycle.generation, lifecycle.finalizedAttempt);
@@ -412,6 +418,7 @@ export class GenerationRunner {
     attemptOrchestration: GenerationAttemptOrchestration,
     runId: RunId,
     generation: number,
+    onEvent?: (event: GenerationLoopEventSequenceItem) => void,
   ): Promise<{
     attemptOrchestration: GenerationAttemptOrchestration;
     events: GenerationLoopEventSequenceItem[];
@@ -439,6 +446,12 @@ export class GenerationRunner {
         seedBase: this.#seedBase,
         matchesPerGeneration: this.#matchesPerGeneration,
         currentElo: this.#runState!.currentElo,
+        onEvent,
+        roleMetadata: {
+          provider: this.providerForRole("competitor").name,
+          model: this.modelForRole("competitor"),
+          inputBytes: Buffer.byteLength(competitorPrompt, "utf-8"),
+        },
         executeCompetitor: () =>
           this.completeRole(
             "competitor",
@@ -785,14 +798,34 @@ export class GenerationRunner {
     gen: number,
     attempt: GenerationAttempt,
   ): Promise<void> {
+    const analystPrompt = this.buildSupportPrompt("analyst", runId, gen, attempt);
+    const coachPrompt = this.buildSupportPrompt("coach", runId, gen, attempt);
+    this.emit("role_started", this.buildRoleStartedPayload(runId, gen, "analyst", analystPrompt));
+    this.emit("role_started", this.buildRoleStartedPayload(runId, gen, "coach", coachPrompt));
     const analystStartedAt = Date.now();
     const coachStartedAt = Date.now();
     const [analystResult, coachResult] = await Promise.all([
-      this.completeRole("analyst", this.buildSupportPrompt("analyst", runId, gen, attempt)),
-      this.completeRole("coach", this.buildSupportPrompt("coach", runId, gen, attempt)),
+      this.completeRole("analyst", analystPrompt),
+      this.completeRole("coach", coachPrompt),
     ]);
-    this.emitRoleCompleted(runId, gen, "analyst", analystStartedAt, analystResult.usage);
-    this.emitRoleCompleted(runId, gen, "coach", coachStartedAt, coachResult.usage);
+    this.emitRoleCompleted(
+      runId,
+      gen,
+      "analyst",
+      analystStartedAt,
+      analystResult.usage,
+      analystPrompt,
+      analystResult.model ?? undefined,
+    );
+    this.emitRoleCompleted(
+      runId,
+      gen,
+      "coach",
+      coachStartedAt,
+      coachResult.usage,
+      coachPrompt,
+      coachResult.model ?? undefined,
+    );
 
     this.#store.appendAgentOutput(runId, gen, "analyst", analystResult.text);
     this.#store.appendAgentOutput(runId, gen, "coach", coachResult.text);
@@ -1168,11 +1201,33 @@ export class GenerationRunner {
     role: "competitor" | "analyst" | "coach" | "curator",
     startedAt: number,
     usage: Record<string, number>,
+    input = "",
+    model?: string,
   ): void {
     this.emit(
       "role_completed",
-      buildRoleCompletedPayload(runId, generation, role, Date.now() - startedAt, usage),
+      buildRoleCompletedPayload(runId, generation, role, Date.now() - startedAt, usage, {
+        provider: this.providerForRole(role).name,
+        model: model || this.modelForRole(role),
+        inputBytes: Buffer.byteLength(input, "utf-8"),
+      }),
     );
+  }
+
+  private buildRoleStartedPayload(
+    runId: RunId,
+    generation: number,
+    role: "competitor" | "analyst" | "coach" | "curator",
+    input: string,
+  ): Record<string, unknown> {
+    return {
+      run_id: runId,
+      generation,
+      role,
+      provider: this.providerForRole(role).name,
+      ...(this.modelForRole(role) ? { model: this.modelForRole(role) } : {}),
+      input_bytes: Buffer.byteLength(input, "utf-8"),
+    };
   }
 }
 

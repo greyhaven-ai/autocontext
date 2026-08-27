@@ -508,6 +508,7 @@ class TestProviderBridgeRegistration:
         settings.openclaw_agent_command = ""
         settings.openclaw_agent_http_endpoint = "http://localhost:8080/execute"
         settings.openclaw_agent_http_headers = '{"Authorization":"Bearer token"}'
+        settings.openclaw_allow_private_network_endpoint = True
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
@@ -535,6 +536,7 @@ class TestOpenClawSettings:
         assert hasattr(s, "openclaw_agent_command")
         assert hasattr(s, "openclaw_agent_http_endpoint")
         assert hasattr(s, "openclaw_agent_http_headers")
+        assert hasattr(s, "openclaw_allow_private_network_endpoint")
         assert hasattr(s, "openclaw_compatibility_version")
         assert hasattr(s, "openclaw_timeout_seconds")
         assert hasattr(s, "openclaw_max_retries")
@@ -544,6 +546,7 @@ class TestOpenClawSettings:
         assert s.openclaw_agent_command == ""
         assert s.openclaw_agent_http_endpoint == ""
         assert s.openclaw_agent_http_headers == ""
+        assert s.openclaw_allow_private_network_endpoint is False
         assert s.openclaw_compatibility_version == "1.0"
         assert s.openclaw_timeout_seconds == 30.0
         assert s.openclaw_max_retries == 2
@@ -560,6 +563,7 @@ class TestOpenClawSettings:
             "AUTOCONTEXT_OPENCLAW_AGENT_COMMAND": "hermes-fly --json",
             "AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT": "http://localhost:8080/execute",
             "AUTOCONTEXT_OPENCLAW_AGENT_HTTP_HEADERS": '{"Authorization":"Bearer token"}',
+            "AUTOCONTEXT_OPENCLAW_ALLOW_PRIVATE_NETWORK_ENDPOINT": "true",
             "AUTOCONTEXT_OPENCLAW_COMPATIBILITY_VERSION": "1.1",
             "AUTOCONTEXT_OPENCLAW_TIMEOUT_SECONDS": "60.0",
             "AUTOCONTEXT_OPENCLAW_MAX_RETRIES": "5",
@@ -573,6 +577,7 @@ class TestOpenClawSettings:
         assert s.openclaw_agent_command == "hermes-fly --json"
         assert s.openclaw_agent_http_endpoint == "http://localhost:8080/execute"
         assert s.openclaw_agent_http_headers == '{"Authorization":"Bearer token"}'
+        assert s.openclaw_allow_private_network_endpoint is True
         assert s.openclaw_compatibility_version == "1.1"
         assert s.openclaw_timeout_seconds == 60.0
         assert s.openclaw_max_retries == 5

@@ -1,5 +1,6 @@
 """Tests for the /api/knowledge/{scenario} read + write endpoints."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -92,3 +93,47 @@ def test_put_rejects_invalid_scenario_ids(client: TestClient) -> None:
     assert client.put("/api/knowledge/bad!name", json={"hints": "x"}).status_code == 400
     assert client.put("/api/knowledge/dots..dots", json={"hints": "x"}).status_code == 400
     assert client.put(f"/api/knowledge/{'a' * 129}", json={"hints": "x"}).status_code == 400
+
+
+def test_knowledge_endpoint_rejects_final_file_symlinks(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    if not hasattr(os, "O_NOFOLLOW"):
+        pytest.skip("platform does not expose no-follow file opens")
+    base = tmp_path / "knowledge" / "grid_ctf"
+    base.mkdir(parents=True)
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside-secret", encoding="utf-8")
+    (base / "playbook.md").symlink_to(outside)
+
+    read_response = client.get("/api/knowledge/grid_ctf")
+    write_response = client.put("/api/knowledge/grid_ctf", json={"playbook": "overwrite"})
+
+    assert read_response.status_code == 400
+    assert "outside-secret" not in read_response.text
+    assert write_response.status_code == 400
+    assert outside.read_text(encoding="utf-8") == "outside-secret"
+    assert (base / "playbook.md").is_symlink()
+
+
+def test_knowledge_endpoint_rejects_scenario_directory_symlink(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    if not hasattr(os, "O_NOFOLLOW"):
+        pytest.skip("platform does not expose no-follow directory opens")
+    knowledge_root = tmp_path / "knowledge"
+    outside = tmp_path / "outside"
+    knowledge_root.mkdir()
+    outside.mkdir()
+    (outside / "hints.md").write_text("outside-secret", encoding="utf-8")
+    (knowledge_root / "grid_ctf").symlink_to(outside, target_is_directory=True)
+
+    read_response = client.get("/api/knowledge/grid_ctf")
+    write_response = client.put("/api/knowledge/grid_ctf", json={"hints": "overwrite"})
+
+    assert read_response.status_code == 400
+    assert "outside-secret" not in read_response.text
+    assert write_response.status_code == 400
+    assert (outside / "hints.md").read_text(encoding="utf-8") == "outside-secret"

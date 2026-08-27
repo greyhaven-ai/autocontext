@@ -9,11 +9,13 @@ from unittest.mock import patch
 
 import pytest
 
+import autocontext.knowledge.export as export_module
 from autocontext.config import AppSettings
 from autocontext.knowledge.export import SkillPackage, _clean_lessons, export_skill_package, list_solved_scenarios
 from autocontext.knowledge.search import _keyword_score, _tokenize, search_strategies
 from autocontext.mcp.tools import MtsToolContext, export_skill, list_solved
 from autocontext.mcp.tools import search_strategies as mcp_search
+from autocontext.security.confined_files import ConfinedFileTooLarge
 
 
 def _make_settings(tmp_path: Path) -> AppSettings:
@@ -158,6 +160,39 @@ class TestExport:
         (playbook_dir / "playbook.md").write_text("# Evolved Strategy\n\nUse flanking.", encoding="utf-8")
         pkg = export_skill_package(ctx, "grid_ctf")
         assert "Evolved Strategy" in pkg.playbook
+
+    def test_export_reads_harness_through_confined_store(self, tmp_path: Path) -> None:
+        ctx = _make_ctx(tmp_path)
+        ctx.artifacts.write_harness("grid_ctf", "validator", "def validate(): ...")
+
+        pkg = export_skill_package(ctx, "grid_ctf")
+
+        assert pkg.harness == {"validator": "def validate(): ..."}
+
+    def test_export_does_not_follow_harness_file_symlink(self, tmp_path: Path) -> None:
+        ctx = _make_ctx(tmp_path)
+        outside = tmp_path / "outside.py"
+        outside.write_text("secret", encoding="utf-8")
+        harness_dir = ctx.artifacts.harness_dir("grid_ctf")
+        harness_dir.mkdir(parents=True)
+        (harness_dir / "validator.py").symlink_to(outside)
+
+        pkg = export_skill_package(ctx, "grid_ctf")
+
+        assert pkg.harness == {}
+
+    def test_export_enforces_aggregate_harness_limit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ctx = _make_ctx(tmp_path)
+        ctx.artifacts.write_harness("grid_ctf", "alpha", "a" * 32)
+        ctx.artifacts.write_harness("grid_ctf", "beta", "b" * 32)
+        monkeypatch.setattr(export_module, "MAX_HARNESS_CONTEXT_BYTES", 48)
+
+        with pytest.raises(ConfinedFileTooLarge, match="exported harness"):
+            export_skill_package(ctx, "grid_ctf")
 
     def test_export_unknown_scenario(self, tmp_path: Path) -> None:
         ctx = _make_ctx(tmp_path)

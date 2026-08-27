@@ -10,13 +10,33 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-oauth-"));
+}
+
+async function getFreePort(): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("Failed to reserve a callback port"));
+        return;
+      }
+      const { port } = address;
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve(port);
+      });
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -119,31 +139,106 @@ describe("OAuth provider configs", () => {
 
 describe("Local callback server", () => {
   it("waitForCallback starts server and resolves with code from redirect", async () => {
-    const { waitForCallback } = await import("../src/config/oauth.js");
+    const { generateState, waitForCallback } = await import("../src/config/oauth.js");
 
-    // Use a random high port to avoid conflicts
-    const port = 49100 + Math.floor(Math.random() * 900);
+    const port = await getFreePort();
     const callbackPath = "/callback";
+    const expectedState = generateState();
 
-    const promise = waitForCallback({ port, path: callbackPath, timeoutMs: 5000 });
+    const promise = waitForCallback({
+      port,
+      path: callbackPath,
+      expectedState,
+      timeoutMs: 5000,
+    });
 
     // Simulate browser redirect
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
-    const url = `http://127.0.0.1:${port}${callbackPath}?code=test-auth-code&state=test-state`;
+    const url = `http://127.0.0.1:${port}${callbackPath}?code=test-auth-code&state=${expectedState}`;
     const res = await fetch(url);
     expect(res.ok).toBe(true);
 
     const result = await promise;
     expect(result.code).toBe("test-auth-code");
-    expect(result.state).toBe("test-state");
+    expect(result.state).toBe(expectedState);
+  });
+
+  it("rejects a callback with no state while continuing to wait", async () => {
+    const { generateState, waitForCallback } = await import("../src/config/oauth.js");
+    const port = await getFreePort();
+    const expectedState = generateState();
+    const promise = waitForCallback({
+      port,
+      path: "/callback",
+      expectedState,
+      timeoutMs: 5000,
+    });
+
+    const res = await fetch(`http://127.0.0.1:${port}/callback?code=attacker-code`);
+
+    expect(res.status).toBe(400);
+    const valid = await fetch(
+      `http://127.0.0.1:${port}/callback?code=valid-code&state=${expectedState}`,
+    );
+    expect(valid.ok).toBe(true);
+    await expect(promise).resolves.toEqual({ code: "valid-code", state: expectedState });
+  });
+
+  it("rejects a mismatched state without cancelling the valid callback", async () => {
+    const { generateState, waitForCallback } = await import("../src/config/oauth.js");
+    const port = await getFreePort();
+    const expectedState = generateState();
+    const promise = waitForCallback({
+      port,
+      path: "/callback",
+      expectedState,
+      timeoutMs: 5000,
+    });
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/callback?code=attacker-code&state=wrong-state`,
+    );
+
+    expect(res.status).toBe(400);
+    const valid = await fetch(
+      `http://127.0.0.1:${port}/callback?code=valid-code&state=${expectedState}`,
+    );
+    expect(valid.ok).toBe(true);
+    await expect(promise).resolves.toEqual({ code: "valid-code", state: expectedState });
+  });
+
+  it("consumes a matching state after one callback", async () => {
+    const { generateState, waitForCallback } = await import("../src/config/oauth.js");
+    const port = await getFreePort();
+    const expectedState = generateState();
+    const callbackUrl = `http://127.0.0.1:${port}/callback?code=test-code&state=${expectedState}`;
+    const promise = waitForCallback({
+      port,
+      path: "/callback",
+      expectedState,
+      timeoutMs: 5000,
+    });
+
+    const first = await fetch(callbackUrl);
+    expect(first.ok).toBe(true);
+    await expect(promise).resolves.toEqual({ code: "test-code", state: expectedState });
+
+    const replay = await fetch(callbackUrl).catch(() => null);
+    expect(replay?.ok ?? false).toBe(false);
+    if (replay) expect(replay.status).toBe(409);
   });
 
   it("waitForCallback times out if no redirect arrives", async () => {
     const { waitForCallback } = await import("../src/config/oauth.js");
-    const port = 49200 + Math.floor(Math.random() * 900);
+    const port = await getFreePort();
 
     await expect(
-      waitForCallback({ port, path: "/callback", timeoutMs: 500 }),
+      waitForCallback({
+        port,
+        path: "/callback",
+        expectedState: "expected-state",
+        timeoutMs: 500,
+      }),
     ).rejects.toThrow(/timeout/i);
   });
 });
@@ -170,6 +265,21 @@ describe("OAuth token storage", () => {
     expect(tokens!.accessToken).toBe("access-123");
     expect(tokens!.refreshToken).toBe("refresh-456");
     expect(tokens!.expiresAt).toBeGreaterThan(Date.now());
+  });
+
+  it("refuses to follow a symbolic-link token file", async () => {
+    if (process.platform === "win32") return;
+    const { saveOAuthTokens } = await import("../src/config/oauth.js");
+    const outside = join(dir, "outside-tokens.json");
+    writeFileSync(outside, "sentinel", "utf-8");
+    symlinkSync(outside, join(dir, "oauth-tokens.json"));
+
+    expect(() => saveOAuthTokens(dir, "anthropic", {
+      accessToken: "access-123",
+      refreshToken: "refresh-456",
+      expiresAt: Date.now() + 3600_000,
+    })).toThrow(/symbolic-link credential file/i);
+    expect(readFileSync(outside, "utf-8")).toBe("sentinel");
   });
 
   it("isTokenExpired returns true when token is past expiry", async () => {

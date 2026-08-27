@@ -1,11 +1,13 @@
 """Tests for PolicyExecutor — zero-LLM match execution of code policies."""
 from __future__ import annotations
 
+import os
 import textwrap
 from typing import Any
 
 import pytest
 
+import autocontext.execution.policy_executor as policy_executor_module
 from autocontext.execution.policy_executor import PolicyExecutor, PolicyMatchResult
 from autocontext.scenarios.base import Result
 from autocontext.scenarios.grid_ctf import GridCtfScenario
@@ -71,6 +73,25 @@ class TestPolicyExecutorInit:
 
 
 class TestPolicyExecutorSafety:
+    def test_policy_source_executes_only_in_child(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        observed_pids: list[int] = []
+        original_exec = policy_executor_module._exec_policy_source
+
+        def tracking_exec(source: str, namespace: dict[str, Any]) -> None:
+            observed_pids.append(os.getpid())
+            original_exec(source, namespace)
+
+        monkeypatch.setattr(policy_executor_module, "_exec_policy_source", tracking_exec)
+        executor = PolicyExecutor(GridCtfScenario())
+        result = executor.execute_match(textwrap.dedent("""\
+            def choose_action(state):
+                return {"aggression": 0.5, "defense": 0.3, "path_bias": 0.6}
+        """), seed=42)
+
+        assert result.errors == []
+        # A forked child's copy-on-write mutation is not visible in the parent.
+        assert observed_pids == []
+
     def test_rejects_import_statements(self) -> None:
         scenario = GridCtfScenario()
         executor = PolicyExecutor(scenario)
@@ -126,6 +147,21 @@ class TestPolicyExecutorSafety:
         result = executor.execute_match(policy, seed=42)
         assert len(result.errors) > 0
         assert result.score == 0.0
+
+    def test_collections_facade_blocks_sys_modules_escape(self, tmp_path: Any) -> None:
+        scenario = GridCtfScenario()
+        executor = PolicyExecutor(scenario)
+        escaped_path = tmp_path / "escaped.txt"
+        policy = textwrap.dedent(f"""\
+            def choose_action(state):
+                collections._sys.modules["builtins"].open({str(escaped_path)!r}, "w").write("escaped")
+                return {{"aggression": 0.5, "defense": 0.3, "path_bias": 0.6}}
+        """)
+
+        result = executor.execute_match(policy, seed=42)
+
+        assert result.errors
+        assert not escaped_path.exists()
 
 
 # ── Restricted builtins ───────────────────────────────────────────────────────
@@ -457,6 +493,23 @@ class TestPolicyExecutorTimeout:
         assert len(result.errors) > 0
         assert any("timeout" in e.lower() or "timed out" in e.lower() for e in result.errors)
         assert result.score == 0.0
+
+    def test_policy_cannot_catch_timeout_signal(self) -> None:
+        scenario = GridCtfScenario()
+        executor = PolicyExecutor(scenario, timeout_per_match=0.1)
+        policy = textwrap.dedent("""\
+            def choose_action(state):
+                try:
+                    while True:
+                        pass
+                except:
+                    return {"aggression": 0.5, "defense": 0.3, "path_bias": 0.6}
+        """)
+
+        result = executor.execute_match(policy, seed=42)
+
+        assert result.score == 0.0
+        assert any("exception handling" in error for error in result.errors)
 
 
 # ── Batch execution ──────────────────────────────────────────────────────────
