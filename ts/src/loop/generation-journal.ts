@@ -121,6 +121,24 @@ export class GenerationJournal {
     });
   }
 
+  persistGenerationTiming(
+    runId: RunId,
+    generationIndex: number,
+    attempt: GenerationJournalAttempt,
+    durationSeconds: number,
+  ): void {
+    this.#store.upsertGeneration(runId, generationIndex, {
+      meanScore: attempt.tournamentResult.meanScore,
+      bestScore: attempt.tournamentResult.bestScore,
+      elo: attempt.tournamentResult.elo,
+      wins: attempt.tournamentResult.wins,
+      losses: attempt.tournamentResult.losses,
+      gateDecision: attempt.gateDecision,
+      status: "completed",
+      durationSeconds: Math.max(0, durationSeconds),
+    });
+  }
+
   countDeadEnds(): number {
     const content = this.#artifacts.readDeadEnds(asScenarioName(this.#scenario.name));
     if (!content) return 0;

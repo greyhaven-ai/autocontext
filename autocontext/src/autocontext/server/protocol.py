@@ -21,13 +21,17 @@ from autocontext.server.resource_limits import (
     MAX_START_RUN_GENERATIONS,
 )
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 SERVER_CAPABILITIES = ["safe_run_stop_v1"]
 
 
 def _is_none(value: object) -> bool:
     return value is None
+
+
+def _is_empty(value: object) -> bool:
+    return not value
 
 
 # ---------------------------------------------------------------------------
@@ -42,14 +46,24 @@ class ScenarioInfo(BaseModel):
     description: str
 
 
+class ExecutorAccelerator(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    count: int = Field(ge=1)
+
+
 class ExecutorResources(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     docker_image: str
-    cpu_cores: int
-    memory_gb: int
-    disk_gb: int
+    cpu_cores: float = Field(gt=0.0)
+    memory_gb: float = Field(gt=0.0)
+    disk_gb: float = Field(gt=0.0)
     timeout_minutes: int
+    accelerator: ExecutorAccelerator | None = Field(default=None, exclude_if=_is_none)
+    region: str | None = Field(default=None, exclude_if=_is_none)
+    required_telemetry: list[str] = Field(default_factory=list, exclude_if=_is_empty)
 
 
 class ExecutorInfo(BaseModel):

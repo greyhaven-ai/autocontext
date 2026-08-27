@@ -1,4 +1,4 @@
-"""Synthetic external adapter implementing autocontext.kernelbench-eval/v2.
+"""Synthetic external adapter implementing autocontext.kernelbench-eval/v3.
 
 This is deliberately not a performance benchmark. It makes the subprocess
 boundary and JSON contract runnable on a laptop; replace it with a pinned GPU
@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "autocontext.kernelbench-eval/v2"
+SCHEMA_VERSION = "autocontext.kernelbench-eval/v3"
 PROTOCOL_COMPATIBILITY_VERSION = "autocontext.kernel-protocol-compatibility/v1"
 
 

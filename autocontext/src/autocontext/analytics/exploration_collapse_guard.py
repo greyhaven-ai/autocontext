@@ -7,9 +7,11 @@ from collections import Counter
 from math import isfinite
 from pathlib import Path
 from statistics import mean
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field  # type: ignore[import-not-found]
+from pydantic import Field  # type: ignore[import-not-found]
+
+from autocontext.util.models import StrictModel
 
 GuidanceKind = Literal["hint", "playbook_update", "teacher_signal", "pressure_mode", "other"]
 CollapseMetric = Literal[
@@ -23,18 +25,7 @@ CollapseMetric = Literal[
 MitigationAction = Literal["none", "demote_guidance"]
 
 
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        return cls.model_validate(data)
-
-
-class ExplorationSnapshot(_StrictModel):
+class ExplorationSnapshot(StrictModel):
     generation_index: int = Field(ge=0)
     response_length: float = Field(ge=0)
     diversity: float | None = Field(default=None, ge=0.0)
@@ -44,7 +35,7 @@ class ExplorationSnapshot(_StrictModel):
     score: float | None = None
 
 
-class GuidanceChange(_StrictModel):
+class GuidanceChange(StrictModel):
     change_id: str = Field(min_length=1)
     generation_index: int = Field(ge=0)
     kind: GuidanceKind
@@ -52,7 +43,7 @@ class GuidanceChange(_StrictModel):
     source_span: str | None = None
 
 
-class ExplorationCollapseThresholds(_StrictModel):
+class ExplorationCollapseThresholds(StrictModel):
     window: int = Field(default=2, ge=1)
     min_signals: int = Field(default=2, ge=1)
     response_length_drop_ratio: float = Field(default=0.25, ge=0.0, le=1.0)
@@ -63,7 +54,7 @@ class ExplorationCollapseThresholds(_StrictModel):
     score_drop: float = Field(default=0.05, ge=0.0)
 
 
-class ExplorationCollapseSignal(_StrictModel):
+class ExplorationCollapseSignal(StrictModel):
     metric: CollapseMetric
     before: float
     after: float
@@ -71,7 +62,7 @@ class ExplorationCollapseSignal(_StrictModel):
     threshold: float
 
 
-class ExplorationCollapseEvent(_StrictModel):
+class ExplorationCollapseEvent(StrictModel):
     event_type: Literal["exploration_collapse_detected"] = "exploration_collapse_detected"
     guidance_change: GuidanceChange
     advisory_only: bool
@@ -92,7 +83,7 @@ class ExplorationCollapseEvent(_StrictModel):
         }
 
 
-class ExplorationCollapseReport(_StrictModel):
+class ExplorationCollapseReport(StrictModel):
     schema_version: Literal[1] = 1
     advisory_only: bool
     events: list[ExplorationCollapseEvent]

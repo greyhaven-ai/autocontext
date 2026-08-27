@@ -4,24 +4,23 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
-import random
 import shutil
 import stat
-import statistics
 import subprocess
 import sys
 import tempfile
 import threading
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NoReturn, Protocol
+from typing import Any, Literal, NoReturn, Protocol
 
 from pydantic import ValidationError
 
 from autocontext.kernel_evolution import _process_control
+from autocontext.kernel_evolution.benchmark_authority import BenchmarkAuthorityVerifier
+from autocontext.kernel_evolution.evaluator_config import KernelBenchmarkEvaluatorConfig
 from autocontext.kernel_evolution.models import (
     ARTIFACT_IDENTITY_VERSION,
     KernelBenchmarkObservation,
@@ -29,8 +28,15 @@ from autocontext.kernel_evolution.models import (
     KernelCandidate,
     content_digest,
 )
+from autocontext.kernel_evolution.observation_derivation import derive_observation_metrics
+from autocontext.kernel_evolution.resource_policy import evaluate_kernel_resource_policy
 
 _WINDOWS_LAUNCH_GATE = b"\x01"
+KernelBenchmarkExecutionOutcome = Literal[
+    "complete", "timeout", "oom", "resource_exceeded", "resource_policy_unsupported",
+    "missing_resource_telemetry", "resource_identity_mismatch", "protocol_corruption",
+    "evaluator_crashed", "candidate_crashed", "teardown_failed",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +54,7 @@ class KernelBenchmarkExecution:
     harness_unchanged: bool = True
     candidate_unchanged: bool = True
     incumbent_unchanged: bool = True
+    outcome: KernelBenchmarkExecutionOutcome = "complete"
 
 
 class KernelBenchmarkRunner(Protocol):
@@ -172,6 +179,26 @@ def _fingerprint_paths(paths: Sequence[Path]) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _expected_files_fingerprint(paths: Sequence[Path], expected: Mapping[Path, bytes]) -> str:
+    normalized = {_lexical_absolute_path(Path(path)): content for path, content in expected.items()}
+    if len(normalized) != len(expected) or set(normalized) != set(paths):
+        raise ValueError("expected immutable files must exactly cover immutable_paths")
+    digest = hashlib.sha256()
+    _update_fingerprint_frame(digest, b"format", b"autocontext-immutable-tree-v2")
+    roots = sorted(normalized, key=lambda path: os.fsencode(os.fspath(path)))
+    _update_fingerprint_frame(digest, b"root-count", len(roots).to_bytes(8, "big"))
+    for root_index, path in enumerate(roots):
+        content = normalized[path]
+        if type(content) is not bytes:
+            raise TypeError("expected immutable file content must be exact bytes")
+        index = root_index.to_bytes(8, "big")
+        _update_fingerprint_frame(digest, b"root", index, os.fsencode(os.fspath(path)), b"file")
+        _update_fingerprint_frame(
+            digest, b"file", index, _relative_label(()), len(content).to_bytes(16, "big"), hashlib.sha256(content).digest()
+        )
+    return f"sha256:{digest.hexdigest()}"
+
+
 def _reject_json_constant(value: str) -> NoReturn:
     raise ValueError(f"invalid JSON constant {value}")
 
@@ -191,13 +218,18 @@ class ExternalKernelBenchmarkRunner:
         cwd: Path | None = None,
         source_suffix: str = ".py",
         immutable_paths: Sequence[Path] = (),
+        expected_immutable_files: Mapping[Path, bytes] | None = None,
+        inherited_fds: Sequence[int] = (),
         environment: Mapping[str, str] | None = None,
         max_output_bytes: int = 64_000,
         max_report_bytes: int = 2_000_000,
         max_report_entries: int = 1_024,
         max_report_depth: int = 16,
         temporary_root: Path | None = None,
+        trusted_unsafe: bool = False,
     ) -> None:
+        if not trusted_unsafe:
+            raise PermissionError("local kernel execution requires trusted_unsafe=True; use an OS-isolated runner")
         if not command:
             raise ValueError("benchmark command must not be empty")
         if not immutable_paths:
@@ -225,7 +257,19 @@ class ExternalKernelBenchmarkRunner:
         self._cwd = cwd.resolve() if cwd is not None else None
         self._source_suffix = source_suffix
         self._immutable_paths = tuple(_lexical_absolute_path(Path(path)) for path in immutable_paths)
-        self._harness_digest = _fingerprint_paths(self._immutable_paths)
+        observed_harness_digest = _fingerprint_paths(self._immutable_paths)
+        self._harness_digest = (
+            _expected_files_fingerprint(self._immutable_paths, expected_immutable_files)
+            if expected_immutable_files is not None
+            else observed_harness_digest
+        )
+        if observed_harness_digest != self._harness_digest:
+            raise ValueError("immutable benchmark harness disagrees with precommitted content")
+        if inherited_fds and sys.platform == "win32":
+            raise ValueError("inherited benchmark descriptors are unavailable on Windows")
+        self._inherited_fds = tuple(dict.fromkeys(inherited_fds))
+        for descriptor in self._inherited_fds:
+            os.fstat(descriptor)
         if sys.platform == "win32":
             launcher_path = Path(__file__).with_name("_windows_job_launcher.py").resolve(strict=True)
             self._windows_launcher_path: Path | None = launcher_path
@@ -245,6 +289,7 @@ class ExternalKernelBenchmarkRunner:
     def manifest(self) -> dict[str, Any]:
         return {
             "kind": "external-command",
+            "trusted_unsafe": True,
             "artifact_identity_version": ARTIFACT_IDENTITY_VERSION,
             "command": list(self._command),
             "executable_target": self._executable_target,
@@ -252,6 +297,7 @@ class ExternalKernelBenchmarkRunner:
             "source_suffix": self._source_suffix,
             "immutable_harness_digest": self._harness_digest,
             "immutable_paths": [str(path) for path in self._immutable_paths],
+            "inherited_fds": list(self._inherited_fds),
             "windows_launcher_path": str(self._windows_launcher_path) if self._windows_launcher_path is not None else None,
             "windows_launcher_digest": self._windows_launcher_digest,
             "max_output_bytes": self._max_output_bytes,
@@ -382,6 +428,7 @@ class ExternalKernelBenchmarkRunner:
                     ]
                 else:
                     popen_kwargs["start_new_session"] = True
+                    popen_kwargs["pass_fds"] = self._inherited_fds
                     launch_argv = argv
                 proc = subprocess.Popen(launch_argv, **popen_kwargs)  # noqa: S603
                 controller = _process_control.ProcessTreeController(proc, windows_job)
@@ -565,64 +612,16 @@ class ExternalKernelBenchmarkRunner:
             )
 
 
-@dataclass(frozen=True, slots=True)
-class KernelBenchmarkEvaluatorConfig:
-    problem_id: str
-    timeout_seconds: float = 630.0
-    min_timing_blocks: int = 5
-    bootstrap_samples: int = 1_000
-    max_feedback_chars: int = 4_000
-
-    def __post_init__(self) -> None:
-        if not self.problem_id.strip():
-            raise ValueError("problem_id must not be empty")
-        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
-        if self.min_timing_blocks < 2:
-            raise ValueError("min_timing_blocks must be at least 2")
-        if self.bootstrap_samples < 100:
-            raise ValueError("bootstrap_samples must be at least 100")
-        if self.max_feedback_chars < 128:
-            raise ValueError("max_feedback_chars must be at least 128")
-
-
-def _percentile(values: Sequence[float], fraction: float) -> float:
-    ordered = sorted(values)
-    index = max(0, math.ceil(fraction * len(ordered)) - 1)
-    return ordered[index]
-
-
-def _geometric_mean_ratio(numerators: Sequence[float], denominators: Sequence[float]) -> float:
-    mean_log = statistics.fmean(math.log(num) - math.log(den) for num, den in zip(numerators, denominators, strict=True))
-    result = math.exp(mean_log)
-    if not math.isfinite(result) or result <= 0:
-        raise ValueError("derived geometric mean ratio is not a positive finite number")
-    return result
-
-
-def _bootstrap_lcb95(blocks: Sequence[tuple[float, float]], *, samples: int, seed_material: str) -> float:
-    logs = [math.log(incumbent) - math.log(candidate) for candidate, incumbent in blocks]
-    seed = int(hashlib.sha256(seed_material.encode()).hexdigest()[:16], 16)
-    rng = random.Random(seed)
-    bootstrapped: list[float] = []
-    for _ in range(samples):
-        mean_log = statistics.fmean(logs[rng.randrange(len(logs))] for _ in logs)
-        value = math.exp(mean_log)
-        if not math.isfinite(value) or value <= 0:
-            raise ValueError("derived bootstrap speedup is not a positive finite number")
-        bootstrapped.append(value)
-    return _percentile(bootstrapped, 0.05)
-
-
 class KernelBenchmarkEvaluator:
     """Fail-closed consumer for the external kernel benchmark contract."""
 
     def __init__(self, runner: KernelBenchmarkRunner, config: KernelBenchmarkEvaluatorConfig) -> None:
         self._runner = runner
         self.config = config
+        self._authority = BenchmarkAuthorityVerifier(config)
 
     def manifest(self) -> dict[str, Any]:
-        return {"evaluator": asdict(self.config), "runner": self._runner.manifest()}
+        return {"evaluator": self.config.manifest(), "runner": self._runner.manifest()}
 
     def evaluate(
         self,
@@ -640,8 +639,15 @@ class KernelBenchmarkEvaluator:
                 returncode=None,
                 error=f"benchmark runner failed: {type(exc).__name__}: {exc}",
             )
+        statistics_policy = self.config.statistics_policy
+        expected_report_schema = (
+            "autocontext.kernelbench-eval/v4"
+            if statistics_policy.schema_version == "autocontext.kernel-statistics-policy/v2"
+            else "autocontext.kernelbench-eval/v3"
+        )
 
         def reject(reason: str, feedback: str, report: KernelBenchmarkReport | None = None) -> KernelBenchmarkObservation:
+            compatible_report = report if report is None or report.schema_version == expected_report_schema else None
             return KernelBenchmarkObservation(
                 artifact_identity_version=candidate.artifact_identity_version,
                 candidate_artifact_digest=candidate.artifact_digest,
@@ -651,11 +657,14 @@ class KernelBenchmarkEvaluator:
                 eligible=False,
                 rejection_reason=reason,
                 feedback=feedback[: self.config.max_feedback_chars],
-                report=report,
-                hardware_scope_id=report.hardware_scope_id if report is not None else None,
-                baseline_id=report.baseline_id if report is not None else None,
-                protocol_id=report.protocol.protocol_id if report is not None else None,
-                protocol_compatibility_id=report.protocol.compatibility_id if report is not None else None,
+                report=compatible_report,
+                hardware_scope_id=compatible_report.hardware_scope_id if compatible_report is not None else None,
+                baseline_id=compatible_report.baseline_id if compatible_report is not None else None,
+                protocol_id=compatible_report.protocol.protocol_id if compatible_report is not None else None,
+                protocol_compatibility_id=(
+                    compatible_report.protocol.compatibility_id if compatible_report is not None else None
+                ),
+                statistics_policy=statistics_policy,
                 stdout=execution.stdout,
                 stderr=execution.stderr,
                 stdout_truncated=execution.stdout_truncated,
@@ -666,11 +675,15 @@ class KernelBenchmarkEvaluator:
             return reject("harness_modified", "The immutable benchmark harness changed during evaluation.")
         if not execution.candidate_unchanged or not execution.incumbent_unchanged:
             return reject("artifact_modified", "A candidate or incumbent artifact changed during evaluation.")
+        if execution.outcome == "teardown_failed":
+            return reject("teardown_failed", execution.error or "Benchmark authority teardown could not be verified.")
+        if execution.outcome != "complete":
+            return reject(execution.outcome, execution.error or f"Benchmark failed with {execution.outcome}.")
         if execution.timed_out:
             return reject("timeout", f"Benchmark timed out after {self.config.timeout_seconds:g}s.")
-        if execution.error is not None:
+        if execution.error is not None and execution.outcome == "complete":
             return reject("contract_error", execution.error)
-        if execution.returncode != 0:
+        if execution.returncode != 0 and execution.outcome == "complete":
             diagnostics = execution.stderr.strip() or execution.stdout.strip() or "no diagnostics"
             return reject("command_failed", f"Benchmark command exited {execution.returncode}: {diagnostics}")
         if execution.report_payload is None:
@@ -679,6 +692,19 @@ class KernelBenchmarkEvaluator:
             report = KernelBenchmarkReport.model_validate(execution.report_payload)
         except ValidationError as exc:
             return reject("contract_error", f"Benchmark report failed schema validation: {exc}")
+        authority_rejection = self._authority.verify_receipt(report)
+        if authority_rejection is not None:
+            # An unauthenticated payload is diagnostic input, not evidence. Keep
+            # the candidate-bound rejection and policy, but do not persist the
+            # report where later replay could mistake it for trusted evidence.
+            return reject(authority_rejection[0], authority_rejection[1])
+        if report.schema_version != expected_report_schema:
+            return reject(
+                "contract_error",
+                f"Benchmark report schema {report.schema_version!r} does not match the configured "
+                f"evidence family ({expected_report_schema!r}).",
+                report,
+            )
 
         if report.problem_id != self.config.problem_id:
             return reject("problem_mismatch", f"Expected problem {self.config.problem_id!r}, got {report.problem_id!r}.", report)
@@ -712,6 +738,8 @@ class KernelBenchmarkEvaluator:
                 "Correctness seeds, tolerances, or timing protocol changed during the run.",
                 report,
             )
+        if report.failure_kind in {"oom", "timeout"}:
+            return reject(report.failure_kind, f"Benchmark failed with {report.failure_kind}.", report)
         if report.evaluation_status == "infrastructure_error":
             return reject("infrastructure_error", f"Benchmark infrastructure failed: {report.failure_kind}.", report)
         if not report.compile.incumbent_passed:
@@ -724,6 +752,16 @@ class KernelBenchmarkEvaluator:
             return reject("correctness_failed", f"Candidate correctness failed: {failures}", report)
         if report.evaluation_status != "complete" or report.performance is None:
             return reject("contract_error", "A successful candidate report did not contain performance measurements.", report)
+        timing_rejection = self._authority.verify_timing_comparability(report)
+        if timing_rejection is not None:
+            return reject(timing_rejection[0], timing_rejection[1], report)
+        resource_policy = evaluate_kernel_resource_policy(
+            report,
+            require_telemetry=self.config.require_resource_telemetry,
+            max_gpu_memory_bytes=self.config.max_gpu_memory_bytes,
+        )
+        if resource_policy.reason is not None:
+            return reject(resource_policy.reason, resource_policy.detail, report)
         blocks = report.performance.blocks
         if len(blocks) < self.config.min_timing_blocks:
             return reject(
@@ -733,29 +771,7 @@ class KernelBenchmarkEvaluator:
             )
 
         try:
-            candidate_times = [float(block.candidate_ms) for block in blocks]
-            incumbent_times = [float(block.incumbent_ms) for block in blocks]
-            reference_times = [float(block.reference_ms) for block in blocks]
-            candidate_median = statistics.median(candidate_times)
-            incumbent_median = statistics.median(incumbent_times)
-            reference_median = statistics.median(reference_times)
-            speedup_incumbent = _geometric_mean_ratio(incumbent_times, candidate_times)
-            speedup_reference = _geometric_mean_ratio(reference_times, candidate_times)
-            lcb95 = _bootstrap_lcb95(
-                list(zip(candidate_times, incumbent_times, strict=True)),
-                samples=self.config.bootstrap_samples,
-                seed_material=(f"{report.baseline_id}:{report.hardware_scope_id}:{report.protocol.seed_commitment}"),
-            )
-            quartile = max(1, len(reference_times) // 4)
-            first_reference = statistics.median(reference_times[:quartile])
-            last_reference = statistics.median(reference_times[-quartile:])
-            drift = abs(last_reference / first_reference - 1.0)
-            relative_improvement = 1.0 - (1.0 / speedup_incumbent)
-            feedback = (
-                f"Correct on {report.correctness.tests_passed}/{report.correctness.tests_run} trials; "
-                f"paired speedup {speedup_incumbent:.4f}x vs incumbent "
-                f"(95% lower bound {lcb95:.4f}x), {speedup_reference:.4f}x vs reference."
-            )
+            derived = derive_observation_metrics(report, self.config)
             return KernelBenchmarkObservation(
                 artifact_identity_version=candidate.artifact_identity_version,
                 candidate_artifact_digest=candidate.artifact_digest,
@@ -763,22 +779,14 @@ class KernelBenchmarkEvaluator:
                 candidate_source_digest=candidate.source_digest,
                 incumbent_source_digest=incumbent.source_digest,
                 eligible=True,
-                feedback=feedback,
+                feedback=derived.pop("feedback"),
                 report=report,
                 hardware_scope_id=report.hardware_scope_id,
                 baseline_id=report.baseline_id,
                 protocol_id=report.protocol.protocol_id,
                 protocol_compatibility_id=report.protocol.compatibility_id,
-                candidate_median_ms=candidate_median,
-                incumbent_median_ms=incumbent_median,
-                reference_median_ms=reference_median,
-                speedup_vs_incumbent=speedup_incumbent,
-                speedup_vs_reference=speedup_reference,
-                speedup_lcb95=lcb95,
-                relative_improvement=relative_improvement,
-                candidate_p95_ms=_percentile(candidate_times, 0.95),
-                incumbent_p95_ms=_percentile(incumbent_times, 0.95),
-                environment_drift_ratio=drift,
+                statistics_policy=self.config.statistics_policy,
+                **derived,
                 stdout=execution.stdout,
                 stderr=execution.stderr,
                 stdout_truncated=execution.stdout_truncated,

@@ -42,7 +42,11 @@ interface BufferedSocket {
 }
 
 const LegacyHelloSchema = z
-  .object({ type: z.literal("hello"), protocol_version: z.number().int().optional() })
+  .object({
+    type: z.literal("hello"),
+    protocol_version: z.number().int().optional(),
+    capabilities: z.array(z.string()).optional(),
+  })
   .strict();
 
 const LegacyRunMessageSchema = z.discriminatedUnion("type", [
@@ -181,7 +185,7 @@ async function openSocket(url: string, protocols?: string | string[]): Promise<B
 describe("Protocol types", () => {
   it("exports PROTOCOL_VERSION", async () => {
     const { PROTOCOL_VERSION } = await import("../src/server/protocol.js");
-    expect(PROTOCOL_VERSION).toBe(1);
+    expect(PROTOCOL_VERSION).toBe(2);
   });
 
   it("exports server message schemas", async () => {
@@ -208,9 +212,9 @@ describe("Protocol types", () => {
 
   it("HelloMsg parses correctly", async () => {
     const { HelloMsgSchema } = await import("../src/server/protocol.js");
-    const msg = HelloMsgSchema.parse({ type: "hello", protocol_version: 1 });
+    const msg = HelloMsgSchema.parse({ type: "hello", protocol_version: 2 });
     expect(msg.type).toBe("hello");
-    expect(msg.protocol_version).toBe(1);
+    expect(msg.protocol_version).toBe(2);
   });
 
   it("StartRunCmd validates scenario and generations", async () => {
@@ -228,12 +232,12 @@ describe("Protocol types", () => {
     expect(cmd.command_id).toBe("command-start-1");
   });
 
-  it("advertises and validates transcript resume metadata without bumping protocol v1", async () => {
+  it("advertises and validates the v1 transcript extension on protocol v2", async () => {
     const { HelloMsgSchema, ResumeRunCmdSchema } = await import("../src/server/protocol.js");
     expect(
       HelloMsgSchema.parse({
         type: "hello",
-        protocol_version: 1,
+        protocol_version: 2,
         transcript_protocol_version: 1,
         capabilities: [
           "run_transcript_v1",
@@ -243,7 +247,7 @@ describe("Protocol types", () => {
         ],
       }),
     ).toMatchObject({
-      protocol_version: 1,
+      protocol_version: 2,
       transcript_protocol_version: 1,
     });
     expect(
@@ -742,7 +746,7 @@ describe("InteractiveServer", () => {
       const cli = await openSocket(server.url);
       try {
         await expect(cli.waitFor((message) => message.type === "hello")).resolves.toMatchObject({
-          protocol_version: 1,
+          protocol_version: 2,
         });
       } finally {
         cli.close();
@@ -794,7 +798,7 @@ describe("InteractiveServer", () => {
       const authenticated = await openSocket(server.url, serverAuthSubprotocol(token));
       try {
         await expect(authenticated.waitFor((message) => message.type === "hello")).resolves.toMatchObject({
-          protocol_version: 1,
+          protocol_version: 2,
         });
       } finally {
         authenticated.close();
@@ -1039,6 +1043,77 @@ describe("InteractiveServer", () => {
     }
   });
 
+  it("applies queued-message backpressure to recoverable invalid tasks", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const deterministicProvider = new DeterministicProvider();
+    let providerEntered = false;
+    let releaseProvider!: () => void;
+    const providerGate = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const gatedProvider = {
+      name: deterministicProvider.name,
+      defaultModel: () => deterministicProvider.defaultModel(),
+      complete: async (opts: Parameters<typeof deterministicProvider.complete>[0]) => {
+        providerEntered = true;
+        await providerGate;
+        return deterministicProvider.complete(opts);
+      },
+    };
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+      deps: {
+        resolveProviderBundle: () => ({
+          defaultProvider: gatedProvider,
+          defaultConfig: {
+            providerType: "deterministic",
+            apiKey: "",
+            baseUrl: "",
+            model: "deterministic-dev",
+          },
+          roleProviders: {},
+          roleModels: {},
+        }),
+      },
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    const socket = await openSocket(server.url);
+    try {
+      await socket.waitFor((message) => message.type === "hello");
+      await socket.waitFor((message) => message.type === "environments");
+      await socket.waitFor((message) => message.type === "state");
+      socket.send({ type: "chat_agent", role: "analyst", message: "Hold this request." });
+      await waitForCondition(() => providerEntered);
+
+      for (let index = 0; index < 40; index += 1) {
+        socket.send({
+          type: "create_task",
+          contract: {
+            target: "Current draft",
+            deliverable: { description: "A revised draft" },
+            criteria: "Evaluate grounding.",
+          },
+          source_contents: [],
+        });
+      }
+
+      await expect(socket.waitForClose()).resolves.toEqual({
+        code: 1013,
+        reason: "interactive server message budget is busy",
+      });
+    } finally {
+      releaseProvider();
+      socket.close();
+      await server.stop();
+    }
+  });
+
   it("keeps safe run control responsive while both expensive handler slots are stalled", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
     const mgr = new RunManager({
@@ -1127,7 +1202,7 @@ describe("InteractiveServer", () => {
 
     try {
       const hello = await socket.waitFor((msg) => msg.type === "hello");
-      expect(LegacyHelloSchema.parse(hello).protocol_version).toBe(1);
+      expect(LegacyHelloSchema.parse(hello).protocol_version).toBe(2);
       expect((await socket.waitFor((msg) => msg.type === "environments")).type).toBe(
         "environments",
       );
@@ -1531,13 +1606,14 @@ describe("InteractiveServer", () => {
     try {
       const hello = await socket.waitFor((msg) => msg.type === "hello");
       expect(hello).toMatchObject({
-        protocol_version: 1,
+        protocol_version: 2,
         transcript_protocol_version: 1,
         capabilities: [
           "run_transcript_v1",
           "safe_run_stop_v1",
           "agent_task_plan_v1",
           "agent_progress_notes_v1",
+          "structured_task_creation_v1",
         ],
       });
       await socket.waitFor((msg) => msg.type === "environments");
@@ -2021,7 +2097,7 @@ describe("InteractiveServer", () => {
         await observer.waitFor(
           (msg) => msg.type === "hello" && msg.transcript_protocol_version === 1,
         ),
-      ).toMatchObject({ protocol_version: 1, transcript_protocol_version: 1 });
+      ).toMatchObject({ protocol_version: 2, transcript_protocol_version: 1 });
 
       socket.send({ type: "chat_agent", role: "analyst", message: "What changed?" });
       const reply = await socket.waitFor((msg) => msg.type === "chat_response");

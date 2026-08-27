@@ -1,0 +1,134 @@
+{
+  "evaluator_epoch": "eval-7",
+  "initial_trials": [
+    {
+      "trial_id": "trial-playbook-1",
+      "component_kind": "playbook",
+      "component_key": "main",
+      "component_digest": "sha256:playbook-a",
+      "tested_bundle_digest": "sha256:bundle-a",
+      "comparison_bundle_digest": "sha256:bundle-a-minus-playbook",
+      "evaluator_epoch": "eval-7",
+      "trial_cohort": "cohort-a",
+      "fixture_digest": "sha256:fixture-1",
+      "seed": 1,
+      "evidence_level": "causal_ablation",
+      "with_component_score": 0.8,
+      "without_component_score": 0.6,
+      "token_cost": 420,
+      "tested_at": "2026-08-17T10:00:00Z",
+      "interaction_component_digests": ["sha256:tool-a"]
+    },
+    {
+      "trial_id": "trial-playbook-2",
+      "component_kind": "playbook",
+      "component_key": "main",
+      "component_digest": "sha256:playbook-a",
+      "tested_bundle_digest": "sha256:bundle-a",
+      "comparison_bundle_digest": "sha256:bundle-a-minus-playbook",
+      "evaluator_epoch": "eval-7",
+      "trial_cohort": "cohort-a",
+      "fixture_digest": "sha256:fixture-2",
+      "seed": 2,
+      "evidence_level": "causal_ablation",
+      "with_component_score": 0.75,
+      "without_component_score": 0.55,
+      "token_cost": 420,
+      "tested_at": "2026-08-17T10:05:00Z",
+      "interaction_component_digests": ["sha256:tool-a"]
+    }
+  ],
+  "initial_expected": {
+    "attribution_id": "e74887ae0357fa607190b3e0c55e5a44235d58f9b7ca4286923777bad5f76d72",
+    "effect": 0.2,
+    "confidence": 0.5,
+    "evidence_level": "causal_ablation",
+    "disposition": "retained",
+    "classification_neutral_effect": 0.0,
+    "classification_high_token_cost": 256,
+    "comparison_bundle_digest": "sha256:bundle-a-minus-playbook",
+    "trial_ids": ["trial-playbook-1", "trial-playbook-2"],
+    "matched_pair_keys": [
+      "23a8b5b81b202cb6d04c6d89b928452af2d833d5b3707afa830250efb57beb8f",
+      "6c63d5f5881249a72df9e570c8bdd5666094356a6b75419c23605caa6d9302d9"
+    ],
+    "source_trial_digests": [
+      "72dea2b2a9d7e939d9e7e6f0c88cc95e53e02c68cfcdb9b55a57755d04b25173",
+      "c40abbc6b822ec2e35e63628e61b0914e4108592518c26f4b4cbaf7c35f1bbe3"
+    ]
+  },
+  "unicode_trial_order": {
+    "input_trial_ids": ["\ue000", "😀"],
+    "expected_trial_ids": ["😀", "\ue000"],
+    "expected_attribution_id": "2257e16fcb3b64c0313e80ef5c0ead696d4030b59b7f68262679c78bd4903274"
+  },
+  "reablation_trials": [
+    {
+      "trial_id": "trial-playbook-reablation",
+      "component_kind": "playbook",
+      "component_key": "main",
+      "component_digest": "sha256:playbook-a",
+      "tested_bundle_digest": "sha256:bundle-b",
+      "comparison_bundle_digest": "sha256:bundle-b-minus-playbook",
+      "evaluator_epoch": "eval-7",
+      "trial_cohort": "cohort-b",
+      "fixture_digest": "sha256:fixture-3",
+      "seed": 3,
+      "evidence_level": "causal_ablation",
+      "with_component_score": 0.55,
+      "without_component_score": 0.6,
+      "token_cost": 420,
+      "tested_at": "2026-08-18T10:00:00Z",
+      "interaction_component_digests": ["sha256:tool-b"]
+    }
+  ],
+  "reablation_expected": {
+    "attribution_id": "2451e69757e0e87b0f8b6bce8719235de8b3508df05e6d0423c8c0b4fa613591",
+    "effect": -0.05,
+    "confidence": 0.25,
+    "disposition": "harmful",
+    "classification_neutral_effect": 0.0,
+    "classification_high_token_cost": 256,
+    "last_tested_bundle_digest": "sha256:bundle-b",
+    "comparison_bundle_digest": "sha256:bundle-b-minus-playbook",
+    "matched_pair_keys": [
+      "d94ad6d1ba75ffa4a1cd900338f1b582dc916e9d205daf126c6675ea1c89c172"
+    ],
+    "source_trial_digests": [
+      "9a88f7098f0869f48d44cc14d3a8b84e8eb1f55b3a6dfb8cff100b269b3be3fc"
+    ]
+  },
+  "budget_case": {
+    "current_generation": 10,
+    "last_reablation_generation": 5,
+    "plateau_length": 0,
+    "current_bundle_digest": "sha256:bundle-b",
+    "policy": { "cadence_generations": 5, "plateau_generations": 3, "budget": 3 },
+    "candidates": [
+      {
+        "component_kind": "playbook",
+        "component_key": "main",
+        "component_digest": "sha256:playbook-a",
+        "token_cost": 420,
+        "estimated_trial_cost": 3,
+        "confidence": 0.5,
+        "last_tested_generation": 5,
+        "last_tested_bundle_digest": "sha256:bundle-a",
+        "interaction_risk": 0.9
+      },
+      {
+        "component_kind": "hints",
+        "component_key": "coach",
+        "component_digest": "sha256:hints-a",
+        "token_cost": 40,
+        "estimated_trial_cost": 2,
+        "confidence": 0.9,
+        "last_tested_generation": 9,
+        "last_tested_bundle_digest": "sha256:bundle-b",
+        "interaction_risk": 0.1
+      }
+    ],
+    "expected_selected": ["sha256:playbook-a"],
+    "expected_deferred": ["sha256:hints-a"]
+  }
+}

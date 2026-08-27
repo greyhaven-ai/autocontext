@@ -20,6 +20,9 @@ class TaskQueueStore(Protocol):
     def dequeue_task(self) -> TaskQueueRow | None:
         """Atomically claim and return the next runnable task."""
 
+    def dequeue_task_for_python_worker(self) -> TaskQueueRow | None:
+        """Atomically claim the next task compatible with the Python worker."""
+
     def get_task(self, task_id: str) -> TaskQueueRow | None:
         """Return a task row by id."""
 

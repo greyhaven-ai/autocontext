@@ -16,6 +16,8 @@ from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.agents.skeptic import SkepticReview
 from autocontext.agents.types import AgentOutputs
 from autocontext.config.settings import AppSettings, HarnessProfile
+from autocontext.execution import RemoteExecutionAccountingError, RemoteExecutionFailure
+from autocontext.execution.remote_execution import RemoteCleanupOutcome, RemoteExecutionResult
 from autocontext.execution.supervisor import ExecutionSupervisor
 from autocontext.harness.core.types import ModelResponse, RoleExecution, RoleUsage
 from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
@@ -788,6 +790,120 @@ class TestStageKnowledgeSetup:
         assert "Coach hints for competitor:\n- Stale corner hint" not in result.prompts.competitor
         assert "Hint freshness warnings" in result.prompts.competitor
 
+    def test_promoted_bundle_hints_override_legacy_freshness_state(self) -> None:
+        from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle, routing_snapshot
+
+        settings = AppSettings(agent_provider="deterministic", evidence_freshness_enabled=True)
+        ctx = _make_ctx(settings=settings)
+        active = ContextBundle.create(
+            scenario=ctx.scenario_name,
+            evaluator_epoch="epoch-1",
+            components=[
+                BundleComponent(ComponentKind.HINTS, "hints", "Promoted matched hint", "text/markdown"),
+                BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", routing_snapshot(settings)),
+            ],
+        )
+        artifacts, trajectory = _make_knowledge_stage_mocks()
+        artifacts.ensure_context_bundle_baseline.return_value = active
+        artifacts.list_tool_names.return_value = []
+
+        with (
+            patch("autocontext.loop.stages._load_fresh_skill_context", return_value=("", "")),
+            patch("autocontext.loop.stages._load_fresh_hint_context") as legacy_hint_loader,
+        ):
+            result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        legacy_hint_loader.assert_not_called()
+        assert result.applied_competitor_hints == "Promoted matched hint"
+        assert result.prompts is not None
+        assert "Promoted matched hint" in result.prompts.competitor
+
+    def test_active_bundle_role_model_is_applied_and_synced_to_orchestrator(self) -> None:
+        from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle, routing_snapshot
+
+        settings = AppSettings(agent_provider="deterministic")
+        ctx = _make_ctx(settings=settings)
+        routing = routing_snapshot(settings)
+        routing["model_competitor"] = "promoted-competitor-model"
+        active = ContextBundle.create(
+            scenario=ctx.scenario_name,
+            evaluator_epoch="epoch-1",
+            components=[BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", routing)],
+        )
+        artifacts, trajectory = _make_knowledge_stage_mocks()
+        artifacts.ensure_context_bundle_baseline.return_value = active
+        artifacts.list_tool_names.return_value = []
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+        orchestrator = AgentOrchestrator(DeterministicDevClient(), settings)
+        orchestrator.apply_active_context_routing(result.settings, result.active_context_routing)
+
+        assert result.settings.model_competitor == "promoted-competitor-model"
+        assert orchestrator.competitor.model == "promoted-competitor-model"
+        _, resolved_model = orchestrator.resolve_role_execution("competitor", generation=1)
+        assert resolved_model == "promoted-competitor-model"
+
+        orchestrator.apply_active_context_routing(settings, {})
+        assert orchestrator.competitor.model == settings.model_competitor
+        _, restored_model = orchestrator.resolve_role_execution("competitor", generation=2)
+        assert restored_model == settings.model_competitor
+
+    @pytest.mark.parametrize(
+        ("update", "message"),
+        [
+            ({"agent_provider": "anthropic"}, "restart with matching settings"),
+            ({"dag_changes": [{"action": "remove_role", "name": "coach"}]}, "orchestrator reconstruction"),
+            ({"tuning_proposal": "{}"}, "gate and executor reconstruction"),
+        ],
+    )
+    def test_active_bundle_construction_bound_routing_fails_closed(
+        self,
+        update: dict[str, object],
+        message: str,
+    ) -> None:
+        from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle, routing_snapshot
+
+        settings = AppSettings(agent_provider="deterministic")
+        ctx = _make_ctx(settings=settings)
+        routing = {**routing_snapshot(settings), **update}
+        active = ContextBundle.create(
+            scenario=ctx.scenario_name,
+            evaluator_epoch="epoch-1",
+            components=[BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", routing)],
+        )
+        artifacts, trajectory = _make_knowledge_stage_mocks()
+        artifacts.ensure_context_bundle_baseline.return_value = active
+
+        with pytest.raises(RuntimeError, match=message):
+            stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+    def test_active_tool_specs_are_reference_only_until_installed(self) -> None:
+        from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle, routing_snapshot
+
+        settings = AppSettings(agent_provider="deterministic")
+        ctx = _make_ctx(settings=settings)
+        active = ContextBundle.create(
+            scenario=ctx.scenario_name,
+            evaluator_epoch="epoch-1",
+            components=[
+                BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", routing_snapshot(settings)),
+                BundleComponent.json(
+                    ComponentKind.TOOL_SPEC,
+                    "promoted_helper",
+                    {"name": "promoted_helper", "description": "Analyze a board", "code": "def run(): return 1"},
+                ),
+            ],
+        )
+        artifacts, trajectory = _make_knowledge_stage_mocks()
+        artifacts.ensure_context_bundle_baseline.return_value = active
+        artifacts.list_tool_names.return_value = ["installed_tool.py"]
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert "Reference helper (not installed or callable): promoted_helper" in result.tool_context
+        assert "do not invoke it as a runtime tool" in result.tool_context
+        assert result.base_tool_names == ["installed_tool"]
+
     def test_freshness_decay_filters_stale_notebook_context(self) -> None:
         artifacts = MagicMock()
         artifacts.read_playbook.return_value = ""
@@ -857,14 +973,15 @@ class TestStageAgentGeneration:
         ctx.strategy_interface = '{"aggression": float}'
 
         artifacts = MagicMock()
-        artifacts.persist_tools.return_value = ["tool1.py"]
         sqlite = MagicMock()
 
         result = stage_agent_generation(ctx, orchestrator=orch, artifacts=artifacts, sqlite=sqlite)
         assert result.outputs is not None
         assert len(result.outputs.role_executions) == 5
         assert isinstance(result.current_strategy, dict)
-        assert result.created_tools == ["tool1.py"]
+        assert result.created_tools == []
+        artifacts.persist_tools.assert_not_called()
+        artifacts.propose_context_bundle.assert_called_once()
 
     def test_raises_on_invalid_strategy(self) -> None:
         settings = _make_settings()
@@ -981,7 +1098,7 @@ class TestStageAgentGeneration:
         assert isinstance(written_tracker, ToolUsageTracker)
         assert written_tracker.get_stats()["cluster_evaluator"].total_refs == 1
 
-    def test_persists_approved_harness_mutations_from_architect_output(self) -> None:
+    def test_stages_harness_mutations_in_context_candidate_namespace(self) -> None:
         scenario = _make_scenario_mock()
         ctx = _make_ctx(settings=_make_settings(), scenario=scenario)
 
@@ -1018,23 +1135,22 @@ class TestStageAgentGeneration:
         orchestrator = MagicMock()
         orchestrator.run_generation.return_value = outputs
         artifacts = MagicMock()
-        artifacts.persist_tools.return_value = []
-        artifacts.load_harness_mutations.return_value = []
         sqlite = MagicMock()
 
         stage_agent_generation(ctx, orchestrator=orchestrator, artifacts=artifacts, sqlite=sqlite)
 
-        artifacts.save_harness_mutations.assert_called_once()
-        call = artifacts.save_harness_mutations.call_args
+        artifacts.save_harness_mutations.assert_not_called()
+        call = artifacts.propose_context_bundle.call_args
         assert call.args[0] == ctx.scenario_name
-        saved = call.args[1]
-        assert len(saved) == 1
-        assert saved[0].target_role == "competitor"
-        assert saved[0].content == "Check edge cases"
-        assert call.kwargs["generation"] == ctx.generation
-        assert call.kwargs["run_id"] == ctx.run_id
+        proposed = call.kwargs["mutations"]
+        assert len(proposed) == 1
+        assert proposed[0].target_role == "competitor"
+        assert proposed[0].content == "Check edge cases"
+        assert call.kwargs["source_generation"] == ctx.generation
+        assert call.kwargs["source_run_id"] == ctx.run_id
 
     def test_multi_basin_branching_selects_best_candidate_in_live_path(self) -> None:
+        from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
         from autocontext.prompts.templates import build_prompt_bundle
 
         settings = _make_settings()
@@ -1102,18 +1218,26 @@ class TestStageAgentGeneration:
         sqlite = MagicMock()
         sqlite.get_self_play_strategy_history.return_value = []
 
-        result = stage_agent_generation(
-            ctx,
-            orchestrator=orchestrator,
-            artifacts=artifacts,
-            sqlite=sqlite,
-            supervisor=_make_inline_supervisor(),
-        )
+        with patch(
+            "autocontext.loop.stage_helpers.exploration.ScenarioEvaluator",
+            side_effect=ScenarioEvaluator,
+        ) as evaluator_class:
+            result = stage_agent_generation(
+                ctx,
+                orchestrator=orchestrator,
+                artifacts=artifacts,
+                sqlite=sqlite,
+                supervisor=_make_inline_supervisor(),
+            )
 
         assert result.current_strategy == {"aggression": 0.8}
         assert result.outputs is not None
         assert result.outputs.strategy == {"aggression": 0.8}
         assert result.exploration_metadata["selected_branch"]["branch_type"] == "experimental"
+        assert [call.kwargs["task_namespace"] for call in evaluator_class.call_args_list] == [
+            "run:run_test:generation:1:evaluation:exploration:branch:conservative",
+            "run:run_test:generation:1:evaluation:exploration:branch:experimental",
+        ]
         appended_outputs = sqlite.append_generation_agent_activity.call_args.kwargs["outputs"]
         competitor_payload = next(content for role, content in appended_outputs if role == "competitor")
         assert json.loads(competitor_payload) == {"aggression": 0.8}
@@ -2341,6 +2465,252 @@ class TestStageTournamentAttempt:
         )
         assert isinstance(result.attempt, int)
         assert result.attempt >= 0
+
+    @pytest.mark.parametrize("retryable", [False, True])
+    def test_remote_failure_respects_paid_retry_disposition(self, retryable: bool) -> None:
+        """Only an explicitly retryable result authorizes a fresh paid tournament."""
+
+        class PartialRemoteFailureExecutor:
+            def __init__(self) -> None:
+                self.calls: list[tuple[int, str]] = []
+                self.failed = False
+
+            def execute_with_task_id(
+                self,
+                scenario: ScenarioInterface,
+                strategy: Mapping[str, Any],
+                seed: int,
+                limits: ExecutionLimits,
+                *,
+                task_id: str,
+            ) -> tuple[Result, ReplayEnvelope]:
+                del limits
+                self.calls.append((seed, task_id))
+                if len(self.calls) == 2 and not self.failed:
+                    self.failed = True
+                    cleanup = RemoteCleanupOutcome(
+                        attempted=retryable,
+                        succeeded=retryable,
+                        resource_id="sbx-partial" if retryable else "",
+                        detail="ambiguous paid outcome" if not retryable else "",
+                    )
+                    raise RemoteExecutionFailure(
+                        RemoteExecutionResult(
+                            task_id=task_id,
+                            provider="primeintellect",
+                            status="provider_error" if retryable else "cleanup_error",
+                            cleanup=cleanup,
+                            error="retryable provisioning failure" if retryable else "ambiguous paid outcome",
+                            retryable=retryable,
+                        )
+                    )
+                result = scenario.execute_match(strategy=strategy, seed=seed)
+                return result, ReplayEnvelope(
+                    scenario=scenario.name,
+                    seed=seed,
+                    narrative=scenario.replay_to_narrative(result.replay),
+                    timeline=result.replay,
+                )
+
+        settings = _make_settings().model_copy(
+            update={
+                "matches_per_generation": 3,
+                "max_retries": 1,
+                "retry_backoff_seconds": 0.0,
+                "holdout_enabled": False,
+            }
+        )
+        ctx = _make_tournament_ctx(settings=settings)
+        executor = PartialRemoteFailureExecutor()
+        supervisor = ExecutionSupervisor(executor=executor)  # type: ignore[arg-type]
+        gate = MagicMock()
+        gate.evaluate.return_value = MagicMock(decision="advance", reason="improved")
+
+        if not retryable:
+            with pytest.raises(RemoteExecutionFailure, match="ambiguous paid outcome"):
+                stage_tournament(
+                    ctx,
+                    supervisor=supervisor,
+                    gate=gate,
+                    events=MagicMock(),
+                    sqlite=MagicMock(),
+                    artifacts=MagicMock(),
+                    agents=None,
+                )
+            assert len(executor.calls) == 2
+            assert all("tournament:attempt:0" in task_id for _, task_id in executor.calls)
+            return
+
+        result = stage_tournament(
+            ctx,
+            supervisor=supervisor,
+            gate=gate,
+            events=MagicMock(),
+            sqlite=MagicMock(),
+            artifacts=MagicMock(),
+            agents=None,
+        )
+
+        assert result.tournament is not None
+        # One successful match plus the failure occurred in attempt 0. The
+        # explicit retry budget then authorizes all three fresh attempt-1
+        # matches; incomplete attempt-0 successes are deliberately not reused.
+        assert len(executor.calls) == 2 + settings.matches_per_generation
+        assert all("tournament:attempt:0" in task_id for _, task_id in executor.calls[:2])
+        assert all("tournament:attempt:1" in task_id for _, task_id in executor.calls[2:])
+
+    def test_ordinary_transient_tournament_exception_still_retries(self) -> None:
+        class TransientExecutor:
+            def __init__(self) -> None:
+                self.task_ids: list[str] = []
+
+            def execute_with_task_id(
+                self,
+                scenario: ScenarioInterface,
+                strategy: Mapping[str, Any],
+                seed: int,
+                limits: ExecutionLimits,
+                *,
+                task_id: str,
+            ) -> tuple[Result, ReplayEnvelope]:
+                del limits
+                self.task_ids.append(task_id)
+                if len(self.task_ids) == 1:
+                    raise RuntimeError("temporary local evaluator failure")
+                result = scenario.execute_match(strategy=strategy, seed=seed)
+                return result, ReplayEnvelope(
+                    scenario=scenario.name,
+                    seed=seed,
+                    narrative=scenario.replay_to_narrative(result.replay),
+                    timeline=result.replay,
+                )
+
+        settings = _make_settings().model_copy(
+            update={
+                "matches_per_generation": 2,
+                "max_retries": 1,
+                "retry_backoff_seconds": 0.0,
+                "holdout_enabled": False,
+            }
+        )
+        executor = TransientExecutor()
+
+        result = stage_tournament(
+            _make_tournament_ctx(settings=settings),
+            supervisor=ExecutionSupervisor(executor=executor),  # type: ignore[arg-type]
+            gate=MagicMock(
+                evaluate=MagicMock(return_value=MagicMock(decision="advance", reason="improved")),
+            ),
+            events=MagicMock(),
+            sqlite=MagicMock(),
+            artifacts=MagicMock(),
+            agents=None,
+        )
+
+        assert result.tournament is not None
+        assert len(executor.task_ids) == 1 + settings.matches_per_generation
+        assert "tournament:attempt:0" in executor.task_ids[0]
+        assert all("tournament:attempt:1" in task_id for task_id in executor.task_ids[1:])
+
+    def test_remote_accounting_failure_never_starts_a_fresh_tournament_namespace(self) -> None:
+        class AccountingFailureExecutor:
+            def __init__(self) -> None:
+                self.task_ids: list[str] = []
+
+            def execute_with_task_id(
+                self,
+                scenario: ScenarioInterface,
+                strategy: Mapping[str, Any],
+                seed: int,
+                limits: ExecutionLimits,
+                *,
+                task_id: str,
+            ) -> tuple[Result, ReplayEnvelope]:
+                del scenario, strategy, seed, limits
+                self.task_ids.append(task_id)
+                raise RemoteExecutionAccountingError("durable claim may already be paid")
+
+        settings = _make_settings().model_copy(
+            update={
+                "matches_per_generation": 2,
+                "max_retries": 2,
+                "retry_backoff_seconds": 0.0,
+                "holdout_enabled": False,
+            }
+        )
+        executor = AccountingFailureExecutor()
+
+        with pytest.raises(RemoteExecutionAccountingError, match="durable claim may already be paid"):
+            stage_tournament(
+                _make_tournament_ctx(settings=settings),
+                supervisor=ExecutionSupervisor(executor=executor),  # type: ignore[arg-type]
+                gate=MagicMock(),
+                events=MagicMock(),
+                sqlite=MagicMock(),
+                artifacts=MagicMock(),
+                agents=None,
+            )
+
+        assert len(executor.task_ids) == 1
+        assert "tournament:attempt:0" in executor.task_ids[0]
+
+    def test_pending_durable_claim_never_dispatches_or_advances_tournament_attempt(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
+    ) -> None:
+        from autocontext.execution.executors.primeintellect import PrimeIntellectExecutor
+        from autocontext.execution.external_eval_outbox import ExternalEvalLedgerOutbox
+        from autocontext.integrations.primeintellect import PrimeIntellectClient
+        from autocontext.scenarios.grid_ctf.scenario import GridCtfScenario
+
+        outbox = ExternalEvalLedgerOutbox(tmp_path / "ledger.sqlite3")
+        original_replay = outbox.replay
+        inserted_claim = False
+
+        def replay_after_existing_claim(provider: str, request: Any) -> Any:
+            nonlocal inserted_claim
+            if not inserted_claim:
+                inserted_claim = True
+                outbox.claim(provider, request)
+            return original_replay(provider, request)
+
+        provider_calls = 0
+
+        async def provider_execution(*_args: object, **_kwargs: object) -> RemoteExecutionResult:
+            nonlocal provider_calls
+            provider_calls += 1
+            raise AssertionError("an unresolved durable claim must prevent provider execution")
+
+        monkeypatch.setattr(outbox, "replay", replay_after_existing_claim)
+        monkeypatch.setattr(PrimeIntellectClient, "_execute_request_once", provider_execution)
+        settings = _make_settings().model_copy(
+            update={
+                "matches_per_generation": 2,
+                "max_retries": 1,
+                "retry_backoff_seconds": 0.0,
+                "holdout_enabled": False,
+            }
+        )
+        client = PrimeIntellectClient(api_key="test-key", ledger_outbox=outbox)
+        scenario = GridCtfScenario()
+        strategy = {"aggression": 0.6, "defense": 0.4, "path_bias": 0.5}
+
+        with pytest.raises(RemoteExecutionAccountingError, match="reconcile provider accounting"):
+            stage_tournament(
+                _make_tournament_ctx(scenario=scenario, strategy=strategy, settings=settings),
+                supervisor=ExecutionSupervisor(executor=PrimeIntellectExecutor(client, max_retries=0)),
+                gate=MagicMock(),
+                events=MagicMock(),
+                sqlite=MagicMock(),
+                artifacts=MagicMock(),
+                agents=None,
+            )
+
+        assert provider_calls == 0
+        statuses = outbox.statuses()
+        assert len(statuses) == 1
+        assert "tournament:attempt:0" in statuses[0].task_id
 
     def test_stage_tournament_persists_revised_competitor_output(self) -> None:
         """Retry-learned competitor strategies should be durable for export."""

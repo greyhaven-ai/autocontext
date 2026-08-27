@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import {
   negativeResultLedgerToMarkdown,
   parseNegativeResultLedger,
+  type NegativeResultApplicabilityContext,
   type NegativeResultLedger,
 } from "../analytics/negative-result-ledger.js";
 
@@ -40,7 +41,7 @@ export function readNegativeResultLedger(
 export function readLatestNegativeResultLedgersMarkdown(
   knowledgeRoot: string,
   scenarioName: string,
-  opts: { maxLedgers?: number } = {},
+  opts: { maxLedgers?: number; applicabilityContext?: NegativeResultApplicabilityContext } = {},
 ): string {
   const dir = join(knowledgeRoot, scenarioName, "negative_result_ledgers");
   if (!existsSync(dir)) return "";
@@ -52,6 +53,7 @@ export function readLatestNegativeResultLedgersMarkdown(
     .map((path: string) =>
       negativeResultLedgerToMarkdown(
         parseNegativeResultLedger(JSON.parse(readFileSync(path, "utf-8")) as unknown),
+        opts.applicabilityContext,
       ),
     )
     .join("\n\n");

@@ -82,3 +82,19 @@ def test_python_app_settings_rejects_representative_invalid_shared_values() -> N
     for field_name, value in invalid_cases:
         with pytest.raises(ValidationError):
             AppSettings.model_validate({field_name: value})
+
+
+def test_context_promotion_seed_base_env_is_bounded_to_safe_integers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env_key = "AUTOCONTEXT_CONTEXT_BUNDLE_PROMOTION_SEED_BASE"
+    monkeypatch.setenv(env_key, "-1")
+    with pytest.raises(ValidationError):
+        load_settings()
+
+    monkeypatch.setenv(env_key, "9007199254740992")
+    with pytest.raises(ValidationError):
+        load_settings()
+
+    monkeypatch.setenv(env_key, "9007199254740991")
+    assert load_settings().context_bundle_promotion_seed_base == 9_007_199_254_740_991

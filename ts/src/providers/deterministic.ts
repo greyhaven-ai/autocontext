@@ -3,11 +3,17 @@
  * Mirrors Python's DeterministicDevClient in agents/llm_client.py.
  */
 
-import { ProviderError, type CompletionOptions, type CompletionResult, type LLMProvider } from "../types/index.js";
+import {
+  ProviderError,
+  type CompletionOptions,
+  type CompletionResult,
+  type LLMProvider,
+} from "../types/index.js";
 
 export class DeterministicProvider implements LLMProvider {
   readonly name = "deterministic";
   readonly supportsThinkingStream = false;
+  readonly isStatelessNoToolsProvider = true;
 
   defaultModel(): string {
     return "deterministic-dev";
@@ -22,17 +28,53 @@ export class DeterministicProvider implements LLMProvider {
       throw new ProviderError("Deterministic provider does not support image attachments");
     }
     const prompt = opts.userPrompt.toLowerCase();
+    const systemPrompt = opts.systemPrompt.toLowerCase();
+    const requiresJsonOutput = prompt.includes("return only valid json");
     let text: string;
 
-    if (
-      prompt.includes("describe your strategy") ||
-      prompt.includes("[competitor]")
-    ) {
-      text = '{"aggression": 0.60, "defense": 0.55, "path_bias": 0.50}';
+    if (systemPrompt.includes("expert judge evaluating")) {
+      const isRevision = prompt.includes("deterministic revised task result");
+      text = [
+        "<!-- JUDGE_RESULT_START -->",
+        JSON.stringify({
+          score: isRevision ? 0.92 : 0.72,
+          reasoning: isRevision
+            ? "The revised deterministic response addresses the requested task and feedback."
+            : "The deterministic draft is usable but should be revised for specificity.",
+          dimensions: {
+            task_completion: isRevision ? 0.92 : 0.72,
+          },
+        }),
+        "<!-- JUDGE_RESULT_END -->",
+      ].join("\n");
     } else if (
-      prompt.includes("analyze strengths/failures") ||
-      prompt.includes("[analyst]")
+      systemPrompt.includes("revis") &&
+      prompt.includes("## original output") &&
+      prompt.includes("## judge feedback")
     ) {
+      text = requiresJsonOutput
+        ? JSON.stringify({
+            result:
+              "Deterministic revised task result. The response incorporates the evaluation feedback and supplied context.",
+            actionable_next_step: "Apply the concrete recommendation and verify the result.",
+          })
+        : "Deterministic revised task result. The response incorporates the evaluation feedback, " +
+          "uses the supplied context, and states a concrete, actionable conclusion.";
+    } else if (
+      systemPrompt.includes("helpful assistant") &&
+      !prompt.includes("continue the artifact")
+    ) {
+      text = requiresJsonOutput
+        ? JSON.stringify({
+            result:
+              "Deterministic task result. The response addresses the requested task using the supplied context.",
+            actionable_next_step: "Revise the response using the evaluation feedback.",
+          })
+        : "Deterministic task result. The response addresses the requested task using the supplied " +
+          "context and provides a concise conclusion with actionable next steps.";
+    } else if (prompt.includes("describe your strategy") || prompt.includes("[competitor]")) {
+      text = deterministicStrategyForPrompt(prompt);
+    } else if (prompt.includes("analyze strengths/failures") || prompt.includes("[analyst]")) {
       text =
         "## Findings\n\n- Strategy balances offense/defense.\n\n" +
         "## Root Causes\n\n- Moderate aggressiveness.\n\n" +
@@ -45,10 +87,7 @@ export class DeterministicProvider implements LLMProvider {
         "- Keep aggression balanced with defense to avoid unstable regressions.\n" +
         "<!-- CONSOLIDATED_LESSONS_END -->\n" +
         "<!-- LESSONS_REMOVED: 1 -->";
-    } else if (
-      prompt.includes("curator") &&
-      prompt.includes("playbook quality")
-    ) {
+    } else if (prompt.includes("curator") && prompt.includes("playbook quality")) {
       text =
         "The proposed playbook keeps the useful structure and adds clearer guidance.\n\n" +
         "<!-- CURATOR_DECISION: accept -->\n" +
@@ -68,8 +107,11 @@ export class DeterministicProvider implements LLMProvider {
         "<!-- COMPETITOR_HINTS_START -->\n" +
         "- Try aggression=0.60 with defense=0.55 for balanced scoring.\n" +
         "<!-- COMPETITOR_HINTS_END -->";
-    } else if (prompt.includes("extract the strategy")) {
-      text = '{"aggression": 0.60, "defense": 0.55, "path_bias": 0.50}';
+    } else if (
+      prompt.includes("repair the invalid competitor strategy") ||
+      prompt.includes("extract the strategy")
+    ) {
+      text = deterministicStrategyForPrompt(prompt);
     } else if (
       prompt.includes("investigate") ||
       prompt.includes("root cause") ||
@@ -78,8 +120,7 @@ export class DeterministicProvider implements LLMProvider {
     ) {
       text = JSON.stringify({
         description: "Investigate a production outage using evidence logs",
-        environment_description:
-          "Production environment with multiple services",
+        environment_description: "Production environment with multiple services",
         initial_state_description: "Outage detected, services degraded",
         success_criteria: ["root cause identified", "remediation proposed"],
         failure_modes: ["misdiagnosis", "incomplete analysis"],
@@ -128,8 +169,7 @@ export class DeterministicProvider implements LLMProvider {
             relevance: 0.3,
           },
         ],
-        correct_diagnosis:
-          "Auth service token validation failure due to expired signing key",
+        correct_diagnosis: "Auth service token validation failure due to expired signing key",
       });
     } else {
       // Default architect response
@@ -157,4 +197,21 @@ export class DeterministicProvider implements LLMProvider {
       },
     };
   }
+}
+
+function deterministicStrategyForPrompt(prompt: string): string {
+  if (
+    prompt.includes("resource_trader") ||
+    (prompt.includes("`buy`") && prompt.includes("`sell`") && prompt.includes("`amount`"))
+  ) {
+    return '{"buy":"wood","sell":"stone","amount":1}';
+  }
+  if (
+    prompt.includes("othello") ||
+    prompt.includes("mobility_weight") ||
+    prompt.includes("corner_weight")
+  ) {
+    return '{"mobility_weight":0.35,"corner_weight":0.45,"stability_weight":0.40}';
+  }
+  return '{"aggression":0.60,"defense":0.55,"path_bias":0.50}';
 }

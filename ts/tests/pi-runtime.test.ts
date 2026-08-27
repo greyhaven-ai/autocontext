@@ -462,6 +462,27 @@ describe("PiCLIRuntime", () => {
       }),
     );
     expect(fakeProcess.stdin.chunks.join("")).toBe("system prompt\n\ntask prompt");
+
+    const isolatedProcess = createFakeSpawnProcess(["isolated pi output"]);
+    spawnMock.mockReturnValueOnce(isolatedProcess.child as never);
+    const isolated = provider.createIsolatedProvider?.({ noTools: true });
+    await isolated!.complete({ systemPrompt: "private", userPrompt: "isolated" });
+    expect(spawnMock).toHaveBeenLastCalledWith(
+      "pi-local",
+      [
+        "--print",
+        "--model",
+        "pi-checkpoint",
+        "--no-context-files",
+        "--no-tools",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-session",
+      ],
+      expect.objectContaining({ cwd: "/tmp/pi-workspace" }),
+    );
+    isolated!.close?.();
   });
 
   it("buildRoleProviderBundle threads Pi CLI settings into run providers", async () => {
@@ -696,6 +717,32 @@ describe("PiRPCRuntime", () => {
     });
     expect(input.endsWith("\n")).toBe(true);
     expect(fakeProcess.stdin.writable).toBe(false);
+
+    const isolatedProcess = createFakeSpawnProcess([
+      JSON.stringify({ type: "response", command: "prompt", success: true }),
+      JSON.stringify({
+        type: "agent_end",
+        messages: [{ role: "assistant", content: "isolated rpc" }],
+      }),
+    ]);
+    spawnMock.mockReturnValueOnce(isolatedProcess.child as never);
+    const isolated = provider.createIsolatedProvider?.({ noTools: true });
+    await isolated!.complete({ systemPrompt: "private", userPrompt: "isolated" });
+    expect(spawnMock).toHaveBeenLastCalledWith(
+      "pi-rpc-local",
+      [
+        "--mode",
+        "rpc",
+        "--no-context-files",
+        "--no-tools",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-session",
+      ],
+      expect.objectContaining({ stdio: ["pipe", "pipe", "pipe"] }),
+    );
+    isolated!.close?.();
   });
 
   it("does not treat a prompt ack as the final assistant output", async () => {

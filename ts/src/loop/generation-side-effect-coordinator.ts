@@ -35,8 +35,8 @@ export function buildRoleCompletedPayload(
     inputBytes?: number;
   } = {},
 ): RoleCompletedPayload {
-  const inputTokens = usage.input_tokens ?? usage.inputTokens ?? 0;
-  const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
+    const inputTokens = usage.input_tokens ?? usage.inputTokens ?? usage.input ?? 0;
+    const outputTokens = usage.output_tokens ?? usage.outputTokens ?? usage.output ?? 0;
 
   return {
     run_id: runId,

@@ -16,6 +16,8 @@ export interface PiRPCConfigOpts {
   sessionPersistence?: boolean;
   noContextFiles?: boolean;
   extraArgs?: string[];
+  /** Host-requested privacy isolate: no tools, customizations, context, or session. */
+  isolatedNoTools?: boolean;
 }
 
 const PI_RPC_CONFIG_DEFAULTS = {
@@ -26,6 +28,7 @@ const PI_RPC_CONFIG_DEFAULTS = {
   sessionPersistence: true,
   noContextFiles: false,
   extraArgs: [] as string[],
+  isolatedNoTools: false,
 };
 
 export class PiRPCConfig {
@@ -36,6 +39,7 @@ export class PiRPCConfig {
   readonly sessionPersistence!: boolean;
   readonly noContextFiles!: boolean;
   readonly extraArgs!: string[];
+  readonly isolatedNoTools!: boolean;
 
   constructor(opts: PiRPCConfigOpts = {}) {
     Object.assign(this, {
@@ -91,10 +95,14 @@ export class PiRPCRuntime {
     if (this.config.noContextFiles) {
       args.push("--no-context-files");
     }
-    if (!this.config.sessionPersistence) {
+    if (this.config.isolatedNoTools) {
+      args.push("--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates");
+      if (!this.config.noContextFiles) args.push("--no-context-files");
+    }
+    if (this.config.isolatedNoTools || !this.config.sessionPersistence) {
       args.push("--no-session");
     }
-    args.push(...this.config.extraArgs);
+    if (!this.config.isolatedNoTools) args.push(...this.config.extraArgs);
     return args;
   }
 

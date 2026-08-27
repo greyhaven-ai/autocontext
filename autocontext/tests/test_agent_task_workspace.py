@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from autocontext.execution.agent_task_evolution import (
@@ -14,6 +17,7 @@ from autocontext.execution.agent_task_evolution import (
     migrate_workspaces,
 )
 from autocontext.execution.interpreter_workspace import InterpreterWorkspace
+from autocontext.execution.research_workspace import ResearchWorkspace, WorkspaceCapabilityRequest
 
 
 def _evaluation(score: float, output: str = "out") -> AgentTaskGenerationEvaluation:
@@ -143,6 +147,25 @@ def test_run_generation_renders_workspace_into_prompt_and_metadata() -> None:
     assert state.metadata["workspace_variables"] == [["pool:list"]]
 
 
+def test_run_generation_persists_typed_workspace_audit_events(tmp_path: Path) -> None:
+    workspace = ResearchWorkspace(
+        WorkspaceCapabilityRequest(workspace_id="trajectory-audit"),
+        workspace_root=tmp_path,
+    )
+    runner = AgentTaskEvolutionRunner(
+        task_prompt="Task",
+        generate_fn=lambda prompt, gen: "code",
+        evaluate_fn=lambda output, gen: _evaluation(0.4),
+        workspace_factory=lambda: workspace,
+    )
+
+    _, state = runner.run_with_state(1)
+
+    assert state.metadata["workspace_audit_events"][0]["action"] == "open"
+    assert state.metadata["workspace_audit_events"][0]["workspace_id"] == "trajectory-audit"
+    assert state.metadata["workspace_audit_events"][-1]["action"] == "cleanup"
+
+
 def test_run_with_state_persists_workspace_and_closes_it() -> None:
     factory = TrackingWorkspaceFactory(seed={"pool": [1, 2, 3]})
 
@@ -187,6 +210,23 @@ def test_run_with_state_closes_workspace_on_evaluate_exception() -> None:
     assert len(factory.created) == 1
     with pytest.raises(RuntimeError, match="closed"):
         factory.created[0].run("1")
+
+
+def test_run_with_state_fails_when_workspace_cleanup_cannot_be_verified() -> None:
+    class FailingCleanupWorkspace(InterpreterWorkspace):
+        def close(self) -> SimpleNamespace:
+            super().close()
+            return SimpleNamespace(outcome="error", detail="container remains")
+
+    runner = AgentTaskEvolutionRunner(
+        task_prompt="Task",
+        generate_fn=lambda prompt, gen: "code",
+        evaluate_fn=lambda output, gen: _evaluation(0.5),
+        workspace_factory=FailingCleanupWorkspace,
+    )
+
+    with pytest.raises(RuntimeError, match="cleanup could not be verified: container remains"):
+        runner.run_with_state(num_generations=1)
 
 
 def test_run_islands_one_workspace_per_island_all_closed() -> None:

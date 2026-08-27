@@ -403,6 +403,14 @@ def _provider_api_key(provider_type: str, settings: AppSettings, *, role: str = 
     from autocontext.providers.registry import resolve_auto_judge_provider, transport_env_api_key
 
     normalized = provider_type.lower().strip()
+    # The independent auditor is a security boundary. It may use its own
+    # explicit key or the selected transport's native environment key, but it
+    # must never inherit a generic agent/judge credential for another route.
+    if role == "campaign_auditor":
+        provider_key = transport_env_api_key(normalized, settings)
+        if provider_key:
+            return provider_key
+        return "no-key" if normalized == "vllm" else None
     if normalized == "anthropic":
         return transport_env_api_key("anthropic", settings)
 
@@ -431,7 +439,23 @@ def _provider_base_url(settings: AppSettings, *, role: str = "") -> str | None:
     role_base_url = _role_setting(settings, role, "base_url")
     if role_base_url:
         return role_base_url
+    # Do not send an independently selected auditor to the agent or judge's
+    # private OpenAI-compatible endpoint. The registry will choose the
+    # selected provider's canonical default when no dedicated endpoint exists.
+    if role == "campaign_auditor":
+        return None
     return settings.agent_base_url or settings.judge_base_url
+
+
+def resolved_role_base_url(provider_type: str, settings: AppSettings, *, role: str = "") -> str | None:
+    """Return the endpoint input used by one concrete role client, if any."""
+
+    normalized = provider_type.lower().strip()
+    if normalized in {"openai", "openai-compatible", "openrouter", "ollama", "vllm"}:
+        return _provider_base_url(settings, role=role)
+    if normalized == "hermes":
+        return _role_setting(settings, role, "base_url") or settings.hermes_base_url or None
+    return None
 
 
 def _provider_model(
@@ -544,7 +568,9 @@ def create_role_client(
         provider_type: Provider name (e.g. "mlx", "anthropic", "deterministic").
             Empty string returns None (use default).
         settings: App settings for provider configuration.
+        model_override: Authoritative model for the constructed route when set.
         scenario_name: Scenario name used for scenario-local runtime handoff.
+        role: Role-specific endpoint and credential namespace.
 
     Returns:
         A LanguageModelClient, or None if provider_type is empty.
@@ -602,8 +628,8 @@ def create_role_client(
         from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
         from autocontext.training.model_registry import ModelRegistry
 
-        resolved_model = settings.pi_model
-        if scenario_name or settings.pi_model:
+        resolved_model = model_override if model_override is not None else settings.pi_model
+        if model_override is None and (scenario_name or settings.pi_model):
             try:
                 handoff = resolve_pi_model(
                     ModelRegistry(settings.knowledge_root),
@@ -631,7 +657,7 @@ def create_role_client(
 
         rpc_config = PiRPCConfig(
             pi_command=settings.pi_command,
-            model=settings.pi_model,
+            model=model_override if model_override is not None else settings.pi_model,
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
             session_persistence=settings.pi_rpc_session_persistence,

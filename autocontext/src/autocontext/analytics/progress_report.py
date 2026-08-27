@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+
+from autocontext.util.models import StrictModel
 
 ProgressMilestoneName = Literal[
     "first_valid_candidate",
@@ -22,18 +24,7 @@ MILESTONE_NAMES: tuple[ProgressMilestoneName, ...] = (
 )
 
 
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        return cls.model_validate(data)
-
-
-class ProgressPoint(_StrictModel):
+class ProgressPoint(StrictModel):
     """One scored candidate on the best-score-over-time curve."""
 
     event_id: str = Field(min_length=1)
@@ -48,7 +39,7 @@ class ProgressPoint(_StrictModel):
     milestone_names: list[ProgressMilestoneName] = Field(default_factory=list)
 
 
-class MilestoneTiming(_StrictModel):
+class MilestoneTiming(StrictModel):
     """Time to a named operator-facing progress milestone."""
 
     name: ProgressMilestoneName
@@ -61,7 +52,7 @@ class MilestoneTiming(_StrictModel):
     score: float | None = None
 
 
-class PassAtKSummary(_StrictModel):
+class PassAtKSummary(StrictModel):
     """Observed pass@k / best-of-k summary for the first k candidates."""
 
     k: int
@@ -72,7 +63,7 @@ class PassAtKSummary(_StrictModel):
     threshold: float
 
 
-class BranchLineageEdge(_StrictModel):
+class BranchLineageEdge(StrictModel):
     """Parent/child hypothesis edge included in the inspection artifact."""
 
     parent_hypothesis_node_id: str = Field(min_length=1)
@@ -81,7 +72,7 @@ class BranchLineageEdge(_StrictModel):
     generation_index: int | None = None
 
 
-class RunProgressReport(_StrictModel):
+class RunProgressReport(StrictModel):
     """Durable progress report shared by Python and TypeScript."""
 
     schema_version: Literal[1] = 1

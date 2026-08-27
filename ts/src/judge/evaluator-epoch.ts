@@ -7,6 +7,7 @@ export interface EvaluatorEpoch {
   rubricHash: string;
   judgeProvider: string;
   judgeModel: string;
+  evaluationContextHash?: string;
 }
 
 function sha256(text: string): string {
@@ -18,16 +19,35 @@ export function computeEvaluatorEpoch(
   rubricText: string,
   judgeProvider: string,
   judgeModel: string,
+  evaluationContext?: string | null,
 ): EvaluatorEpoch {
   const rubricHash = sha256(rubricText);
   // Keys inserted in sorted order so JSON.stringify matches Python json.dumps(sort_keys=True,
   // separators=(",", ":"), ensure_ascii=False) byte-for-byte.
-  const canonical = JSON.stringify({
-    judge_model: judgeModel,
-    judge_provider: judgeProvider,
-    rubric_hash: rubricHash,
-  });
-  return { epochId: sha256(canonical), rubricHash, judgeProvider, judgeModel };
+  const evaluationContextHash = evaluationContext?.trim()
+    ? sha256(evaluationContext)
+    : undefined;
+  const canonical = JSON.stringify(
+    evaluationContextHash
+      ? {
+          evaluator_context_hash: evaluationContextHash,
+          judge_model: judgeModel,
+          judge_provider: judgeProvider,
+          rubric_hash: rubricHash,
+        }
+      : {
+          judge_model: judgeModel,
+          judge_provider: judgeProvider,
+          rubric_hash: rubricHash,
+        },
+  );
+  return {
+    epochId: sha256(canonical),
+    rubricHash,
+    judgeProvider,
+    judgeModel,
+    ...(evaluationContextHash ? { evaluationContextHash } : {}),
+  };
 }
 
 /** Two epoch ids are comparable only when equal; null (legacy/unknown) equals only null. */

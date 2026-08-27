@@ -63,6 +63,7 @@ export * from "./knowledge/campaign-mode-report-store.js";
 export * from "./analytics/goal-run-report.js";
 export * from "./knowledge/goal-run-report-store.js";
 export * from "./analytics/negative-result-ledger.js";
+export * from "./analytics/context-attribution.js";
 export * from "./knowledge/negative-result-ledger-store.js";
 export * from "./analytics/progress-report.js";
 export * from "./analytics/run-utilization-report.js";

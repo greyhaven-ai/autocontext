@@ -1,0 +1,40 @@
+{
+  "type": "create_task",
+  "contract": {
+    "schemaVersion": 1,
+    "objective": "Improve the attached analysis without inventing evidence.",
+    "target": "The current analysis of the supplied records.",
+    "deliverable": {
+      "description": "A concise, evidence-backed analysis with an actionable recommendation.",
+      "outputFormat": "free_text"
+    },
+    "dataSources": [
+      {
+        "schemaVersion": 1,
+        "id": "records",
+        "role": "input",
+        "name": "records.csv",
+        "contentRef": "mission://attachments/records.csv",
+        "mediaType": "text/csv",
+        "provenance": {
+          "origin": "desktop_attachment",
+          "metadata": {}
+        },
+        "integrity": {
+          "contentHash": "sha256:e3ffc8249dcd71bca6df65bf275dd62babf3d9961cf888a8f4290cd143f321d6",
+          "byteLength": 19,
+          "truncated": false
+        }
+      }
+    ],
+    "criteria": "Score evidence grounding, clarity, and actionability.",
+    "qualityThreshold": 0.9,
+    "iterations": 2
+  },
+  "source_contents": [
+    {
+      "sourceId": "records",
+      "content": "item,value\nalpha,1\n"
+    }
+  ]
+}

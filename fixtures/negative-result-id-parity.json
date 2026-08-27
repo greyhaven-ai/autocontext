@@ -1,0 +1,48 @@
+{
+  "events": [
+    {
+      "event_type": "branch_rejected",
+      "timestamp": "2026-08-17T10:00:00Z",
+      "branch_id": "aa",
+      "payload": {
+        "disposition": "hard_ban",
+        "reason": "First branch failed.",
+        "evaluated_seeds": ["seed-1"],
+        "evidence_refs": [
+          { "uri": "first.json", "summary": "First failure reproduced." }
+        ]
+      }
+    },
+    {
+      "event_type": "branch_rejected",
+      "timestamp": "2026-08-17T10:01:00Z",
+      "branch_id": "bb",
+      "payload": {
+        "disposition": "hard_ban",
+        "reason": "Second branch failed.",
+        "evaluated_seeds": ["seed-2"],
+        "evidence_refs": [
+          { "uri": "second.json", "summary": "Second failure reproduced." }
+        ]
+      }
+    },
+    {
+      "event_type": "branch_rejected",
+      "timestamp": "2026-08-17T10:00:00Z",
+      "branch_id": "aa",
+      "payload": {
+        "disposition": "hard_ban",
+        "reason": "First branch failed.",
+        "evaluated_seeds": ["seed-1"],
+        "evidence_refs": [
+          { "uri": "first.json", "summary": "First failure reproduced." }
+        ]
+      }
+    }
+  ],
+  "expected_result_ids": [
+    "negative-1fe6d1634192f5a83becb1147764465bfd4b0068d644cdf0072985c819e6c1f5",
+    "negative-c2f0948470da49443cae4d6d12dac539fc06b6b5f5ce07350b70b5fa6a41f54d",
+    "negative-4e7066b1ec00e3205466f62c3a04d5f934b58994d2353ba14c42be0b7f39a152"
+  ]
+}

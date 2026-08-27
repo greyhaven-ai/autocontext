@@ -14,6 +14,8 @@ export interface CodexCLIConfigOpts {
   workspace?: string;
   quiet?: boolean;
   extraArgs?: string[];
+  /** Host-requested privacy isolate: no tools, customizations, context, or session. */
+  isolatedNoTools?: boolean;
 }
 
 const CODEX_CLI_CONFIG_DEFAULTS = {
@@ -23,6 +25,7 @@ const CODEX_CLI_CONFIG_DEFAULTS = {
   workspace: "",
   quiet: false,
   extraArgs: [] as string[],
+  isolatedNoTools: false,
 };
 
 export class CodexCLIConfig {
@@ -32,6 +35,7 @@ export class CodexCLIConfig {
   readonly workspace!: string;
   readonly quiet!: boolean;
   readonly extraArgs!: string[];
+  readonly isolatedNoTools!: boolean;
 
   constructor(opts: CodexCLIConfigOpts = {}) {
     Object.assign(this, {
@@ -79,7 +83,43 @@ export class CodexCLIRuntime {
     const args = ["exec"];
     args.push("--model", this.#config.model);
 
-    if (this.#config.approvalMode === "full-auto") {
+    if (this.#config.isolatedNoTools) {
+      args.push("--ephemeral", "--ignore-user-config", "--ignore-rules");
+      args.push("-c", "project_doc_max_bytes=0");
+      args.push("-c", "project_doc_fallback_filenames=[]");
+      args.push("--sandbox", "read-only");
+      for (const feature of [
+        "shell_tool",
+        "shell_snapshot",
+        "unified_exec",
+        "code_mode_host",
+        "view_image",
+        "computer_use",
+        "browser_use",
+        "browser_use_external",
+        "browser_use_full_cdp_access",
+        "in_app_browser",
+        "apps",
+        "enable_mcp_apps",
+        "mcp_2026_07_28",
+        "skill_search",
+        "skill_mcp_dependency_install",
+        "multi_agent",
+        "multi_agent_v2",
+        "goals",
+        "image_generation",
+        "hooks",
+        "plugins",
+        "plugin_sharing",
+        "remote_plugin",
+        "tool_suggest",
+        "tool_call_mcp_elicitation",
+        "request_permissions_tool",
+        "workspace_dependencies",
+      ]) {
+        args.push("--disable", feature);
+      }
+    } else if (this.#config.approvalMode === "full-auto") {
       args.push("--full-auto");
     }
     if (this.#config.quiet) {
@@ -91,7 +131,7 @@ export class CodexCLIRuntime {
     if (schema) {
       args.push("--output-schema", JSON.stringify(schema));
     }
-    args.push(...this.#config.extraArgs);
+    if (!this.#config.isolatedNoTools) args.push(...this.#config.extraArgs);
     return args;
   }
 

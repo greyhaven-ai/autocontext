@@ -20,16 +20,16 @@ export interface GenerationLifecycleWorkflow {
   orchestration: GenerationLoopOrchestration;
   curatorEnabled: boolean;
   maxRetries: number;
-  onEvent?: (event: GenerationLoopEventSequenceItem) => void;
   runAttempt: (input: {
     attemptOrchestration: GenerationAttemptOrchestration;
     runId: string;
     generation: number;
-    onEvent?: (event: GenerationLoopEventSequenceItem) => void;
+    onEvent?: (item: GenerationLoopEventSequenceItem) => void;
   }) => Promise<{
     attemptOrchestration: GenerationAttemptOrchestration;
     events: GenerationLoopEventSequenceItem[];
   }>;
+  onEvent?: (item: GenerationLoopEventSequenceItem) => void;
 }
 
 export interface GenerationLifecycleWorkflowResult {
@@ -60,7 +60,8 @@ export async function runGenerationLifecycleWorkflow(
     phaseState,
   );
   const generation = phaseState.generation;
-  const events: GenerationLoopEventSequenceItem[] = [
+  const events: GenerationLoopEventSequenceItem[] = [];
+  const initialEvents: GenerationLoopEventSequenceItem[] = [
     {
       event: "generation_started",
       payload: orchestration.events.generationStarted!,
@@ -70,19 +71,26 @@ export async function runGenerationLifecycleWorkflow(
       payload: orchestration.events.agentsStarted!,
     },
   ];
-  for (const event of events) workflow.onEvent?.(event);
+  const recordEvents = (items: GenerationLoopEventSequenceItem[]): void => {
+    if (workflow.onEvent) {
+      for (const item of items) workflow.onEvent(item);
+    } else {
+      events.push(...items);
+    }
+  };
+  recordEvents(initialEvents);
 
   while (canContinueGenerationPhase(phaseState, workflow.maxRetries)) {
     const attemptResult = await workflow.runAttempt({
       attemptOrchestration,
       runId: orchestration.runState.runId,
       generation,
-      onEvent: workflow.onEvent,
+      ...(workflow.onEvent ? { onEvent: workflow.onEvent } : {}),
     });
     attemptOrchestration = attemptResult.attemptOrchestration;
     phaseState = attemptOrchestration.phaseState;
     orchestration = attemptOrchestration.orchestration;
-    events.push(...attemptResult.events);
+    recordEvents(attemptResult.events);
   }
 
   return {

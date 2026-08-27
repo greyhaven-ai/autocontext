@@ -4,14 +4,24 @@
  */
 
 import { z } from "zod";
+import { MAX_TASK_DATA_SOURCES, TaskDataSourceSchema } from "./task-data-source.js";
 
 export const AgentTaskSpecSchema = z.object({
+  improvementTaskContractVersion: z.literal(1).optional(),
+  taskDataSources: z
+    .array(TaskDataSourceSchema)
+    .max(
+      MAX_TASK_DATA_SOURCES,
+      `task_data_sources must not exceed ${MAX_TASK_DATA_SOURCES} entries`,
+    )
+    .optional(),
   taskPrompt: z.string().min(1, "task_prompt must not be empty"),
   judgeRubric: z.string().min(1, "judge_rubric must not be empty"),
   outputFormat: z.enum(["free_text", "json_schema", "code"]).default("free_text"),
   judgeModel: z.string().default(""),
   difficultyTiers: z.array(z.record(z.unknown())).nullable().optional(),
   referenceContext: z.string().min(1, "reference_context, if provided, must not be empty").nullable().optional(),
+  evaluationContext: z.string().min(1, "evaluation_context, if provided, must not be empty").nullable().optional(),
   referenceSources: z.array(z.string().min(1)).min(1, "reference_sources, if provided, must not be empty").nullable().optional(),
   requiredConcepts: z.array(z.string().min(1)).min(1, "required_concepts, if provided, must not be empty").nullable().optional(),
   calibrationExamples: z.array(z.record(z.unknown())).nullable().optional(),
@@ -30,12 +40,17 @@ export type AgentTaskSpec = z.infer<typeof AgentTaskSpecSchema>;
  */
 export function parseRawSpec(data: Record<string, unknown>): AgentTaskSpec {
   return AgentTaskSpecSchema.parse({
+    improvementTaskContractVersion:
+      data.improvement_task_contract_version ??
+      data.improvementTaskContractVersion,
+    taskDataSources: data.task_data_sources ?? data.taskDataSources,
     taskPrompt: data.task_prompt,
     judgeRubric: data.judge_rubric,
     outputFormat: data.output_format ?? "free_text",
     judgeModel: data.judge_model ?? "",
     difficultyTiers: data.difficulty_tiers ?? null,
     referenceContext: data.reference_context ?? null,
+    evaluationContext: data.evaluation_context ?? null,
     referenceSources: data.reference_sources ?? null,
     requiredConcepts: data.required_concepts ?? null,
     calibrationExamples: data.calibration_examples ?? null,

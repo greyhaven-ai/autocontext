@@ -5,7 +5,10 @@
 export {
   PROTOCOL_VERSION,
   TRANSCRIPT_PROTOCOL_VERSION,
+  BASE_SERVER_CAPABILITIES,
   SERVER_CAPABILITIES,
+  TRANSCRIPT_SERVER_CAPABILITIES,
+  STRUCTURED_TASK_CREATION_CAPABILITY,
   AGENT_PROGRESS_NOTE_CAPABILITY,
   AGENT_PROGRESS_NOTE_EVENT_NAME,
   AgentProgressNoteEvidenceTargetSchema,
@@ -44,6 +47,7 @@ export {
   ResumeRunCmdSchema,
   ListScenariosCmdSchema,
   CreateScenarioCmdSchema,
+  CreateTaskCmdSchema,
   ConfirmScenarioCmdSchema,
   ReviseScenarioCmdSchema,
   CancelScenarioCmdSchema,

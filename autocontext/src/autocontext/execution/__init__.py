@@ -3,6 +3,29 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .action_filter import ActionFilterHarness
+from .campaign_scheduler import (
+    CallableCampaignWorker,
+    CampaignBatchWorker,
+    CampaignJobRequest,
+    CampaignJobResult,
+    CampaignScheduler,
+    CampaignSchedulerEventStore,
+    CancellableCampaignWorker,
+    RemoteCampaignWorker,
+    SchedulerBudget,
+    SchedulerResources,
+    StaleCampaignSchedulerError,
+    WorkerDescriptor,
+)
+from .docker_research_sandbox import DockerResearchSandboxBackend, SecretGrantResolver
+from .external_eval_outbox import (
+    ExternalEvalLedgerOutbox,
+    ExternalEvalOutboxConflictError,
+    ExternalEvalOutboxPendingError,
+    ExternalEvalOutboxStatus,
+    ExternalEvalSinkDeliveryPendingError,
+    ExternalEvalSinkDeliveryReservation,
+)
 from .phased_execution import (
     PhaseBudget,
     PhasedExecutionPlan,
@@ -10,6 +33,33 @@ from .phased_execution import (
     PhasedRunner,
     PhaseResult,
     split_budget,
+)
+from .remote_execution import (
+    RemoteAcceleratorRequest,
+    RemoteExecutionRequest,
+    RemoteExecutionRequirements,
+    RemoteExecutionResult,
+    RemoteProviderCapabilities,
+    RemoteResolvedEnvironment,
+    RemoteResourceRequest,
+)
+from .remote_failure import RemoteExecutionAccountingError, RemoteExecutionError, RemoteExecutionFailure
+from .research_workspace import (
+    ResearchWorkspace,
+    ResearchWorkspaceBenchmark,
+    ResearchWorkspaceSnapshot,
+    WorkspaceCapabilityRequest,
+    WorkspaceResourceLimits,
+    benchmark_research_workspace,
+    grant_workspace_access,
+)
+from .research_workspace_models import (
+    ResearchSandboxBackend,
+    ResearchSandboxExecutionRequest,
+    ResearchSandboxExecutionResult,
+    SandboxBackendCapabilities,
+    SandboxBackendCleanupResult,
+    WorkspaceSecretGrant,
 )
 from .sandbox_adapter_contracts import (
     SANDBOX_CAPABILITY_NAMES,
@@ -36,9 +86,23 @@ _LAZY_SUPERVISOR_EXPORTS = frozenset({"ExecutionInput", "ExecutionOutput", "Exec
 
 __all__ = [
     "ActionFilterHarness",
+    "CallableCampaignWorker",
+    "CampaignBatchWorker",
+    "CancellableCampaignWorker",
+    "CampaignJobRequest",
+    "CampaignJobResult",
+    "CampaignScheduler",
+    "CampaignSchedulerEventStore",
     "ExecutionSupervisor",
     "ExecutionInput",
     "ExecutionOutput",
+    "ExternalEvalLedgerOutbox",
+    "ExternalEvalOutboxConflictError",
+    "ExternalEvalOutboxPendingError",
+    "ExternalEvalOutboxStatus",
+    "ExternalEvalSinkDeliveryPendingError",
+    "ExternalEvalSinkDeliveryReservation",
+    "DockerResearchSandboxBackend",
     "SANDBOX_CAPABILITY_NAMES",
     "SandboxBootMode",
     "SandboxCapabilityName",
@@ -57,6 +121,35 @@ __all__ = [
     "PhasedExecutionPlan",
     "PhasedExecutionResult",
     "PhasedRunner",
+    "ResearchWorkspace",
+    "ResearchWorkspaceBenchmark",
+    "ResearchWorkspaceSnapshot",
+    "ResearchSandboxBackend",
+    "ResearchSandboxExecutionRequest",
+    "ResearchSandboxExecutionResult",
+    "RemoteAcceleratorRequest",
+    "RemoteCampaignWorker",
+    "RemoteExecutionAccountingError",
+    "RemoteExecutionError",
+    "RemoteExecutionRequirements",
+    "RemoteExecutionFailure",
+    "RemoteExecutionRequest",
+    "RemoteExecutionResult",
+    "RemoteProviderCapabilities",
+    "RemoteResolvedEnvironment",
+    "RemoteResourceRequest",
+    "SchedulerBudget",
+    "SchedulerResources",
+    "SecretGrantResolver",
+    "SandboxBackendCapabilities",
+    "SandboxBackendCleanupResult",
+    "StaleCampaignSchedulerError",
+    "WorkspaceCapabilityRequest",
+    "WorkspaceResourceLimits",
+    "WorkspaceSecretGrant",
+    "WorkerDescriptor",
+    "benchmark_research_workspace",
+    "grant_workspace_access",
     "lifecycle_hooks_for_boot_mode",
     "normalize_sandbox_adapter_capabilities",
     "plan_sandbox_startup",

@@ -72,12 +72,15 @@ class OpenAICompatibleProvider(LLMProvider):
         base_url: str | None = None,
         default_model_name: str = "gpt-5.6-terra",
         extra_headers: dict[str, str] | None = None,
+        single_dispatch: bool = False,
     ) -> None:
         if not _HAS_OPENAI:
             raise ProviderError("openai package is required for OpenAICompatibleProvider. Install with: pip install openai")
 
         resolved_key = api_key or os.getenv("OPENAI_API_KEY") or "no-key"
         kwargs: dict[str, Any] = {"api_key": resolved_key}
+        if single_dispatch:
+            kwargs["max_retries"] = 0
         if base_url:
             kwargs["base_url"] = base_url
         if extra_headers:
@@ -89,6 +92,7 @@ class OpenAICompatibleProvider(LLMProvider):
         # used, rather than inferring it from a provider label.
         self._base_url = str(self._client.base_url)
         self._default_model = default_model_name
+        self._single_dispatch = single_dispatch
 
     def complete(
         self,
@@ -301,7 +305,8 @@ class OpenAICompatibleProvider(LLMProvider):
                 require_endpoint_available("call an OpenAI-compatible endpoint", endpoint)
                 return self._client.chat.completions.create(**request), constrained
             except Exception as exc:
-                if constrained and _is_unsupported_response_format_error(exc):
+                single_dispatch = getattr(self, "_single_dispatch", False)
+                if not single_dispatch and constrained and _is_unsupported_response_format_error(exc):
                     # AC-913: a backend without constrained decoding should
                     # still answer, but the result must report the truth.
                     logger.info(
@@ -311,14 +316,22 @@ class OpenAICompatibleProvider(LLMProvider):
                     request.pop("response_format", None)
                     constrained = False
                     continue
-                if _request_uses_strict_tools(request) and _is_unsupported_strict_tools_error(exc):
+                if (
+                    not single_dispatch
+                    and _request_uses_strict_tools(request)
+                    and _is_unsupported_strict_tools_error(exc)
+                ):
                     logger.info(
                         "providers.openai_compat: %s rejected strict tools; retrying with manual validation",
                         model_id,
                     )
                     _disable_strict_tools(request)
                     continue
-                if "reasoning_effort" in request and _is_unsupported_reasoning_effort_error(exc):
+                if (
+                    not single_dispatch
+                    and "reasoning_effort" in request
+                    and _is_unsupported_reasoning_effort_error(exc)
+                ):
                     # OpenAI-compatible servers frequently support tools but
                     # not OpenAI's native-reasoning control. Keep the required
                     # deep_think contract and negotiate away only this field.
@@ -339,7 +352,11 @@ class OpenAICompatibleProvider(LLMProvider):
                         )
                         request["reasoning_effort"] = fallback_effort
                     continue
-                if "max_completion_tokens" in request and _is_unsupported_max_completion_tokens_error(exc):
+                if (
+                    not single_dispatch
+                    and "max_completion_tokens" in request
+                    and _is_unsupported_max_completion_tokens_error(exc)
+                ):
                     request["max_tokens"] = request.pop("max_completion_tokens")
                     continue
                 if _is_unsupported_tools_error(exc):
@@ -355,6 +372,10 @@ class OpenAICompatibleProvider(LLMProvider):
 
     def default_model(self) -> str:
         return self._default_model
+
+    @property
+    def supports_single_dispatch(self) -> bool:
+        return getattr(self, "_single_dispatch", False)
 
     @property
     def supports_thinking_stream(self) -> bool:

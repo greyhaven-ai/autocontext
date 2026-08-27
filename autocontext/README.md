@@ -4,6 +4,15 @@ This package is the Python control plane for autocontext: scenario runs, `solve`
 
 Use it when you want the full harness in Python, a CLI installed with `uv`/`pip`, or the MCP/HTTP server that coding agents can call.
 
+Generation output that changes prompts or harness behavior is staged as an
+immutable `ContextBundle`. It becomes active only after matched screening,
+adaptive confirmation, and held-out evaluation; a successful strategy gate by
+itself does not activate a context edit. The artifact layout and Python API are
+documented in [context bundles](../docs/context-bundles.md).
+The `autocontext.analytics.context_attribution` API joins controlled trials to
+those immutable digests, plans bounded re-ablation, and returns non-destructive
+prompt-selection decisions. See [ablation-backed attribution](../docs/context-attribution.md).
+
 ## Install
 
 ```bash
@@ -21,6 +30,51 @@ pip install 'autocontext[mcp]'              # MCP server dependencies
 ```
 
 The CLI entrypoint is `autoctx`. Provider env vars are listed in the repo-level [`.env.example`](../.env.example).
+
+Autoresearch checkpoint selection uses a minimum-effect gate by default and
+supports adaptive matched-trial confirmation through the Python API. Raw
+trials and stopping rationale are persisted separately from deployment
+promotion; see [trainer-local statistical confirmation](../docs/training-statistical-confirmation.md).
+
+Long-running campaign operators can opt into a separately routed, frozen
+`CampaignAuditor` that reviews a sanitized evidence packet without mutation
+authority. Live checkpoints and the pre-promotion gate are idempotent, and
+production calls require a cancellable transport by default. Reviews are
+cached, bounded, and advisory; see the
+[read-only campaign auditor](../docs/campaign-auditor.md).
+
+Campaign plans can be executed through the optional, provider-neutral
+`CampaignScheduler`, with durable leases, resource/capability matching,
+comparable lanes, bounded retries and budgets, capability-driven warm reuse,
+worker cancellation, late-usage accounting, and a restart-safe service loop.
+See the [campaign scheduler](../docs/campaign-scheduler.md).
+
+Code and research scenarios can opt into a process-backed `ResearchWorkspace`
+with explicit file, import, network, and host-bridge grants. Only approved
+`trusted_local` workspaces may import packages or run allow-listed subprocesses;
+`isolated_sandbox` requires a complete OS backend and never falls back. The
+shipped Docker backend provides a pinned, read-only, deny-network container
+with resource limits, opaque host-side credential brokering, transactional state, and
+verified cleanup; allowlisted egress needs a stronger deployment backend. The
+live queued-task path selects it with
+`AUTOCONTEXT_WORKSPACE_INTERPRETER_BACKEND=docker`, candidate execution, and
+explicit capability-approval settings. The existing restricted interpreter
+remains the default; see
+[capability-scoped research workspaces](../docs/research-workspaces.md).
+
+Remote tasks use a provider-neutral request/result contract for resources,
+artifacts, lifecycle, events, usage, and cleanup. Prime Intellect implements
+that contract as an optional adapter and no longer owns scenario scoring logic;
+see [remote execution sessions](../docs/remote-execution-sessions.md).
+Accelerators remain opt-in. Configure both the requested type/count and an
+operator-verified capability allowlist; image, region, required telemetry,
+resolved hardware, and attributable usage then remain identity-bound through
+campaign scheduling and external-evaluation accounting. Unsupported requests
+fail before provider creation and never fall back to local CPU execution.
+The shipped Prime runtime also commits a durable pre-dispatch claim and full
+typed result under `runs/external-evaluations/`; restart replays a committed
+result or surfaces an unresolved, possibly billable claim instead of dispatching
+the paid request again.
 
 ## Run from a checkout
 
@@ -138,7 +192,9 @@ Detailed setup moved out of this README:
 - Persistent worker trust boundaries: [docs/persistent-host.md](docs/persistent-host.md)
 - Sandbox/executor notes: [docs/sandbox.md](docs/sandbox.md)
 - Extension hooks: [docs/extensions.md](docs/extensions.md)
-- Correctness-first external kernel evolution: [docs/kernel-evolution.md](docs/kernel-evolution.md)
+- Correctness-first external kernel evolution, including durable autonomous
+  provider campaigns, resume, and fail-closed multi-workload transfer studies:
+  [docs/kernel-evolution.md](docs/kernel-evolution.md)
 
 ## Contract probes
 

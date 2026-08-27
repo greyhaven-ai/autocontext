@@ -27,9 +27,9 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.16.1` |
-| Python library/dev  | `uv pip install autocontext==0.16.1`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.16.1`           |
+| Python CLI          | `uv tool install autocontext==0.17.0` |
+| Python library/dev  | `uv pip install autocontext==0.17.0`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.17.1`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -51,6 +51,16 @@ Use `AUTOCONTEXT_AGENT_PROVIDER=anthropic`, `openai-compatible`, `openrouter`, `
 Running it on your own GPU instead? [Self-hosted models](autocontext/docs/self-hosted-models.md) covers the whole loop on vLLM, Ollama, or any OpenAI-compatible endpoint — including what each role actually resolves to, and why constrained output matters more on open weights.
 Self-hosted endpoints can additionally declare `AUTOCONTEXT_PROVIDER_HOSTING=local` and a `fast`, `mid_tier`, or `frontier` `AUTOCONTEXT_PROVIDER_CAPABILITY`; role-specific endpoints use matching `<ROLE>_PROVIDER_*` declarations.
 
+Prime remote execution also supports opt-in accelerator requests with explicit
+type/count, immutable-image, region, and telemetry capability validation. It
+fails before provider creation when the configured pool cannot satisfy the
+request and never downgrades accelerator work to CPU; see
+[remote execution sessions](docs/remote-execution-sessions.md).
+Shipped Prime generation and campaign paths persist a durable pre-dispatch
+claim plus the complete result/ledger projection before returning paid work;
+restart never treats an unresolved or already committed request as permission
+to provision another sandbox.
+
 ## Agent Entry Points
 
 - **Pi:** install `pi-autocontext`, then ask Pi to solve, judge, improve, list, or inspect runs through the packaged skill.
@@ -71,10 +81,30 @@ runs/<run_id>/
 knowledge/<scenario>/
 ├── playbook.md
 ├── hints.md
-└── tools/
+├── tools/
+└── context_bundles/{bundles,candidates,promotions,active.json}
 ```
 
 Everything is filesystem-first: inspect it, diff it, replay it, export it, or feed it into training.
+Kernel campaigns extend that contract with exact provider-generation receipts,
+bounded paid-call accounting, content-addressed lineage, and safe stop/status/resume.
+Coach and architect context changes are stored as immutable candidates and are
+not served until matched candidate/incumbent trials confirm them. The live
+serving boundary can additionally require a cancellable independent audit and
+a durable campaign-wide false-promotion budget; exact causal credit is accepted
+only from verified single-component manifest additions. See
+[context bundles and outcome-gated promotion](docs/context-bundles.md).
+Controlled component trials feed
+[ablation-backed attribution](docs/context-attribution.md), so prompt selection
+can demote low-value context without presenting edit-size correlation as causal.
+
+Python kernel evolution can also compose bounded studies across variable-shape
+matmul, fused elementwise/reduction, and causal-attention families. Each family
+retains independent primary/confirmation evidence and per-case floors;
+cross-shape, cross-hardware, and cross-family trials distinguish portable,
+partially transferring, specialist, and plateau outcomes without an aggregate
+score hiding a failed workload. See the
+[kernel evolution guide](autocontext/docs/kernel-evolution.md#multi-workload-studies).
 
 ## Core Surfaces
 
@@ -102,20 +132,35 @@ runtime (`python` or `typescript`).
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.16.1
+## What's New in 0.17.0
 
-- **A clearer paved-road CLI:** `run` now requires an explicit scenario, `--iterations` is the primary spelling, concise help leads with the core workflow, and `autoctx commands --all` exposes the full catalog. Existing `--gens` and legacy command aliases remain available for compatibility.
-- **Stable machine-readable inspection:** `status`, `show`, and `watch --ndjson` emit versioned, schema-backed envelopes with consistent stdout, stderr, and exit-code behavior. Status and show accept `--run-id`, while `--version --json` identifies the Python runtime and package version.
-- **More reliable run inspection:** `watch` no longer exits before a completed generation becomes visible, and `show` defaults to the latest generation while rejecting conflicting selectors instead of guessing.
-- **Portable exports by default:** `export` now writes JSON to stdout when no output path is supplied, supports Pi packages, and retains `strategy` as a compatibility alias for the default JSON format.
-- **Contracts ship with the package:** CLI contract v2 schemas and shared fixtures are included in wheels and source distributions so downstream tools can validate the same status, show, queue, and export shapes as the CLI.
-- **Ratcheted package boundaries:** domain, analytics, configuration, and storage implementations now follow enforced dependency directions while legacy module paths remain available as compatibility shims.
+- **Outcome-gated context bundles:** immutable candidates now move through matched screening, adaptive confirmation, held-out evaluation, false-promotion control, causal attribution, and atomic activation while rejected evidence remains available for scoped retesting.
+- **Capability-scoped execution:** generated research code can run in a locked-down Docker workspace, remote scenarios ship as verified content-addressed packages, and trusted-local execution remains an explicit operator choice rather than a fallback.
+- **Durable campaign operations:** restart-safe scheduling, leases, heartbeats, cancellation, bounded reuse, campaign auditing, and a paid-result outbox make long-running local and remote evaluation inspectable, accountable, and recoverable without duplicate provider execution.
+- **Correctness-first kernel evolution:** protected workers, fresh confirmation, finite-sample promotion gates, autonomous model-backed campaigns, and three-family transfer studies expose regressions, specialists, plateaus, and generalizing champions without averaging failures away.
+- **Capability-validated accelerators:** Prime requests bind immutable images, accelerator type/count, region, telemetry, idempotency, and resolved hardware identity; unsupported or drifting configurations fail before paid candidate execution.
+- **Stronger learning evidence across runtimes:** Python and TypeScript share context-bundle, attribution, and negative-result contracts, while Python training adds replayable adaptive confirmation and minimum-effect promotion artifacts.
 <!-- autocontext-whats-new:end -->
 
-### npm runtime highlights included in 0.16.1
+### npm 0.17.1 structured task creation
 
-The aligned `autoctx@0.16.1` package also carries the TypeScript-first runtime
-work introduced in 0.16.0 and hardened in 0.16.1:
+`autoctx@0.17.1` is a TypeScript-only patch release; the Python package remains
+at `autocontext==0.17.0`. The npm package adds:
+
+- **Structured desktop missions:** protocol-v2 servers advertise
+  `structured_task_creation_v1` and accept strict, versioned `create_task`
+  commands with bounded source contents, explicit data roles, retained
+  provenance, integrity checks, ordered setup/run progress, and durable
+  multi-round results.
+- **Privacy-preserving evaluation:** evaluator-only sources can affect scores
+  without entering candidate prompts, revision feedback, transcripts, or
+  retained analyst output.
+- **Bounded artifact continuation:** truncated initial or revised task outputs
+  can continue within explicit segment and total-size limits; exhausted or
+  non-growing continuation fails closed before evaluation.
+
+The package also carries the TypeScript-first runtime work introduced in 0.16.0
+and hardened in 0.16.1:
 
 - **Host-owned live composition:** typed runtime capabilities, scoped cleanup
   and effect policies, reactive component graphs, and durable transactional
@@ -130,7 +175,8 @@ work introduced in 0.16.0 and hardened in 0.16.1:
   priority controls, bounded WebSocket resources, credential redaction, and
   terminal-control sanitization are enforced across the interactive path.
 
-Python parity for the pi-tui client and image attachments remains deferred.
+Python parity for structured task creation, the pi-tui client, and image
+attachments remains deferred.
 See the [TypeScript guide](ts/README.md), [runtime composition
 contracts](docs/internal/runtime-component-graph.md), and the full
 [changelog](CHANGELOG.md) for details.

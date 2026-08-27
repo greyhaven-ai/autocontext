@@ -10,7 +10,36 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
-SCHEMA_VERSION: Literal["autocontext.kernelbench-eval/v2"] = "autocontext.kernelbench-eval/v2"
+from autocontext.kernel_evolution.authority_protocol import (
+    KernelEvaluatorAuthorityReceipt,
+    verify_authority_receipt_integrity,
+)
+from autocontext.kernel_evolution.finite_sample import KernelDerivedStatisticsReceipt
+from autocontext.kernel_evolution.protocols import (
+    KernelDecisionPolicy,
+    KernelMeasurementDesign,
+    KernelProtocolSemantics,
+    KernelSequentialEvidence,
+    KernelSequentialTestingPolicy,
+    KernelStatisticsPolicy,
+    PrecisionProfileName,
+)
+from autocontext.kernel_evolution.report_models import (
+    KernelCasePerformanceReport as KernelCasePerformanceReport,
+)
+from autocontext.kernel_evolution.report_models import (
+    KernelCorrectnessReport,
+    KernelPerformanceReport,
+    exact_case_speedup_floor_passed,
+)
+from autocontext.kernel_evolution.report_models import (
+    KernelCorrectnessSliceReport as KernelCorrectnessSliceReport,
+)
+from autocontext.kernel_evolution.report_models import (
+    KernelTimingBlock as KernelTimingBlock,
+)
+
+SCHEMA_VERSION: Literal["autocontext.kernelbench-eval/v3"] = "autocontext.kernelbench-eval/v3"
 ARTIFACT_IDENTITY_VERSION: Literal["autocontext.kernel-artifact/v2"] = "autocontext.kernel-artifact/v2"
 PROTOCOL_COMPATIBILITY_VERSION: Literal["autocontext.kernel-protocol-compatibility/v1"] = (
     "autocontext.kernel-protocol-compatibility/v1"
@@ -21,6 +50,7 @@ ArtifactIdentityVersion = Literal["autocontext.kernel-artifact/v2"]
 ProtocolCompatibilityVersion = Literal["autocontext.kernel-protocol-compatibility/v1"]
 PositiveFiniteFloat = Annotated[FiniteFloat, Field(gt=0)]
 NonNegativeFiniteFloat = Annotated[FiniteFloat, Field(ge=0)]
+ConfidenceLevel = Annotated[FiniteFloat, Field(gt=0.5, lt=1)]
 
 
 def content_digest(content: str | bytes) -> str:
@@ -190,18 +220,24 @@ class KernelBenchmarkProtocol(StrictModel):
     rtol: NonNegativeFiniteFloat
     seed_commitment: Digest
     compatibility_version: ProtocolCompatibilityVersion = PROTOCOL_COMPATIBILITY_VERSION
+    semantics: KernelProtocolSemantics | None = None
+    sequential_testing: KernelSequentialTestingPolicy | None = None
 
     @model_validator(mode="after")
     def validate_hidden_trials(self) -> Self:
         if self.hidden_trials > self.correctness_trials:
             raise ValueError("hidden_trials cannot exceed correctness_trials")
+        if self.semantics is not None:
+            expected = 0.0001 if self.semantics.profile_name == "strict-fp32-v1" else 0.01
+            if abs(float(self.atol) - expected) > 1e-15 or abs(float(self.rtol) - expected) > 1e-15:
+                raise ValueError("tolerances do not match the named precision profile")
         return self
 
     @property
     def protocol_id(self) -> str:
         # Preserve the v1 protocol-id semantics for historical evidence. The
         # new compatibility version is domain separation for the family only.
-        return canonical_digest(self.model_dump(mode="json", exclude={"compatibility_version"}))
+        return canonical_digest(self.model_dump(mode="json", exclude={"compatibility_version"}, exclude_none=True))
 
     @property
     def compatibility_id(self) -> str:
@@ -212,6 +248,7 @@ class KernelBenchmarkProtocol(StrictModel):
                 **self.model_dump(
                     mode="json",
                     exclude={"compatibility_version", "seed_commitment"},
+                    exclude_none=True,
                 ),
             }
         )
@@ -224,61 +261,62 @@ class KernelCompileReport(StrictModel):
     diagnostics: str = ""
 
 
-class KernelCorrectnessReport(StrictModel):
-    passed: bool
-    tests_run: int = Field(ge=1)
-    tests_passed: int = Field(ge=0)
-    hidden_tests_run: int = Field(ge=1)
-    hidden_tests_passed: int = Field(ge=0)
-    max_abs_error: NonNegativeFiniteFloat | None = None
-    max_rel_error: NonNegativeFiniteFloat | None = None
-    parameter_state_match: bool = True
-    input_mutation_detected: bool = False
-    failures: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_counts_and_pass_flag(self) -> Self:
-        if self.tests_passed > self.tests_run:
-            raise ValueError("tests_passed cannot exceed tests_run")
-        if self.hidden_tests_run > self.tests_run:
-            raise ValueError("hidden_tests_run cannot exceed tests_run")
-        if self.hidden_tests_passed > self.hidden_tests_run:
-            raise ValueError("hidden_tests_passed cannot exceed hidden_tests_run")
-        fully_correct = (
-            self.tests_passed == self.tests_run
-            and self.hidden_tests_passed == self.hidden_tests_run
-            and self.parameter_state_match
-            and not self.input_mutation_detected
-        )
-        if self.passed != fully_correct:
-            raise ValueError("correctness passed flag disagrees with trial, state, or mutation checks")
-        return self
-
-
-class KernelTimingBlock(StrictModel):
-    """One interleaved, paired measurement block."""
-
-    block: int = Field(ge=0)
-    candidate_ms: PositiveFiniteFloat
-    incumbent_ms: PositiveFiniteFloat
-    reference_ms: PositiveFiniteFloat
-
-
-class KernelPerformanceReport(StrictModel):
-    blocks: list[KernelTimingBlock] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_blocks(self) -> Self:
-        block_ids = [block.block for block in self.blocks]
-        if block_ids != list(range(len(self.blocks))):
-            raise ValueError("timing block ids must be unique, ordered, and contiguous from zero")
-        return self
-
-
 class KernelResourceReport(StrictModel):
+    """Identity-bound allocator or evaluator-observed accelerator telemetry."""
+
+    candidate_artifact_digest: Digest | None = None
+    incumbent_artifact_digest: Digest | None = None
+    candidate_peak_allocated_bytes: int | None = Field(default=None, ge=0)
+    candidate_peak_reserved_bytes: int | None = Field(default=None, ge=0)
+    incumbent_peak_allocated_bytes: int | None = Field(default=None, ge=0)
+    incumbent_peak_reserved_bytes: int | None = Field(default=None, ge=0)
+    # Retained for v2 readers; new workers set these to peak reservation.
     candidate_peak_memory_bytes: int | None = Field(default=None, ge=0)
     incumbent_peak_memory_bytes: int | None = Field(default=None, ge=0)
+    candidate_observed_peak_bytes: int | None = Field(default=None, ge=0)
+    incumbent_observed_peak_bytes: int | None = Field(default=None, ge=0)
+    telemetry_authority: Literal["trusted-evaluator-observed/v1"] | None = None
+    accelerator_attestation_digest: Digest | None = None
     device_total_memory_bytes: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_cuda_peaks(self) -> Self:
+        for role in ("candidate", "incumbent"):
+            allocated = getattr(self, f"{role}_peak_allocated_bytes")
+            reserved = getattr(self, f"{role}_peak_reserved_bytes")
+            if allocated is not None and reserved is not None and allocated > reserved:
+                raise ValueError(f"{role} peak allocated bytes cannot exceed peak reserved bytes")
+        if self.device_total_memory_bytes is not None:
+            for value in (
+                self.candidate_peak_allocated_bytes,
+                self.candidate_peak_reserved_bytes,
+                self.incumbent_peak_allocated_bytes,
+                self.incumbent_peak_reserved_bytes,
+                self.candidate_observed_peak_bytes,
+                self.incumbent_observed_peak_bytes,
+            ):
+                if value is not None and value > self.device_total_memory_bytes:
+                    raise ValueError("accelerator peak telemetry cannot exceed total device bytes")
+        observed = (self.candidate_observed_peak_bytes, self.incumbent_observed_peak_bytes)
+        if any(value is not None for value in observed):
+            if any(value is None for value in observed):
+                raise ValueError("trusted evaluator peaks must cover candidate and incumbent")
+            if self.telemetry_authority != "trusted-evaluator-observed/v1":
+                raise ValueError("evaluator-observed peaks require the trusted telemetry authority")
+            if self.accelerator_attestation_digest is None:
+                raise ValueError("evaluator-observed peaks require an accelerator attestation digest")
+        return self
+
+    @property
+    def candidate_enforced_peak_bytes(self) -> int | None:
+        values = (
+            self.candidate_peak_allocated_bytes,
+            self.candidate_peak_reserved_bytes,
+            self.candidate_peak_memory_bytes,
+            self.candidate_observed_peak_bytes,
+        )
+        present = [value for value in values if value is not None]
+        return max(present) if present else None
 
 
 KernelEvaluationStatus = Literal["complete", "candidate_error", "infrastructure_error"]
@@ -291,6 +329,10 @@ KernelFailureKind = Literal[
     "crash",
     "unstable_environment",
     "contract",
+    "protocol_corruption",
+    "evaluator_crash",
+    "candidate_crash",
+    "teardown_failure",
     "reference_failure",
 ]
 
@@ -298,7 +340,11 @@ KernelFailureKind = Literal[
 class KernelBenchmarkReport(StrictModel):
     """Machine-written benchmark result. AutoContext recomputes every score."""
 
-    schema_version: Literal["autocontext.kernelbench-eval/v2"]
+    schema_version: Literal[
+        "autocontext.kernelbench-eval/v2",
+        "autocontext.kernelbench-eval/v3",
+        "autocontext.kernelbench-eval/v4",
+    ] = SCHEMA_VERSION
     evaluation_status: KernelEvaluationStatus
     failure_kind: KernelFailureKind | None = None
     problem_id: str
@@ -319,11 +365,25 @@ class KernelBenchmarkReport(StrictModel):
     correctness: KernelCorrectnessReport | None
     performance: KernelPerformanceReport | None
     resources: KernelResourceReport = Field(default_factory=KernelResourceReport)
+    evaluator_authority_receipt: KernelEvaluatorAuthorityReceipt | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_invariants(self) -> Self:
         _require_finite_json(self.metadata)
+        if self.schema_version == "autocontext.kernelbench-eval/v4":
+            design_payload = self.metadata.get("measurement_design")
+            try:
+                design = KernelMeasurementDesign.model_validate(design_payload)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("v4 reports require a complete measurement-design receipt") from exc
+            if design.fixed_block_count != self.protocol.timing_blocks:
+                raise ValueError("measurement design block count must match the benchmark protocol")
+            semantics = self.protocol.semantics
+            if semantics is not None:
+                expected_tolerance = 0.0001 if semantics.profile_name == "strict-fp32-v1" else 0.01
+                if float(self.protocol.atol) != expected_tolerance or float(self.protocol.rtol) != expected_tolerance:
+                    raise ValueError("v4 protocol tolerances must exactly match the named precision profile")
         if not self.candidate_entrypoint.strip() or not self.incumbent_entrypoint.strip():
             raise ValueError("candidate and incumbent entrypoints must not be empty")
         expected_candidate = artifact_digest_from_source_digest(
@@ -342,6 +402,26 @@ class KernelBenchmarkReport(StrictModel):
             raise ValueError("incumbent artifact digest does not match its source digest and ABI")
         if self.hardware_scope_id != self.hardware.scope_id:
             raise ValueError("hardware_scope_id does not match the canonical hardware identity")
+        if self.evaluator_authority_receipt is not None:
+            verify_authority_receipt_integrity(self.evaluator_authority_receipt, self.model_dump(mode="json"))
+            attestation = self.evaluator_authority_receipt.accelerator_attestation
+            if attestation.backend != self.hardware.backend or attestation.architecture != self.hardware.architecture:
+                raise ValueError("authority receipt accelerator identity does not match report hardware")
+            if self.resources.accelerator_attestation_digest != attestation.digest:
+                raise ValueError("resource telemetry is not bound to the receipt accelerator attestation")
+            if self.resources.device_total_memory_bytes != attestation.enforced_memory_bytes:
+                raise ValueError("resource telemetry capacity does not match receipt accelerator attestation")
+        resources = self.resources
+        if (
+            resources.candidate_artifact_digest is not None
+            and resources.candidate_artifact_digest != self.candidate_artifact_digest
+        ):
+            raise ValueError("candidate resource telemetry is bound to a different artifact")
+        if (
+            resources.incumbent_artifact_digest is not None
+            and resources.incumbent_artifact_digest != self.incumbent_artifact_digest
+        ):
+            raise ValueError("incumbent resource telemetry is bound to a different artifact")
         if self.correctness is not None:
             if self.correctness.tests_run != self.protocol.correctness_trials:
                 raise ValueError("correctness tests_run does not match protocol correctness_trials")
@@ -358,6 +438,48 @@ class KernelBenchmarkReport(StrictModel):
                 raise ValueError("complete reports require paired performance blocks")
             if len(self.performance.blocks) != self.protocol.timing_blocks:
                 raise ValueError("protocol timing_blocks does not match the performance block count")
+            for case in self.performance.cases:
+                if self.schema_version == "autocontext.kernelbench-eval/v4":
+                    case_passed = exact_case_speedup_floor_passed(
+                        incumbent_ms=float(case.incumbent_median_ms),
+                        candidate_ms=float(case.candidate_median_ms),
+                        minimum_speedup=float(case.minimum_speedup_vs_incumbent),
+                    )
+                else:
+                    actual_speedup = float(case.incumbent_median_ms) / float(case.candidate_median_ms)
+                    case_passed = actual_speedup + 1e-12 >= float(case.minimum_speedup_vs_incumbent)
+                if case.passed_no_regression != case_passed:
+                    raise ValueError("case no-regression result does not match the report schema")
+            semantics = self.protocol.semantics
+            if semantics is not None:
+                enforcement = semantics.enforcement
+                assert self.correctness is not None
+                if enforcement.require_every_correctness_slice:
+                    if not self.correctness.slices:
+                        raise ValueError("semantic protocols require named correctness slices")
+                    observed_splits = {item.split for item in self.correctness.slices}
+                    if observed_splits != set(semantics.inputs.required_slices):
+                        raise ValueError("correctness slices do not cover the protocol's required splits")
+                if enforcement.require_every_case_no_regression:
+                    if not self.performance.cases:
+                        raise ValueError("semantic protocols require per-case performance gates")
+                    correctness_cases = [(item.name, item.split) for item in self.correctness.slices]
+                    performance_cases = [(item.name, item.split) for item in self.performance.cases]
+                    if len(set(correctness_cases)) != len(correctness_cases):
+                        raise ValueError("correctness slice names and splits must be unique")
+                    if len(set(performance_cases)) != len(performance_cases):
+                        raise ValueError("performance case names and splits must be unique")
+                    if set(performance_cases) != set(correctness_cases):
+                        raise ValueError("performance cases must cover every named correctness slice")
+                    for case in self.performance.cases:
+                        expected_floor = float(enforcement.minimum_case_speedup_vs_incumbent)
+                        observed_floor = float(case.minimum_speedup_vs_incumbent)
+                        if self.schema_version == "autocontext.kernelbench-eval/v4":
+                            floor_matches = observed_floor == expected_floor
+                        else:
+                            floor_matches = abs(observed_floor - expected_floor) <= 1e-12
+                        if not floor_matches:
+                            raise ValueError("case no-regression floor does not match the protocol")
         else:
             if self.failure_kind is None:
                 raise ValueError("failed reports require failure_kind")
@@ -382,12 +504,19 @@ class KernelBenchmarkObservation(StrictModel):
     baseline_id: Digest | None = None
     protocol_id: Digest | None = None
     protocol_compatibility_id: Digest | None = None
+    statistics_policy: KernelStatisticsPolicy | None = None
+    derived_statistics_receipt: KernelDerivedStatisticsReceipt | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     candidate_median_ms: PositiveFiniteFloat | None = None
     incumbent_median_ms: PositiveFiniteFloat | None = None
     reference_median_ms: PositiveFiniteFloat | None = None
     speedup_vs_incumbent: PositiveFiniteFloat | None = None
     speedup_vs_reference: PositiveFiniteFloat | None = None
     speedup_lcb95: PositiveFiniteFloat | None = None
+    speedup_lcb: PositiveFiniteFloat | None = None
+    confidence_level: ConfidenceLevel | None = None
+    all_case_no_regression_passed: bool | None = None
     relative_improvement: FiniteFloat | None = None
     candidate_p95_ms: PositiveFiniteFloat | None = None
     incumbent_p95_ms: PositiveFiniteFloat | None = None
@@ -397,15 +526,48 @@ class KernelBenchmarkObservation(StrictModel):
     stdout_truncated: bool = False
     stderr_truncated: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_pre_sequential_v2_metrics(cls, data: Any) -> Any:
+        """Read eligible v2 observations written before sequential bounds.
+
+        Those observations persisted the 95% lower bound under
+        ``speedup_lcb95``.  It is safe to map that value to the generic field
+        only when the embedded protocol has no sequential-testing policy; a
+        bounded-search observation must carry its adjusted bound explicitly.
+        """
+        if not isinstance(data, dict) or not data.get("eligible"):
+            return data
+        if data.get("speedup_lcb") is not None or data.get("confidence_level") is not None:
+            return data
+        lcb95 = data.get("speedup_lcb95")
+        report = data.get("report")
+        if lcb95 is None or report is None:
+            return data
+        if isinstance(report, BaseModel):
+            protocol = getattr(report, "protocol", None)
+            sequential = getattr(protocol, "sequential_testing", None)
+        elif isinstance(report, dict):
+            protocol = report.get("protocol")
+            sequential = protocol.get("sequential_testing") if isinstance(protocol, dict) else None
+        else:
+            return data
+        if sequential is not None:
+            return data
+        migrated = dict(data)
+        migrated["speedup_lcb"] = lcb95
+        migrated["confidence_level"] = 0.95
+        return migrated
+
     @model_validator(mode="after")
     def validate_eligible_metrics(self) -> Self:
-        metrics = (
+        common_metrics = (
             self.candidate_median_ms,
             self.incumbent_median_ms,
             self.reference_median_ms,
             self.speedup_vs_incumbent,
             self.speedup_vs_reference,
-            self.speedup_lcb95,
+            self.confidence_level,
             self.relative_improvement,
             self.candidate_p95_ms,
             self.incumbent_p95_ms,
@@ -415,15 +577,59 @@ class KernelBenchmarkObservation(StrictModel):
             self.report is None
             or self.protocol_id is None
             or self.protocol_compatibility_id is None
-            or any(value is None for value in metrics)
+            or any(value is None for value in common_metrics)
         ):
             raise ValueError("eligible observations require a report, protocol identities, and all derived metrics")
         if self.eligible and self.rejection_reason is not None:
             raise ValueError("eligible observations cannot have a rejection_reason")
         if not self.eligible and not self.rejection_reason:
             raise ValueError("ineligible observations require a rejection_reason")
+        if not self.eligible and self.derived_statistics_receipt is not None:
+            raise ValueError("ineligible v4 observations cannot carry a derived statistics receipt")
         if self.report is not None:
             report = self.report
+            if report.schema_version == "autocontext.kernelbench-eval/v3" and self.statistics_policy is None:
+                raise ValueError("v3 eligible observations require a statistics-policy receipt")
+            if report.schema_version == "autocontext.kernelbench-eval/v4":
+                if (
+                    self.statistics_policy is None
+                    or self.statistics_policy.schema_version != "autocontext.kernel-statistics-policy/v2"
+                ):
+                    raise ValueError("v4 observations require a finite-sample statistics policy")
+                if not self.eligible:
+                    if self.derived_statistics_receipt is not None:
+                        raise ValueError("ineligible v4 observations cannot carry a derived statistics receipt")
+                else:
+                    if self.derived_statistics_receipt is None:
+                        raise ValueError("v4 eligible observations require a finite-sample derivation receipt")
+                    receipt = self.derived_statistics_receipt
+                    if receipt.statistics_policy_id != self.statistics_policy.policy_id:
+                        raise ValueError("derived statistics receipt is bound to a different statistics policy")
+                    if receipt.raw_report_digest != kernel_benchmark_report_digest(report):
+                        raise ValueError("derived statistics receipt is bound to a different raw report")
+                    if self.speedup_lcb95 is not None or self.speedup_lcb is not None:
+                        raise ValueError("v4 observations cannot label empirical bootstrap quantiles as confidence bounds")
+                    receipt_metrics = {
+                        "candidate_median_ms": receipt.candidate_median_ms,
+                        "incumbent_median_ms": receipt.incumbent_median_ms,
+                        "reference_median_ms": receipt.reference_median_ms,
+                        "speedup_vs_incumbent": receipt.speedup_vs_incumbent,
+                        "speedup_vs_reference": receipt.speedup_vs_reference,
+                        "relative_improvement": receipt.relative_improvement,
+                        "candidate_p95_ms": receipt.candidate_p95_ms,
+                        "incumbent_p95_ms": receipt.incumbent_p95_ms,
+                        "environment_drift_ratio": receipt.environment_drift_ratio,
+                        "all_case_no_regression_passed": receipt.all_case_no_regression_passed,
+                    }
+                    for name, expected in receipt_metrics.items():
+                        actual = getattr(self, name)
+                        if isinstance(expected, float):
+                            if actual is None or float(actual) != expected:
+                                raise ValueError(f"observation {name} disagrees with its derivation receipt")
+                        elif actual != expected:
+                            raise ValueError(f"observation {name} disagrees with its derivation receipt")
+            elif self.eligible and (self.speedup_lcb95 is None or self.speedup_lcb is None):
+                raise ValueError("legacy eligible observations require both empirical bootstrap lower bounds")
             if self.eligible and (
                 self.artifact_identity_version != report.artifact_identity_version
                 or self.candidate_artifact_digest != report.candidate_artifact_digest
@@ -438,10 +644,23 @@ class KernelBenchmarkObservation(StrictModel):
                 raise ValueError("observation protocol id does not match its report")
             if self.protocol_compatibility_id != report.protocol.compatibility_id:
                 raise ValueError("observation protocol compatibility id does not match its report")
+            if self.eligible:
+                assert self.confidence_level is not None
+                sequential = report.protocol.sequential_testing
+                expected_confidence = sequential.confidence_level if sequential is not None else 0.95
+                if float(self.confidence_level) != expected_confidence:
+                    raise ValueError("observation confidence_level disagrees with its benchmark protocol")
         return self
 
 
 KernelDecision = Literal["baseline", "promoted", "rejected"]
+KernelGateStatus = Literal["passed", "failed", "not-evaluated"]
+
+
+class KernelPromotionGateResult(StrictModel):
+    name: str
+    status: KernelGateStatus
+    detail: str = ""
 
 
 class KernelPromotionDecision(StrictModel):
@@ -449,12 +668,30 @@ class KernelPromotionDecision(StrictModel):
     decision: KernelDecision
     reason: str
     feedback: str
+    gates: tuple[KernelPromotionGateResult, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_promotion_flag(self) -> Self:
+        if self.promote != (self.decision in {"baseline", "promoted"}):
+            raise ValueError("promotion decision flag and disposition disagree")
+        return self
+
+
+def kernel_benchmark_report_digest(report: KernelBenchmarkReport) -> str:
+    """Digest the exact canonical report representation persisted by lineage."""
+    return content_digest(report.model_dump_json(indent=2))
 
 
 class KernelAttemptRecord(StrictModel):
     """Append-only lineage record for one baseline or proposal evaluation."""
 
-    schema_version: Literal["autocontext.kernel-lineage/v2"] = "autocontext.kernel-lineage/v2"
+    schema_version: Literal[
+        "autocontext.kernel-lineage/v2",
+        "autocontext.kernel-lineage/v3",
+        "autocontext.kernel-lineage/v4",
+    ] = (
+        "autocontext.kernel-lineage/v3"
+    )
     run_id: str
     attempt_id: str
     generation: int = Field(ge=0)
@@ -477,122 +714,41 @@ class KernelAttemptRecord(StrictModel):
     protocol_compatibility_id: Digest | None
     created_at: str
     observation: KernelBenchmarkObservation
+    decision_policy: KernelDecisionPolicy | None = None
+    decision_policy_id: Digest | None = Field(default=None, exclude_if=lambda value: value is None)
+    primary_decision: KernelPromotionDecision | None = None
+    promotion_decision: KernelPromotionDecision | None = None
     confirmation_required: bool = False
     confirmation_report_digest: Digest | None = None
     confirmation_observation: KernelBenchmarkObservation | None = None
     confirmation_decision: KernelPromotionDecision | None = None
+    sequential_evidence: KernelSequentialEvidence | None = None
 
     @model_validator(mode="after")
     def validate_lineage(self) -> Self:
-        if self.artifact_identity_version != self.observation.artifact_identity_version:
-            raise ValueError("attempt artifact identity version does not match its observation")
-        if self.source_digest != self.observation.candidate_source_digest:
-            raise ValueError("attempt source digest does not match its observation")
-        if self.artifact_digest != artifact_digest_from_source_digest(
-            self.source_digest,
-            source_suffix=self.source_suffix,
-            entrypoint=self.entrypoint,
-        ):
-            raise ValueError("attempt artifact digest does not match its source digest and ABI")
-        if self.artifact_digest != self.observation.candidate_artifact_digest:
-            raise ValueError("attempt artifact digest does not match its observation")
-        if self.hardware_scope_id != self.observation.hardware_scope_id:
-            raise ValueError("attempt hardware scope does not match its observation")
-        if self.baseline_id != self.observation.baseline_id:
-            raise ValueError("attempt baseline id does not match its observation")
-        if self.protocol_id != self.observation.protocol_id:
-            raise ValueError("attempt protocol id does not match its observation")
-        if self.protocol_compatibility_id != self.observation.protocol_compatibility_id:
-            raise ValueError("attempt protocol compatibility id does not match its observation")
-        if (self.report_digest is None) != (self.observation.report is None):
-            raise ValueError("attempt report digest presence does not match its observation")
-        if not re.fullmatch(r"\.[A-Za-z0-9]{1,12}", self.source_suffix):
-            raise ValueError("attempt source_suffix is invalid")
-        if not self.entrypoint.strip():
-            raise ValueError("attempt entrypoint must not be empty")
-        if not self.confirmation_required and (
-            self.confirmation_report_digest is not None
-            or self.confirmation_observation is not None
-            or self.confirmation_decision is not None
-        ):
-            raise ValueError("confirmation evidence requires confirmation_required")
-        if self.confirmation_observation is None:
-            if self.confirmation_report_digest is not None:
-                raise ValueError("confirmation report digest requires a confirmation observation")
-        elif (self.confirmation_report_digest is None) != (self.confirmation_observation.report is None):
-            raise ValueError("confirmation report digest presence does not match its observation")
-        if self.confirmation_observation is not None and self.confirmation_decision is None:
-            raise ValueError("confirmation observations require a confirmation decision")
-        if self.confirmation_decision is not None and self.confirmation_decision.promote:
-            confirmation = self.confirmation_observation
-            if confirmation is None:
-                raise ValueError("successful confirmation requires an observation")
-            if confirmation.candidate_artifact_digest != self.artifact_digest:
-                raise ValueError("successful confirmation candidate digest does not match the attempt")
-            if confirmation.baseline_id != self.baseline_id:
-                raise ValueError("successful confirmation baseline does not match the primary observation")
-            if confirmation.protocol_id == self.protocol_id:
-                raise ValueError("successful confirmation must use a fresh benchmark protocol")
-            if confirmation.protocol_compatibility_id != self.protocol_compatibility_id:
-                raise ValueError("successful confirmation must use a compatible benchmark protocol")
-            primary_report = self.observation.report
-            confirmation_report = confirmation.report
-            if primary_report is None or confirmation_report is None:
-                raise ValueError("successful confirmation requires primary and confirmation reports")
-            if confirmation_report.problem_id != primary_report.problem_id:
-                raise ValueError("successful confirmation problem does not match the primary report")
-            if confirmation_report.hardware.workload_family_id != primary_report.hardware.workload_family_id:
-                raise ValueError("successful confirmation workload family does not match the primary report")
-            if (
-                confirmation_report.candidate_artifact_digest != self.artifact_digest
-                or confirmation_report.incumbent_artifact_digest != confirmation.incumbent_artifact_digest
-            ):
-                raise ValueError("successful confirmation report artifact identity does not match its observation")
-            if (
-                confirmation_report.candidate_entrypoint != self.entrypoint
-                or confirmation_report.incumbent_entrypoint != primary_report.incumbent_entrypoint
-            ):
-                raise ValueError("successful confirmation entrypoint identity does not match the primary report")
-            if confirmation_report.hardware.execution_environment_id != primary_report.hardware.execution_environment_id:
-                raise ValueError("successful confirmation execution environment does not match the primary report")
-            if self.decision != "promoted":
-                raise ValueError("successful confirmation requires a promoted attempt decision")
-        if self.decision == "promoted" and self.confirmation_required:
-            if self.confirmation_decision is None or not self.confirmation_decision.promote:
-                raise ValueError("promoted attempts requiring confirmation must contain a successful confirmation")
-        if self.role == "baseline":
-            if self.confirmation_required:
-                raise ValueError("baseline attempts cannot require confirmation")
-            if self.generation != 0 or self.parent_attempt_id is not None or self.parent_artifact_digest is not None:
-                raise ValueError("baseline attempts must be generation zero lineage roots")
-            if self.decision not in {"baseline", "rejected"}:
-                raise ValueError("baseline attempts must establish the baseline or be rejected")
-            if self.observation.incumbent_artifact_digest != self.artifact_digest:
-                raise ValueError("baseline must be evaluated against itself")
-        else:
-            if self.generation < 1 or self.parent_attempt_id is None or self.parent_artifact_digest is None:
-                raise ValueError("candidate attempts require a champion parent")
-            if self.decision == "baseline":
-                raise ValueError("candidate attempts cannot carry a baseline decision")
-            if self.parent_artifact_digest != self.observation.incumbent_artifact_digest:
-                raise ValueError("candidate parent digest must match the paired incumbent")
-            if self.confirmation_decision is not None and self.confirmation_decision.promote:
-                assert self.confirmation_observation is not None
-                if self.confirmation_observation.incumbent_artifact_digest != self.parent_artifact_digest:
-                    raise ValueError("successful confirmation incumbent digest does not match the candidate parent")
+        from autocontext.kernel_evolution.evidence_replay import validate_attempt
+
+        validate_attempt(self)
         return self
 
 
 class KernelEvolutionResult(StrictModel):
     """Stable result surface that reports the champion, not the final attempt."""
 
-    schema_version: Literal["autocontext.kernel-result/v2"] = "autocontext.kernel-result/v2"
+    schema_version: Literal[
+        "autocontext.kernel-result/v2",
+        "autocontext.kernel-result/v3",
+        "autocontext.kernel-result/v4",
+    ] = (
+        "autocontext.kernel-result/v3"
+    )
     run_id: str
     problem_id: str
     hardware_scope_id: Digest
     baseline_id: Digest
     protocol_id: Digest
     protocol_compatibility_id: Digest
+    precision_profile: PrecisionProfileName | None = None
     baseline_attempt_id: str
     champion_attempt_id: str
     artifact_identity_version: ArtifactIdentityVersion
@@ -601,50 +757,16 @@ class KernelEvolutionResult(StrictModel):
     champion_source: str
     champion_score: PositiveFiniteFloat
     champion_speedup_vs_reference: PositiveFiniteFloat
+    decision_policy: KernelDecisionPolicy | None = None
+    decision_policy_id: Digest | None = Field(default=None, exclude_if=lambda value: value is None)
     attempts: list[KernelAttemptRecord]
     playbook: str
 
     @model_validator(mode="after")
     def validate_result_lineage(self) -> Self:
-        if not self.attempts:
-            raise ValueError("kernel evolution results require at least the baseline attempt")
-        by_id = {attempt.attempt_id: attempt for attempt in self.attempts}
-        if len(by_id) != len(self.attempts):
-            raise ValueError("attempt ids must be unique")
-        baseline = by_id.get(self.baseline_attempt_id)
-        champion = by_id.get(self.champion_attempt_id)
-        if baseline is None or baseline.role != "baseline" or baseline.decision != "baseline":
-            raise ValueError("baseline_attempt_id must identify the baseline root")
-        if champion is None or champion.decision not in {"baseline", "promoted"}:
-            raise ValueError("champion_attempt_id must identify an accepted attempt")
-        if champion.artifact_digest != self.champion_artifact_digest:
-            raise ValueError("champion artifact digest does not match the champion attempt")
-        if content_digest(self.champion_source) != self.champion_source_digest:
-            raise ValueError("champion source does not match its source digest")
-        if champion.source_digest != self.champion_source_digest:
-            raise ValueError("champion source digest does not match the champion attempt")
-        if self.artifact_identity_version != champion.artifact_identity_version:
-            raise ValueError("result artifact identity version does not match the champion attempt")
-        expected_champion = artifact_digest_from_source_digest(
-            self.champion_source_digest,
-            source_suffix=champion.source_suffix,
-            entrypoint=champion.entrypoint,
-        )
-        if expected_champion != self.champion_artifact_digest:
-            raise ValueError("champion source and ABI do not match its artifact digest")
-        if baseline.hardware_scope_id != self.hardware_scope_id or baseline.baseline_id != self.baseline_id:
-            raise ValueError("result scope or baseline does not match the baseline attempt")
-        if baseline.protocol_id != self.protocol_id:
-            raise ValueError("result protocol does not match the baseline attempt")
-        if baseline.protocol_compatibility_id != self.protocol_compatibility_id:
-            raise ValueError("result protocol compatibility does not match the baseline attempt")
-        if (
-            champion.hardware_scope_id != self.hardware_scope_id
-            or champion.baseline_id != self.baseline_id
-            or champion.protocol_id != self.protocol_id
-            or champion.protocol_compatibility_id != self.protocol_compatibility_id
-        ):
-            raise ValueError("champion was not evaluated in the result's pinned benchmark scope")
+        from autocontext.kernel_evolution.evidence_replay import validate_result
+
+        validate_result(self)
         return self
 
 

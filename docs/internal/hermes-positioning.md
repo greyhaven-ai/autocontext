@@ -23,7 +23,7 @@ training pipelines can consume.
 | Curator decision logs                     | Source of truth      | Ingest target                                                                               |
 | Session and trajectory data               | Hermes writes        | autocontext imports (with explicit redaction)                                               |
 | Evaluation against a rubric               | Out of scope         | `autoctx judge` / `autoctx improve`                                                         |
-| Replay / artifact storage                 | Per-Hermes-run logs  | Durable `Run` / `Artifact` / `Knowledge` model (see [concept-model.md](./concept-model.md)) |
+| Replay / artifact storage                 | Per-Hermes-run logs  | Durable `Run` / `Artifact` / `Knowledge` model (see [concept-model.md](../concept-model.md)) |
 | Local MLX / CUDA training                 | Out of scope         | `autoctx hermes train-advisor` (advisory, narrow)                                           |
 | Exporting reusable skills                 | Out of scope         | `autoctx hermes export-skill`                                                               |
 
@@ -38,7 +38,7 @@ training pipelines can consume.
    ```
 
    Detailed flag and output reference: see
-   [agent-integration.md → autoctx hermes](../autocontext/docs/agent-integration.md#autoctx-hermes-inspect-hermes-and-export-the-hermes-skill).
+   [agent-integration.md → autoctx hermes](../../autocontext/docs/agent-integration.md#autoctx-hermes--inspect-hermes-and-export-the-hermes-skill).
 
 2. **Install the autocontext skill into Hermes** so Hermes agents know
    when to use autocontext at all:
@@ -73,7 +73,7 @@ the source of truth for agent-facing usage. See:
   `render_autocontext_skill()` output is what `autoctx hermes
 export-skill` writes).
 - The shared agent-integration guide:
-  [agent-integration.md](../autocontext/docs/agent-integration.md).
+  [agent-integration.md](../../autocontext/docs/agent-integration.md).
 
 In short: an agent picks the simplest surface available. CLI first
 (observable, easy to debug). MCP only if it's already configured.
@@ -128,7 +128,7 @@ external storage. Before any session or trajectory import:
   `--include-trajectories` flag (no implicit inclusion).
 - Imports run a redaction policy before persisting; the policy is
   shared with the production-traces redaction path
-  ([see redaction module docs](../autocontext/docs/sandbox.md) for
+  ([see redaction module docs](../../autocontext/docs/sandbox.md) for
   the runtime redaction surface).
 - Imported batches are stored under
   `.autocontext/production-traces/ingested/<date>/*.jsonl` exactly

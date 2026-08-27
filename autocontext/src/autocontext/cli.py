@@ -23,6 +23,7 @@ from autocontext import __version__
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.cli_ambient import ambient_app
 from autocontext.cli_analytics import register_analytics_command
+from autocontext.cli_campaign import register_campaign_command
 from autocontext.cli_capabilities import register_capabilities_command
 from autocontext.cli_epoch import epoch_app
 from autocontext.cli_errors import StructuredUsageGroup
@@ -934,7 +935,6 @@ def ab_test(
     runner = ABTestRunner(config)
     result = runner.run()
 
-    # Results table
     table = Table(title="A/B Test Results")
     table.add_column("Run", justify="right")
     table.add_column("Baseline Score", justify="right")
@@ -951,7 +951,6 @@ def ab_test(
     console.print(f"[bold]Treatment wins:[/bold] {result.treatment_wins()}")
     console.print(f"[bold]Baseline wins:[/bold] {result.baseline_wins()}")
 
-    # McNemar's test
     threshold = 0.5
     baseline_passed = [s >= threshold for s in result.baseline_scores]
     treatment_passed = [s >= threshold for s in result.treatment_scores]
@@ -1276,6 +1275,7 @@ def judge(
 
 
 register_analytics_command(app, console=console)
+register_campaign_command(app, console=console)
 register_capabilities_command(app, console=console)
 register_hermes_command(app, console=console)
 register_skills_command(app, console=console)

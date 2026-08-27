@@ -27,12 +27,12 @@ def _normalize_path_segment(value: str, label: str) -> str:
     normalized = value.strip()
     if not normalized:
         raise ValueError(f"{label} is required")
-    if "/" in normalized or "\\" in normalized:
-        raise ValueError(f"{label} must be a single path segment: {value!r}")
+    if len(normalized.encode("utf-8")) > 120 or "/" in normalized or "\\" in normalized:
+        raise ValueError(f"{label} must be one safe path segment")
     for path_cls in (PurePosixPath, PureWindowsPath):
         candidate = path_cls(normalized)
         if candidate.is_absolute() or len(candidate.parts) != 1 or candidate.parts[0] in {".", ".."}:
-            raise ValueError(f"{label} must be a single path segment: {value!r}")
+            raise ValueError(f"{label} must be one safe path segment")
     return normalized
 
 

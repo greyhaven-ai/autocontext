@@ -103,6 +103,25 @@ class TestMontyExternalFunctionDispatch:
         assert result["seed"] == 42
         assert result["terminal"] is False
 
+    def test_dispatch_uses_prepared_state_without_rematerializing(self) -> None:
+        from autocontext.execution.executors.monty import MontyExecutor
+
+        scenario = FakeScenario()
+        scenario.initial_state = MagicMock(side_effect=AssertionError("must not rematerialize"))  # type: ignore[method-assign]
+        prepared = {"seed": 999, "terminal": False, "timeline": []}
+        dispatch = MontyExecutor()._build_dispatch(
+            scenario,
+            {"aggression": 0.8},
+            42,
+            prepared,
+        )
+
+        result = dispatch("initial_state", (42,))
+
+        assert result == prepared
+        assert result is not prepared
+        scenario.initial_state.assert_not_called()
+
     def test_dispatch_validate_actions_valid(self) -> None:
         from autocontext.execution.executors.monty import MontyExecutor
 

@@ -1,6 +1,7 @@
 import {
+  BASE_SERVER_CAPABILITIES,
   PROTOCOL_VERSION,
-  SERVER_CAPABILITIES,
+  TRANSCRIPT_SERVER_CAPABILITIES,
   TRANSCRIPT_PROTOCOL_VERSION,
   type ServerMessage,
 } from "./protocol.js";
@@ -31,14 +32,21 @@ export function buildStateMessage(state: RunManagerState): ServerMessage {
 export function buildHelloMessage(
   opts: { runTranscript?: boolean; capabilities?: readonly string[] } = {},
 ): ServerMessage {
-  return opts.runTranscript
-    ? {
-        type: "hello",
-        protocol_version: PROTOCOL_VERSION,
-        transcript_protocol_version: TRANSCRIPT_PROTOCOL_VERSION,
-        capabilities: [...new Set([...SERVER_CAPABILITIES, ...(opts.capabilities ?? [])])],
-      }
-    : { type: "hello", protocol_version: PROTOCOL_VERSION };
+  const capabilities = opts.runTranscript
+    ? [
+        ...TRANSCRIPT_SERVER_CAPABILITIES,
+        ...BASE_SERVER_CAPABILITIES,
+        ...(opts.capabilities ?? []),
+      ]
+    : [...BASE_SERVER_CAPABILITIES];
+  return {
+    type: "hello",
+    protocol_version: PROTOCOL_VERSION,
+    ...(opts.runTranscript
+      ? { transcript_protocol_version: TRANSCRIPT_PROTOCOL_VERSION }
+      : {}),
+    capabilities: [...new Set(capabilities)],
+  };
 }
 
 export function buildSessionBootstrapMessages(

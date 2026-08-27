@@ -310,6 +310,25 @@ def test_create_role_client_pi_uses_scenario_handoff(tmp_path: Path) -> None:
     mock_resolve.assert_called_once()
 
 
+def test_create_role_client_pi_model_override_is_authoritative(tmp_path: Path) -> None:
+    s = AppSettings(
+        knowledge_root=tmp_path / "knowledge",
+        pi_command="/usr/bin/pi",
+        pi_model="settings-model",
+    )
+    with patch("autocontext.providers.scenario_routing.resolve_pi_model") as mock_resolve:
+        client = create_role_client(
+            "pi",
+            s,
+            model_override="role-model",
+            scenario_name="grid_ctf",
+        )
+
+    assert isinstance(client, RuntimeBridgeClient)
+    assert client._runtime._config.model == "role-model"  # type: ignore[attr-defined]
+    mock_resolve.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # PiCLIRuntime.available property
 # ---------------------------------------------------------------------------

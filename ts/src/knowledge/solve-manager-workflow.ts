@@ -60,6 +60,7 @@ export function createSolveExecutionDeps(opts: {
 export async function runBuiltInGameSolveJob(opts: {
   job: SolveJob;
   provider: LLMProvider;
+  agentProvider?: string;
   store: SQLiteStore;
   runsRoot: string;
   knowledgeRoot: string;
@@ -71,6 +72,7 @@ export async function runBuiltInGameSolveJob(opts: {
   opts.job.status = "running";
   const result = await opts.executeBuiltInGameSolve({
     provider: opts.provider,
+    agentProvider: opts.agentProvider ?? opts.provider.name,
     store: opts.store,
     runsRoot: opts.runsRoot,
     knowledgeRoot: opts.knowledgeRoot,
@@ -130,6 +132,7 @@ export async function runCodegenSolveJob(opts: {
 export async function executeSolveJobWorkflow(opts: {
   job: SolveJob;
   provider: LLMProvider;
+  agentProvider?: string;
   store: SQLiteStore;
   runsRoot: string;
   knowledgeRoot: string;
@@ -162,6 +165,7 @@ export async function executeSolveJobWorkflow(opts: {
       await runBuiltInGameSolveJob({
         job: opts.job,
         provider: opts.provider,
+        agentProvider: opts.agentProvider ?? opts.provider.name,
         store: opts.store,
         runsRoot: opts.runsRoot,
         knowledgeRoot: opts.knowledgeRoot,

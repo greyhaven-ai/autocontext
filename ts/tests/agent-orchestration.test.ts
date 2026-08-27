@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import type { LLMProvider } from "../src/types/index.js";
 
 // ---------------------------------------------------------------------------
 // Task 13: Role Definitions & Output Parsing
@@ -183,6 +184,29 @@ describe("RetryProvider", () => {
   it("exports RetryProvider", async () => {
     const { RetryProvider } = await import("../src/agents/provider-bridge.js");
     expect(RetryProvider).toBeDefined();
+  });
+
+  it("does not take ownership when the inner isolation factory returns itself", async () => {
+    const { RetryProvider } = await import("../src/agents/provider-bridge.js");
+    let closes = 0;
+    const inner: LLMProvider = {
+      name: "shared-stateless",
+      evaluatorIdentity: "codex",
+      isStatelessNoToolsProvider: true,
+      defaultModel: () => "model",
+      complete: async () => ({ text: "ok", usage: {} }),
+      createIsolatedProvider: () => inner,
+      close: () => {
+        closes += 1;
+      },
+    };
+    const retry = new RetryProvider(inner, { maxRetries: 1 });
+
+    const isolated = retry.createIsolatedProvider?.({ noTools: true });
+    expect(isolated).toBe(retry);
+    expect(retry.isStatelessNoToolsProvider).toBe(true);
+    expect(retry.evaluatorIdentity).toBe("codex");
+    expect(closes).toBe(0);
   });
 
   it("returns result on first success", async () => {
@@ -374,6 +398,62 @@ describe("CodexCLIRuntime", () => {
     expect(args).toContain("--quiet");
     expect(args).toContain("--cd");
     expect(args).toContain("/tmp/work");
+  });
+
+  it("buildArgs removes tools, project context, customizations, and sessions in isolation", async () => {
+    const { CodexCLIRuntime, CodexCLIConfig } = await import("../src/runtimes/codex-cli.js");
+    const runtime = new CodexCLIRuntime(
+      new CodexCLIConfig({
+        model: "o4-mini",
+        approvalMode: "full-auto",
+        isolatedNoTools: true,
+        extraArgs: ["--enable", "shell_tool"],
+      }),
+    );
+
+    expect(runtime.buildArgs()).toEqual([
+      "exec",
+      "--model",
+      "o4-mini",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "project_doc_fallback_filenames=[]",
+      "--sandbox",
+      "read-only",
+      ...[
+        "shell_tool",
+        "shell_snapshot",
+        "unified_exec",
+        "code_mode_host",
+        "view_image",
+        "computer_use",
+        "browser_use",
+        "browser_use_external",
+        "browser_use_full_cdp_access",
+        "in_app_browser",
+        "apps",
+        "enable_mcp_apps",
+        "mcp_2026_07_28",
+        "skill_search",
+        "skill_mcp_dependency_install",
+        "multi_agent",
+        "multi_agent_v2",
+        "goals",
+        "image_generation",
+        "hooks",
+        "plugins",
+        "plugin_sharing",
+        "remote_plugin",
+        "tool_suggest",
+        "tool_call_mcp_elicitation",
+        "request_permissions_tool",
+        "workspace_dependencies",
+      ].flatMap((feature) => ["--disable", feature]),
+    ]);
   });
 });
 

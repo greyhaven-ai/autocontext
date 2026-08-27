@@ -36,6 +36,8 @@ export interface ClaudeCLIConfig {
   repairGate?: RepairGateConfig;
   repairScenario?: string;
   repairEmitter?: EventStreamEmitter;
+  /** Host-requested privacy isolate: no tools, customizations, context, or session. */
+  isolatedNoTools?: boolean;
 }
 
 export class ClaudeCLIRuntime implements AgentRuntime {
@@ -95,30 +97,36 @@ export class ClaudeCLIRuntime implements AgentRuntime {
     if (this.#config.fallbackModel) {
       args.push("--fallback-model", this.#config.fallbackModel);
     }
-    if (this.#config.tools != null) {
+    if (this.#config.isolatedNoTools) {
+      args.push("--tools", "");
+      args.push("--safe-mode", "--disable-slash-commands");
+    } else if (this.#config.tools != null) {
       args.push("--tools", this.#config.tools);
     }
-    args.push("--permission-mode", this.#config.permissionMode);
+    args.push(
+      "--permission-mode",
+      this.#config.isolatedNoTools ? "dontAsk" : this.#config.permissionMode,
+    );
 
-    if (!this.#config.sessionPersistence) {
+    if (this.#config.isolatedNoTools || !this.#config.sessionPersistence) {
       args.push("--no-session-persistence");
     }
-    if (this.#config.sessionId) {
+    if (this.#config.sessionId && !this.#config.isolatedNoTools) {
       args.push("--session-id", this.#config.sessionId);
     }
 
     if (system) {
       args.push("--system-prompt", system);
-    } else if (this.#config.systemPrompt) {
+    } else if (this.#config.systemPrompt && !this.#config.isolatedNoTools) {
       args.push("--system-prompt", this.#config.systemPrompt);
     }
-    if (this.#config.appendSystemPrompt) {
+    if (this.#config.appendSystemPrompt && !this.#config.isolatedNoTools) {
       args.push("--append-system-prompt", this.#config.appendSystemPrompt);
     }
     if (schema) {
       args.push("--json-schema", JSON.stringify(schema));
     }
-    if (this.#config.extraArgs) {
+    if (this.#config.extraArgs && !this.#config.isolatedNoTools) {
       for (const arg of this.#config.extraArgs) {
         if (typeof arg !== "string") {
           throw new Error(`extraArgs must be strings, got ${typeof arg}`);

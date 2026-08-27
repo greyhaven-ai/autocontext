@@ -3,6 +3,7 @@ import type {
   OutputRevisionOpts,
   RevisionPromptOpts,
 } from "./scenario-revision-contracts.js";
+import { partitionScenarioRevisionSpec } from "./scenario-revision-visibility.js";
 
 export const FAMILY_DESCRIPTIONS: Partial<Record<ScenarioFamilyName, string>> = {
   agent_task: "an agent task evaluated by an LLM judge",
@@ -37,6 +38,10 @@ export function buildWeakDimensionSection(
 export function buildRevisionPrompt(opts: RevisionPromptOpts): string {
   const familyDescription = FAMILY_DESCRIPTIONS[opts.family as ScenarioFamilyName]
     ?? `a ${opts.family} scenario`;
+  const { providerVisibleSpec, structuredAgentTask } = partitionScenarioRevisionSpec(
+    opts.family,
+    opts.currentSpec,
+  );
   const sections: string[] = [
     `You are revising the spec for ${familyDescription}.`,
     "Given the current spec and user feedback, produce an updated JSON spec.",
@@ -53,7 +58,18 @@ export function buildRevisionPrompt(opts: RevisionPromptOpts): string {
   }
 
   sections.push(
-    `\n## Current Spec\n${JSON.stringify(opts.currentSpec, null, 2)}`,
+    ...(opts.family === "agent_task" && structuredAgentTask
+      ? [
+          "\n## Immutable execution boundary",
+          "All execution-semantic agent-task fields are immutable. Revise only descriptive metadata and preserve the task-prompt sentinel exactly.",
+        ]
+      : opts.family === "agent_task"
+        ? [
+          "\n## Protected evaluator boundary",
+          "Evaluator-only reference, calibration, and difficulty fields are immutable and omitted. The legacy task prompt and other execution settings remain revisable.",
+        ]
+      : []),
+    `\n## Current Spec\n${JSON.stringify(providerVisibleSpec, null, 2)}`,
     `\n## User Feedback\n${opts.feedback}`,
     "\n## Instructions",
     `Revise the ${opts.family} spec based on the feedback.`,

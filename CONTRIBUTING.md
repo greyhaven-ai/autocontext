@@ -39,6 +39,7 @@ cd autocontext
 uv run ruff check src tests
 uv run mypy src
 uv run pytest
+uv run python ../scripts/check_markdown_links.py
 ```
 
 TypeScript:
@@ -70,6 +71,13 @@ npm test
 - Prefer targeted tests for touched modules before running full suites.
 - Use parity-last changes: implement one runtime first unless cross-runtime parity is user-visible in the same release. Note deferred parity in the PR.
 - Keep protocol changes in sync with `scripts/generate_protocol.py`.
+- Keep repository-relative Markdown paths and heading anchors valid with
+  `scripts/check_markdown_links.py`. The deterministic check skips external URL
+  availability plus generated run/knowledge artifacts, test fixtures/goldens,
+  dependencies, caches, and build outputs.
+- Keep proposed context and harness artifacts out of live paths. Use immutable
+  context bundles and matched confirmation for activation; a strategy gate is
+  not evidence for a context edit that the strategy did not exercise.
 - Avoid rewriting historical plan docs unless the change is user-facing or release-facing.
 - Use `autoctx scenario create` and `autoctx serve mcp` in public examples; reserve
   legacy aliases for explicitly labeled compatibility documentation.

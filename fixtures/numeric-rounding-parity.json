@@ -1,0 +1,12 @@
+{
+  "precision": 6,
+  "rule": "round_half_away_from_zero",
+  "cases": [
+    { "name": "positive-half-tie", "value": 0.0000005, "expected": 0.000001 },
+    { "name": "negative-half-tie", "value": -0.0000005, "expected": -0.000001 },
+    { "name": "positive-one-and-a-half-tie", "value": 0.0000015, "expected": 0.000002 },
+    { "name": "negative-one-and-a-half-tie", "value": -0.0000015, "expected": -0.000002 },
+    { "name": "positive-below-half", "value": 0.000000499999, "expected": 0.0 },
+    { "name": "negative-below-half", "value": -0.000000499999, "expected": 0.0 }
+  ]
+}

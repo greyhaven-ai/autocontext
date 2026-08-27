@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from autocontext.execution.executors import ExecutionEngine, LocalExecutor
-from autocontext.scenarios.base import ExecutionLimits, ReplayEnvelope, Result, ScenarioInterface
+from autocontext.execution.remote_execution import RemoteExecutionRequirements
+from autocontext.scenarios.base import (
+    ExecutionLimits,
+    Observation,
+    ReplayEnvelope,
+    Result,
+    ScenarioInterface,
+)
 
 
 @dataclass(slots=True)
@@ -12,6 +20,31 @@ class ExecutionInput:
     strategy: Mapping[str, object]
     seed: int
     limits: ExecutionLimits
+    task_id: str | None = None
+    fixture_state: Mapping[str, Any] | None = None
+    fixture_observation: Observation | None = None
+    fixture_digest: str | None = None
+    remote_requirements: RemoteExecutionRequirements | None = None
+    strict_task_identity: bool = False
+
+    def __post_init__(self) -> None:
+        if self.task_id is not None and not self.task_id.strip():
+            raise ValueError("execution task_id must be non-empty when supplied")
+        if not isinstance(self.strict_task_identity, bool):
+            raise TypeError("execution strict_task_identity must be boolean")
+        if self.strict_task_identity and self.task_id is None:
+            raise ValueError("strict task identity requires an execution task_id")
+        fixture_fields = (
+            self.fixture_state is not None,
+            self.fixture_observation is not None,
+            self.fixture_digest is not None,
+        )
+        if any(fixture_fields) and not all(fixture_fields):
+            raise ValueError("prepared fixture state, observation, and digest must be supplied together")
+        if self.fixture_digest is not None and (
+            len(self.fixture_digest) != 64 or any(character not in "0123456789abcdef" for character in self.fixture_digest)
+        ):
+            raise ValueError("prepared fixture digest must be a sha256 hex digest")
 
 
 @dataclass(slots=True)
@@ -27,10 +60,85 @@ class ExecutionSupervisor:
         self.executor = executor or LocalExecutor()
 
     def run(self, scenario: ScenarioInterface, payload: ExecutionInput) -> ExecutionOutput:
-        result, replay = self.executor.execute(
-            scenario=scenario,
-            strategy=payload.strategy,
-            seed=payload.seed,
-            limits=payload.limits,
-        )
+        if payload.remote_requirements is not None and payload.task_id is None:
+            raise RuntimeError("explicit remote requirements require a task-identified prepared fixture")
+        if payload.fixture_state is not None:
+            return self._run_prepared_fixture(scenario, payload)
+        if payload.remote_requirements is not None:
+            raise RuntimeError("explicit remote requirements require a task-identified prepared fixture")
+        execute_with_task_id = getattr(self.executor, "execute_with_task_id", None)
+        if payload.task_id is not None and callable(execute_with_task_id):
+            task_kwargs: dict[str, Any] = {
+                "scenario": scenario,
+                "strategy": payload.strategy,
+                "seed": payload.seed,
+                "limits": payload.limits,
+                "task_id": payload.task_id,
+            }
+            if payload.strict_task_identity:
+                task_kwargs["strict_task_identity"] = True
+            result, replay = execute_with_task_id(
+                **task_kwargs,
+            )
+        else:
+            result, replay = self.executor.execute(
+                scenario=scenario,
+                strategy=payload.strategy,
+                seed=payload.seed,
+                limits=payload.limits,
+            )
+        return ExecutionOutput(result=result, replay=replay)
+
+    def _run_prepared_fixture(
+        self,
+        scenario: ScenarioInterface,
+        payload: ExecutionInput,
+    ) -> ExecutionOutput:
+        from autocontext.context_bundles.runtime_evaluator import runtime_fixture_digest
+
+        assert payload.fixture_state is not None
+        assert payload.fixture_observation is not None
+        assert payload.fixture_digest is not None
+        actual_digest = runtime_fixture_digest(payload.fixture_state, payload.fixture_observation)
+        if actual_digest != payload.fixture_digest:
+            raise ValueError("prepared execution fixture digest does not match its state and observation")
+        if payload.task_id is not None:
+            method = (
+                "execute_prepared_fixture_with_task_id_and_remote_requirements"
+                if payload.remote_requirements is not None
+                else "execute_prepared_fixture_with_task_id"
+            )
+            execute = getattr(self.executor, method, None)
+            if not callable(execute):
+                raise RuntimeError("configured executor cannot satisfy prepared remote execution requirements")
+            kwargs: dict[str, Any] = {
+                "scenario": scenario,
+                "strategy": payload.strategy,
+                "seed": payload.seed,
+                "limits": payload.limits,
+                "initial_state": payload.fixture_state,
+                "initial_observation": payload.fixture_observation,
+                "fixture_digest": payload.fixture_digest,
+                "task_id": payload.task_id,
+            }
+            if payload.strict_task_identity:
+                kwargs["strict_task_identity"] = True
+            if payload.remote_requirements is not None:
+                kwargs["remote_requirements"] = payload.remote_requirements
+            result, replay = execute(
+                **kwargs,
+            )
+        else:
+            execute = getattr(self.executor, "execute_prepared_fixture", None)
+            if not callable(execute):
+                raise RuntimeError("configured executor cannot execute a prepared fixture")
+            result, replay = execute(
+                scenario=scenario,
+                strategy=payload.strategy,
+                seed=payload.seed,
+                limits=payload.limits,
+                initial_state=payload.fixture_state,
+                initial_observation=payload.fixture_observation,
+                fixture_digest=payload.fixture_digest,
+            )
         return ExecutionOutput(result=result, replay=replay)

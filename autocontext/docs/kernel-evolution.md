@@ -11,15 +11,167 @@ The split is intentional:
 | --- | --- |
 | Generate complete candidate source | Pin one problem, reference, inputs, seeds, and tolerances |
 | Carry the incumbent and benchmark feedback forward | Compile candidate and current incumbent |
-| Recompute benchmark statistics | Run host-owned correctness and hidden holdout trials |
+| Recompute benchmark statistics with a bounded sequential policy | Run host-owned correctness and worker-private holdout trials |
 | Decide promotion independently of scalar prompt score | Record paired/interleaved timing blocks |
-| Require an optional fresh-protocol confirmation before promotion | Re-run provisional winners with new host-owned seeds and measurement order |
+| Require an optional fresh-protocol confirmation before promotion | Re-run provisional winners with disjoint host-owned inputs and measurement order |
 | Persist source, raw reports, decisions, and lineage | Report hardware, runtime, driver, toolchain, and workload identity |
 
-The external worker may be local, SSH-backed, or a container/job scheduler. A
-subprocess is lifecycle isolation, not a security boundary; generated Python,
-CUDA, or Triton must run on a dedicated worker with no secrets, no network,
-resource limits, read-only harness mounts, and an operator-owned GPU allocation.
+Generated Python, CUDA, or Triton must use `DockerKernelBenchmarkRunner` (or an
+equivalent VM/cgroup backend) in production. It provides an OS boundary with no
+network, no ambient credentials, read-only input and harness mounts, an
+ephemeral tmpfs candidate workspace, and an explicit GPU partition grant. Host
+isolation is necessary but not sufficient for trustworthy evidence: generated
+code must also run outside the interpreter or process that owns private plans,
+correctness, timing, telemetry, and the authoritative report. The legacy local
+subprocess runner is lifecycle containment only and now requires the
+conspicuous `trusted_unsafe=True` opt-in.
+
+For authoritative evaluation of hostile generated code, use
+`DockerProtectedKernelBenchmarkRunner`. Its core protocol is accelerator
+neutral: attestations name a backend, vendor, architecture, device/partition,
+runtime, driver, and capacity without encoding CUDA, NVIDIA, MIG, or H100 into
+the schema. The H100/MIG example is the first conformance profile, not a limit
+on future ROCm, other accelerator, or VM-backed implementations.
+
+## Production host-containment worker
+
+This composition establishes the host and GPU-partition boundary only. The
+adapter named in `command` must additionally isolate generated execution from
+its authoritative evaluator; importing candidate Python into that adapter
+would still make correctness, timing, telemetry, and report values untrusted.
+
+```python
+from pathlib import Path
+from autocontext.kernel_evolution import (
+    DockerGPUDeviceGrant,
+    DockerKernelBenchmarkRunner,
+    DockerKernelWorkerLimits,
+    KernelBenchmarkEvaluator,
+    KernelBenchmarkEvaluatorConfig,
+    NvidiaSMIGPUDeviceAttestor,
+)
+
+gpu_limit = 20 * 1024**3
+isolated = DockerKernelBenchmarkRunner(
+    [
+        "python", "{immutable_0}",
+        "--candidate", "{candidate}",
+        "--incumbent", "{incumbent}",
+        "--reference", "{immutable_1}",
+        "--report", "{report}",
+    ],
+    image="registry.example/kernelbench@sha256:<64-hex-digest>",
+    immutable_paths=[Path("adapter.py"), Path("reference.py")],
+    gpu_grant=DockerGPUDeviceGrant(
+        device_id="MIG-GPU-.../1/0",
+        isolation_kind="mig",
+        enforced_memory_bytes=gpu_limit,
+    ),
+    gpu_attestor=NvidiaSMIGPUDeviceAttestor(),
+    limits=DockerKernelWorkerLimits(max_gpu_memory_bytes=gpu_limit),
+)
+evaluator = KernelBenchmarkEvaluator(
+    isolated,
+    KernelBenchmarkEvaluatorConfig(
+        problem_id="kernelbench-level1-problem1",
+        require_resource_telemetry=True,
+        max_gpu_memory_bytes=gpu_limit,
+    ),
+)
+```
+
+`gpu_grant` is mandatory and `all` is forbidden. A plain visibility grant such
+as `--gpus device=0` does not enforce a byte ceiling, so it is rejected with
+`resource_policy_unsupported` when the worker has a GPU-memory limit. Use a MIG
+or other hardware partition whose capacity was independently verified and is
+no larger than the configured ceiling. Allocation/reservation telemetry is a
+second fail-closed check, not a substitute for that enforcement boundary.
+
+The worker applies wall-clock, CPU-time/CPU-share, RAM/swap, PID, bounded
+stdout/stderr/report, report-structure, and tmpfs byte/inode limits. Only the
+candidate/incumbent input directory and benchmark/reference paths are mounted
+read-only. The candidate workspace and `/output` report area are ephemeral,
+bounded tmpfs mounts. While the authenticated supervisor and container remain
+alive, the host copies and verifies the bounded regular `/output/report.json`,
+then acknowledges completion and stops the container; only that verified report
+persists in a private host temporary directory. The root filesystem is read-only,
+Linux capabilities are dropped, `no-new-privileges` is enabled, the environment
+is rebuilt from an empty set, and network mode is `none`. Every outcome removes
+and verifies the labeled container. Before a new run, expired labeled workers
+left by a crashed coordinator are reconciled.
+
+## Protected evaluator authority boundary
+
+`DockerProtectedKernelBenchmarkRunner` creates three separately named
+containers: a trusted evaluator, an isolated candidate authority, and an
+isolated incumbent authority. The evaluator mounts private plans, references,
+its immutable code, two Unix-socket directories, and report storage, but no
+generated source. Each artifact container mounts only its own read-only source,
+the public authority worker/support files, and one read-only socket directory.
+It receives no private-plan path, report path, evaluator build identity, other
+role channel, ambient credential, network, or durable writable mount.
+
+The socket contract uses strict bounded JSON headers (including duplicate-key
+rejection) and canonical safetensors
+payloads; pickle and candidate-authored timing/resource/report fields are not
+accepted. The evaluator creates fresh randomized timed inputs, independently
+checks each returned tensor against its trusted reference, measures wall time
+around the authority exchange, and observes accelerator-partition memory from
+the trusted side. This prevents cached correctness outputs, forged clocks, or a
+candidate-local `torch` patch from becoming authoritative evidence.
+
+Every report can carry an
+`autocontext.accelerator-authority-receipt/v1` receipt binding:
+
+- candidate and incumbent artifact identities;
+- private-plan commitment and input/output commitments;
+- a constant-size evaluator-owned transcript summary: ordered transcript and
+  request/response set roots, unique exchange counts, outcome counts, and
+  role-specific resource peaks;
+- evaluator build and public boundary-manifest digests;
+- the generic accelerator attestation and the report content itself.
+
+Receipts are authenticated with HMAC-SHA256 under an operator-pinned key id and
+owner-only 0400/0600 secret file. The secret is mounted only into the evaluator
+and is never serialized in a manifest, report, observation, or profile export.
+`KernelBenchmarkEvaluatorConfig(require_authority_receipt=True)` requires that
+external trust configuration and rejects missing, self-issued, tampered, or
+wrong-build receipts. Replay also reconciles transcript outcomes and resource
+peaks with the authenticated report. The protected Docker runner requires the
+authenticated evaluator/boundary digests, device, partition kind/capacity,
+attestor, and underlying host grant digest to match host-computed values.
+Protocol corruption, evaluator crash,
+candidate crash, OOM, timeout, and teardown failure remain separate outcomes.
+
+Portable campaign profile evidence is separately wrapped in
+`autocontext.kernel-profile-evidence-envelope/v1`. Its canonical content digest
+and HMAC authenticate the complete profile payload—champion and report wrapper
+identities, decision policy, holdout summaries, resource claims, and campaign
+counts—so a valid evaluator receipt cannot be transplanted into a doctored
+profile artifact. Consumers must verify the outer envelope with the pinned key
+before using any profile field.
+
+Normal teardown kills and removal-verifies every created container. Crash-safe
+ownership during synchronous container creation is not implemented, so the
+protected runner remains unavailable; expiry labels alone do not close that
+pre-watchdog coordinator-loss window. Manifests expose this as the unavailable
+`crash_safe_container_creation` requirement.
+
+Protected adaptive campaigns should also set
+`adaptive_feedback_policy="aggregate-gates"`. Promotion and persisted audit
+evidence still use the exact trusted statistics, but later candidate prompts
+receive only documented passed/failed/not-evaluated gates and a disposition—no
+candidate-modulatable latency digits or exact derived metrics. Confirmation
+feedback remains quarantined as before.
+
+The H100 example's protected factory is constructible and manifest-inspectable,
+but neither it nor the normal recursive campaign can execute authoritative
+work. The runner returns `resource_policy_unsupported` before Docker while
+independently attested role grants, trusted out-of-process mutation observation,
+comparable candidate/incumbent/reference timing boundaries, and crash-safe
+container creation are unavailable. The release guard must remain until all
+four requirements are implemented and
+the exact digest-pinned path passes real H100 adversarial validation.
 
 ## Run the vertical slice
 
@@ -51,6 +203,212 @@ only for provisional winners. Rejected attempts remain append-only evidence.
 Each new proposal's parent is the current champion, not the most recent
 rejected attempt, and the final summary reports the champion rather than the
 last trial.
+
+## Multi-workload studies
+
+`KernelWorkloadStudyReport` composes ordinary kernel runs without replacing
+their trusted evaluator or inventing a cross-workload scalar score. Each
+`KernelWorkloadSpec` pins the exact reference source/artifact and ABI, family,
+family-independent public shape profile, execution environment, campaign
+protocol, fresh ordered adaptive-confirmation protocols, distinct final protocols,
+and one fresh primary/confirmation reservation for every transfer route. It also
+pins required slices, exact benchmark-case identities, per-case floor, task
+prompt, exact generation budget, and end-to-end workload wall/cost ceilings.
+Transfer dimensions use canonical sorted order, so permuting a dimension set
+cannot create a second reservation for the same logical route.
+
+`KernelWorkloadRunEvidence` embeds the complete evolution result, final primary
+and confirmation observations, generation receipts and terminal failures,
+replayable budget state, and reported runner/final wall and cost usage. A study
+therefore retains promotion lineage and raw evidence rather than only copying
+digests. Each run binds its generation activity to the study execution, exact
+workload spec, runner ID, and generation budget; final evaluator reports carry
+that context commitment. A measured run requires at least one signed final report
+so the commitment cannot be rewritten during assembly. Outcomes are `promoted`, `plateau`, or `incomplete`;
+interrupted or failed generation cannot masquerade as proposal exhaustion.
+
+Promoted champions can be re-evaluated with
+`build_kernel_transfer_evidence()` on another shape profile, execution
+environment, or workload family. A study classifies the result as:
+
+- `portable` only when the champion passes every workload and covers the
+  required shape, hardware, and workload-family dimensions;
+- `cross-workload` when it transfers beyond its source but not everywhere;
+- `specialist` when target correctness or per-case floors fail; or
+- `unconfirmed` when required target evidence is missing.
+
+Plateaus and incomplete runs remain explicit per-workload outcomes. Derived
+transfer lessons and regressions replay from the embedded observations;
+callers cannot edit the summary independently. Reused protocols/private plans,
+route, reference, shape, family, environment, required-slice, floor,
+provenance, or budget mismatches fail validation. Outgoing transfer wall and
+cost are charged to the source workload's end-to-end ceilings. Consequently,
+`portable_champion_artifact_digests` cannot contain a candidate with a failed
+or untested target.
+
+The runnable conformance study needs no GPU:
+
+```bash
+cd autocontext
+uv run --frozen python ../examples/kernel_evolution/multi_workload/run.py
+```
+
+It runs variable-shape matrix multiplication, fused bias/GELU/reduction, and
+causal attention through the same runner/report/confirmation/lineage path,
+then performs target-family and second-hardware-identity evaluations with new
+plans. Every invocation generates a high-entropy execution identity before any
+plan is reserved, preventing reports, burns, or execution IDs from being replayed
+across fresh studies. The report and every embedded benchmark report carry the
+execution identity, exact workload-spec digest, manifest/contract digests, and
+conspicuous synthetic provenance; its timings prove orchestration, not accelerator
+effectiveness. A content-addressed evidence index preserves
+every raw observation/report; its digest is bound into report provenance, and
+`study_artifacts.json` is the sole success commit marker. The private `0700`
+study directory is created exclusively through a retained no-follow output
+descriptor, which remains open through terminal success or failure. Host-local
+kernel run diagnostics execute from descriptor-bound working directories and
+fail closed if their public names change. Benchmark children inherit the
+retained study-root descriptor and change into it before opening adapter and
+problem bytes that were checked against their in-memory precommit, so a
+transient public-path replacement cannot redirect execution. The marker seals every portable
+file—including unused reserved contracts, exact reference sources, and a
+relocatable snapshot of the example, full first-party source tree, package/lock
+files, and Python runtime identity. The report and marker are built from exact
+bytes and published marker-last through one retained,
+no-follow study-root descriptor. The complete portable inventory is read and
+replayed through that same descriptor, and both output names, inodes, and exact
+bytes are checked through the final commit. Platforms without the required
+directory-relative operations fail closed. Handled setup, workload, finalization,
+and pre-commit interruption failures produce a manifest-bound, descriptor-anchored
+`study_failure.json` and remove partial success files. An interruption after the
+exact marker commit cannot create a conflicting failure state. After an
+unrecoverable process kill, the absence of
+`study_artifacts.json` still makes any orphaned report uncommitted.
+`--study-id` accepts a single safe path component, so it cannot escape
+`--output`.
+
+For a production study, keep the exact case material and confirmation order in
+worker-private plans while publishing their commitments. Pin every trusted
+reference, evaluator build, runtime image, and resolved accelerator identity;
+reserve fresh profiles for every adaptive confirmation, final look, and
+transfer phase; require protected OS/process authority and resource telemetry;
+and place generation plus end-to-end cost/wall ceilings in the immutable study
+manifest. Publish the artifact manifest and raw evidence index alongside the
+report so specialists, regressions, incomplete runs, and infrastructure failures
+remain inspectable. Treat raw `runs/` manifests as host-local diagnostics because
+they may contain absolute paths. Validation of measured studies must receive an
+external trusted evaluator key, pinned evaluator build/boundary digests, and the
+externally trusted exact evidence-index bytes plus digest. Validation replays
+index membership, binds every execution ID to its stream sequence, candidate,
+incumbent, protocol, and private-plan commitment, and permits exactly one direct
+evaluation or one raw/derived deadline pair per physical execution. Report-backed
+looks cannot be relabeled as derived failures. Finite non-negative index wall/cost
+usage is charged back to its campaign or phase, so report accounting cannot
+understate the externally pinned history; authenticated transcript time remains
+an additional wall-time lower bound. An embedded receipt or mutable artifact
+manifest is integrity evidence, not its own trust root. Provider billing still
+needs a separately trusted provider receipt when it is not part of that external
+index trust boundary.
+
+## Durable autonomous campaigns
+
+Production generators should return `KernelGenerationResult`, normally through
+`ProviderKernelGenerator`. The receipt preserves the exact response/source
+bytes and binds provider, actual model, system-prompt and recursive-prompt
+digests, response/source/artifact digests, normalized token usage, cost and its
+source, provider latency, stop reason, and every rejected or failed retry.
+Empty, fenced, prose-only, malformed, missing-entrypoint, oversized, and
+provider-truncated Python responses fail before external evaluation. Legacy
+`(prompt, generation) -> str` callables remain compatible for synthetic and
+trusted integrations, but they do not provide provider-native validation or
+usage provenance.
+
+`KernelGenerationBudget` makes proposal, retry, per-call output-token,
+campaign token, cost, provider/backoff wall-time, and source-size limits
+explicit. Construct the registry provider with transport retries disabled so
+the campaign owns the only retry loop and accounts for every call:
+
+```python
+from autocontext.kernel_evolution import KernelGenerationBudget, ProviderKernelGenerator
+from autocontext.providers.registry import create_provider
+
+generation_budget = KernelGenerationBudget(
+    proposal_cap=10,
+    max_retries_per_proposal=2,
+    max_output_tokens_per_call=8192,
+    max_total_tokens=300_000,
+    max_cost_usd=100.0,
+    max_wall_seconds=86_400,
+)
+generator = ProviderKernelGenerator(
+    create_provider("openai", model="gpt-5.6-terra", max_retries=0),
+    provider_id="openai",
+    model="gpt-5.6-terra",
+    budget=generation_budget,
+    entrypoint="ModelNew",
+)
+```
+
+Retries require one complete, internally consistent directional provider-counter
+family and positive remaining token, cost, and wall capacity. Partial, total-only,
+mixed-family, contradictory, or unsupported nonzero counters stop before another
+paid dispatch. Estimated receipts use the immutable
+`estimated-model-pricing-v1` rate table and conservatively price total tokens that
+the provider did not allocate to a direction at the output-token rate.
+
+Credentials are resolved and held by the provider in the control process.
+They are never passed to the benchmark worker or serialized in campaign
+configuration, prompts, receipts, lineage, status, or the artifact index.
+
+Each provider call and benchmark dispatch has an immutable pre-dispatch claim.
+Successful generation receipts and source are persisted before GPU work;
+attempt IDs are deterministic from run, proposal, receipt, and artifact
+identity. Resume verifies the manifest, generator/budget identities, prompts,
+receipts, sources, lineage, reports, attempts, sealed evidence, and champion,
+then reconstructs the exact playbook and continues at the next proposal. A
+crash after a durable generation receipt but before evaluation reuses the exact
+source without another paid call. A claim without its result, or an evaluation
+claim without its attempt, is deliberately reported as ambiguous and is never
+re-dispatched automatically.
+
+```python
+from autocontext.kernel_evolution import (
+    KernelEvolutionRunner,
+    read_kernel_campaign_status,
+    request_kernel_campaign_stop,
+)
+
+# Start uses resume=False (the default) and blocks until completion or stop.
+KernelEvolutionRunner(
+    config,
+    generator,
+    evaluator,
+    lineage_root,
+    run_id="kernel-campaign-001",
+    generation_budget=generation_budget,
+).run(proposals=10)
+
+status = read_kernel_campaign_status(lineage_root, "kernel-campaign-001")
+request_kernel_campaign_stop(lineage_root, "kernel-campaign-001", requested_by="release-operator")
+
+# In a later process after a safe cancellation/interruption, reconstruct an
+# equivalent provider generator, evaluator, and config before resuming.
+resumed = KernelEvolutionRunner(
+    config,
+    generator,
+    evaluator,
+    lineage_root,
+    run_id="kernel-campaign-001",
+    generation_budget=generation_budget,
+    resume=True,
+).run(proposals=10)
+```
+
+`artifact-index.json` inventories prompts, generation claims/receipts/failures,
+exact sources, reports, evaluation claims, attempt links, lineage, champion,
+summary, profile evidence, and released audit files with byte digests. Operator
+status reports progress, budget consumption, stop state, and whether automatic
+resume is safe.
 
 ## Python API
 
@@ -86,10 +444,17 @@ external = ExternalKernelBenchmarkRunner(
         Path("/opt/kernel-worker/kernelbench_adapter.py"),
         Path("/opt/kernel-worker/problems/level1/1"),
     ],
+    trusted_unsafe=True,
 )
 evaluator = KernelBenchmarkEvaluator(
     external,
-    KernelBenchmarkEvaluatorConfig(problem_id="kernelbench-level1-problem1"),
+    KernelBenchmarkEvaluatorConfig(
+        problem_id="kernelbench-level1-problem1",
+        min_timing_blocks=8,
+        bootstrap_samples=None,
+        statistics_method="paired-sign-eprocess/v1",
+        finite_sample_improvement_margin=0.05,
+    ),
 )
 
 # Use a separately pinned adapter/profile with different host-owned seeds and
@@ -116,10 +481,17 @@ confirmation_external = ExternalKernelBenchmarkRunner(
         Path("/opt/kernel-worker/kernelbench_confirmation_adapter.py"),
         Path("/opt/kernel-worker/problems/level1/1-confirmation"),
     ],
+    trusted_unsafe=True,
 )
 confirmation_evaluator = KernelBenchmarkEvaluator(
     confirmation_external,
-    KernelBenchmarkEvaluatorConfig(problem_id="kernelbench-level1-problem1"),
+    KernelBenchmarkEvaluatorConfig(
+        problem_id="kernelbench-level1-problem1",
+        min_timing_blocks=8,
+        bootstrap_samples=None,
+        statistics_method="paired-sign-eprocess/v1",
+        finite_sample_improvement_margin=0.05,
+    ),
 )
 
 def confirm(candidate, incumbent):
@@ -139,14 +511,18 @@ runner = KernelEvolutionRunner(
         problem_id="kernelbench-level1-problem1",
         task_prompt="Optimize ModelNew; preserve its ABI and exact semantics.",
         baseline_source=Path("kernel.py").read_text(),
-        min_relative_improvement=0.01,
+        min_relative_improvement=0.05,
+        precision_profile="strict-fp32-v1",
+        proposal_cap=10,
+        familywise_alpha=0.05,
     ),
     generate_fn=my_kernel_generator,
     evaluator=evaluator,
     lineage_root=Path("runs/kernel-evolution"),
     confirmation_fn=confirm,
+    sealed_audit_root=Path("/operator-private/kernel-confirmation-audit"),
 )
-result = runner.run(proposals=20)
+result = runner.run(proposals=10)
 ```
 
 The command is an argv sequence and never uses a shell. It receives initially
@@ -160,7 +536,11 @@ configured immutable harness tree before launch and again after execution,
 rejects symlinks and special files in those trees, re-hashes the candidate and
 incumbent, and tears down the worker process group after every invocation,
 including a nominal exit. Include the resolved executable in `immutable_paths`
-when its bytes must also be content-pinned.
+when its bytes must also be content-pinned. `expected_immutable_files` can
+require regular-file roots to equal caller-held precommitted bytes before the
+runner adopts their fingerprint. On POSIX, `inherited_fds` can retain an
+already-verified directory for a trusted descriptor-relative launcher; those
+descriptors are passed directly to the child and are unavailable on Windows.
 
 Lifecycle containment is implemented once for every terminal outcome: success,
 command failure, timeout, stdout/stderr overflow, and report overflow. On POSIX,
@@ -177,14 +557,14 @@ handle-close failures as contract errors. The adapter's `HOME`, `USERPROFILE`,
 `SystemRoot` and `WINDIR` are preserved from the control process. Custom
 environment values cannot override those reserved paths.
 
-These controls fail closed and limit ordinary adapter mistakes, but they are
-not a hostile-code sandbox. The report caps use a polling watchdog and can
-briefly overshoot. Process-tree cleanup does not prevent generated code from
-reading available credentials, using the network, writing elsewhere, asking a
-privileged service to launch work, or exploiting the host. AC-991 tracks that
-separate security boundary: a dedicated container/VM or equivalent isolated
-worker, cgroup or Job resource quotas, read-only mounts, restricted networking,
-and a worker account with no secrets.
+These local-process controls limit ordinary adapter mistakes, but they are not
+a hostile-code sandbox. Use them only with `trusted_unsafe=True` on a dedicated
+trusted worker. `DockerKernelBenchmarkRunner` is the shipped host-containment
+boundary; equivalent custom backends must enforce and attest the same controls.
+Neither makes a report authoritative if candidate code shares a process with
+the evaluator. Production adapters need a second, evaluator-owned execution
+boundary so the candidate cannot observe private plans or replace correctness,
+timing, telemetry, and report controls.
 
 `confirmation_fn` is optional and backward compatible. When present, it
 receives the exact provisional candidate and incumbent and must return a
@@ -193,25 +573,52 @@ ineligible, identity-mismatched, same-protocol, protocol-incompatible, or
 different-environment confirmation. Successful confirmation may have a
 different workload scope because fresh seeds are part of the workload
 fingerprint, but its static workload-family ID must match. That family binds
-the shape, dtype, reference, and input contract while excluding only randomized
-seed/order material. The backend, device, runtime, driver, toolchain, hardware
+the named precision profile, numerical and reference semantics, tolerances,
+public input-distribution requirements, per-case floor, and enforcement policy
+while excluding only the committed private input/order material. The backend,
+device, runtime, driver, toolchain, hardware
 metadata (for example device UUID or MIG/topology identity), problem, and
 reference baseline must also match. Its protocol ID must differ while its
 compatibility ID must match, so only the seed/order commitment can change;
-tolerances, correctness/hidden trials, warmups, timing blocks, and calls per
-block remain fixed.
-The confirmation observation, report digest, and decision are persisted with
-the attempt.
+tolerances, correctness/hidden trials, warmups, timing blocks, calls per block,
+and the bounded sequential-testing policy remain fixed.
+For finite-sample campaigns using `aggregate-gates`, complete primary and
+confirmation observations, raw reports, case names, derived metrics, and
+detailed vetoes are first written to `sealed_audit_root`, which must be outside
+the mailbox and public lineage root. Separate public `reports/` artifacts are
+not written in this mode; the adaptive run directory contains only report/audit
+digests and gate names and states. Confirmation details are likewise sealed for
+finite-sample campaigns using detailed primary feedback. Every returned
+report-backed confirmation protocol ID and private-plan commitment is consumed,
+including rejected evidence; reuse of either identity fails freshness. An
+exception, missing result, invalid result, or other confirmation without
+report-backed identity is persisted and then terminates the campaign before
+another proposal. Completion, non-resumable failure, or baseline rejection
+publishes the sealed records under `audit/confirmation`. Safe cancellation and
+interruption retain them in the disjoint sealed root so a resumed adaptive
+proposal cannot inspect holdout evidence; they are published only when that
+campaign becomes terminal.
 
 ## Benchmark report contract
 
-The adapter writes `autocontext.kernelbench-eval/v2`. Pydantic validates it
+New finite-sample adapters write `autocontext.kernelbench-eval/v4`. Pydantic validates it
 with unknown fields forbidden and NaN, infinity, zero, or negative timings
-rejected. Important fields are:
+rejected. The v4 report includes a measurement-design receipt; the v4 derived
+statistics receipt binds the raw-report and raw-block digests, method, block
+definition, sample count, deterministic schedule-seed derivation, policy ID,
+and every promotion-affecting metric. V4 lineage, result, and H100 profile
+receipts reproduce the same complete decision-policy digest and replay every
+gate and champion transition. Result, attempt, and report versions cannot be
+mixed. Named-profile tolerances and protocol-owned per-case floors match their
+canonical values exactly. Each v4 per-case pass flag is replayed with an exact
+rational comparison of the canonical finite timings; aggregate, tail,
+reference-drift, and integer memory-fraction gates likewise compare canonical
+values exactly. The additive tolerances retained for legacy v2/v3 evidence do
+not apply to v4 promotion. Important fields are:
 
 ```json
 {
-  "schema_version": "autocontext.kernelbench-eval/v2",
+  "schema_version": "autocontext.kernelbench-eval/v4",
   "evaluation_status": "complete",
   "failure_kind": null,
   "problem_id": "kernelbench-level1-problem1",
@@ -238,15 +645,23 @@ rejected. Important fields are:
   },
   "hardware_scope_id": "sha256:...",
   "protocol": {
-    "correctness_trials": 5,
-    "hidden_trials": 5,
+    "correctness_trials": 2,
+    "hidden_trials": 1,
     "warmup_runs": 3,
-    "timing_blocks": 30,
-    "calls_per_block": 20,
+    "timing_blocks": 8,
+    "calls_per_block": 10,
     "atol": 0.01,
     "rtol": 0.01,
     "seed_commitment": "sha256:...",
-    "compatibility_version": "autocontext.kernel-protocol-compatibility/v1"
+    "compatibility_version": "autocontext.kernel-protocol-compatibility/v1",
+    "semantics": {
+      "profile_name": "strict-fp32-v1",
+      "numerical": {"input_dtype": "float32", "minimum_input_precision": "float32", "accumulation_dtype": "float32", "output_dtype": "float32", "input_downcast_allowed": false},
+      "reference": {"implementation": "torch.matmul", "precision": "float32", "tf32_allowed": false, "deterministic_algorithms": true},
+      "inputs": {"family": "matmul-generalization-v1", "required_shape_classes": ["non-tile-square", "rectangular"], "required_layouts": ["contiguous", "transposed"], "required_value_classes": ["signed", "small", "large", "cancellation", "dynamic-range"], "required_slices": ["train", "holdout"]},
+      "enforcement": {"require_every_correctness_slice": true, "require_every_case_no_regression": true, "require_paired_aggregate_performance": true, "candidate_controls_protected": true, "minimum_case_speedup_vs_incumbent": 0.98}
+    },
+    "sequential_testing": {"method": "bonferroni", "proposal_cap": 10, "familywise_alpha": 0.05}
   },
   "compile": {
     "candidate_passed": true,
@@ -256,25 +671,49 @@ rejected. Important fields are:
   },
   "correctness": {
     "passed": true,
-    "tests_run": 5,
-    "tests_passed": 5,
-    "hidden_tests_run": 5,
-    "hidden_tests_passed": 5,
+    "tests_run": 2,
+    "tests_passed": 2,
+    "hidden_tests_run": 1,
+    "hidden_tests_passed": 1,
     "parameter_state_match": true,
     "input_mutation_detected": false,
-    "failures": []
+    "failures": [],
+    "slices": [
+      {"name": "worker-case-a", "split": "train", "cases_run": 1, "cases_passed": 1, "passed": true},
+      {"name": "worker-case-b", "split": "holdout", "cases_run": 1, "cases_passed": 1, "passed": true}
+    ]
   },
   "performance": {
     "blocks": [
       {"block": 0, "candidate_ms": 0.0183, "incumbent_ms": 0.0194, "reference_ms": 0.0271}
+    ],
+    "cases": [
+      {"name": "worker-case-a", "split": "train", "candidate_median_ms": 0.0183, "incumbent_median_ms": 0.0194, "reference_median_ms": 0.0271, "minimum_speedup_vs_incumbent": 0.98, "passed_no_regression": true},
+      {"name": "worker-case-b", "split": "holdout", "candidate_median_ms": 0.0200, "incumbent_median_ms": 0.0201, "reference_median_ms": 0.0290, "minimum_speedup_vs_incumbent": 0.98, "passed_no_regression": true}
     ]
   },
   "resources": {
+    "candidate_artifact_digest": "sha256:...",
+    "incumbent_artifact_digest": "sha256:...",
+    "candidate_peak_allocated_bytes": 69206016,
+    "candidate_peak_reserved_bytes": 73400320,
+    "incumbent_peak_allocated_bytes": 67108864,
+    "incumbent_peak_reserved_bytes": 71303168,
     "candidate_peak_memory_bytes": 73400320,
     "incumbent_peak_memory_bytes": 71303168,
     "device_total_memory_bytes": 85899345920
   },
-  "metadata": {}
+  "metadata": {
+    "measurement_design": {
+      "schema_version": "autocontext.kernel-measurement-design/v1",
+      "block_definition": "balanced-interleaved-paired-block/v1",
+      "schedule_seed_derivation": "sha256-plan-commitment-block-schedule/v1",
+      "dependence_assumption": "conditional-threshold-win-probability-lte-half/v1",
+      "fixed_block_count": 8,
+      "early_stopping_allowed": false,
+      "order_balanced": true
+    }
+  }
 }
 ```
 
@@ -283,14 +722,53 @@ in a real report. Failed evaluations use `candidate_error` or
 `infrastructure_error`, set a `failure_kind`, omit performance, and may omit
 correctness when compilation never completed.
 
+Production evaluators set `require_resource_telemetry=True`. Candidate and
+incumbent peak allocation and reservation are measured in separate reset
+windows and bound to their ABI-qualified artifact digests. Missing metrics
+reject as `missing_resource_telemetry`; CUDA/container OOM,
+`resource_exceeded`, unsupported hard GPU-memory enforcement, and verified
+teardown failure remain distinct outcomes.
+
 AutoContext does not trust supplied summary numbers. It recomputes geometric
-paired speedups, medians, p95 latency, reference drift, and a deterministic
-paired-bootstrap 95% lower confidence bound from raw blocks. It also recomputes
+paired speedups, medians, p95 latency, reference drift, threshold-win signs,
+the terminal e-value, and its finite-sample p-value bound from the raw blocks
+and policy. It also recomputes
 source digests and the canonical hardware scope ID. A different GPU,
 driver/runtime/toolchain, workload fingerprint, or reference baseline is a hard
 scope mismatch. It also hashes and pins the complete protocol from the baseline,
-so later proposals cannot weaken tolerances, hidden-trial counts, seeds,
-warmups, timing blocks, or calls per block.
+so later proposals cannot weaken precision semantics, tolerances, holdout
+commitments, slice floors, search budget, warmups, timing blocks, or calls per
+block.
+
+The production statistic is the pre-registered paired sign e-process. A block
+is a win only when `incumbent_ms / candidate_ms >= 1 / (1 - margin)`. The
+comparison uses canonical decimal spellings of the finite binary64 timings and
+is inclusive at equality, with no additive tolerance; any representable value
+above the latency boundary is a non-win. With the fixed all-in bet and null
+conditional win probability at most one half, each
+win multiplies the e-value by two and any non-win zeros it. Therefore eight
+pre-registered blocks have exact per-look bound `2^-8 = 0.00390625`; ten
+Bonferroni looks have familywise bound at most `10 / 256 = 0.0390625`, below
+the configured 0.05 budget. The argument needs no Gaussian timing model and no
+independence assumption on timing magnitudes. It does require the documented
+conditional sign assumption at the block boundary, fixed block count, balanced
+order, no early stopping, and a schedule fixed by the private-plan commitment.
+V4 caps the fixed design at 1,074 blocks, whose all-win probability `2^-1074`
+is the smallest positive binary64 value; larger designs fail closed instead of
+persisting a false zero p-value bound. Sequential configurations also fail
+early if per-proposal alpha underflows or if its confidence gap rounds away to
+one. Persisted per-look alpha, cumulative spend, and confidence receipts must
+exactly reproduce the canonical Bonferroni arithmetic.
+
+`calibrate_kernel_promotion()` deterministically stress-tests the exact eight-
+block, ten-proposal configuration under null, heavy-tail, paired shared drift,
+across-block AR(1) magnitudes with conditionally symmetric signs, and
+heteroskedastic noise. Simulation is a
+diagnostic of the implementation and operating design; the theorem above, not
+a Monte Carlo percentile, supplies the advertised error bound. Historical v2
+and v3 evidence remains readable as explicitly unverified policy replay. The
+v1 empirical percentile bootstrap remains available for legacy/non-production
+reports and is never described as distribution-free coverage.
 
 The v2 artifact digest is a domain-separated canonical-JSON hash of four
 framed fields: identity version, SHA-256 of the exact source bytes, source
@@ -307,9 +785,10 @@ Promotion is separate from the normalized score used to enrich the next
 generation's prompt. Gates run in this order:
 
 1. The command, JSON contract, artifact hashes, problem, baseline, and hardware scope are valid.
-2. Candidate and incumbent compile, and every correctness/hidden trial passes.
-3. The report contains at least the configured number of paired blocks.
-4. Relative latency improvement meets the margin:
+2. Candidate and incumbent compile, and every named train and holdout correctness slice passes.
+3. Every named case meets the protocol-owned no-regression floor, including each holdout case.
+4. The report contains at least the configured number of paired aggregate blocks.
+5. Relative latency improvement meets the margin:
 
    ```text
    paired_speedup = geometric_mean(incumbent_ms / candidate_ms)
@@ -317,18 +796,28 @@ generation's prompt. Gates run in this order:
    ```
 
    The boundary is inclusive: a configured 5% margin accepts exactly 5%.
-5. The paired-bootstrap 95% lower bound supports the configured margin (enabled by default). For a 5% latency margin,
-   it must reach `1 / (1 - 0.05) = 1.05263x`; an exact boundary is accepted.
-6. Candidate p95, reference drift, and peak-memory use remain within configured limits.
-7. When confirmation is configured, a distinct but compatibility-matched
+6. The finite-sample receipt shows every pre-registered paired block clears the
+   configured margin and its sign e-process p-value is at most
+   `familywise_alpha / proposal_cap` (Bonferroni alpha spending). V4 evidence
+   contains no bootstrap field labeled as a confidence bound.
+7. Candidate p95, reference drift, and peak-memory use remain within configured limits.
+8. When confirmation is configured, a distinct but compatibility-matched
    protocol must pass the same correctness, improvement, confidence, tail,
-   drift, and resource gates.
+   drift, and resource gates. Each attempted confirmation burns its protocol
+   identity; later adaptive proposals must use a new independently committed
+   confirmation plan. Detailed confirmation evidence remains in sealed audit
+   storage until the adaptive campaign is terminal; prompts receive only
+   aggregate passed/failed/not-evaluated gates and disposition.
 
 Compile failure, malformed JSON, nonzero command exit, timeout, correctness
 failure, insufficient gain, or measurement instability rejects only that
 proposal and preserves the incumbent. An invalid baseline is terminal because
 there is no trustworthy comparison scope, but its failed attempt remains
 auditable on disk.
+
+Every promotion decision also persists ordered gate results. Each gate is
+explicitly `passed`, `failed`, or `not-evaluated`, so an early fail-closed exit
+does not imply that later confidence, tail, or resource gates ran.
 
 ## Adapting AutoKernel / KernelBench
 
@@ -349,18 +838,33 @@ the structured contract and keep all evaluator-controlled inputs outside
 candidate control. The synthetic adapter in the example is a reference for the
 I/O boundary, not for CUDA measurement methodology.
 
-This MVP is intentionally Python-first and library-only: it adds no public CLI,
-island/concurrent GPU search, cross-hardware champion transfer, or TypeScript
-surface. Its lineage root is a standalone artifact directory and is not yet
-indexed by `autoctx status`, mirrored through `ArtifactStore`, or discoverable
-through the run API.
+This surface is intentionally Python-first and library-only: it adds no public
+CLI, island/concurrent GPU search, or TypeScript execution surface. The study
+layer can record cross-hardware transfer evidence, but the bundled example is
+synthetic and the protected production H100 path remains fail-closed. Its
+lineage root is a standalone artifact directory and is not yet indexed by
+`autoctx status`, mirrored through `ArtifactStore`, or discoverable through the
+run API.
 
-For a long or open-ended search, repeated hypothesis testing makes a lucky
-false positive increasingly likely. Configure `confirmation_fn` so provisional
-winners face a fresh process, correctness seeds, and measurement order before
-promotion. Confirmation reduces selection bias but does not provide a complete
-sequential-testing guarantee; large campaigns should additionally use a fixed
-attempt budget or an explicit alpha-spending policy.
+Bounded searches set `proposal_cap` and `familywise_alpha`. AutoContext rejects
+requests above the cap before benchmarking, uses the actual Bonferroni-adjusted
+finite-sample bound for every proposal, and persists proposal index, cap,
+per-proposal alpha, cumulative spend, and confidence level with each attempt. Configure
+`confirmation_fn` as well so provisional winners face a fresh process,
+disjoint committed inputs, and a different measurement order. Supply enough
+fresh plans for every possible confirmation attempt; a fixed confirmation plan
+cannot be reused after its result has influenced champion selection.
+
+`read_kernel_evolution_result()` makes compatibility explicit:
+
+- v2: readable as `legacy-v2-unverified-policy-replay`;
+- v3: readable as `legacy-v3-empirical-unverified-policy-replay`;
+- v4: accepted only after finite-sample policy/raw-block/gate/lineage replay;
+- a reader capped at v2 or v3 rejects v4 with a clear newer-reader error.
+
+Duplicate JSON keys, non-finite constants, mixed nesting, missing policy IDs,
+and canonical-digest mismatches fail closed. There is no ambiguous automatic
+downgrade from v4 to a legacy evidence family.
 
 ## Why recursive kernel improvement matters
 

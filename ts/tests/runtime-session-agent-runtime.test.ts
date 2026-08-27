@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,11 +8,17 @@ import { DirectAPIRuntime } from "../src/runtimes/direct-api.js";
 import { RuntimeSessionAgentRuntime } from "../src/runtimes/runtime-session-agent.js";
 import type { AgentOutput, AgentRuntime } from "../src/runtimes/base.js";
 import type { LLMProvider } from "../src/types/index.js";
-import { RuntimeSession } from "../src/session/runtime-session.js";
+import {
+  EVALUATOR_ONLY_PROMPT_REDACTION,
+  EVALUATOR_ONLY_RESPONSE_REDACTION,
+  RuntimeSession,
+} from "../src/session/runtime-session.js";
 import {
   RuntimeSessionEventStore,
   RuntimeSessionEventType,
 } from "../src/session/runtime-events.js";
+import { EventStreamEmitter } from "../src/loop/events.js";
+import { createRuntimeSessionEventStreamSink } from "../src/server/runtime-session-event-stream.js";
 
 function createEventStore(): RuntimeSessionEventStore {
   const dbPath = join(mkdtempSync(join(tmpdir(), "runtime-session-agent-")), "events.db");
@@ -20,6 +26,79 @@ function createEventStore(): RuntimeSessionEventStore {
 }
 
 describe("RuntimeSessionAgentRuntime", () => {
+  it("redacts evaluator-only prompts, responses, and metadata from every event surface", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "runtime-session-private-evaluator-"));
+    const eventStore = new RuntimeSessionEventStore(join(dir, "events.db"));
+    const eventStreamPath = join(dir, "events.ndjson");
+    const emitter = new EventStreamEmitter(eventStreamPath);
+    const liveEvents: unknown[] = [];
+    emitter.subscribe((_event, payload, record) => {
+      liveEvents.push({ payload, record });
+    });
+    const session = RuntimeSession.create({
+      sessionId: "private-evaluator-session",
+      goal: "evaluate privately",
+      workspace: createInMemoryWorkspaceEnv({ cwd: "/workspace" }),
+      eventStore,
+      eventSink: createRuntimeSessionEventStreamSink(emitter),
+    });
+    const privatePrompt = "PRIVATE_EVALUATOR_PROMPT_SECRET";
+    const privateResponse = "PRIVATE_EVALUATOR_RESPONSE_SECRET";
+    let receivedPrompt = "";
+    const privateRuntime: AgentRuntime = {
+      name: "PrivateEvaluatorRuntime",
+      generate: async (opts) => {
+        receivedPrompt = opts.prompt;
+        return {
+          text: privateResponse,
+          model: "private-model",
+          costUsd: 0.25,
+          structured: { leaked: privateResponse },
+          metadata: { privateEcho: privatePrompt },
+        };
+      },
+      revise: async () => ({ text: "unused" }),
+    };
+    const runtime = new RuntimeSessionAgentRuntime({
+      runtime: privateRuntime,
+      session,
+      role: "private-evaluator",
+    });
+
+    const output = await runtime.generate({
+      prompt: privatePrompt,
+      promptVisibility: "evaluator_only",
+    });
+
+    expect(receivedPrompt).toBe(privatePrompt);
+    expect(output.text).toBe(privateResponse);
+    expect(output.structured).toEqual({ leaked: privateResponse });
+
+    const loaded = eventStore.load("private-evaluator-session");
+    const persistedDb = JSON.stringify(loaded?.events ?? []);
+    const inMemory = JSON.stringify(session.log.events);
+    const eventFile = readFileSync(eventStreamPath, "utf8");
+    const websocketPayloads = JSON.stringify(liveEvents);
+    for (const recorded of [persistedDb, inMemory, eventFile, websocketPayloads]) {
+      expect(recorded).not.toContain(privatePrompt);
+      expect(recorded).not.toContain(privateResponse);
+      expect(recorded).toContain("evaluator_only");
+      expect(recorded).toContain("contentRedacted");
+      expect(recorded).toContain(EVALUATOR_ONLY_PROMPT_REDACTION);
+      expect(recorded).toContain(EVALUATOR_ONLY_RESPONSE_REDACTION);
+    }
+    expect(session.log.events[1]?.payload.metadata).toMatchObject({
+      runtime: "PrivateEvaluatorRuntime",
+      operation: "generate",
+      runtimeSessionId: "private-evaluator-session",
+      model: "private-model",
+      costUsd: 0.25,
+    });
+    expect(session.log.events[1]?.payload.metadata).not.toHaveProperty("structured");
+    expect(session.log.events[1]?.payload.metadata).not.toHaveProperty("privateEcho");
+    eventStore.close();
+  });
+
   it("records AgentRuntime generate calls into a RuntimeSession", async () => {
     const providerCalls: Array<{
       systemPrompt: string;

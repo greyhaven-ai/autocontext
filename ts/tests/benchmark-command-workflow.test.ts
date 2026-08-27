@@ -81,6 +81,7 @@ describe("benchmark command workflow", () => {
     expect(assertFamilyContract).toHaveBeenCalledTimes(2);
     expect(createRunner).toHaveBeenNthCalledWith(1, {
       provider: { name: "provider" },
+      agentProvider: "anthropic",
       roleProviders: { judge: { name: "judge" } },
       roleModels: { judge: "claude" },
       scenario: expect.any(FakeScenario),

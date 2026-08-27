@@ -1,4 +1,9 @@
 import type { AgentTaskResult, LLMProvider } from "../types/index.js";
+import {
+  acquireProviderIsolation,
+  closeProviderIsolation,
+  NO_TOOLS_PROVIDER_ISOLATION,
+} from "../providers/provider-isolation.js";
 import { RlmSession } from "./session.js";
 import { SecureExecReplWorker } from "./secure-exec-worker.js";
 import type { LlmComplete, RlmPhase, RlmSessionRecord, RlmTaskConfig } from "./types.js";
@@ -15,6 +20,8 @@ export interface AgentTaskRlmOpts {
   currentOutput?: string;
   judgeResult?: AgentTaskResult;
   revisionPrompt?: string;
+  /** Execute every provider turn in a fresh no-tools runtime boundary. */
+  requiresNoToolsProviderIsolation?: boolean;
 }
 
 function makeConversationPrompt(messages: Array<{ role: string; content: string }>): string {
@@ -130,16 +137,20 @@ function buildNamespace(opts: AgentTaskRlmOpts): Record<string, unknown> {
 }
 
 export async function runAgentTaskRlmSession(opts: AgentTaskRlmOpts): Promise<RlmSessionRecord> {
-  const worker = new SecureExecReplWorker({
-    namespace: buildNamespace(opts),
-    maxStdoutChars: opts.config.maxStdoutChars,
-    codeTimeoutMs: opts.config.codeTimeoutMs,
-    memoryLimitMb: opts.config.memoryLimitMb,
-  });
+  const acquiredProvider = opts.requiresNoToolsProviderIsolation
+    ? acquireProviderIsolation(opts.provider, NO_TOOLS_PROVIDER_ISOLATION)
+    : { provider: opts.provider, owned: false };
+  let worker: SecureExecReplWorker | undefined;
 
   try {
+    worker = new SecureExecReplWorker({
+      namespace: buildNamespace(opts),
+      maxStdoutChars: opts.config.maxStdoutChars,
+      codeTimeoutMs: opts.config.codeTimeoutMs,
+      memoryLimitMb: opts.config.memoryLimitMb,
+    });
     const session = new RlmSession({
-      complete: makeProviderComplete(opts.provider),
+      complete: makeProviderComplete(acquiredProvider.provider),
       worker,
       role: `agent_task_${opts.phase}`,
       model: opts.config.model ?? opts.model,
@@ -169,6 +180,12 @@ export async function runAgentTaskRlmSession(opts: AgentTaskRlmOpts): Promise<Rl
       error: error instanceof Error ? error.message : String(error),
     };
   } finally {
-    await worker.dispose();
+    // Close the evaluator boundary before worker teardown: disposal may
+    // reject or hang, but it must never retain an owned no-tools provider.
+    try {
+      closeProviderIsolation(acquiredProvider);
+    } finally {
+      await worker?.dispose();
+    }
   }
 }

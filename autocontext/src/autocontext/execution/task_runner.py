@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from autocontext.config.settings import AppSettings
 from autocontext.execution.agent_task_completion import (
+    NATIVE_AGENT_TASK_QUEUE_MARKER,
     TaskConfig,
     build_evaluator_guardrail_payload,
     build_objective_guardrail_payload,
@@ -33,11 +34,12 @@ from autocontext.execution.agent_task_evolution import (
     AgentTaskEvolutionRunner,
     AgentTaskGenerationEvaluation,
     AgentTaskTrajectory,
+    EvolutionWorkspace,
+    WorkspaceEvaluateFn,
 )
 from autocontext.execution.evaluator_epoch_registry import observe_epoch_quarantined
 from autocontext.execution.evaluator_guardrail import evaluate_evaluator_guardrail
 from autocontext.execution.improvement_loop import ImprovementLoop, ImprovementResult
-from autocontext.execution.interpreter_workspace import InterpreterWorkspace
 from autocontext.execution.judge import LLMJudge
 from autocontext.execution.queued_task_browser_context import (
     QueuedTaskBrowserContextService,
@@ -48,6 +50,12 @@ from autocontext.execution.simple_agent_task_workflow import (
     revise_simple_agent_task_output,
 )
 from autocontext.execution.task_queue_store import TaskQueueEnqueueStore, TaskQueueStore
+from autocontext.execution.task_runner_workspaces import (
+    evaluate_workspace_candidate as _evaluate_workspace_candidate,
+)
+from autocontext.execution.task_runner_workspaces import (
+    workspace_factory_from_settings as _workspace_factory_from_settings,
+)
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.simplicity import normalize_simplicity_mode
@@ -104,25 +112,6 @@ def _serialize_result(
     if result.metadata:
         data["optimizer_metadata"] = result.metadata
     return json.dumps(data)
-
-
-def _workspace_factory_from_settings(
-    settings: AppSettings | None,
-) -> Callable[[], InterpreterWorkspace] | None:
-    """Build a workspace factory when the opt-in flag is set (AC-901).
-
-    Substrate-only wiring: the queued-task evaluate path (ImprovementLoop +
-    LLM judge) does not execute candidate code, so it passes no
-    workspace_evaluate_fn and the workspace stays empty there. Code-mode
-    consumers construct AgentTaskEvolutionRunner directly with a
-    workspace_evaluate_fn (see tests/test_workspace_benchmark.py and
-    examples/workspace_benchmark.py); wiring a code-executing queued-task
-    path is deferred follow-up work, noted on the Linear issue.
-    """
-    if settings is None or not settings.workspace_interpreter_enabled:
-        return None
-    timeout = settings.workspace_interpreter_timeout_seconds
-    return lambda: InterpreterWorkspace(timeout_seconds=timeout)
 
 
 def _serialize_evolution_result(
@@ -334,8 +323,15 @@ class TaskRunner:
         max_attempts: int = 3,
         retry_backoff_s: float = 30.0,
         stale_running_after_s: float = 3600.0,
+        workspace_factory: Callable[[], EvolutionWorkspace] | None = None,
+        workspace_evaluate_fn: WorkspaceEvaluateFn | None = None,
     ) -> None:
         self.store = store
+        dequeue_for_python_worker = getattr(store, "dequeue_task_for_python_worker", None)
+        if not callable(dequeue_for_python_worker):
+            msg = "TaskRunner requires a store with dequeue_task_for_python_worker()"
+            raise TypeError(msg)
+        self._dequeue_for_python_worker: Callable[[], dict[str, Any] | None] = dequeue_for_python_worker
         self.provider = provider
         self.model = model
         self.poll_interval = poll_interval
@@ -349,6 +345,15 @@ class TaskRunner:
         self.max_attempts = max(1, max_attempts)
         self.retry_backoff_s = retry_backoff_s
         self.stale_running_after_s = stale_running_after_s
+        self.workspace_factory = workspace_factory or _workspace_factory_from_settings(settings)
+        if workspace_evaluate_fn is not None and self.workspace_factory is None:
+            raise ValueError("workspace_evaluate_fn requires a workspace_factory or enabled workspace setting")
+        self.workspace_evaluate_fn = workspace_evaluate_fn
+        self.workspace_execute_candidates = bool(
+            settings is not None and settings.workspace_interpreter_execute_candidates and workspace_evaluate_fn is None
+        )
+        if self.workspace_execute_candidates and self.workspace_factory is None:
+            raise ValueError("workspace candidate execution requires an enabled workspace")
         self._shutdown = False
         self._tasks_processed = 0
 
@@ -404,7 +409,7 @@ class TaskRunner:
 
     def run_once(self) -> dict[str, Any] | None:
         """Process a single task from the queue. Returns the task dict or None."""
-        task = self.store.dequeue_task()
+        task = self._dequeue_for_python_worker()
         if task is None:
             return None
         self._process_task(task)
@@ -421,7 +426,7 @@ class TaskRunner:
         max_tasks = limit if limit is not None else self.concurrency
         tasks: list[dict[str, Any]] = []
         for _ in range(max_tasks):
-            task = self.store.dequeue_task()
+            task = self._dequeue_for_python_worker()
             if task is None:
                 break
             tasks.append(task)
@@ -461,6 +466,13 @@ class TaskRunner:
 
         try:
             config = TaskConfig.from_json(task.get("config_json"))
+            if config.has_native_task_metadata:
+                msg = (
+                    f"Queued task '{spec_name}' contains native saved-task metadata and must be "
+                    f"processed by the TypeScript worker ({NATIVE_AGENT_TASK_QUEUE_MARKER}); "
+                    "Python SimpleAgentTask execution is disabled to preserve evaluator isolation"
+                )
+                raise ValueError(msg)
             reference_context = self._resolve_reference_context(task_id, config)
 
             agent_task = SimpleAgentTask(
@@ -567,9 +579,7 @@ class TaskRunner:
         except Exception:
             logger.exception("task %s failed", task_id)
             error_msg = traceback.format_exc()
-            self.store.fail_task(
-                task_id, error_msg, max_attempts=self.max_attempts, retry_backoff_s=self.retry_backoff_s
-            )
+            self.store.fail_task(task_id, error_msg, max_attempts=self.max_attempts, retry_backoff_s=self.retry_backoff_s)
             self._emit_failure_event(task_id, spec_name, error_msg)
 
     def _run_task_multi_generation(
@@ -585,6 +595,11 @@ class TaskRunner:
         generation_results: dict[int, ImprovementResult] = {}
 
         def generate_fn(prompt: str, generation: int) -> str:
+            if self.workspace_execute_candidates:
+                prompt = (
+                    f"{prompt}\n\nReturn executable Python source only. The program must produce the "
+                    "task answer through stdout or the `answer` mapping."
+                )
             return generate_simple_agent_task_output(
                 provider=self.provider,
                 model=self.model or self.provider.default_model(),
@@ -635,13 +650,35 @@ class TaskRunner:
                 },
             )
 
+        def evaluate_workspace_candidate(
+            program: str,
+            generation: int,
+            workspace: EvolutionWorkspace,
+        ) -> AgentTaskGenerationEvaluation:
+            evaluation, improvement = _evaluate_workspace_candidate(
+                program,
+                workspace,
+                evaluate_output=agent_task.evaluate_output,
+                quality_threshold=config.quality_threshold,
+                reference_context=reference_context,
+                required_concepts=config.required_concepts,
+                calibration_examples=config.calibration_examples,
+            )
+            generation_results[generation] = improvement
+            return evaluation
+
+        live_workspace_evaluator = self.workspace_evaluate_fn
+        if live_workspace_evaluator is None and self.workspace_execute_candidates:
+            live_workspace_evaluator = evaluate_workspace_candidate
+
         evolution = AgentTaskEvolutionRunner(
             task_prompt=agent_task.get_task_prompt({}),
             generate_fn=generate_fn,
             evaluate_fn=evaluate_fn,
-            initial_output=initial_output,
+            initial_output="" if self.workspace_execute_candidates else initial_output,
             task_name=spec_name,
-            workspace_factory=_workspace_factory_from_settings(self.settings),
+            workspace_factory=self.workspace_factory,
+            workspace_evaluate_fn=live_workspace_evaluator,
         )
         trajectory, state = evolution.run_with_state(config.generations)
 
@@ -650,12 +687,22 @@ class TaskRunner:
         met_threshold = any(result.met_threshold for result in ordered_results)
         best_score = state.best_score
         best_output = state.best_output
+        best_generation = max(
+            ordered_results,
+            key=lambda result: result.best_score,
+        )
+        finalization_output = best_output
+        workspace_execution = best_generation.metadata.get("workspace_execution")
+        if self.workspace_execute_candidates and isinstance(workspace_execution, dict):
+            observed_output = workspace_execution.get("observed_output")
+            if isinstance(observed_output, str):
+                finalization_output = observed_output
         objective_payload, objective_guardrail, evaluator_guardrail, effective_met_threshold, rubric_calibration = (
             self._finalize_task_output(
                 agent_task=agent_task,
                 task_id=task_id,
                 spec_name=spec_name,
-                best_output=best_output,
+                best_output=finalization_output,
                 best_score=best_score,
                 met_threshold=met_threshold,
                 reference_context=reference_context,
@@ -663,10 +710,6 @@ class TaskRunner:
             )
         )
 
-        best_generation = max(
-            ordered_results,
-            key=lambda result: result.best_score,
-        )
         # The multi-generation aggregate persists best_generation's score; carry its epoch so the
         # queue result JSON (and the returned result) keep the epoch + quarantine lineage.
         epoch_id = best_generation.evaluator_epoch

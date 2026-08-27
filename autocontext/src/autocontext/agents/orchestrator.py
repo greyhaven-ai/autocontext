@@ -11,6 +11,8 @@ from autocontext.agents.analyst import AnalystRunner
 from autocontext.agents.architect import ArchitectRunner
 from autocontext.agents.coach import CoachRunner
 from autocontext.agents.competitor import CompetitorRunner
+from autocontext.agents.context_evaluation_isolation import isolate_context_bundle_client
+from autocontext.agents.context_routing_activation import resolve_active_context_settings
 from autocontext.agents.curator import KnowledgeCurator
 from autocontext.agents.llm_client import DeferredMLXClient, LanguageModelClient, build_client_from_settings
 from autocontext.agents.model_router import ModelRouter, TierConfig
@@ -40,7 +42,6 @@ if TYPE_CHECKING:
     from autocontext.agents.role_router import ProviderConfig
 
 logger = logging.getLogger(__name__)
-
 _ARCHITECT_CADENCE_SKIP = "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
 
 
@@ -174,6 +175,7 @@ class AgentOrchestrator:
             self.skeptic = SkepticAgent(runtime, settings.model_skeptic, settings.skeptic_max_tokens)
         self._role_clients: dict[str, LanguageModelClient] = {}
         self._active_generation_deadline: float | None = None
+        self._context_bundle_evaluation_isolation_depth = 0
         self._role_router = RoleRouter(settings)
 
         self._model_router = ModelRouter(
@@ -236,10 +238,25 @@ class AgentOrchestrator:
 
         orch = cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite, hook_bus=hook_bus)
 
-        # Apply per-role provider overrides (AC-184)
         role_runtime_overrides.apply_role_overrides(orch, settings)
 
         return orch
+
+    def apply_active_context_routing(self, settings: AppSettings, routing: dict[str, Any]) -> AppSettings:
+        """Synchronize generation-time routes from the immutable active bundle."""
+        effective_settings = resolve_active_context_settings(settings, self.settings, routing)
+        # An empty routing map is meaningful: the current active bundle no
+        # longer overrides generation-time routes. Always resynchronize from
+        # the generation's baseline settings so an older promoted bundle cannot
+        # leak its models or routing flags into later generations.
+        self.settings = effective_settings
+        self.competitor.model = effective_settings.model_competitor
+        self.analyst.model = effective_settings.model_analyst
+        self.coach.model = effective_settings.model_coach
+        self.architect.model = effective_settings.model_architect
+        self._role_router = RoleRouter(effective_settings)
+        self._harness_coverage_cache.clear()
+        return effective_settings
 
     def _client_for_role(self, role: str) -> LanguageModelClient:
         return self._role_clients.get(role, self.client)
@@ -454,6 +471,15 @@ class AgentOrchestrator:
             self._active_generation_deadline = previous_deadline
 
     @contextmanager
+    def isolate_context_bundle_evaluation_arm(self) -> Any:
+        """Require every role turn in this scope to start without prior-arm state."""
+        self._context_bundle_evaluation_isolation_depth += 1
+        try:
+            yield
+        finally:
+            self._context_bundle_evaluation_isolation_depth -= 1
+
+    @contextmanager
     def _use_role_runtime(
         self,
         role: str,
@@ -495,6 +521,8 @@ class AgentOrchestrator:
             generation_deadline=generation_deadline,
             wrap_client=wrap_panel_client,
         )
+        if self._context_bundle_evaluation_isolation_depth:
+            isolate_context_bundle_client(client, role=role)
         runner.runtime.client = client
         if model is not None:
             runner.model = model

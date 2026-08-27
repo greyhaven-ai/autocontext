@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { asDbPath } from "../../domain/ids.js";
+import type { AgentTaskSpec } from "../../scenarios/agent-task-spec.js";
 
 export function getMigrationsDir(): string {
   const thisDir = dirname(fileURLToPath(import.meta.url));
@@ -76,6 +77,8 @@ export async function loadProjectDefaults() {
 
 export interface SavedAgentTaskScenario {
   name: string;
+  /** Full normalized spec retained for evaluator-isolated structured execution. */
+  agentTaskSpec: AgentTaskSpec;
   taskPrompt: string;
   rubric: string;
   referenceContext?: string;
@@ -101,6 +104,7 @@ export async function loadSavedAgentTaskScenario(
 
   return {
     name: saved.name,
+    agentTaskSpec: saved.spec,
     taskPrompt: renderAgentTaskPrompt(saved.spec),
     rubric: saved.spec.judgeRubric,
     referenceContext: saved.spec.referenceContext ?? undefined,

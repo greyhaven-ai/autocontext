@@ -28,7 +28,7 @@ describe("RuntimeBridgeProvider session recording", () => {
       goal: "run queued task",
       workspace: createInMemoryWorkspaceEnv({ cwd: "/workspace" }),
     });
-    const provider = new RuntimeBridgeProvider(runtime, "bridge-model", {
+    const provider = new RuntimeBridgeProvider(runtime, "requested-model", {
       session,
       role: "task-runner",
       cwd: "tasks",
@@ -88,7 +88,7 @@ describe("RuntimeBridgeProvider session recording", () => {
       goal: "run queued task",
       workspace: createInMemoryWorkspaceEnv({ cwd: "/workspace" }),
     });
-    const provider = new RuntimeBridgeProvider(runtime, "bridge-model", {
+    const provider = new RuntimeBridgeProvider(runtime, "requested-model", {
       session,
       role: "task-runner",
       cwd: "tasks",

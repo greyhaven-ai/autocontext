@@ -52,6 +52,30 @@ describe("LLMJudge evaluatorEpoch", () => {
     expect(r1.evaluatorEpoch).not.toBe(r2.evaluatorEpoch);
   });
 
+  it("uses stable provider provenance and private context in the evaluator epoch", async () => {
+    const provider: LLMProvider = {
+      ...makeMockProvider(RESPONSE),
+      name: "runtime-bridge",
+      evaluatorIdentity: "codex",
+    };
+    const judge = new LLMJudge({
+      provider,
+      model: "judge-model",
+      rubric: "score correctness 0-1",
+      evaluationContext: "PRIVATE_ANSWER_KEY",
+    });
+
+    const result = await judge.evaluate({ taskPrompt: "task", agentOutput: "output" });
+    expect(result.evaluatorEpoch).toBe(
+      computeEvaluatorEpoch(
+        "score correctness 0-1",
+        "codex",
+        "judge-model",
+        "PRIVATE_ANSWER_KEY",
+      ).epochId,
+    );
+  });
+
   it("stamps the epoch of the model a BEFORE_JUDGE hook switched to", async () => {
     const modelsUsed: (string | undefined)[] = [];
     const provider = makeRecordingProvider(RESPONSE, modelsUsed);

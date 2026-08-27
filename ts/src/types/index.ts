@@ -66,16 +66,16 @@ export type CompletionResult = z.infer<typeof CompletionResultSchema>;
 export class ProviderError extends Error {
   usage: Record<string, number>;
 
-  constructor(message: string, usage: Record<string, number> = {}) {
-    super(message);
+  constructor(message: string, usage: Record<string, number> = {}, options?: ErrorOptions) {
+    super(message, options);
     this.name = "ProviderError";
     this.usage = { ...usage };
   }
 }
 
 export class ThinkingUnsupportedError extends ProviderError {
-  constructor(message: string, usage: Record<string, number> = {}) {
-    super(message, usage);
+  constructor(message: string, usage: Record<string, number> = {}, options?: ErrorOptions) {
+    super(message, usage, options);
     this.name = "ThinkingUnsupportedError";
   }
 }
@@ -93,12 +93,30 @@ export interface OutputSchema {
   schema: Record<string, unknown>;
 }
 
+/**
+ * Controls whether a provider-backed runtime may retain prompt/response text in
+ * its public RuntimeSession transcript. The provider still receives the real
+ * prompt; this flag is recording policy, not prompt transformation.
+ */
+export type PromptVisibility = "default" | "evaluator_only";
+
+/**
+ * Isolation requested for a fresh provider/runtime instance. `noTools` is a
+ * fail-closed privacy boundary for evaluator-bearing tasks: built-in local
+ * runtimes disable tools, customizations, context-file discovery, and session
+ * persistence together.
+ */
+export interface ProviderIsolationPolicy {
+  noTools?: boolean;
+}
+
 export interface CompletionOptions {
   systemPrompt: string;
   userPrompt: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  promptVisibility?: PromptVisibility;
   /**
    * Optional and best-effort. An implementation that cannot honor it must
    * still answer and must leave `constrained` false.
@@ -129,6 +147,27 @@ export interface LLMProvider {
   completeWithThinking?(opts: ThinkingCompletionOptions): Promise<CompletionResult>;
 
   defaultModel(): string;
+
+  /**
+   * Return a provider with an independent conversation/runtime session. The
+   * caller owns the returned provider and closes it after the isolated call.
+   * Providers that cannot honor the requested policy must throw.
+   */
+  createIsolatedProvider?(policy?: ProviderIsolationPolicy): LLMProvider;
+
+  /**
+   * Explicit attestation that this provider keeps no conversation state and
+   * exposes no ambient tools or host context. Only providers setting this to
+   * true may be reused when a no-tools isolation policy is requested without
+   * allocating a fresh provider.
+   */
+  readonly isStatelessNoToolsProvider?: boolean;
+
+  /**
+   * Stable evaluator provenance when the public provider name is an adapter
+   * label shared by multiple backends (for example, runtime-bridge).
+   */
+  readonly evaluatorIdentity?: string;
 
   close?(): void;
 
@@ -173,6 +212,11 @@ export const AgentTaskResultSchema = z.object({
   reasoning: z.string(),
   dimensionScores: z.record(z.number().min(0).max(1)).default({}),
   internalRetries: z.number().int().min(0).default(0),
+  /**
+   * The authoritative evaluator response could not be parsed. Optional for
+   * compatibility with delegated and callback evaluators.
+   */
+  authoritativeParseFailed: z.boolean().optional(),
   // AC-885: evaluator epoch carried from the judge so the improve loop refuses to
   // compare scores across evaluator changes. null for legacy/delegated results.
   evaluatorEpoch: z.string().nullable().default(null),

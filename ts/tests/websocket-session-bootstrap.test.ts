@@ -48,7 +48,8 @@ describe("websocket session bootstrap", () => {
     expect(buildSessionBootstrapMessages(environment, state)).toEqual([
       {
         type: "hello",
-        protocol_version: 1,
+        protocol_version: 2,
+        capabilities: ["structured_task_creation_v1"],
       },
       {
         type: "environments",
@@ -68,17 +69,18 @@ describe("websocket session bootstrap", () => {
     ]);
   });
 
-  it("advertises transcript capability only after explicit opt-in", () => {
+  it("adds transcript-only capabilities after explicit opt-in", () => {
     expect(buildSessionBootstrapMessages(environment, state, { runTranscript: true })).toEqual([
       {
         type: "hello",
-        protocol_version: 1,
+        protocol_version: 2,
         transcript_protocol_version: 1,
         capabilities: [
           "run_transcript_v1",
           "safe_run_stop_v1",
           "agent_task_plan_v1",
           "agent_progress_notes_v1",
+          "structured_task_creation_v1",
         ],
       },
       {

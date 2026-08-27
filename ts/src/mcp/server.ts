@@ -59,8 +59,20 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
     name: "autocontext",
     version: "0.2.3",
   });
-  const solveManager = new SolveManager({ provider, store, runsRoot, knowledgeRoot });
-  const sandboxManager = new SandboxManager({ provider, store, runsRoot, knowledgeRoot });
+  const solveManager = new SolveManager({
+    provider,
+    agentProvider: settings.agentProvider,
+    store,
+    runsRoot,
+    knowledgeRoot,
+  });
+  const sandboxManager = new SandboxManager({
+    provider,
+    agentProvider: settings.agentProvider,
+    store,
+    runsRoot,
+    knowledgeRoot,
+  });
 
   registerCoreControlPlaneTools(server, {
     store,
@@ -80,6 +92,7 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
     runsRoot,
     knowledgeRoot,
     settings: {
+      agentProvider: settings.agentProvider,
       maxRetries: settings.maxRetries,
       backpressureMinDelta: settings.backpressureMinDelta,
       playbookMaxVersions: settings.playbookMaxVersions,

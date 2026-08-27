@@ -59,6 +59,7 @@
     "./analytics/goal-run-report.js",
     "./knowledge/goal-run-report-store.js",
     "./analytics/negative-result-ledger.js",
+    "./analytics/context-attribution.js",
     "./knowledge/negative-result-ledger-store.js",
     "./analytics/progress-report.js",
     "./analytics/run-utilization-report.js",

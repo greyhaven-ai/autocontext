@@ -12,9 +12,271 @@ All notable changes to this project will be documented in this file.
   `/ws/events?projection=system-map`.
 - TypeScript generation events now carry versioned trace/span metadata and
   publish live role, tournament, and persistence boundaries for the system map.
+
+### Security
+
+- Control-plane WebSockets no longer accept bearer credentials in query strings;
+  browser clients use an authenticated, echoed subprotocol, native clients may
+  use the Authorization header, and the TUI authenticates both HTTP and WebSocket
+  traffic from `AUTOCONTEXT_SERVER_TOKEN` without credential-bearing URLs.
+
+## [0.17.1] - 2026-08-26
+
+This TypeScript-only patch release adds a strict, capability-negotiated
+structured task creation flow for desktop missions. Python remains at
+`autocontext==0.17.0`, and Pi remains on its separate `0.10.0` package line.
+
+### Added
+
+- Protocol-v2 TypeScript servers now advertise `structured_task_creation_v1`
+  and accept a strict `create_task` command with a versioned improvement
+  objective, deliverable, evaluation contract, bounded source contents, typed
+  source roles, provenance, and SHA-256/byte-length verification. The npm
+  package ships a valid `structured-task-create-v1.json` protocol fixture
+  (issue #1299).
+- Structured tasks compile directly to native agent-task scenarios, emit setup
+  and run progress before provider work, persist reloadable source manifests
+  and task data, retain scored per-round outputs and a final artifact, and run
+  multiple evaluation/revision rounds without falling back to a generic
+  scenario prompt.
+- Agent-task provider output supports at most two bounded continuation segments
+  after a reported truncation. Empty, non-growing, oversized, or still-truncated
+  continuations fail closed before evaluation or retention.
+
+### Security
+
+- Candidate-visible generation and revision never receive evaluator-only
+  source contents. Retained judge reasoning is independently regenerated from
+  candidate-visible context while the evaluator-only score remains authoritative,
+  preventing sealed evaluation data from leaking through progress events,
+  transcripts, or SQLite analyst outputs.
+
+## [0.17.0] - 2026-08-25
+
+This release aligns the PyPI `autocontext` and npm `autoctx` packages at
+`0.17.0`. It adds outcome-gated context bundles, capability-scoped local and
+remote execution, durable campaign operations, correctness-first recursive
+kernel evolution, and capability-validated accelerator requests. Live context
+promotion and paid accelerator execution remain opt-in and fail closed when
+their required authority, identity, telemetry, or capability contracts are not
+satisfied. The Pi extension remains on its separate `0.10.0` package line.
+
+### Added
+
+- Prime generation and campaign execution now use a durable SQLite result
+  outbox. A stable request claim is committed before provider dispatch; the
+  complete typed result, usage, cleanup, provenance, retry lineage, and
+  external-evaluation ledger projection are committed before completion is
+  exposed. Restart replays committed results without another paid request and
+  fails closed on unresolved possibly-billable claims. Optional sink failures
+  remain retryable accounting work and never re-enter provider execution
+  (AC-999).
+
+- Kernel evolution can now compose bounded studies across variable-shape
+  matmul, fused elementwise/reduction, and causal-attention families while
+  reusing the existing evaluator, confirmation, promotion, lineage, and
+  generation-budget contracts. Versioned workload specifications bind trusted
+  references, primary/fresh-confirmation protocols, required correctness
+  slices, case floors, and per-family proposal/token/cost/wall budgets. Study
+  receipts keep each workload visible, record cross-shape, cross-hardware, and
+  cross-family transfer trials, distinguish portable/partial/specialist/plateau
+  outcomes, and reject aggregate portability claims when any required target
+  fails or remains untested. A deterministic three-family example exercises the
+  contract without claiming synthetic latencies as accelerator evidence
+  (AC-996).
+
+- Prime accelerator execution is now reachable through an explicit,
+  provider-neutral capability contract. App settings and campaign plans bind
+  accelerator type/count, immutable image, region, and required telemetry into
+  scheduler resources, idempotency fingerprints, evaluation cohorts, Prime
+  create requests, result provenance, and external-evaluation ledgers.
+  Configured capability mismatches fail before provider creation; resolved
+  image/region/hardware drift fails before command execution; accelerator work
+  can never use the local CPU fallback. The current Prime SDK exposes verified
+  hardware identity but not accelerator usage or peak-memory telemetry, so
+  unsupported telemetry is rejected before paid dispatch. The interactive
+  WebSocket protocol is version 2 for accelerator-aware environment metadata,
+  while CPU-only execution retains its legacy resource payload shape (AC-998).
+
+- Kernel evolution now supports provider-registry-backed autonomous campaigns
+  with exact source/provenance receipts, fail-closed response validation,
+  deterministic proposal/retry/token/cost/wall budgets, control-plane-only
+  credentials, operator status/stop, indexed campaign artifacts, and
+  content-addressed crash-safe resume. Durable pre-dispatch claims prevent a
+  restart from duplicating an ambiguous paid provider call or GPU attempt;
+  mailbox generation remains available as the manual fallback (AC-995).
+
+- Kernel promotion now has a versioned v4 finite-sample evidence family. Eight
+  pre-registered balanced paired blocks use a fixed sign e-process, and a
+  ten-proposal Bonferroni budget gives exact per-look and familywise bounds of
+  1/256 and 10/256 under the receipt-bound conditional sign assumption.
+  Deterministic calibration covers null, heavy-tail, paired drift,
+  across-block autocorrelated magnitudes, heteroskedasticity, and repeated
+  adaptive proposals. Raw
+  blocks, derived statistics, decisions, attempts, results, and H100 profile
+  evidence reproduce one canonical policy digest; explicit readers distinguish
+  unverified legacy v2/v3 evidence and fail closed on ambiguous/tampered/newer
+  versions. Aggregate-feedback primary evidence and every confirmation outcome
+  remain in a disjoint sealed audit root until adaptive generation is terminal;
+  unidentified confirmation attempts terminate before another proposal, and
+  replay consumes report-backed protocol IDs and private-plan commitments from
+  successful and rejected exposures. Exact rational aggregate, tail,
+  reference-drift, memory-fraction, and protected-case threshold comparisons,
+  exact named-profile tolerances, and representable, exactly replayed
+  Bonferroni receipts fail closed at binary64 boundary cases.
+  A real H100/MIG v4 release run remains
+  pending the protected-boundary readiness gates tracked under AC-1005
+  (AC-1004).
+- Hostile accelerator candidates can now execute behind an accelerator-neutral,
+  typed, bounded, non-pickle authority protocol. A protected Docker runner gives
+  the trusted evaluator and candidate/incumbent separate process, mount,
+  environment, socket, and report identities; evaluator-randomized timed
+  challenges, compact HMAC-authenticated replay receipts, host build/boundary
+  and accelerator-attestation binding, an authenticated outer envelope for
+  every portable profile-evidence field, plus verified normal teardown keep
+  candidate clocks/reports, private plans, and confirmation state outside the
+  generated-code boundary. H100/MIG is the first conformance profile, and its
+  production campaign and protected runner remain fail-closed until independently
+  attested role grants, out-of-interpreter mutation observation, comparable
+  reference timing, crash-safe container creation, and the opt-in live
+  adversarial gate are all available (AC-1003).
+- Generated GPU kernels can now run through a pinned-image Docker worker that
+  shares the ResearchWorkspace lockdown primitive: read-only harness/input
+  mounts, ephemeral byte/inode-bounded workspace, deny-network/scrubbed
+  environment, explicit partitioned GPU grant, CPU/RAM/PID/output limits,
+  verified teardown, and crashed-coordinator orphan reconciliation. Mandatory
+  identity-bound CUDA allocation/reservation telemetry and three-state gate
+  feedback keep missing metrics, OOM, excess, unsupported enforcement, and
+  teardown failures distinct; local execution requires `trusted_unsafe=True`
+  (AC-991).
+- A concrete `DockerResearchSandboxBackend` now backs explicitly approved
+  `isolated_sandbox` research workspaces with a pinned image, read-only rootfs,
+  workspace-only mounts, denied network, dropped capabilities, scrubbed
+  environment, CPU/memory/PID limits, terminable calls, scoped secret
+  resolution, transactional commit, and label-based cleanup verification. The
+  TaskRunner's multi-generation code path accepts the capable workspace
+  factory directly and never falls back to `trusted_local` (AC-981).
+- Remote scenario execution now uploads a deterministic, content-addressed
+  stdlib zipapp containing the exact built-in or custom scenario source,
+  constructor state, strategy, and seed. Both the package and the pinned clean
+  runtime image are verified before provisioning; network-denied built-in and
+  non-game integration tests exercise the same image contract (AC-982).
+- The live campaign scheduler now runs a restart-safe service loop, heartbeats
+  active leases, batches matched remote trials into one bounded reuse session,
+  invokes cooperative worker cancellation, and durably charges results and
+  provider usage that arrive after cancellation (AC-983).
+- Standard and tree-search generation can invoke one live
+  `ContextBundlePromotionCoordinator` for matched screen, adaptive
+  confirmation, held-out evaluation, audit, campaign error control, atomic
+  serving, and immediate routing refresh. Exact component-addition evidence
+  produces an immutable manifest-verified causal-attribution artifact before
+  cutover (AC-984, AC-997).
+- Campaign audits have a reusable live-checkpoint adapter and a pre-promotion
+  serving gate. Enabled production auditors require a provider-native
+  cancellable call handle by default; the legacy non-terminable transport is an
+  explicit opt-in. Cancellation and timeout decisions remain durable and do
+  not rewrite deterministic scores (AC-985).
+- Campaign-wide false-promotion state now pre-reserves a summable alpha slice
+  for every adaptive challenger, persists selection/spend/decision history
+  across restart, collapses repeated seeds into fixture dependence blocks, and
+  requires disjoint lanes. A bounded-Hoeffding option covers predeclared
+  bounded heavy-tailed effects; deterministic operating-characteristic
+  simulations and byte-compatible Python/TypeScript state fixtures pin the
+  policy (AC-986).
+
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- Kernel promotion now names strict-FP32 and relaxed-precision profiles, binds
+  numerical/reference/input/enforcement semantics and private-plan commitments
+  into protocol identity, requires correctness plus per-case no-regression
+  gates, and uses a persisted Bonferroni proposal budget. Profile-namespaced
+  H100 evidence schema and export validation are prepared for disjoint
+  primary/confirmation plans. The authenticated AC-1003 authority boundary and
+  release guard are implemented; production stays fail-closed pending
+  role-separated telemetry, trusted mutation observation, comparable reference
+  timing, crash-safe container creation, and the real H100/MIG validation now
+  tracked by AC-1005 (AC-994).
+- An optional Python `CampaignScheduler` dispatches branch/trial jobs across
+  local workers and remote adapters using capability/resource matching,
+  expiring leases, heartbeats, bounded retry and concurrency, idempotent
+  completion, comparable-lane affinity, branch-scoped warm reuse, and enforced
+  campaign/branch/evidence budgets. A checksummed append-only event log enables
+  deterministic restart reconciliation, while reports separate candidate and
+  infrastructure outcomes and include utilization (AC-979). TypeScript retains
+  the shared campaign report artifact; executable scheduling is Python-first.
+- Remote execution now has provider-neutral typed requests/results for images,
+  commands, resources, optional accelerators, network and scoped-secret policy,
+  artifacts, events, usage, and cleanup. The optional Prime Intellect adapter
+  contains no game scoring logic, supports bounded matched-trial reuse and
+  capability-gated warm/snapshot requests, and keeps infrastructure, task,
+  timeout, artifact, and cleanup failures distinct for external-eval ledgers
+  (AC-978).
+- Hermetic scenario zipapps now re-verify their own format, runtime, and file
+  digests before import. A declared bootstrap exit is classified as
+  infrastructure (including in campaign scheduling), and clean pinned-image
+  Docker execution is exercised in CI (AC-982).
+- Python code/research scenarios can now opt into capability-scoped,
+  process-backed persistent workspaces with explicit file, import, subprocess,
+  network, and typed host-bridge grants. Transactional executions, bounded
+  resources, snapshots/restores, deterministic cleanup, and audit events keep
+  the current restricted interpreter as the safe default (AC-977). TypeScript
+  coordinates the shared runtime workspace boundary but does not embed a
+  parallel Python interpreter.
+- TaskRunner can now select the pinned Docker research workspace directly from
+  settings, execute generated Python transactionally, judge observable output,
+  and persist workspace audit events. Capable execution rejects the local
+  interpreter and requires explicit operator capability approval (AC-981).
+- An optional Python `CampaignAuditor` now performs separately routed,
+  read-only integrity reviews at bounded campaign checkpoints. Sanitized,
+  fingerprinted evidence packets exclude holdout answers and credentials;
+  duplicate reviews are cached, timeouts fail open to deterministic monitors,
+  findings remain advisory by default, and operator dispositions are durable
+  (AC-980). TypeScript parity is deferred with the Python campaign executor.
+- All four campaign audit checkpoints are connected to live promotion and
+  scheduler paths; durable audit/disposition records surface in scheduler
+  reports while audit failures leave deterministic gates unchanged (AC-985).
+- The Python autoresearch trainer now persists replayable checkpoint-promotion
+  artifacts and supports deterministic minimum-effect gating plus adaptive
+  matched screen/confirmation/held-out trials. Decisions distinguish accepted,
+  rejected, inconclusive, invalid, and infrastructure-error outcomes; validity,
+  parse, and dimensional regressions are binding (AC-976). TypeScript parity is
+  deferred because the autoresearch trainer is Python-only.
+- Ablation-backed context attribution records controlled trial pairs against
+  stable component and bundle digests, reconstructs causal credit, schedules
+  bounded cadence/plateau/composition re-tests, preserves attribution history,
+  and lets prompt selection demote harmful or neutral high-cost components.
+  Paired-shadow and edit-size correlation remain explicitly noncausal in Python
+  and TypeScript reports (AC-974).
+- Negative-result ledger schema v2 binds evidence to context-bundle,
+  evaluator, verifier, cohort, dependency, and environment identity. Scoped
+  applicability, explicit retest triggers, hard-ban authority, and durable
+  retest/supersession links prevent stale evidence from suppressing unrelated
+  exploration; Python and TypeScript safely migrate v1 ledgers as qualified
+  `context_unknown` evidence (AC-975).
+- Rejected and inconclusive context-bundle candidates now write an immutable,
+  exactly bound negative-result ledger from the live promotion coordinator
+  (AC-984).
+- Immutable, content-addressed `ContextBundle` manifests now group playbooks,
+  hints, prompt and completion mutations, tool guidance/specifications,
+  harness validators, and routing configuration under one evaluator epoch.
+  Architect and coach output lands in a candidate namespace; matched screening,
+  adaptive confirmation, and a held-out lane are required before one atomic
+  active-pointer promotion. Promotion records include exact lineage, cohort,
+  rationale, and rollback target. Python and TypeScript share canonical digests
+  and parity fixtures through `autoctx/context-bundles` (AC-973).
+
+### Changed
+
+- Refreshed compatible npm transitive dependencies to patched releases for
+  request-path parsing and build tooling. The 0.17.0 production dependency
+  audit has no high, critical, or moderate advisories; the remaining low-severity
+  findings require a separately tested `secure-exec` major-version upgrade.
+- Repaired all known repository-relative Markdown paths, reconciled the
+  scenario/codegen parity guide with the current TypeScript registry, and
+  added a deterministic CI check for local paths and heading anchors. External
+  URL availability and generated/vendor content remain explicitly outside the
+  check (AC-954).
 
 ## [0.16.1] - 2026-08-14
 
@@ -69,10 +331,6 @@ remains deferred, and the Pi extension remains at `0.10.0`.
   control and provider endpoints reject plaintext credential transport, browser
   WebSocket upgrades reject untrusted origins, and displayed endpoints redact
   URL userinfo plus sensitive query and fragment values.
-- Control-plane WebSockets no longer accept bearer credentials in query strings;
-  browser clients use an authenticated, echoed subprotocol, native clients may
-  use the Authorization header, and the TUI authenticates both HTTP and WebSocket
-  traffic from `AUTOCONTEXT_SERVER_TOKEN` without credential-bearing URLs.
 - Cooperative stop, pause, and resume use a separately bounded priority lane,
   so they remain responsive while provider work is stalled or the normal queue
   is saturated. Interactive WebSockets cap connections, frame size, incomplete
@@ -884,7 +1142,8 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.17.0...HEAD
+[0.17.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...py-v0.17.0
 [0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.1...py-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
 [0.15.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.0...py-v0.15.1

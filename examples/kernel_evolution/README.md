@@ -4,7 +4,9 @@ This runnable example exercises the same control/data-plane split intended for
 one pinned KernelBench problem. AutoContext generates candidates, makes
 promotion decisions, accumulates feedback, and persists lineage. A separate
 host-owned command compiles/checks/times candidate and incumbent artifacts and
-writes `autocontext.kernelbench-eval/v2` JSON.
+writes `autocontext.kernelbench-eval/v3` JSON. The v3 lineage/result envelopes
+bind the exact statistics and promotion policy; the reader retains an explicit
+legacy path for pre-policy v2 artifacts.
 
 Run it from the Python package directory:
 
@@ -20,10 +22,23 @@ host-owned problem profile whose seed/order commitment differs while every
 correctness, tolerance, trial-count, warmup, and timing field remains compatible.
 Inspect the printed run directory for the manifest, exact content-addressed
 sources, primary and confirmation reports, append-only lineage, and champion.
+The production runner also accepts typed provider-backed generation receipts,
+durable token/cost/retry/wall budgets, operator stop/status, and lineage-verified
+resume; see the main kernel evolution guide for the API.
+
+The [multi-workload study](multi_workload/README.md) composes the same runner
+and evaluator contract across variable-shape matmul, fused
+elementwise/reduction, and causal-attention families. It emits independent
+primary/confirmation evidence and explicit cross-shape, cross-hardware, and
+cross-family transfer classifications without collapsing failures into an
+aggregate score. The bundled study adapter is synthetic contract evidence, not
+accelerator performance data.
 
 For a pinned live comparison on an NVIDIA H100, use the
-[KernelBench L1/P1 H100 example](kernelbench_h100/README.md). It runs the real
-external contract against an AutoKernel starter and a tuned Triton candidate.
+[KernelBench L1/P1 H100 example](kernelbench_h100/README.md). Its trusted-only
+control smoke preserves the historical comparison. Its Docker production
+composition fails closed until authoritative evaluation is separated from the
+candidate process.
 
 For a real run, replace `fake_kernelbench_adapter.py` with an operator-owned
 GPU adapter. Keep `problem.json`, reference inputs, tolerances, hidden seeds,

@@ -4,6 +4,17 @@
 
 Use the Python package when you need the full Python control plane or local MLX/CUDA training implementation. Use this package when you need Node, npm, the TUI, Fetch/agent adapters, or TypeScript library APIs.
 
+The `autoctx/context-bundles` subpath provides the cross-runtime immutable
+manifest, canonical digest, and matched-confirmation contract used by the
+Python control plane. It validates the same shared fixtures and can be used by
+Node evaluators before they return promotion evidence. The subpath also
+reproduces campaign alpha allocation, dependence-block decisions, persisted
+state digests, and exact component-removal attribution verification. See
+[context bundles](../docs/context-bundles.md).
+The root library also exports ablation-backed component attribution, bounded
+re-testing, causal-credit reconstruction, and prompt-selection helpers; see
+[ablation-backed attribution](../docs/context-attribution.md).
+
 ## Install
 
 The npm package requires Node.js 22.19.0 or newer. The pinned development
@@ -254,13 +265,14 @@ pipeline). They are available via `pip install autocontext`; the npm package's
 autoctx serve mcp
 ```
 
-The MCP server exposes 40+ tools across scenarios, runs, knowledge, evaluation, feedback, solve (`solve_scenario`, `solve_status`, `solve_result`), sandbox (`sandbox_create`, `sandbox_run`, `sandbox_status`, ...), export, and discovery (`capabilities`). Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/scenario-parity-matrix.md](../docs/scenario-parity-matrix.md).
+The MCP server exposes 40+ tools across scenarios, runs, knowledge, evaluation, feedback, solve (`solve_scenario`, `solve_status`, `solve_result`), sandbox (`sandbox_create`, `sandbox_run`, `sandbox_status`, ...), export, and discovery (`capabilities`). Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/internal/scenario-parity-matrix.md](../docs/internal/scenario-parity-matrix.md).
 
 ### Interactive run transcript extension
 
-The TypeScript `/ws/interactive` server keeps the base WebSocket
-`protocol_version` at `1`. Plain `/ws/interactive` connections retain the exact
-legacy v1 hello and run-frame shapes. Clients explicitly opt into durable
+The TypeScript `/ws/interactive` server uses base WebSocket
+`protocol_version: 2` for accelerator-aware environment descriptors. CPU-only
+environment resources omit the new optional fields and retain their legacy v1
+shape. Clients explicitly opt into durable
 transcripts with `/ws/interactive?transcript_protocol_version=1`; that connection
 advertises `transcript_protocol_version: 1` plus the `run_transcript_v1` and
 `safe_run_stop_v1` capabilities. TypeScript engines that publish live execution
@@ -269,6 +281,31 @@ plans and progress notes also advertise `agent_task_plan_v1` and
 Clients may attach a stable `client_run_id` and `command_id` to `start_run`,
 operator-control, and chat commands. Run-scoped responses then include stable
 `event_id`, monotonic `sequence`, `client_run_id`, and `occurred_at` fields.
+
+#### Structured task creation
+
+TypeScript protocol-v2 servers in `autoctx@0.17.1` advertise
+`structured_task_creation_v1` only with the complete `create_task` handler and
+schema available. The command compiles a versioned improvement objective,
+deliverable, evaluation contract, and at most eight bounded inline sources
+directly into a native agent-task scenario. Each source declares an explicit
+role (`target`, `input`, `reference`, `constraint`, `example`, or `eval`),
+provenance, retained byte count, and SHA-256 digest. `holdout` is rejected until
+winner-only verification exists.
+
+Candidate-visible and evaluator-only data stay separate through generation,
+revision, evaluation, persistence, progress events, and retained results. A
+valid setup emits `scenario_generating`, then `scenario_preview`; after
+`confirm_scenario`, persistence completes before `scenario_ready`. Validation
+or persistence failures emit `scenario_error` and never advertise readiness.
+Provider responses that report truncation may use at most two continuation
+segments; empty, non-growing, oversized, or exhausted continuations fail before
+evaluation or retention.
+
+The package includes a copyable, integrity-valid command at
+[`protocol-fixtures/structured-task-create-v1.json`](protocol-fixtures/structured-task-create-v1.json).
+The [machine-readable WebSocket contract](../docs/websocket-protocol-contract.json)
+defines the exact TypeScript-only extension. Python does not advertise it.
 
 Reconnect with:
 
@@ -301,7 +338,7 @@ client must fail closed when the capability is absent. Python parity is
 deferred; its interactive server does not advertise this capability.
 
 `chat_agent` and `inject_hint` accept the same optional additive
-`image_attachments` array without changing `protocol_version: 1`:
+`image_attachments` array without changing `protocol_version: 2`:
 
 ```json
 {
@@ -572,7 +609,7 @@ Reference docs moved out of this README:
 - [../docs/generated-fetch-packaging.md](../docs/generated-fetch-packaging.md)
 - [../docs/fetch-conformance.md](../docs/fetch-conformance.md)
 - [../docs/fetch-troubleshooting.md](../docs/fetch-troubleshooting.md)
-- [../docs/edge-runtime-compatibility.md](../docs/edge-runtime-compatibility.md)
+- [../docs/internal/edge-runtime-compatibility.md](../docs/internal/edge-runtime-compatibility.md)
 
 Runnable examples: [`examples/fetch-conformance-host-wrapper.ts`](examples/fetch-conformance-host-wrapper.ts)
 (typed executable wrapper) and

@@ -45,6 +45,8 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.blobstore.store import BlobStore
+    from autocontext.context_bundles.models import ContextBundle
+    from autocontext.context_bundles.store import CandidateRecord, ContextBundleStore
 
 
 @runtime_checkable
@@ -143,6 +145,93 @@ class ArtifactStore(
         if not hasattr(self, "_harness_mutation_store"):
             self._harness_mutation_store = MutationStore(root=self.knowledge_root)
         return self._harness_mutation_store
+
+    @property
+    def context_bundle_store(self) -> ContextBundleStore:
+        """Lazily create the immutable context-bundle registry (AC-973)."""
+        from autocontext.context_bundles.store import ContextBundleStore
+
+        if not hasattr(self, "_context_bundle_store"):
+            self._context_bundle_store = ContextBundleStore(self.knowledge_root)
+        return self._context_bundle_store
+
+    def ensure_context_bundle_baseline(
+        self,
+        scenario_name: str,
+        *,
+        evaluator_epoch: str,
+        routing_config: dict[str, Any] | None = None,
+    ) -> ContextBundle:
+        """Return the active bundle, bootstrapping legacy live state once."""
+        from autocontext.context_bundles.assembly import build_legacy_baseline
+
+        active = self.context_bundle_store.active_bundle(scenario_name)
+        if active is not None:
+            if active.evaluator_epoch == evaluator_epoch:
+                return active
+            return self.context_bundle_store.rollover_evaluator_epoch(scenario_name, evaluator_epoch)
+        baseline = build_legacy_baseline(
+            self,
+            scenario_name,
+            evaluator_epoch=evaluator_epoch,
+            routing_config=routing_config,
+        )
+        return self.context_bundle_store.bootstrap(baseline)
+
+    def propose_context_bundle(
+        self,
+        scenario_name: str,
+        *,
+        evaluator_epoch: str,
+        source_run_id: str,
+        source_generation: int,
+        playbook: str = "",
+        hints: str = "",
+        mutations: list[HarnessMutation] | None = None,
+        tool_specs: list[dict[str, Any]] | None = None,
+        harness_specs: list[dict[str, Any]] | None = None,
+        routing_config: dict[str, Any] | None = None,
+        rationale: str = "",
+    ) -> CandidateRecord | None:
+        """Persist generation output in the candidate namespace, never live."""
+        from autocontext.context_bundles.assembly import build_candidate_bundle
+
+        active = self.ensure_context_bundle_baseline(
+            scenario_name,
+            evaluator_epoch=evaluator_epoch,
+            routing_config=routing_config,
+        )
+        candidate = build_candidate_bundle(
+            active,
+            evaluator_epoch=evaluator_epoch,
+            playbook=playbook,
+            hints=hints,
+            mutations=mutations or [],
+            tool_specs=tool_specs or [],
+            harness_specs=harness_specs or [],
+            routing_config=routing_config,
+        )
+        if candidate is None:
+            return None
+        try:
+            existing = self.context_bundle_store.candidate(scenario_name, candidate.digest)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and (
+            existing.source_run_id != source_run_id
+            or existing.source_generation != source_generation
+        ):
+            # Content-addressed candidates retain the source generation that
+            # first proposed them. A later generation producing identical
+            # context is an unchanged proposal, not authority to relabel and
+            # re-evaluate the same immutable manifest.
+            return None
+        return self.context_bundle_store.propose(
+            candidate,
+            source_run_id=source_run_id,
+            source_generation=source_generation,
+            rationale=rationale,
+        )
 
     def _scenario_dir(self, scenario_name: str) -> Path:
         """Resolve a scenario directory under knowledge_root."""

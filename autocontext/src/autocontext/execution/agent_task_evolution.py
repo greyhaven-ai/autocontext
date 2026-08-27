@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from itertools import accumulate
-from typing import Any
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel, Field
 
-from autocontext.execution.interpreter_workspace import InterpreterWorkspace
+from autocontext.execution.interpreter_workspace import WorkspaceVariable
 from autocontext.knowledge.compaction import compact_prompt_component
 from autocontext.knowledge.harness_entries import HarnessEdit, HarnessEntry, SkillReference
 from autocontext.scenarios.agent_task import AgentTaskResult
@@ -332,7 +332,7 @@ def migrate_states(
 def migrate_workspaces(
     states: list[AgentTaskGenerationState],
     migrated: list[AgentTaskGenerationState],
-    workspaces: Sequence[InterpreterWorkspace],
+    workspaces: Sequence[EvolutionWorkspace],
 ) -> None:
     """Carry the champion's workspace into islands that adopted its output.
 
@@ -439,8 +439,26 @@ class ScenarioFamilyGuide:
 
 GenerateFn = Callable[[str, int], str]
 EvaluateFn = Callable[[str, int], AgentTaskGenerationEvaluation]
-WorkspaceEvaluateFn = Callable[[str, int, InterpreterWorkspace], AgentTaskGenerationEvaluation]
+WorkspaceEvaluateFn = Callable[[str, int, Any], AgentTaskGenerationEvaluation]
 PromotionFn = Callable[[AgentTaskGenerationState, AgentTaskGenerationEvaluation], bool]
+
+
+class EvolutionWorkspace(Protocol):
+    """Stateful workspace surface consumed by multi-generation evolution."""
+
+    def render_markdown(self, max_vars: int = 20) -> str: ...
+
+    def variables(self) -> list[WorkspaceVariable]: ...
+
+    def snapshot(self) -> Any: ...
+
+    def restore(self, snapshot: Any) -> None: ...
+
+    def close(self) -> Any: ...
+
+
+def _serialized_workspace_audit_events(workspace: EvolutionWorkspace) -> list[Any]:
+    return [asdict(cast(Any, event)) if is_dataclass(event) else repr(event) for event in getattr(workspace, "audit_events", ())]
 
 
 class AgentTaskEvolutionRunner:
@@ -454,9 +472,10 @@ class AgentTaskEvolutionRunner:
         initial_output: str = "",
         task_name: str = "agent_task",
         slot: FunctionSlot | None = None,
-        workspace_factory: Callable[[], InterpreterWorkspace] | None = None,
+        workspace_factory: Callable[[], EvolutionWorkspace] | None = None,
         workspace_evaluate_fn: WorkspaceEvaluateFn | None = None,
         promotion_fn: PromotionFn | None = None,
+        preserve_generated_output: bool = False,
     ) -> None:
         if workspace_evaluate_fn is not None and workspace_factory is None:
             raise ValueError("workspace_evaluate_fn requires a workspace_factory")
@@ -469,11 +488,12 @@ class AgentTaskEvolutionRunner:
         self._workspace_factory = workspace_factory
         self._workspace_evaluate_fn = workspace_evaluate_fn
         self._promotion_fn = promotion_fn
+        self._preserve_generated_output = preserve_generated_output
 
     def run_generation(
         self,
         state: AgentTaskGenerationState,
-        workspace: InterpreterWorkspace | None = None,
+        workspace: EvolutionWorkspace | None = None,
     ) -> AgentTaskGenerationState:
         """Run one generation: generate, evaluate, accumulate lessons, advance state.
 
@@ -494,8 +514,13 @@ class AgentTaskEvolutionRunner:
         if state.generation == 0 and self._initial_output:
             candidate_output = self._initial_output
         else:
-            candidate_output = self._generate_fn(prompt, state.generation).strip()
-            if not candidate_output:
+            generated_output = self._generate_fn(prompt, state.generation)
+            candidate_output = (
+                generated_output
+                if self._preserve_generated_output
+                else generated_output.strip()
+            )
+            if not candidate_output.strip():
                 candidate_output = state.best_output
 
         if self._slot is not None:
@@ -513,7 +538,13 @@ class AgentTaskEvolutionRunner:
         if self._slot is not None:
             evaluated_output = candidate_output
         else:
-            evaluated_output = evaluation.output.strip() or candidate_output
+            evaluated_output = (
+                evaluation.output
+                if self._preserve_generated_output
+                else evaluation.output.strip()
+            )
+            if not evaluated_output.strip():
+                evaluated_output = candidate_output
 
         judge_result = AgentTaskResult(
             score=evaluation.score,
@@ -557,6 +588,9 @@ class AgentTaskEvolutionRunner:
             workspace_variables = list(metadata.get("workspace_variables", []))
             workspace_variables.append([f"{v.name}:{v.type_name}" for v in workspace.variables()])
             metadata["workspace_variables"] = workspace_variables
+            audit_events = getattr(workspace, "audit_events", ())
+            if audit_events:
+                metadata["workspace_audit_events"] = _serialized_workspace_audit_events(workspace)
 
         return AgentTaskGenerationState(
             generation=state.generation + 1,
@@ -584,12 +618,33 @@ class AgentTaskEvolutionRunner:
         )
 
         workspace = self._workspace_factory() if self._workspace_factory is not None else None
+        primary_error: BaseException | None = None
         try:
             for _ in range(num_generations):
                 state = self.run_generation(state, workspace=workspace)
+        except BaseException as exc:  # noqa: BLE001 - preserve the primary failure through cleanup
+            primary_error = exc
+            raise
         finally:
             if workspace is not None:
-                workspace.close()
+                cleanup = workspace.close()
+                audit_events = _serialized_workspace_audit_events(workspace)
+                if audit_events:
+                    state = state.model_copy(
+                        update={
+                            "metadata": {
+                                **state.metadata,
+                                "workspace_audit_events": audit_events,
+                            }
+                        }
+                    )
+                if getattr(cleanup, "outcome", None) == "error":
+                    detail = str(getattr(cleanup, "detail", "") or "workspace cleanup failed")
+                    cleanup_error = RuntimeError(f"workspace cleanup could not be verified: {detail}")
+                    if primary_error is not None:
+                        primary_error.add_note(str(cleanup_error))
+                    else:
+                        raise cleanup_error
 
         trajectory = AgentTaskTrajectory(
             task_name=self._task_name,
@@ -648,8 +703,8 @@ class AgentTaskEvolutionRunner:
 
         # Created inside the try so a factory failure mid-list still closes
         # the workspaces already created.
-        created_workspaces: list[InterpreterWorkspace] = []
-        workspaces: list[InterpreterWorkspace] | None = None
+        created_workspaces: list[EvolutionWorkspace] = []
+        workspaces: list[EvolutionWorkspace] | None = None
 
         best_per_gen: list[float] = []
         try:

@@ -1,6 +1,10 @@
 # Campaign Mode Report
 
-Campaign mode is a shared Python/TypeScript artifact for multi-branch runs. It makes the hypothesis tree operator-visible without adding hosted scheduling or proprietary orchestration.
+Campaign mode is a shared Python/TypeScript artifact for multi-branch runs. It
+makes the hypothesis tree operator-visible independently of execution. Python
+also offers an [optional OSS campaign scheduler](campaign-scheduler.md) for
+user-controlled workers; hosted placement and proprietary orchestration remain
+separate concerns.
 
 ## Contract
 
@@ -29,4 +33,8 @@ Branch states: `pending`, `running`, `continued`, `pruned`, `succeeded`, `failed
 
 ## OSS boundary
 
-The artifact contract, builders, parsers, and file helpers are public. Hosted tenant scheduling, fleet routing, budget billing, warm pools, and proprietary campaign dashboards remain out of scope.
+The artifact contract, builders, parsers, and file helpers are public. The
+optional Python scheduler adds leases, resource matching, durable recovery, and
+capability-driven reuse for user-controlled workers. Hosted tenant scheduling,
+proprietary fleet routing, budget billing, managed warm pools, and proprietary
+campaign dashboards remain out of scope.

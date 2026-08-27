@@ -164,9 +164,7 @@ class SimulationInterface(ScenarioInterface):
         action_lines = "\n".join(f"- {action.name}: {action.description}" for action in env.available_actions)
         criteria = "\n".join(f"- {criterion}" for criterion in env.success_criteria)
         failure_modes = (
-            "\n".join(f"- {failure}" for failure in env.failure_modes)
-            if env.failure_modes
-            else "- none explicitly modeled"
+            "\n".join(f"- {failure}" for failure in env.failure_modes) if env.failure_modes else "- none explicitly modeled"
         )
         return (
             f"{self.describe_scenario()}\n\n"
@@ -349,6 +347,16 @@ class SimulationInterface(ScenarioInterface):
 
     def execute_match(self, strategy: Mapping[str, Any], seed: int) -> Result:
         state = self.initial_state(seed=seed)
+        return self.execute_match_from_state(strategy, seed, state)
+
+    def execute_match_from_state(
+        self,
+        strategy: Mapping[str, Any],
+        seed: int,
+        initial_state: Mapping[str, Any],
+    ) -> Result:
+        del seed
+        state = dict(initial_state)
         valid, reason = self.validate_actions(state, "challenger", strategy)
         if not valid:
             return Result(

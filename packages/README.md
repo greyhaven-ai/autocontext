@@ -11,4 +11,4 @@ consumer needs them. Do not add `packages/python/*`, `packages/ts/*`, topology
 manifests, or facade barrels as placeholders; add a buildable package in the
 same PR that publishes or consumes it.
 
-See [`docs/core-control-package-split.md`](../docs/core-control-package-split.md).
+See [`docs/internal/core-control-package-split.md`](../docs/internal/core-control-package-split.md).

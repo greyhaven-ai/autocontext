@@ -81,6 +81,7 @@ npm pack --dry-run
 - Treat `.github/workflows/publish-python.yml`, `.github/workflows/publish-ts.yml`, and `.github/workflows/publish-pi-autocontext.yml` as the supported release workflows. Do not add a parallel publish path without updating the trusted publisher configuration first.
 - Confirm release notes in `CHANGELOG.md` reflect the tagged version.
 - Confirm `python scripts/sync_release_surfaces.py --check` passes.
+- Confirm `python scripts/check_markdown_links.py` passes.
 - Confirm any install commands in the READMEs still match the package names and binaries.
 
 ## 6. Publish

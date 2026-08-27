@@ -10,6 +10,7 @@ from autocontext.config import AppSettings
 from autocontext.harness.core.controller import LoopController
 from autocontext.harness.core.events import EventStreamEmitter
 from autocontext.server import app as app_module
+from autocontext.server.protocol import PROTOCOL_VERSION
 from autocontext.server.run_manager import RunManager
 
 
@@ -43,7 +44,7 @@ def test_safe_stop_advertised_and_reports_no_active_run_when_manager_present(
         with client.websocket_connect("/ws/interactive") as websocket:
             assert websocket.receive_json() == {
                 "type": "hello",
-                "protocol_version": 1,
+                "protocol_version": PROTOCOL_VERSION,
                 "capabilities": ["safe_run_stop_v1"],
             }
             # With a run_manager, the server also sends environment info on connect.
@@ -82,7 +83,7 @@ def test_safe_stop_not_advertised_without_a_run_manager(
             # No manager -> no safe_run_stop_v1 in the hello frame.
             assert websocket.receive_json() == {
                 "type": "hello",
-                "protocol_version": 1,
+                "protocol_version": PROTOCOL_VERSION,
             }
             websocket.send_json(
                 {

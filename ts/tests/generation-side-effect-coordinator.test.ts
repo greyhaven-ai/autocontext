@@ -23,6 +23,12 @@ describe("generation side-effect coordinator", () => {
       latency_ms: 125,
       tokens: 7,
     });
+    expect(
+      buildRoleCompletedPayload("run-1", 3, "analyst", 80, {
+        input: 11,
+        output: 13,
+      }),
+    ).toMatchObject({ tokens: 24 });
   });
 
   it("executes role completion and reports timing metadata", async () => {

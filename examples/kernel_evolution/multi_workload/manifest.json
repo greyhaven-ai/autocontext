@@ -1,0 +1,170 @@
+{
+  "schema_version": "autocontext.synthetic-kernel-study-manifest/v1",
+  "study_name": "recursive-kernel-transfer-contract",
+  "evidence_origin": "synthetic",
+  "warning": "Synthetic orchestration evidence only; latencies are not accelerator measurements.",
+  "workloads": [
+    {
+      "workload_id": "variable-shape-matmul",
+      "workload_family": "matmul-generalization-v1",
+      "problem_id": "kernel-study-variable-shape-matmul-v1",
+      "reference_identity": "pinned-reference:torch.matmul:float32:v1",
+      "reference_implementation": "torch.matmul in deterministic FP32 mode",
+      "task_prompt": "Optimize variable-shape FP32 matrix multiplication across square, rectangular, contiguous, and transposed cases.",
+      "required_transfer_dimensions": ["shape", "hardware", "workload-family"],
+      "strategy_tags": ["shape-polymorphic-tiling", "coalesced-loads"],
+      "budget": {
+        "generation": {
+          "proposal_cap": 2,
+          "max_retries_per_proposal": 0,
+          "max_output_tokens_per_call": 4096,
+          "max_total_input_tokens": 10000,
+          "max_total_output_tokens": 10000,
+          "max_cost_usd": 1.0,
+          "max_wall_seconds": 300.0,
+          "max_total_tokens": 10000,
+          "retry_backoff_seconds": 1.0,
+          "max_source_bytes": 1000000
+        },
+        "max_workload_cost_usd": 1.0,
+        "max_workload_wall_seconds": 300.0
+      },
+      "protocol": {
+        "warmup_runs": 3,
+        "timing_blocks": 10,
+        "calls_per_block": 3,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      },
+      "primary_seed_commitment": "variable-matmul-primary-private-seeds-v1",
+      "confirmation_seed_commitment": "variable-matmul-confirmation-private-seeds-v1",
+      "baseline_latency_ms": 1.0,
+      "cases": [
+        {"name": "train-square", "split": "train", "shape_class": "non-tile-square", "latency_scale": 1.0},
+        {"name": "train-rectangular", "split": "train", "shape_class": "rectangular", "latency_scale": 1.1},
+        {"name": "holdout-square", "split": "holdout", "shape_class": "non-tile-square", "latency_scale": 0.95},
+        {"name": "holdout-transposed", "split": "holdout", "shape_class": "rectangular-transposed", "latency_scale": 1.2}
+      ],
+      "candidates": [
+        {
+          "correct_families": ["matmul-generalization-v1", "fused-elementwise-reduction-v1", "causal-attention-v1"],
+          "latency_ms": {"matmul-generalization-v1": 0.98, "fused-elementwise-reduction-v1": 0.97, "causal-attention-v1": 1.1},
+          "strategy_tags": ["shape-polymorphic-tiling"]
+        },
+        {
+          "correct_families": ["matmul-generalization-v1", "fused-elementwise-reduction-v1", "causal-attention-v1"],
+          "latency_ms": {"matmul-generalization-v1": 0.8, "fused-elementwise-reduction-v1": 0.9, "causal-attention-v1": 1.1},
+          "strategy_tags": ["shape-polymorphic-tiling", "coalesced-loads"]
+        }
+      ]
+    },
+    {
+      "workload_id": "fused-elementwise-reduction",
+      "workload_family": "fused-elementwise-reduction-v1",
+      "problem_id": "kernel-study-fused-elementwise-reduction-v1",
+      "reference_identity": "pinned-reference:gelu-bias-row-reduction:float32:v1",
+      "reference_implementation": "torch.nn.functional.gelu(x + bias).sum(dim=-1) in deterministic FP32 mode",
+      "task_prompt": "Optimize fused bias, GELU, and row reduction across narrow, wide, and strided FP32 tensors.",
+      "required_transfer_dimensions": ["shape", "hardware", "workload-family"],
+      "strategy_tags": ["epilogue-fusion", "warp-reduction"],
+      "budget": {
+        "generation": {
+          "proposal_cap": 2,
+          "max_retries_per_proposal": 0,
+          "max_output_tokens_per_call": 4096,
+          "max_total_input_tokens": 10000,
+          "max_total_output_tokens": 10000,
+          "max_cost_usd": 1.0,
+          "max_wall_seconds": 300.0,
+          "max_total_tokens": 10000,
+          "retry_backoff_seconds": 1.0,
+          "max_source_bytes": 1000000
+        },
+        "max_workload_cost_usd": 1.0,
+        "max_workload_wall_seconds": 300.0
+      },
+      "protocol": {
+        "warmup_runs": 3,
+        "timing_blocks": 10,
+        "calls_per_block": 3,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      },
+      "primary_seed_commitment": "fused-reduction-primary-private-seeds-v1",
+      "confirmation_seed_commitment": "fused-reduction-confirmation-private-seeds-v1",
+      "baseline_latency_ms": 1.0,
+      "cases": [
+        {"name": "train-narrow", "split": "train", "shape_class": "row-narrow", "latency_scale": 0.8},
+        {"name": "train-wide", "split": "train", "shape_class": "row-wide", "latency_scale": 1.2},
+        {"name": "holdout-batched", "split": "holdout", "shape_class": "batched", "latency_scale": 1.0},
+        {"name": "holdout-strided", "split": "holdout", "shape_class": "strided", "latency_scale": 1.15}
+      ],
+      "candidates": [
+        {
+          "correct_families": [],
+          "latency_ms": {"fused-elementwise-reduction-v1": 0.4},
+          "strategy_tags": ["unsafe-elision"]
+        },
+        {
+          "correct_families": ["fused-elementwise-reduction-v1"],
+          "latency_ms": {"fused-elementwise-reduction-v1": 0.75, "matmul-generalization-v1": 0.95, "causal-attention-v1": 0.95},
+          "strategy_tags": ["epilogue-fusion", "warp-reduction"]
+        }
+      ]
+    },
+    {
+      "workload_id": "causal-attention",
+      "workload_family": "causal-attention-v1",
+      "problem_id": "kernel-study-causal-attention-v1",
+      "reference_identity": "pinned-reference:scaled-dot-product-causal-attention:float32:v1",
+      "reference_implementation": "scaled dot-product attention with a causal mask in deterministic FP32 mode",
+      "task_prompt": "Optimize causal FP32 attention across short, non-tile, rectangular, and multi-head cases.",
+      "required_transfer_dimensions": ["shape", "hardware", "workload-family"],
+      "strategy_tags": [],
+      "budget": {
+        "generation": {
+          "proposal_cap": 2,
+          "max_retries_per_proposal": 0,
+          "max_output_tokens_per_call": 4096,
+          "max_total_input_tokens": 10000,
+          "max_total_output_tokens": 10000,
+          "max_cost_usd": 1.0,
+          "max_wall_seconds": 300.0,
+          "max_total_tokens": 10000,
+          "retry_backoff_seconds": 1.0,
+          "max_source_bytes": 1000000
+        },
+        "max_workload_cost_usd": 1.0,
+        "max_workload_wall_seconds": 300.0
+      },
+      "protocol": {
+        "warmup_runs": 3,
+        "timing_blocks": 10,
+        "calls_per_block": 3,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      },
+      "primary_seed_commitment": "causal-attention-primary-private-seeds-v1",
+      "confirmation_seed_commitment": "causal-attention-confirmation-private-seeds-v1",
+      "baseline_latency_ms": 1.0,
+      "cases": [
+        {"name": "train-short", "split": "train", "shape_class": "short-sequence", "latency_scale": 0.7},
+        {"name": "train-nontile", "split": "train", "shape_class": "non-tile-sequence", "latency_scale": 1.0},
+        {"name": "holdout-rectangular", "split": "holdout", "shape_class": "rectangular-sequence", "latency_scale": 1.2},
+        {"name": "holdout-multihead", "split": "holdout", "shape_class": "multi-head", "latency_scale": 1.1}
+      ],
+      "candidates": [
+        {
+          "correct_families": ["causal-attention-v1"],
+          "latency_ms": {"causal-attention-v1": 0.99},
+          "strategy_tags": ["online-softmax"]
+        },
+        {
+          "correct_families": ["causal-attention-v1"],
+          "latency_ms": {"causal-attention-v1": 1.01},
+          "strategy_tags": ["sequence-specialization"]
+        }
+      ]
+    }
+  ]
+}

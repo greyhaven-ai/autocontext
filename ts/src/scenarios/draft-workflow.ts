@@ -1,6 +1,10 @@
 import { normalizePreviewThreshold } from "../analytics/number-utils.js";
 import type { CreatedScenarioResult } from "./scenario-creator.js";
 import { IntentValidator, type IntentValidationResult } from "./intent-validator.js";
+import {
+  partitionScenarioRevisionSpec,
+  restoreScenarioRevisionSpec,
+} from "./scenario-revision-visibility.js";
 
 export interface ScenarioPreviewInfo {
   name: string;
@@ -23,6 +27,19 @@ function readStringValue(spec: Record<string, unknown>, ...keys: string[]): stri
   for (const key of keys) {
     const value = spec[key];
     if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function readFiniteNumberValue(
+  spec: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined {
+  for (const key of keys) {
+    const value = spec[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
       return value;
     }
   }
@@ -71,15 +88,26 @@ export function reviseScenarioDraft(opts: {
   validator?: IntentValidator;
 }): ScenarioDraft {
   const validator = opts.validator ?? new IntentValidator();
+  const revisedSpec =
+    opts.draft.preview.family === "agent_task"
+      ? restoreScenarioRevisionSpec(
+          "agent_task",
+          opts.revisedSpec,
+          partitionScenarioRevisionSpec(
+            "agent_task",
+            opts.draft.preview.spec,
+          ).immutableSpec,
+        )
+      : opts.revisedSpec;
   const revisedPreview: CreatedScenarioResult = {
     ...opts.draft.preview,
     spec: {
-      ...opts.revisedSpec,
-      taskPrompt: readStringValue(opts.revisedSpec, "taskPrompt", "task_prompt")
+      ...revisedSpec,
+      taskPrompt: readStringValue(revisedSpec, "taskPrompt", "task_prompt")
         ?? opts.draft.preview.spec.taskPrompt,
-      rubric: readStringValue(opts.revisedSpec, "rubric", "judgeRubric", "judge_rubric")
+      rubric: readStringValue(revisedSpec, "rubric", "judgeRubric", "judge_rubric")
         ?? opts.draft.preview.spec.rubric,
-      description: readStringValue(opts.revisedSpec, "description")
+      description: readStringValue(revisedSpec, "description")
         ?? opts.draft.preview.spec.description,
     },
   };
@@ -105,6 +133,20 @@ export function buildScenarioPreviewInfo(
     );
   }
 
+  const maxRounds = readFiniteNumberValue(
+    draft.preview.spec,
+    "maxRounds",
+    "max_rounds",
+  );
+  if (maxRounds !== undefined) {
+    constraints.push(`Improvement loop: up to ${maxRounds} attempts.`);
+  }
+  const qualityThreshold = readFiniteNumberValue(
+    draft.preview.spec,
+    "qualityThreshold",
+    "quality_threshold",
+  );
+
   return {
     name: draft.preview.name,
     displayName: opts?.humanizeName?.(draft.preview.name) ?? draft.preview.name,
@@ -117,6 +159,9 @@ export function buildScenarioPreviewInfo(
       { name: "rubric", description: draft.preview.spec.rubric, weight: 1.0 },
     ],
     constraints,
-    winThreshold: normalizePreviewThreshold(draft.validation.confidence),
+    winThreshold:
+      qualityThreshold === undefined
+        ? normalizePreviewThreshold(draft.validation.confidence)
+        : normalizePreviewThreshold(qualityThreshold),
   };
 }

@@ -3,6 +3,7 @@ import {
   type CompletionOptions,
   type CompletionResult,
   type LLMProvider,
+  type ProviderIsolationPolicy,
 } from "../types/index.js";
 
 export interface PanelParticipant {
@@ -90,6 +91,15 @@ export class PanelProvider implements LLMProvider {
 
   close(): void {
     this.opts.baseProvider.close?.();
+  }
+
+  createIsolatedProvider(policy?: ProviderIsolationPolicy): LLMProvider {
+    if (policy?.noTools) {
+      throw new ProviderError(
+        "Panel providers cannot guarantee no-tools isolation across dynamically created participants",
+      );
+    }
+    return this;
   }
 
   async complete(callOpts: CompletionOptions): Promise<CompletionResult> {

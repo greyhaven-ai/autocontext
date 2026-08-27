@@ -16,6 +16,12 @@ class TestWriteTextAtomic:
         assert target.read_text(encoding="utf-8") == "hello"
         assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
 
+    def test_writes_exact_utf8_bytes_without_platform_newline_translation(self, tmp_path) -> None:
+        target = tmp_path / "state.json"
+        content = "first line\nsecond line: café\n"
+        write_text_atomic(target, content)
+        assert target.read_bytes() == content.encode("utf-8")
+
     def test_replaces_existing_content(self, tmp_path) -> None:
         target = tmp_path / "state.json"
         target.write_text("old", encoding="utf-8")

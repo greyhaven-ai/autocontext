@@ -24,6 +24,7 @@ type ScenarioConstructor = new () => ScenarioLike;
 type ScenarioRegistry = Record<string, ScenarioConstructor>;
 
 interface RunControlSettings {
+  agentProvider?: string;
   maxRetries: number;
   backpressureMinDelta: number;
   playbookMaxVersions: number;
@@ -72,6 +73,7 @@ const defaultInternals: RunManagementInternals = {
   createRunner: (args) =>
     new GenerationRunner({
       provider: args.provider,
+      agentProvider: args.settings.agentProvider ?? args.provider.name,
       scenario: args.scenario as ConstructorParameters<typeof GenerationRunner>[0]["scenario"],
       store: args.store,
       runsRoot: args.runsRoot,

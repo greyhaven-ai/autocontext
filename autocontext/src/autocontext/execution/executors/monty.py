@@ -1,12 +1,20 @@
 """MontyExecutor — sandboxed execution via pydantic-monty interpreter."""
+
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from collections.abc import Mapping
 from typing import Any
 
-from autocontext.scenarios.base import ExecutionLimits, ReplayEnvelope, Result, ScenarioInterface
+from autocontext.scenarios.base import (
+    ExecutionLimits,
+    Observation,
+    ReplayEnvelope,
+    Result,
+    ScenarioInterface,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +24,7 @@ def _create_monty(code: str, inputs: list[str], external_functions: list[str]) -
     try:
         import pydantic_monty
     except ImportError as exc:
-        raise ImportError(
-            "pydantic-monty is required for executor_mode=monty. "
-            "Install with: uv sync --extra monty"
-        ) from exc
+        raise ImportError("pydantic-monty is required for executor_mode=monty. Install with: uv sync --extra monty") from exc
     return pydantic_monty.Monty(
         code,
         inputs=inputs,
@@ -134,14 +139,16 @@ class MontyExecutor:
         scenario: ScenarioInterface,
         strategy: Mapping[str, Any],
         seed: int,
+        initial_state: Mapping[str, Any] | None = None,
     ) -> Any:
         """Build a dispatch function that routes external function calls to the scenario.
 
         Returns a callable: (function_name, args) -> return_value
         """
+
         def dispatch(function_name: str, args: tuple[Any, ...]) -> Any:
             if function_name == "initial_state":
-                return scenario.initial_state(seed=args[0])
+                return scenario.initial_state(seed=args[0]) if initial_state is None else copy.deepcopy(dict(initial_state))
             elif function_name == "validate_actions":
                 state, actions = args[0], args[1]
                 valid, reason = scenario.validate_actions(state, "challenger", actions)
@@ -163,14 +170,20 @@ class MontyExecutor:
         self,
         scenario: ScenarioInterface,
         seed: int,
+        initial_state: Mapping[str, Any] | None = None,
+        initial_observation: Observation | None = None,
     ) -> Any:
         """Build dispatch for code strategy mode (includes get_observation)."""
+
         def dispatch(function_name: str, args: tuple[Any, ...]) -> Any:
             if function_name == "get_observation":
-                obs = scenario.get_observation(args[0], player_id="challenger")
+                obs = initial_observation or scenario.get_observation(
+                    args[0],
+                    player_id="challenger",
+                )
                 return {"narrative": obs.narrative, "state": dict(obs.state), "constraints": list(obs.constraints)}
             elif function_name == "initial_state":
-                return scenario.initial_state(seed=args[0])
+                return scenario.initial_state(seed=args[0]) if initial_state is None else copy.deepcopy(dict(initial_state))
             elif function_name == "validate_actions":
                 state, actions = args[0], args[1]
                 valid, reason = scenario.validate_actions(state, "challenger", actions)
@@ -185,6 +198,7 @@ class MontyExecutor:
                 return result.model_dump()
             else:
                 raise ValueError(f"Unknown external function: {function_name}")
+
         return dispatch
 
     def execute_code_strategy(
@@ -193,6 +207,9 @@ class MontyExecutor:
         code: str,
         seed: int,
         limits: ExecutionLimits,
+        *,
+        initial_state: Mapping[str, Any] | None = None,
+        initial_observation: Observation | None = None,
     ) -> tuple[Result, ReplayEnvelope]:
         """Execute an agent-authored code strategy inside Monty sandbox."""
         script = self.build_code_strategy_script(code)
@@ -208,7 +225,12 @@ class MontyExecutor:
             logger.debug("execution.executors.monty: caught Exception", exc_info=True)
             raise RuntimeError(f"Failed to create Monty interpreter for code strategy: {exc}") from exc
 
-        dispatch = self._build_code_dispatch(scenario, seed)
+        dispatch = self._build_code_dispatch(
+            scenario,
+            seed,
+            initial_state,
+            initial_observation,
+        )
         timeout = min(limits.timeout_seconds, self._max_execution_time_seconds)
 
         try:
@@ -219,14 +241,10 @@ class MontyExecutor:
             while hasattr(progress, "function_name"):
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout:
-                    raise TimeoutError(
-                        f"Code strategy exceeded {timeout}s timeout after {calls} calls"
-                    )
+                    raise TimeoutError(f"Code strategy exceeded {timeout}s timeout after {calls} calls")
                 calls += 1
                 if calls > self._max_external_calls:
-                    raise TimeoutError(
-                        f"Code strategy exceeded {self._max_external_calls} external function calls"
-                    )
+                    raise TimeoutError(f"Code strategy exceeded {self._max_external_calls} external function calls")
                 return_value = dispatch(progress.function_name, progress.args)
                 progress = progress.resume(return_value=return_value)
         except (TimeoutError, ValueError):
@@ -264,12 +282,54 @@ class MontyExecutor:
         seed: int,
         limits: ExecutionLimits,
     ) -> tuple[Result, ReplayEnvelope]:
+        return self._execute(
+            scenario,
+            strategy,
+            seed,
+            limits,
+            initial_state=None,
+            initial_observation=None,
+        )
+
+    def execute_prepared_fixture(
+        self,
+        scenario: ScenarioInterface,
+        strategy: Mapping[str, Any],
+        seed: int,
+        limits: ExecutionLimits,
+        *,
+        initial_state: Mapping[str, Any],
+        initial_observation: Observation,
+        fixture_digest: str,
+    ) -> tuple[Result, ReplayEnvelope]:
+        del fixture_digest
+        return self._execute(
+            scenario,
+            strategy,
+            seed,
+            limits,
+            initial_state=initial_state,
+            initial_observation=initial_observation,
+        )
+
+    def _execute(
+        self,
+        scenario: ScenarioInterface,
+        strategy: Mapping[str, Any],
+        seed: int,
+        limits: ExecutionLimits,
+        *,
+        initial_state: Mapping[str, Any] | None,
+        initial_observation: Observation | None,
+    ) -> tuple[Result, ReplayEnvelope]:
         if "__code__" in strategy:
             return self.execute_code_strategy(
                 scenario=scenario,
                 code=str(strategy["__code__"]),
                 seed=seed,
                 limits=limits,
+                initial_state=initial_state,
+                initial_observation=initial_observation,
             )
         script = self.build_eval_script()
         try:
@@ -284,7 +344,7 @@ class MontyExecutor:
             logger.debug("execution.executors.monty: caught Exception", exc_info=True)
             raise RuntimeError(f"Failed to create Monty interpreter: {exc}") from exc
 
-        dispatch = self._build_dispatch(scenario, strategy, seed)
+        dispatch = self._build_dispatch(scenario, strategy, seed, initial_state)
         timeout = min(limits.timeout_seconds, self._max_execution_time_seconds)
 
         try:
@@ -295,15 +355,10 @@ class MontyExecutor:
             while hasattr(progress, "function_name"):
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout:
-                    raise TimeoutError(
-                        f"Monty sandbox exceeded {timeout}s timeout "
-                        f"after {calls} external function calls"
-                    )
+                    raise TimeoutError(f"Monty sandbox exceeded {timeout}s timeout after {calls} external function calls")
                 calls += 1
                 if calls > self._max_external_calls:
-                    raise TimeoutError(
-                        f"Monty sandbox exceeded {self._max_external_calls} external function calls"
-                    )
+                    raise TimeoutError(f"Monty sandbox exceeded {self._max_external_calls} external function calls")
 
                 return_value = dispatch(progress.function_name, progress.args)
                 progress = progress.resume(return_value=return_value)
@@ -311,9 +366,7 @@ class MontyExecutor:
             raise  # Let our own errors propagate
         except Exception as exc:
             logger.debug("execution.executors.monty: caught Exception", exc_info=True)
-            raise RuntimeError(
-                f"Monty sandbox execution failed for scenario '{scenario.name}': {exc}"
-            ) from exc
+            raise RuntimeError(f"Monty sandbox execution failed for scenario '{scenario.name}': {exc}") from exc
 
         # progress is now MontyComplete — extract the result dict
         raw_result = progress.output

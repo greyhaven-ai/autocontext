@@ -251,6 +251,7 @@ describe("run command workflow", () => {
     );
     expect(createRunner).toHaveBeenCalledWith({
       provider: { name: "provider" },
+      agentProvider: "deterministic",
       roleProviders: { judge: { name: "judge" } },
       roleModels: { judge: "claude" },
       scenario: expect.any(FakeScenario),

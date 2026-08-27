@@ -14,7 +14,21 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want to package generic Fetch/ESM agent app artifacts? Use the generated Fetch packaging example.
 - Want to prototype a reusable TypeScript agent handler? Use the experimental agent-runtime example.
 - Want always-on queued work? Use the persistent host worker recipe.
+- Want to build a Node evaluator for context promotion? Import the
+  `autoctx/context-bundles` subpath and follow the
+  [matched-trial and campaign error-control contract](../docs/context-bundles.md).
+- Want OS-isolated multi-generation Python research? Enable the TaskRunner's
+  Docker workspace backend, candidate execution, and explicit capability
+  approval; custom runtimes may still inject a `ResearchWorkspace` factory.
+  Start with the settings and lifecycle requirements in
+  [research workspaces](../docs/research-workspaces.md).
 - Want correctness-first recursive GPU-kernel search? Start with the kernel evolution MVP.
+- Want to compare transfer and specialist behavior across kernel families? Run
+  the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
+- Want a scenario campaign on a managed accelerator? Use the
+  [capability-validated Prime plan](../docs/campaign-scheduler.md#prime-accelerator-plans);
+  accelerator type/count, image, region, and telemetry must be declared and
+  are never silently downgraded to CPU.
 
 ## Kernel Evolution MVP
 
@@ -32,8 +46,25 @@ See [the example](kernel_evolution/README.md) and
 [kernel evolution guide](../autocontext/docs/kernel-evolution.md). The bundled
 orchestration adapter is synthetic. The companion
 [H100 contract smoke](kernel_evolution/kernelbench_h100/README.md) preserves a
-real KernelBench/AutoKernel comparison and sanitized result; live CUDA/Triton
-execution still belongs in an isolated, operator-owned worker.
+real KernelBench/AutoKernel comparison and now separates strict-FP32 from
+relaxed-precision campaigns, binds private holdout commitments, and applies a
+bounded sequential promotion gate. The historical one-shot smoke accepts only
+trusted source. The accelerator-neutral protected runner now separates
+generated execution from its authoritative evaluator and authenticates compact
+receipts against an operator-pinned host key. New v4 evidence uses a
+finite-sample paired sign e-process, canonical policy/calibration receipts, and
+sealed confirmation audit storage. Model-backed campaigns additionally persist
+exact generation provenance and deterministic retry/token/cost/wall budgets,
+support safe stop/status/resume, and retain mailbox generation as a fallback.
+The production H100 campaign
+remains fail-closed until role-separated telemetry, trusted mutation
+observation, comparable reference timing, and crash-safe container creation are
+implemented and the exact path passes the opt-in real MIG adversarial gate.
+The companion multi-workload study uses the same runner/report lineage across
+variable-shape matmul, fused elementwise/reduction, and causal attention. It
+keeps every family's primary and fresh-confirmation result visible, records
+cross-hardware and cross-family trials, and cannot label a champion portable
+when any required correctness slice or case floor fails.
 
 ## Python CLI From Source
 

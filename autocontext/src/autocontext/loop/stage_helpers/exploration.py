@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING, Any
 from autocontext.harness.core.types import RoleExecution
 from autocontext.harness.evaluation.dimensional import detect_dimension_regression
 from autocontext.harness.evaluation.runner import EvaluationRunner
-from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
+from autocontext.harness.evaluation.scenario_evaluator import (
+    ScenarioEvaluator,
+    generation_evaluation_namespace,
+)
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from autocontext.harness.evaluation.types import EvaluationSummary
 from autocontext.harness.pipeline.trend_gate import TrendAwareGate
@@ -298,11 +301,21 @@ def _select_exploration_strategy(
         return outputs.strategy, {}
 
     _self_play_pool, opponent_pool, planned_self_play_matches = _build_live_opponent_pool(ctx, sqlite=sqlite)
-    evaluator = ScenarioEvaluator(ctx.scenario, supervisor, hook_bus=ctx.hook_bus)
-    runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
     selection_results: list[dict[str, Any]] = []
 
     for candidate in candidate_entries:
+        branch_type = str(candidate["branch_type"])
+        evaluator = ScenarioEvaluator(
+            ctx.scenario,
+            supervisor,
+            hook_bus=ctx.hook_bus,
+            task_namespace=generation_evaluation_namespace(
+                ctx.run_id,
+                ctx.generation,
+                f"exploration:branch:{branch_type}",
+            ),
+        )
+        runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
         tournament = runner.run(
             candidate=candidate["strategy"],
             seed_base=settings.seed_base + (ctx.generation * 100),
@@ -503,6 +516,7 @@ def _apply_novelty_and_cost_adjustments(
             strategy=current_strategy,
             in_sample_score=tournament.best_score,
             limits=harness_limits,
+            attempt=attempt,
         )
         if holdout_result is not None:
             events.emit(
