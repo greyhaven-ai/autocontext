@@ -228,7 +228,7 @@ operator-control, and chat commands. Run-scoped responses then include stable
 
 #### Structured task creation
 
-TypeScript protocol-v2 servers in `autoctx@0.17.1` advertise
+TypeScript protocol-v2 servers in `autoctx@0.17.2` advertise
 `structured_task_creation_v1` only with the complete `create_task` handler and
 schema available. The command compiles a versioned improvement objective,
 deliverable, evaluation contract, and at most eight bounded inline sources

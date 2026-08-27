@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-08-27
+
+This TypeScript-only patch release adds a durable, versioned outcome contract
+for structured agent tasks. Python remains at `autocontext==0.17.0`, and Pi
+remains on its separate `0.10.0` package line.
+
 ### Added
 
 - TypeScript structured agent-task runs now advertise `agent_task_outcome_v1`.

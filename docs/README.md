@@ -49,12 +49,13 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [Cross-runtime CLI contract guide](cli-contract.md), [machine-readable contract](cli-contract.json), [wire-output schemas](cli-schemas/), and [shared fixtures](cli-fixtures/)
 - [Interactive WebSocket protocol contract](websocket-protocol-contract.json)
 
-The contract pins the TypeScript-only `agent_progress_notes_v1` and
-`structured_task_creation_v1` extensions. It covers Autowork-compatible
-fixtures, strict source roles and integrity checks, evaluator-only privacy,
-ordered setup states, bounded continuation, exact durable replay, and finite
-retention. Python intentionally does not advertise either extension until its
-equivalent contracts are available.
+The contract pins the TypeScript-only `agent_progress_notes_v1`,
+`structured_task_creation_v1`, and `agent_task_outcome_v1` extensions. It covers
+Autowork-compatible fixtures, strict source roles and integrity checks,
+evaluator-only privacy, ordered setup states, bounded continuation, versioned
+terminal outcomes, exact durable replay, and finite retention. Python
+intentionally does not advertise these extensions until its equivalent
+contracts are available.
 
 - [Core/control package split](internal/core-control-package-split.md)
 - [Runtime component lifecycle](internal/runtime-component-lifecycle.md)
