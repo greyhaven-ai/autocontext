@@ -209,43 +209,6 @@ type WebSocketProtocolContract = {
       advertised_runtimes: ["typescript"];
     };
   };
-  system_map_projection_extension: {
-    advertised_runtimes: ["typescript"];
-    capability: "system_map_projection_v1";
-    channel: "cockpit";
-    endpoint: "/ws/events";
-    event: "system_map_transfer";
-    payload: {
-      optional_fields: string[];
-      required_fields: string[];
-      statuses: string[];
-      version: 1;
-    };
-    python_support: "deferred";
-    query: {
-      optional_run_scope: "run_id";
-      optional_view: {
-        default: "execution";
-        parameter: "view";
-        values: ["execution", "context", "activation", "routing"];
-      };
-      projection: "system-map";
-    };
-    safety: {
-      allowlisted_summary_fields_only: true;
-      bounded_replay: true;
-      credentials_allowed: false;
-      raw_model_or_tool_io_allowed: false;
-      raw_prompts_allowed: false;
-    };
-    trace: {
-      paired_boundaries: string[];
-      phases: string[];
-      raw_payload_copied: false;
-      source: "EventStreamRecord.trace";
-      version: 1;
-    };
-  };
   structured_task_creation_extension: {
     advertised_runtimes: ["typescript"];
     capability: "structured_task_creation_v1";
@@ -445,42 +408,6 @@ describe("WebSocket protocol shared contract", () => {
         unexpected: true,
       }),
     ).toThrow();
-  });
-
-  it("documents the TypeScript-only redacted system-map projection", () => {
-    expect(CONTRACT.system_map_projection_extension).toMatchObject({
-      advertised_runtimes: ["typescript"],
-      capability: "system_map_projection_v1",
-      channel: "cockpit",
-      endpoint: "/ws/events",
-      event: "system_map_transfer",
-      query: {
-        projection: "system-map",
-        optional_run_scope: "run_id",
-        optional_view: {
-          parameter: "view",
-          values: ["execution", "context", "activation", "routing"],
-          default: "execution",
-        },
-      },
-      safety: {
-        allowlisted_summary_fields_only: true,
-        bounded_replay: true,
-        credentials_allowed: false,
-        raw_model_or_tool_io_allowed: false,
-        raw_prompts_allowed: false,
-      },
-      trace: {
-        version: 1,
-        source: "EventStreamRecord.trace",
-        phases: ["start", "complete", "instant"],
-        raw_payload_copied: false,
-      },
-      python_support: "deferred",
-    });
-    expect(CONTRACT.system_map_projection_extension.payload.required_fields).toEqual(
-      expect.arrayContaining(["traceId", "spanId", "spanName", "spanPhase", "startedAt"]),
-    );
   });
 
   it("documents the exact additive image attachment contract and TypeScript parity boundary", () => {

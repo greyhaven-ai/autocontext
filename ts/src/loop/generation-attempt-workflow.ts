@@ -1,5 +1,3 @@
-import { Buffer } from "node:buffer";
-
 import type { TournamentOpts, TournamentResult } from "../execution/tournament.js";
 import type { CompletionResult } from "../types/index.js";
 import {
@@ -21,7 +19,6 @@ import {
   executeTournamentSideEffect,
   type GenerationLoopEventSequenceItem,
 } from "./generation-side-effect-coordinator.js";
-import { buildGenerationTournamentStartedEvent } from "./generation-tournament-event-sequencing.js";
 
 export interface GenerationAttemptWorkflow {
   attemptOrchestration: GenerationAttemptOrchestration;
@@ -33,11 +30,6 @@ export interface GenerationAttemptWorkflow {
   matchesPerGeneration: number;
   currentElo: number;
   executeCompetitor: () => Promise<CompletionResult>;
-  roleMetadata?: {
-    provider?: string;
-    model?: string;
-    inputBytes?: number;
-  };
   repairCompetitor?: (input: {
     repairPrompt: string;
     invalidOutput: string;
@@ -72,73 +64,28 @@ export async function runGenerationAttemptWorkflow(workflow: GenerationAttemptWo
   attempt: ReturnType<typeof buildGenerationAttemptCandidate>;
   events: GenerationLoopEventSequenceItem[];
 }> {
-  const events: GenerationLoopEventSequenceItem[] = [];
-  const recordEvent = (item: GenerationLoopEventSequenceItem): void => {
+  let attemptOrchestration = awaitGenerationCompetitorResult(workflow.attemptOrchestration);
+
+  let competitorCompletion = await executeRoleCompletionSideEffect({
+    runId: workflow.runId,
+    generation: workflow.generation,
+    role: "competitor",
+    execute: workflow.executeCompetitor,
+  });
+  const competitorEvents: GenerationLoopEventSequenceItem[] = [];
+  const recordCompetitorCompletion = (
+    item: GenerationLoopEventSequenceItem,
+  ): void => {
     if (workflow.onEvent) {
       workflow.onEvent(item);
     } else {
-      events.push(item);
+      competitorEvents.push(item);
     }
   };
-  const attemptNumber = workflow.attemptOrchestration.phaseState.attemptState.retryCount + 1;
-  let attemptOrchestration = awaitGenerationCompetitorResult(workflow.attemptOrchestration);
-
-  const executeCompetitor = async (
-    execute: () => Promise<CompletionResult>,
-    inputBytes: number | undefined,
-  ): Promise<Awaited<ReturnType<typeof executeRoleCompletionSideEffect>>> => {
-    recordEvent({
-      event: "role_started",
-      payload: {
-        run_id: workflow.runId,
-        generation: workflow.generation,
-        role: "competitor",
-        attempt: attemptNumber,
-        ...(workflow.roleMetadata?.provider
-          ? { provider: workflow.roleMetadata.provider }
-          : {}),
-        ...(workflow.roleMetadata?.model ? { model: workflow.roleMetadata.model } : {}),
-        ...(inputBytes === undefined ? {} : { input_bytes: inputBytes }),
-      },
-    });
-
-    try {
-      const completion = await executeRoleCompletionSideEffect({
-        runId: workflow.runId,
-        generation: workflow.generation,
-        role: "competitor",
-        execute,
-        metadata: {
-          ...workflow.roleMetadata,
-          attempt: attemptNumber,
-          ...(inputBytes === undefined ? {} : { inputBytes }),
-        },
-      });
-      recordEvent({
-        event: "role_completed",
-        payload: completion.roleCompletedPayload,
-      });
-      return completion;
-    } catch (error) {
-      recordEvent({
-        event: "role_failed",
-        payload: {
-          run_id: workflow.runId,
-          generation: workflow.generation,
-          role: "competitor",
-          attempt: attemptNumber,
-          status: "failed",
-          reason: error instanceof Error ? error.name : "provider_failure",
-        },
-      });
-      throw error;
-    }
-  };
-
-  let competitorCompletion = await executeCompetitor(
-    workflow.executeCompetitor,
-    workflow.roleMetadata?.inputBytes,
-  );
+  recordCompetitorCompletion({
+    event: "role_completed",
+    payload: competitorCompletion.roleCompletedPayload,
+  });
   let competitorResult = competitorCompletion.result;
   let strategy: Record<string, unknown>;
   try {
@@ -154,14 +101,20 @@ export async function runGenerationAttemptWorkflow(workflow: GenerationAttemptWo
       strategyInterface: workflow.strategyInterface,
       invalidOutput,
     });
-    competitorCompletion = await executeCompetitor(
-      () =>
+    competitorCompletion = await executeRoleCompletionSideEffect({
+      runId: workflow.runId,
+      generation: workflow.generation,
+      role: "competitor",
+      execute: () =>
         repairCompetitor({
           repairPrompt,
           invalidOutput,
         }),
-      Buffer.byteLength(repairPrompt, "utf-8"),
-    );
+    });
+    recordCompetitorCompletion({
+      event: "role_completed",
+      payload: competitorCompletion.roleCompletedPayload,
+    });
     competitorResult = competitorCompletion.result;
     try {
       strategy = parseCompetitorStrategyResult(competitorResult.text);
@@ -181,14 +134,6 @@ export async function runGenerationAttemptWorkflow(workflow: GenerationAttemptWo
     matchesPerGeneration: workflow.matchesPerGeneration,
     currentElo: workflow.currentElo,
   });
-  recordEvent(
-    buildGenerationTournamentStartedEvent(
-      workflow.runId,
-      workflow.generation,
-      workflow.matchesPerGeneration,
-      attemptNumber,
-    ),
-  );
   const tournamentExecution = executeTournamentSideEffect({
     runId: workflow.runId,
     generation: workflow.generation,
@@ -196,9 +141,7 @@ export async function runGenerationAttemptWorkflow(workflow: GenerationAttemptWo
     executionPlan: tournamentPlan,
     strategy,
     executeTournament: workflow.executeTournament,
-    attempt: attemptNumber,
   });
-  for (const item of tournamentExecution.events.slice(1)) recordEvent(item);
 
   const gateDecision = workflow.decideGate({
     attemptOrchestration,
@@ -211,31 +154,27 @@ export async function runGenerationAttemptWorkflow(workflow: GenerationAttemptWo
     tournamentResult: tournamentExecution.tournamentResult,
     gateDecision: gateDecision.gateDecision,
   });
-  attemptOrchestration = finalizeGenerationAttemptDecision(
-    attemptOrchestration,
-    {
-      runId: workflow.runId,
-      generation: workflow.generation,
-      attempt,
-      delta: gateDecision.delta,
-      threshold: gateDecision.threshold,
-      metadata: gateDecision.metadata,
-    },
-  );
-  const gateEvent = {
-    event: "gate_decided",
-    payload: {
-      ...attemptOrchestration.events.gateDecided!,
-      attempt: attemptNumber,
-    },
-  } satisfies GenerationLoopEventSequenceItem;
-  recordEvent(gateEvent);
+  attemptOrchestration = finalizeGenerationAttemptDecision(attemptOrchestration, {
+    runId: workflow.runId,
+    generation: workflow.generation,
+    attempt,
+    delta: gateDecision.delta,
+    threshold: gateDecision.threshold,
+    metadata: gateDecision.metadata,
+  });
 
   return {
     attemptOrchestration,
     competitorResult,
     tournamentResult: tournamentExecution.tournamentResult,
     attempt,
-    events,
+    events: [
+      ...competitorEvents,
+      ...tournamentExecution.events,
+      {
+        event: "gate_decided",
+        payload: attemptOrchestration.events.gateDecided!,
+      },
+    ],
   };
 }

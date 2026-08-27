@@ -9,10 +9,6 @@ export interface RoleCompletedPayload {
   role: "competitor" | "analyst" | "coach" | "curator";
   latency_ms: number;
   tokens: number;
-  attempt?: number;
-  provider?: string;
-  model?: string;
-  input_bytes?: number;
 }
 import type { TournamentExecutionPlan } from "./generation-execution-step.js";
 import {
@@ -28,12 +24,6 @@ export function buildRoleCompletedPayload(
   role: "competitor" | "analyst" | "coach" | "curator",
   latencyMs: number,
   usage: Record<string, number>,
-  metadata: {
-    attempt?: number;
-    provider?: string;
-    model?: string;
-    inputBytes?: number;
-  } = {},
 ): RoleCompletedPayload {
     const inputTokens = usage.input_tokens ?? usage.inputTokens ?? usage.input ?? 0;
     const outputTokens = usage.output_tokens ?? usage.outputTokens ?? usage.output ?? 0;
@@ -44,10 +34,6 @@ export function buildRoleCompletedPayload(
     role,
     latency_ms: latencyMs,
     tokens: inputTokens + outputTokens,
-    ...(metadata.attempt === undefined ? {} : { attempt: metadata.attempt }),
-    ...(metadata.provider ? { provider: metadata.provider } : {}),
-    ...(metadata.model ? { model: metadata.model } : {}),
-    ...(metadata.inputBytes === undefined ? {} : { input_bytes: metadata.inputBytes }),
   };
 }
 
@@ -57,12 +43,6 @@ export async function executeRoleCompletionSideEffect(opts: {
   role: "competitor" | "analyst" | "coach" | "curator";
   execute: () => Promise<CompletionResult>;
   now?: () => number;
-  metadata?: {
-    attempt?: number;
-    provider?: string;
-    model?: string;
-    inputBytes?: number;
-  };
 }): Promise<{
   result: CompletionResult;
   roleCompletedPayload: RoleCompletedPayload;
@@ -80,10 +60,6 @@ export async function executeRoleCompletionSideEffect(opts: {
       opts.role,
       finishedAt - startedAt,
       result.usage,
-      {
-        ...opts.metadata,
-        model: result.model || opts.metadata?.model,
-      },
     ),
   };
 }
@@ -98,7 +74,6 @@ export function executeTournamentSideEffect(opts: {
     strategy: Record<string, unknown>;
     tournamentOptions: TournamentOpts;
   }) => TournamentResult;
-  attempt?: number;
 }): {
   tournamentResult: TournamentResult;
   events: GenerationLoopEventSequenceItem[];
@@ -115,7 +90,6 @@ export function executeTournamentSideEffect(opts: {
       generation: opts.generation,
       scheduledMatches: opts.scheduledMatches,
       tournamentResult,
-      attempt: opts.attempt,
     }),
   };
 }

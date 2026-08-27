@@ -79,10 +79,7 @@ describe("generation attempt workflow", () => {
 
     expect(workflow.attemptOrchestration.phaseState.phase).toBe("gate_decided");
     expect(workflow.attemptOrchestration.orchestration.runState.bestScore).toBe(0);
-    expect(
-      workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event),
-    ).toEqual([
-      "role_started",
+    expect(workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event)).toEqual([
       "role_completed",
       "tournament_started",
       "match_completed",
@@ -95,7 +92,6 @@ describe("generation attempt workflow", () => {
       decision: "retry",
       delta: 0.001,
       threshold: 0.005,
-      attempt: 1,
     });
   });
 
@@ -115,10 +111,7 @@ describe("generation attempt workflow", () => {
     expect(workflow.attemptOrchestration.orchestration.runState.bestScore).toBe(0.7);
     expect(workflow.attemptOrchestration.orchestration.runState.currentElo).toBe(1015);
     expect(workflow.attempt.tournamentResult.bestScore).toBe(0.7);
-    expect(
-      workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event),
-    ).toEqual([
-      "role_started",
+    expect(workflow.events.map((event: GenerationLoopEventSequenceItem) => event.event)).toEqual([
       "role_completed",
       "tournament_started",
       "match_completed",

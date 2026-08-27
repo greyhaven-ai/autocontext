@@ -57,7 +57,6 @@ import {
 } from "./run-simulation-read-workflow.js";
 import type { HttpRouteContext } from "./routes/http-route-context.js";
 import { tryRootRoutes } from "./routes/root-routes.js";
-import { trySystemMapRoutes } from "./routes/system-map-routes.js";
 import { tryNotebookRoutes } from "./routes/notebook-routes.js";
 import { tryMonitorRoutes } from "./routes/monitor-routes.js";
 import { tryOpenClawRoutes } from "./routes/openclaw-routes.js";
@@ -87,12 +86,6 @@ import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
 import type { LLMProvider } from "../types/index.js";
 import { MAX_IMAGE_AGGREGATE_ENCODED_BYTES } from "../types/image-attachments.js";
-import {
-  projectSystemMapTransfer,
-  readSystemMapView,
-  SYSTEM_MAP_PROJECTION,
-  SYSTEM_MAP_TRANSFER_EVENT,
-} from "./system-map.js";
 import {
   assertSecureServerBind,
   isServerRequestAuthorized,
@@ -272,12 +265,7 @@ export class InteractiveServer {
       }
       if (requestUrl.pathname === "/ws/events") {
         wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-          this.#attachEventStreamClient(
-            ws,
-            requestUrl.searchParams.get("projection"),
-            requestUrl.searchParams.get("run_id"),
-            requestUrl.searchParams.get("view"),
-          );
+          this.#attachEventStreamClient(ws);
         });
         return;
       }
@@ -468,7 +456,6 @@ export class InteractiveServer {
     };
 
     if (tryRootRoutes(ctx)) return;
-    if (await trySystemMapRoutes(ctx, { eventsPath: this.#runManager.events.path })) return;
     if (await tryNotebookRoutes(ctx, notebookApi)) return;
     if (await tryMonitorRoutes(ctx, monitorApi)) return;
     if (await tryOpenClawRoutes(ctx, openClawApi)) return;
@@ -821,16 +808,9 @@ export class InteractiveServer {
     });
   }
 
-  #attachEventStreamClient(
-    ws: WebSocket,
-    projection: string | null,
-    requestedRunId: string | null,
-    requestedView: string | null,
-  ): void {
+  #attachEventStreamClient(ws: WebSocket): void {
     this.#eventStreamClients.add(ws);
     let sequence = 0;
-    const runId = requestedRunId?.trim() ?? "";
-    const systemMapView = readSystemMapView(requestedView);
     const nextSequence = () => {
       sequence += 1;
       return sequence;
@@ -841,18 +821,6 @@ export class InteractiveServer {
         return;
       }
       if (ws.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      if (projection === SYSTEM_MAP_PROJECTION) {
-        const transfer = record ? projectSystemMapTransfer(record, systemMapView) : null;
-        if (!transfer || (runId && transfer.runId !== runId)) return;
-        this.#sendWire(ws, JSON.stringify(buildEventStreamEnvelope({
-          channel: "cockpit",
-          event: SYSTEM_MAP_TRANSFER_EVENT,
-          payload: transfer,
-          seq: nextSequence(),
-          timestamp: transfer.timestamp,
-        })));
         return;
       }
       this.#sendWire(ws, JSON.stringify(buildEventStreamEnvelope({
@@ -871,7 +839,6 @@ export class InteractiveServer {
       buildMissionProgress: (missionId, latestStep) =>
         this.#buildMissionProgress(missionId, latestStep),
       onProgress: (progress) => {
-        if (projection === SYSTEM_MAP_PROJECTION) return;
         if (ws.readyState !== WebSocket.OPEN) {
           return;
         }

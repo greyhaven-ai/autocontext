@@ -75,30 +75,6 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("core", "GET", "/api/runs/:run_id/replay/:generation"),
   both("core", "WEBSOCKET", "/ws/events"),
   both("core", "WEBSOCKET", "/ws/interactive"),
-  typescriptOnly(
-    "core",
-    "GET",
-    "/system-map",
-    "TypeScript serves the first live isometric harness explorer; Python parity is deferred.",
-  ),
-  typescriptOnly(
-    "core",
-    "GET",
-    "/system-map/context",
-    "TypeScript serves the context and memory lineage lens; Python parity is deferred.",
-  ),
-  typescriptOnly(
-    "core",
-    "GET",
-    "/system-map/activation",
-    "TypeScript serves the runtime activation and rollback lens; Python parity is deferred.",
-  ),
-  typescriptOnly(
-    "core",
-    "GET",
-    "/system-map/routing",
-    "TypeScript serves the provider and model routing lens; Python parity is deferred.",
-  ),
 
   both(
     "knowledge",
@@ -355,18 +331,6 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("cockpit", "PUT", "/api/cockpit/notebooks/:session_id", PY_COCKPIT_API),
   both("cockpit", "DELETE", "/api/cockpit/notebooks/:session_id", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs", PY_COCKPIT_API),
-  typescriptOnly(
-    "cockpit",
-    "GET",
-    "/api/cockpit/system-map/topology",
-    "TypeScript exposes the versioned topology consumed by the live system map.",
-  ),
-  typescriptOnly(
-    "cockpit",
-    "GET",
-    "/api/cockpit/system-map/replay",
-    "TypeScript exposes a bounded redacted projection of retained harness events.",
-  ),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/status", PY_COCKPIT_API),
   typescriptOnly(
     "cockpit",

@@ -145,52 +145,6 @@ describe("EventStreamEmitter", () => {
     expect(typeof records[0]?.ts).toBe("string");
   });
 
-  it("pairs stable trace spans across real boundary start and completion events", async () => {
-    const { EventStreamEmitter } = await import("../src/loop/events.js");
-    const path = join(dir, "events.ndjson");
-    const timestamps = [
-      "2026-08-16T12:00:00.000Z",
-      "2026-08-16T12:00:00.250Z",
-    ];
-    const emitter = new EventStreamEmitter(path, {
-      now: () => new Date(timestamps.shift()!),
-    });
-
-    emitter.emit("role_started", {
-      run_id: "run-1",
-      generation: 2,
-      role: "competitor",
-      attempt: 1,
-    });
-    emitter.emit("role_completed", {
-      run_id: "run-1",
-      generation: 2,
-      role: "competitor",
-      attempt: 1,
-      latency_ms: 245,
-    });
-
-    const [started, completed] = readFileSync(path, "utf-8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(started.trace).toMatchObject({
-      version: 1,
-      phase: "start",
-      name: "role.competitor",
-      started_at: "2026-08-16T12:00:00.000Z",
-    });
-    expect(completed.trace).toMatchObject({
-      phase: "complete",
-      started_at: "2026-08-16T12:00:00.000Z",
-      ended_at: "2026-08-16T12:00:00.250Z",
-      duration_ms: 250,
-    });
-    expect(completed.trace.span_id).toBe(started.trace.span_id);
-    expect(completed.trace.parent_span_id).toBe(started.trace.parent_span_id);
-    expect(completed.trace.payload_bytes).toBeGreaterThan(0);
-  });
-
   it("should support multiple subscribers", async () => {
     const { EventStreamEmitter } = await import("../src/loop/events.js");
     const path = join(dir, "events.ndjson");

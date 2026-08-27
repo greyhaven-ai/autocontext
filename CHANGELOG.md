@@ -4,15 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-
-- The TypeScript interactive server now exposes an experimental read-only
-  isometric system map at `/system-map`, with a versioned topology endpoint,
-  bounded replay, run scoping, and a redacted live transfer projection over
-  `/ws/events?projection=system-map`.
-- TypeScript generation events now carry versioned trace/span metadata and
-  publish live role, tournament, and persistence boundaries for the system map.
-
 ### Security
 
 - Control-plane WebSockets no longer accept bearer credentials in query strings;
