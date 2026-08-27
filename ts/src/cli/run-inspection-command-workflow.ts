@@ -175,7 +175,11 @@ export function renderRunShow(
   }
 
   if (values.json) {
-    return JSON.stringify({ run, generation, runtime_session: runtimeSession ?? null }, null, 2);
+    return JSON.stringify(
+      { run: runWirePayload(run), generation, runtime_session: runtimeSession ?? null },
+      null,
+      2,
+    );
   }
 
   return [
@@ -234,11 +238,19 @@ function runStatusPayload(
   progress_report: ReturnType<typeof progressReportReference> | null;
 } {
   return {
-    run,
+    run: runWirePayload(run),
     latest_generation: latestGeneration(generations),
     runtime_session: runtimeSession ?? null,
     progress_report: progressReport ? progressReportReference(progressReport) : null,
   };
+}
+
+function runWirePayload(run: RunInspectionRun): RunInspectionRun {
+  if ((run.minimum_generations ?? 1) > 1) {
+    return run;
+  }
+  const { minimum_generations: _minimumGenerations, ...legacyRun } = run;
+  return legacyRun;
 }
 
 function bestGeneration(generations: RunInspectionGeneration[]): RunInspectionGeneration | null {

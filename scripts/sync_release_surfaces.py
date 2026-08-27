@@ -80,6 +80,14 @@ def _replace_versions(text: str, manifest: ReleaseManifest) -> str:
     )
 
 
+def _replace_version_after(text: str, prefix: str, version: str) -> str:
+    return re.sub(
+        rf"({re.escape(prefix)}){_VERSION_RE}",
+        lambda match: f"{match.group(1)}{version}",
+        text,
+    )
+
+
 def _replace_root_pi_notes(text: str, manifest: ReleaseManifest) -> str:
     separate_note = re.compile(
         r"Pi is on a separate package line: `pi-autocontext@[^`]+` depends on `autoctx@[^`]+`\. "
@@ -98,7 +106,15 @@ def _replace_root_pi_notes(text: str, manifest: ReleaseManifest) -> str:
 
 
 def sync_root_readme(text: str, manifest: ReleaseManifest) -> str:
-    text = _replace_versions(text, manifest)
+    # Only install commands are release-manifest surfaces. Historical release
+    # notes intentionally retain the package version they describe.
+    for prefix, version in (
+        ("uv tool install autocontext==", manifest.python_version),
+        ("uv pip install autocontext==", manifest.python_version),
+        ("bun add -g autoctx@", manifest.npm_version),
+        ("pi install npm:pi-autocontext@", manifest.pi_version),
+    ):
+        text = _replace_version_after(text, prefix, version)
     text = _replace_root_pi_notes(text, manifest)
     return _replace_block(
         text,

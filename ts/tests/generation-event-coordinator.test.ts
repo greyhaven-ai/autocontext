@@ -22,7 +22,20 @@ describe("generation event coordinator", () => {
     ).toEqual({
       run_id: "run-1",
       scenario: "grid_ctf",
-      minimum_generations: 1,
+      target_generations: 3,
+    });
+
+    expect(
+      buildRunStartedPayload({
+        runId: "run-1",
+        scenarioName: "grid_ctf",
+        minimumGenerations: 2,
+        targetGenerations: 3,
+      }),
+    ).toEqual({
+      run_id: "run-1",
+      scenario: "grid_ctf",
+      minimum_generations: 2,
       target_generations: 3,
     });
 

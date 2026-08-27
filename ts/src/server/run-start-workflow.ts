@@ -5,6 +5,7 @@ import { asDbPath, asRunId } from "../domain/ids.js";
 import { isRunStopRequestedError, type LoopController } from "../loop/controller.js";
 import type { EventStreamEmitter } from "../loop/events.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
+import { buildRunStartedPayload } from "../loop/generation-event-coordinator.js";
 import { createAgentTaskPlanPublisher } from "../loop/agent-task-plan.js";
 import {
   createAgentProgressNotePublisher,
@@ -545,10 +546,12 @@ export async function executeAgentTaskCustomStartRun(opts: {
   });
 
   opts.events.emit("run_started", {
-    run_id: opts.runId,
-    scenario: opts.scenarioName,
-    minimum_generations: minimumGenerations,
-    target_generations: opts.generations,
+    ...buildRunStartedPayload({
+      runId: opts.runId,
+      scenarioName: opts.scenarioName,
+      minimumGenerations,
+      targetGenerations: opts.generations,
+    }),
     family: "agent_task",
     saved_custom: true,
   });
@@ -1108,10 +1111,12 @@ export async function executeGeneratedCustomStartRun(opts: {
   const executeScenario = opts.deps?.executeGeneratedScenarioEntry ?? executeGeneratedScenarioEntry;
 
   opts.events.emit("run_started", {
-    run_id: opts.runId,
-    scenario: opts.scenarioName,
-    minimum_generations: opts.minimumGenerations ?? 1,
-    target_generations: opts.generations,
+    ...buildRunStartedPayload({
+      runId: opts.runId,
+      scenarioName: opts.scenarioName,
+      minimumGenerations: opts.minimumGenerations,
+      targetGenerations: opts.generations,
+    }),
     family: opts.family,
     generated_custom: true,
   });

@@ -1055,15 +1055,14 @@ class GenerationRunner:
             gate_decision_history,
         ) = self._hydrate_run_state(active_run_id)
         completed = 0
-        self.events.emit(
-            "run_started",
-            {
-                "run_id": active_run_id,
-                "scenario": scenario_name,
-                "minimum_generations": minimum_generations,
-                "target_generations": target_generations,
-            },
-        )
+        run_started_payload: dict[str, Any] = {
+            "run_id": active_run_id,
+            "scenario": scenario_name,
+            "target_generations": target_generations,
+        }
+        if minimum_generations > 1:
+            run_started_payload["minimum_generations"] = minimum_generations
+        self.events.emit("run_started", run_started_payload)
         emit_run_start(
             self,
             run_id=active_run_id,
