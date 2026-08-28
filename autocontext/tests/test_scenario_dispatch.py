@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from autocontext.cli import app
@@ -95,6 +98,112 @@ class TestCliDispatch:
             run_id=None,
         )
         mock_run_agent_task.assert_not_called()
+
+    def test_serve_loop_aborts_queued_and_future_chat_requests(self) -> None:
+        real_thread = threading.Thread
+        failures: list[str] = []
+        request_thread: threading.Thread | None = None
+        mock_runner = MagicMock()
+
+        def run_loop(**_kwargs: object) -> None:
+            nonlocal request_thread
+
+            def submit_chat() -> None:
+                try:
+                    mock_runner.controller.submit_chat("analyst", "queued")
+                except RuntimeError as exc:
+                    failures.append(str(exc))
+
+            request_thread = real_thread(target=submit_chat, daemon=True)
+            request_thread.start()
+            deadline = time.monotonic() + 1.0
+            while (
+                mock_runner.controller.pending_chat_count() != 1
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            assert mock_runner.controller.pending_chat_count() == 1
+
+        class InlineThread:
+            def __init__(self, *, target: object, daemon: bool) -> None:
+                self._target = target
+
+            def start(self) -> None:
+                assert callable(self._target)
+                self._target()
+
+        mock_runner.run.side_effect = run_loop
+        with (
+            patch.dict("autocontext.cli.SCENARIO_REGISTRY", {"grid_ctf": object}, clear=True),
+            patch("autocontext.cli._runner", return_value=mock_runner),
+            patch("autocontext.cli.threading.Thread", InlineThread),
+            patch("autocontext.server.app.create_app", return_value=object()),
+            patch("autocontext.cli.uvicorn.run"),
+        ):
+            result = runner.invoke(
+                app,
+                ["run", "--scenario", "grid_ctf", "--serve", "--skip-preflight"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert request_thread is not None
+        request_thread.join(timeout=1.0)
+        assert failures == ["interactive run ended"]
+        with pytest.raises(RuntimeError, match="interactive run ended"):
+            mock_runner.controller.submit_chat("analyst", "late")
+
+    def test_serve_server_exit_aborts_chat_while_runner_is_active(self) -> None:
+        release_runner = threading.Event()
+        runner_finished = threading.Event()
+        failures: list[str] = []
+        submitter: threading.Thread | None = None
+        mock_runner = MagicMock()
+
+        def run_loop(**_kwargs: object) -> None:
+            nonlocal submitter
+
+            def submit_chat() -> None:
+                try:
+                    mock_runner.controller.submit_chat("analyst", "waiting")
+                except RuntimeError as exc:
+                    failures.append(str(exc))
+
+            submitter = threading.Thread(target=submit_chat, daemon=True)
+            submitter.start()
+            release_runner.wait(timeout=2.0)
+            runner_finished.set()
+
+        def return_after_chat_is_pending(*_args: object, **_kwargs: object) -> None:
+            deadline = time.monotonic() + 1.0
+            while (
+                mock_runner.controller.pending_chat_count() != 1
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            assert mock_runner.controller.pending_chat_count() == 1
+
+        mock_runner.run.side_effect = run_loop
+        try:
+            with (
+                patch.dict("autocontext.cli.SCENARIO_REGISTRY", {"grid_ctf": object}, clear=True),
+                patch("autocontext.cli._runner", return_value=mock_runner),
+                patch("autocontext.server.app.create_app", return_value=object()),
+                patch("autocontext.cli.uvicorn.run", side_effect=return_after_chat_is_pending),
+            ):
+                result = runner.invoke(
+                    app,
+                    ["run", "--scenario", "grid_ctf", "--serve", "--skip-preflight"],
+                )
+
+            assert result.exit_code == 0, result.output
+            assert submitter is not None
+            submitter.join(timeout=1.0)
+            assert failures == ["interactive server ended"]
+            with pytest.raises(RuntimeError, match="interactive server ended"):
+                mock_runner.controller.submit_chat("analyst", "late")
+        finally:
+            release_runner.set()
+            runner_finished.wait(timeout=1.0)
 
 
 class TestScenarioInfoTypes:

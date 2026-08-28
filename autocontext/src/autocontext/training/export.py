@@ -117,7 +117,7 @@ def _resolve_run_ids(
     if run_id is not None:
         return [run_id]
     if scenario is not None:
-        with sqlite.connect() as conn:
+        with sqlite.connection() as conn:
             rows = conn.execute(
                 "SELECT run_id FROM runs WHERE scenario = ? ORDER BY created_at",
                 (scenario,),
@@ -128,7 +128,7 @@ def _resolve_run_ids(
 
 def _get_run_scenario(sqlite: SQLiteStore, run_id: str) -> str | None:
     """Look up the scenario name for a run."""
-    with sqlite.connect() as conn:
+    with sqlite.connection() as conn:
         row = conn.execute(
             "SELECT scenario FROM runs WHERE run_id = ?",
             (run_id,),
@@ -173,7 +173,7 @@ def _iter_matches(
     Extracts per-turn state history from replay_json when entries contain
     a "state" key.
     """
-    with sqlite.connect() as conn:
+    with sqlite.connection() as conn:
         rows = conn.execute(
             "SELECT seed, score, passed_validation, validation_errors, "
             "winner, strategy_json, replay_json "

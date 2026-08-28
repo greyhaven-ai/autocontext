@@ -489,10 +489,11 @@ class TestPolicyExecutorTimeout:
                 while True:
                     pass
         """)
-        result = executor.execute_match(policy, seed=42)
-        assert len(result.errors) > 0
-        assert any("timeout" in e.lower() or "timed out" in e.lower() for e in result.errors)
-        assert result.score == 0.0
+        for _attempt in range(2):
+            result = executor.execute_match(policy, seed=42)
+            assert len(result.errors) > 0
+            assert any("timeout" in e.lower() or "timed out" in e.lower() for e in result.errors)
+            assert result.score == 0.0
 
     def test_policy_cannot_catch_timeout_signal(self) -> None:
         scenario = GridCtfScenario()

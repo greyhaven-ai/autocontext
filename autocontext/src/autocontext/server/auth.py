@@ -49,7 +49,9 @@ def request_is_authorized(auth_token: str | None, authorization_header: str | No
 def tokenless_client_is_local(client_host: str | None) -> bool:
     """Allow tokenless app access only from an actual loopback transport peer."""
     if client_host is None:
-        return True
+        # ASGI servers are allowed to omit peer metadata.  Absence is not
+        # evidence of a loopback transport, so fail closed at that boundary.
+        return False
     # Starlette's in-process TestClient uses this non-network sentinel.
     if client_host == "testclient":
         return True

@@ -88,7 +88,9 @@ import type { LLMProvider } from "../types/index.js";
 import { MAX_IMAGE_AGGREGATE_ENCODED_BYTES } from "../types/image-attachments.js";
 import {
   assertSecureServerBind,
+  isExplicitlyAllowedServerOrigin,
   isServerRequestAuthorized,
+  resolveServerAllowedOrigins,
   resolveServerAuthToken,
   selectServerAuthSubprotocol,
 } from "./server-auth.js";
@@ -111,6 +113,8 @@ export interface InteractiveServerOpts {
   port?: number;
   host?: string;
   authToken?: string;
+  /** Exact browser origins allowed through a TLS-terminating reverse proxy. */
+  allowedOrigins?: readonly string[];
 }
 
 export class PortInUseError extends Error {
@@ -143,6 +147,7 @@ export class InteractiveServer {
   readonly #missionEvents: MissionEventEmitter;
   readonly #host: string;
   readonly #authToken: string | null;
+  readonly #allowedOrigins: ReadonlySet<string>;
   readonly #requestedPort: number;
   readonly #runTranscripts: RunTranscriptStore;
   readonly #interactiveClients = new Set<WebSocket>();
@@ -187,6 +192,7 @@ export class InteractiveServer {
     this.#campaignManager = new CampaignManager(this.#missionManager);
     this.#host = opts.host ?? "127.0.0.1";
     this.#authToken = resolveServerAuthToken(opts.authToken);
+    this.#allowedOrigins = resolveServerAllowedOrigins(opts.allowedOrigins);
     assertSecureServerBind(this.#host, this.#authToken);
     this.#requestedPort = opts.port ?? 8000;
     this.#runTranscripts = new RunTranscriptStore(
@@ -241,7 +247,12 @@ export class InteractiveServer {
         socket.destroy();
         return;
       }
-      if (!isTrustedWebSocketOrigin(req.headers.origin, this.#host, this.#boundPort)) {
+      if (!isTrustedWebSocketOrigin(
+        req.headers.origin,
+        this.#host,
+        this.#boundPort,
+        this.#allowedOrigins,
+      )) {
         socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
         socket.destroy();
         return;
@@ -310,6 +321,7 @@ export class InteractiveServer {
         req.headers.origin,
         this.#host,
         this.#boundPort || this.#requestedPort,
+        this.#allowedOrigins,
       )
     ) {
       res.writeHead(403, { "Content-Type": "application/json" });
@@ -406,7 +418,12 @@ export class InteractiveServer {
     // CORS headers for dashboard/API clients. Keep this local by default instead of using '*'.
     res.setHeader(
       "Access-Control-Allow-Origin",
-      resolveCorsOrigin(req.headers.origin, this.#host, this.#boundPort || this.#requestedPort),
+      resolveCorsOrigin(
+        req.headers.origin,
+        this.#host,
+        this.#boundPort || this.#requestedPort,
+        this.#allowedOrigins,
+      ),
     );
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
@@ -1456,10 +1473,12 @@ function isTrustedWebSocketOrigin(
   origin: string | string[] | undefined,
   host: string,
   port: number,
+  allowedOrigins: ReadonlySet<string>,
 ): boolean {
   if (origin === undefined) return true;
   const requestedOrigin = Array.isArray(origin) ? origin[0] : origin;
   if (!requestedOrigin) return false;
+  if (isExplicitlyAllowedServerOrigin(requestedOrigin, allowedOrigins)) return true;
   try {
     const parsed = new URL(requestedOrigin);
     if (parsed.protocol !== "http:") return false;
@@ -1491,16 +1510,26 @@ function resolveCorsOrigin(
   origin: string | string[] | undefined,
   host: string,
   port: number,
+  allowedOrigins: ReadonlySet<string>,
 ): string {
   const requestedOrigin = Array.isArray(origin) ? origin[0] : origin;
-  if (requestedOrigin && isTrustedLocalOrigin(requestedOrigin, host, port)) {
+  if (
+    requestedOrigin
+    && isTrustedLocalOrigin(requestedOrigin, host, port, allowedOrigins)
+  ) {
     return requestedOrigin;
   }
   const displayHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
   return `http://${displayHost}:${port}`;
 }
 
-function isTrustedLocalOrigin(origin: string, host: string, port: number): boolean {
+function isTrustedLocalOrigin(
+  origin: string,
+  host: string,
+  port: number,
+  allowedOrigins: ReadonlySet<string>,
+): boolean {
+  if (isExplicitlyAllowedServerOrigin(origin, allowedOrigins)) return true;
   try {
     const parsed = new URL(origin);
     const requestedHost = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");

@@ -7,7 +7,7 @@ and ANTHROPIC_API_KEY, matching the behavior of the provider registry.
 from __future__ import annotations
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 class TestApiKeyFallback:
@@ -19,8 +19,11 @@ class TestApiKeyFallback:
             agent_provider="anthropic",
             anthropic_api_key="sk-autocontext-key",
         )
-        client = build_client_from_settings(settings)
+        with patch("autocontext.agents.llm_client.Anthropic", autospec=True) as constructor:
+            constructor.return_value = MagicMock()
+            client = build_client_from_settings(settings)
         assert client is not None
+        constructor.assert_called_once_with(api_key="sk-autocontext-key")
 
     def test_falls_back_to_anthropic_api_key_env(self) -> None:
         from autocontext.agents.llm_client import build_client_from_settings
@@ -31,10 +34,15 @@ class TestApiKeyFallback:
             anthropic_api_key="",  # Not set via AUTOCONTEXT_ prefix
         )
 
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-fallback-key"}, clear=False):
+        with (
+            patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-fallback-key"}, clear=False),
+            patch("autocontext.agents.llm_client.Anthropic", autospec=True) as constructor,
+        ):
+            constructor.return_value = MagicMock()
             client = build_client_from_settings(settings)
 
         assert client is not None
+        constructor.assert_called_once_with(api_key="sk-fallback-key")
 
     def test_load_settings_reads_anthropic_api_key_alias(self) -> None:
         from autocontext.config.settings import load_settings

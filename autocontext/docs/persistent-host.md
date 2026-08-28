@@ -31,6 +31,14 @@ This persistent-host shape is single-tenant or trusted-org infrastructure. Treat
 
 If `autoctx serve` binds beyond loopback, a unique `AUTOCONTEXT_SERVER_TOKEN` of at least 32 characters is mandatory. This is enforced by the CLI and by the HTTP/WebSocket application boundary for non-loopback peers, including direct ASGI launches. HTTP clients send it as an `Authorization: Bearer` value. Native WebSocket clients may use the same header; browser clients encode it in the `autocontext.bearer.<base64url-token>` subprotocol, which the server must echo. Credential-bearing WebSocket query parameters are rejected because URLs are routinely captured in proxy logs and shell history. The TypeScript TUI reads the token from the environment for both transports and rejects credentials embedded in `--connect` URLs. Still put the service behind TLS, authentication, and authorization before exposing it to other users. A loopback reverse proxy is seen as a local peer, so configure the application token even when the proxy itself enforces identity. Provider keys, SCM credentials, sandbox API keys, and webhook secrets may be supplied through the host environment for this single-tenant shape, but they must not be baked into images or written into prompts, runtime-session timelines, background-session summaries, lifecycle hook payloads, or outcome metadata.
 
+Browser origins remain explicit behind a TLS-terminating reverse proxy. The
+Python server reads `AUTOCONTEXT_CORS_ORIGINS`; the TypeScript server reads
+`AUTOCONTEXT_SERVER_ALLOWED_ORIGINS`, a comma-separated list of exact
+`http://` or `https://` origins. For a browser using WSS, configure its
+corresponding HTTPS origin rather than a `wss://` endpoint. These settings do
+not trust forwarded headers, replace the server token, or authorize a request
+on their own.
+
 Shared GitHub App credentials or bot tokens for branch/PR workflows are acceptable only inside one tenant or trusted organization with explicit admin consent. Cross-customer hosted PR creation requires a product adapter with per-tenant GitHub App installations or user OAuth tokens, scoped credential brokering, audit, and revocation. See [Background execution trust boundaries and credential model](../../docs/background-execution-trust-boundaries.md) before claiming hosted or multi-tenant safety.
 
 ## Interactive Server Resource Limits
@@ -69,6 +77,13 @@ On a service manager such as systemd, run `serve` and `worker` as separate units
 
 Use one environment file for both units:
 
+Generate the server token once and store it in that root-readable environment
+file. Do not copy a placeholder token into production:
+
+```bash
+openssl rand -hex 32
+```
+
 ```ini
 # /etc/autoctx/autoctx.env
 AUTOCONTEXT_DB_PATH=/srv/autoctx/runs/autocontext.sqlite3
@@ -76,6 +91,7 @@ AUTOCONTEXT_RUNS_ROOT=/srv/autoctx/runs
 AUTOCONTEXT_KNOWLEDGE_ROOT=/srv/autoctx/knowledge
 AUTOCONTEXT_AGENT_PROVIDER=pi
 AUTOCONTEXT_PI_COMMAND=pi
+AUTOCONTEXT_SERVER_TOKEN=<paste the generated 64-character hex token here>
 ```
 
 ```ini

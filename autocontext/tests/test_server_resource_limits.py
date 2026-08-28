@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
+import sys
 import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -59,6 +62,191 @@ def _create_app(
     monkeypatch.setattr(app_module, "load_settings", lambda: settings)
     monkeypatch.setattr(app_module, "_build_scenario_creator", lambda _settings: None)
     return app_module.create_app(controller=controller, events=events, run_manager=run_manager), settings
+
+
+def test_importing_module_level_app_does_not_start_monitor_thread() -> None:
+    environment = dict(os.environ)
+    environment["AUTOCONTEXT_MONITOR_ENABLED"] = "true"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, threading; import autocontext.server.app; "
+                "print(json.dumps([t.name for t in threading.enumerate()]))"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=environment,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "monitor-heartbeat" not in json.loads(completed.stdout)
+
+
+def test_monitor_starts_once_with_application_lifespan_and_stops_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from autocontext.monitor import engine as monitor_module
+
+    starts: list[object] = []
+    stops: list[object] = []
+
+    class FakeMonitorEngine:
+        def __init__(self, **_kwargs: object) -> None:
+            self.running = False
+
+        def start(self) -> None:
+            assert not self.running
+            self.running = True
+            starts.append(self)
+
+        def stop(self) -> None:
+            assert self.running
+            self.running = False
+            stops.append(self)
+
+    settings = _settings(tmp_path).model_copy(update={"monitor_enabled": True})
+    monkeypatch.setattr(app_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(app_module, "_build_scenario_creator", lambda _settings: None)
+    monkeypatch.setattr(monitor_module, "MonitorEngine", FakeMonitorEngine)
+
+    application = app_module.create_app()
+    assert starts == []
+    assert stops == []
+
+    with TestClient(application):
+        assert len(starts) == 1
+        assert starts[0].running is True
+
+    assert stops == starts
+    assert starts[0].running is False
+
+
+def test_partial_monitor_start_failure_always_clears_global_registration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from autocontext.monitor import engine as monitor_module
+
+    starts: list[object] = []
+    stops: list[object] = []
+
+    class PartialMonitorEngine:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def start(self) -> None:
+            starts.append(self)
+            monitor_module.set_engine(self)  # emulate a partial global side effect
+            raise RuntimeError("heartbeat thread failed to start")
+
+        def stop(self) -> None:
+            stops.append(self)
+            raise RuntimeError("cannot join an unstarted heartbeat thread")
+
+    settings = _settings(tmp_path).model_copy(update={"monitor_enabled": True})
+    monkeypatch.setattr(app_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(app_module, "_build_scenario_creator", lambda _settings: None)
+    monkeypatch.setattr(monitor_module, "MonitorEngine", PartialMonitorEngine)
+
+    application = app_module.create_app()
+    with TestClient(application):
+        pass
+
+    assert len(starts) == 1
+    assert stops == starts
+    with pytest.raises(RuntimeError, match="not initialized"):
+        monitor_module.get_engine()
+
+
+def test_overlapping_app_lifespans_only_clear_their_owned_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from autocontext.monitor import engine as monitor_module
+
+    class FakeMonitorEngine:
+        def __init__(self, **_kwargs: object) -> None:
+            self.running = False
+            engines.append(self)
+
+        def start(self) -> None:
+            self.running = True
+
+        def stop(self) -> None:
+            self.running = False
+
+    engines: list[FakeMonitorEngine] = []
+
+    settings = _settings(tmp_path).model_copy(update={"monitor_enabled": True})
+    monkeypatch.setattr(app_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(app_module, "_build_scenario_creator", lambda _settings: None)
+    monkeypatch.setattr(monitor_module, "MonitorEngine", FakeMonitorEngine)
+    monitor_module.clear_engine()
+    first_client = TestClient(app_module.create_app())
+    second_client = TestClient(app_module.create_app())
+
+    first_client.__enter__()
+    second_entered = False
+    first_exited = False
+    try:
+        assert monitor_module.get_engine() is engines[0]
+        second_client.__enter__()
+        second_entered = True
+        assert monitor_module.get_engine() is engines[1]
+
+        first_client.__exit__(None, None, None)
+        first_exited = True
+        assert monitor_module.get_engine() is engines[1]
+        assert engines[0].running is False
+        assert engines[1].running is True
+    finally:
+        if not first_exited:
+            first_client.__exit__(None, None, None)
+        if second_entered:
+            second_client.__exit__(None, None, None)
+        monitor_module.clear_engine()
+
+    assert engines[1].running is False
+
+
+def test_direct_app_shutdown_aborts_pending_chat_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    controller = LoopController()
+    controller.begin_run_session()
+    application, _settings_value = _create_app(
+        monkeypatch,
+        tmp_path,
+        controller=controller,
+        events=EventStreamEmitter(tmp_path / "events.ndjson"),
+    )
+    failure: list[str] = []
+
+    def submit_chat() -> None:
+        try:
+            controller.submit_chat("analyst", "waiting")
+        except RuntimeError as exc:
+            failure.append(str(exc))
+
+    with TestClient(application):
+        submitter = threading.Thread(target=submit_chat, daemon=True)
+        submitter.start()
+        deadline = time.monotonic() + 1.0
+        while controller.pending_chat_count() != 1 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert controller.pending_chat_count() == 1
+
+    submitter.join(timeout=1.0)
+    assert failure == ["interactive server ended before the chat request completed"]
+    with pytest.raises(RuntimeError, match="interactive server ended"):
+        controller.submit_chat("analyst", "late")
 
 
 @pytest.mark.parametrize(
@@ -150,7 +338,225 @@ def test_interactive_handler_exception_is_redacted(
     assert "provider-secret" not in json.dumps(response)
 
 
+def test_chat_is_rejected_before_work_slot_when_run_manager_is_inactive(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    controller = MagicMock(spec=LoopController)
+    events = EventStreamEmitter(tmp_path / "events.ndjson")
+    run_manager = MagicMock(spec=RunManager)
+    run_manager.is_active = False
+    run_manager.prepare_chat_run.return_value = ("not_active", None)
+    run_manager.get_environment_info.return_value = {
+        "scenarios": [],
+        "executors": [],
+        "current_executor": "local",
+        "agent_provider": "deterministic",
+    }
+    app, _settings_value = _create_app(
+        monkeypatch,
+        tmp_path,
+        controller=controller,
+        events=events,
+        run_manager=run_manager,
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/interactive") as websocket:
+            assert websocket.receive_json()["type"] == "hello"
+            assert websocket.receive_json()["type"] == "environments"
+            websocket.send_json(
+                {"type": "chat_agent", "role": "analyst", "message": "hello"}
+            )
+            response = websocket.receive_json()
+
+    assert response == {
+        "type": "error",
+        "message": "No active run is available for chat.",
+    }
+    controller.submit_chat.assert_not_called()
+    run_manager.chat_run.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_message"),
+    [
+        ({"type": "pause"}, "no active run available for pause"),
+        ({"type": "resume"}, "no active run available for resume"),
+        (
+            {"type": "inject_hint", "text": "try this"},
+            "no active run available for hint injection",
+        ),
+        (
+            {"type": "override_gate", "decision": "advance"},
+            "no active run available for gate override",
+        ),
+    ],
+)
+def test_manager_backed_controls_reject_inactive_runs_without_mutation(
+    payload: dict[str, str],
+    expected_message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    controller = MagicMock(spec=LoopController)
+    events = EventStreamEmitter(tmp_path / "events.ndjson")
+    run_manager = MagicMock(spec=RunManager)
+    run_manager.get_environment_info.return_value = {
+        "scenarios": [],
+        "executors": [],
+        "current_executor": "local",
+        "agent_provider": "deterministic",
+    }
+    run_manager.control_run.return_value = "not_active"
+    app, _settings_value = _create_app(
+        monkeypatch,
+        tmp_path,
+        controller=controller,
+        events=events,
+        run_manager=run_manager,
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/interactive") as websocket:
+            assert websocket.receive_json()["type"] == "hello"
+            assert websocket.receive_json()["type"] == "environments"
+            websocket.send_json(payload)
+            response = websocket.receive_json()
+
+    assert response == {"type": "error", "message": expected_message}
+    controller.pause.assert_not_called()
+    controller.resume.assert_not_called()
+    controller.inject_hint.assert_not_called()
+    controller.set_gate_override.assert_not_called()
+
+
+def test_legacy_chat_returns_response_without_a_run_manager(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    controller = MagicMock(spec=LoopController)
+    controller.submit_chat.return_value = "legacy answer"
+    events = EventStreamEmitter(tmp_path / "events.ndjson")
+    app, _settings_value = _create_app(
+        monkeypatch,
+        tmp_path,
+        controller=controller,
+        events=events,
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/interactive") as websocket:
+            assert websocket.receive_json()["type"] == "hello"
+            websocket.send_json(
+                {
+                    "type": "chat_agent",
+                    "role": "analyst",
+                    "message": "hello",
+                    "client_run_id": "legacy-run",
+                    "command_id": "legacy-chat",
+                }
+            )
+            response = websocket.receive_json()
+
+    assert response == {
+        "type": "chat_response",
+        "role": "analyst",
+        "text": "legacy answer",
+        "client_run_id": "legacy-run",
+        "command_id": "legacy-chat",
+    }
+
+
+def test_manager_commands_echo_correlation_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    controller = MagicMock(spec=LoopController)
+    events = EventStreamEmitter(tmp_path / "events.ndjson")
+    run_manager = MagicMock(spec=RunManager)
+    run_manager.is_active = False
+    run_manager.control_run.return_value = "accepted"
+    run_manager.prepare_chat_run.return_value = ("accepted", 7)
+    run_manager.chat_run.return_value = ("accepted", "manager answer")
+    run_manager.start_run.return_value = "server-run"
+    run_manager.get_environment_info.return_value = {
+        "scenarios": [],
+        "executors": [],
+        "current_executor": "local",
+        "agent_provider": "deterministic",
+    }
+    app, _settings_value = _create_app(
+        monkeypatch,
+        tmp_path,
+        controller=controller,
+        events=events,
+        run_manager=run_manager,
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/interactive") as websocket:
+            assert websocket.receive_json()["type"] == "hello"
+            assert websocket.receive_json()["type"] == "environments"
+            websocket.send_json(
+                {
+                    "type": "pause",
+                    "client_run_id": "client-run",
+                    "command_id": "pause-1",
+                }
+            )
+            assert websocket.receive_json() == {
+                "type": "ack",
+                "action": "pause",
+                "client_run_id": "client-run",
+                "command_id": "pause-1",
+                "decision": None,
+            }
+            assert websocket.receive_json() == {
+                "type": "state",
+                "paused": True,
+                "generation": 0,
+                "phase": "",
+                "client_run_id": "client-run",
+            }
+            websocket.send_json(
+                {
+                    "type": "chat_agent",
+                    "role": "analyst",
+                    "message": "hello",
+                    "client_run_id": "client-run",
+                    "command_id": "chat-1",
+                }
+            )
+            assert websocket.receive_json() == {
+                "type": "chat_response",
+                "role": "analyst",
+                "text": "manager answer",
+                "client_run_id": "client-run",
+                "command_id": "chat-1",
+            }
+            websocket.send_json(
+                {
+                    "type": "start_run",
+                    "scenario": "grid_ctf",
+                    "generations": 1,
+                    "client_run_id": "client-start",
+                    "command_id": "start-1",
+                }
+            )
+            assert websocket.receive_json() == {
+                "type": "run_accepted",
+                "run_id": "server-run",
+                "scenario": "grid_ctf",
+                "generations": 1,
+                "client_run_id": "client-start",
+                "command_id": "start-1",
+            }
+
+
+@pytest.mark.parametrize("failure_type", [RuntimeError, OSError])
 def test_run_start_exception_is_redacted(
+    failure_type: type[Exception],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -164,7 +570,7 @@ def test_run_start_exception_is_redacted(
         "current_executor": "local",
         "agent_provider": "deterministic",
     }
-    run_manager.start_run.side_effect = RuntimeError("database-secret-should-not-cross-boundary")
+    run_manager.start_run.side_effect = failure_type("database-secret-should-not-cross-boundary")
     app, _settings_value = _create_app(
         monkeypatch,
         tmp_path,
@@ -177,10 +583,23 @@ def test_run_start_exception_is_redacted(
         with client.websocket_connect("/ws/interactive") as websocket:
             assert websocket.receive_json()["type"] == "hello"
             assert websocket.receive_json()["type"] == "environments"
-            websocket.send_json({"type": "start_run", "scenario": "grid_ctf", "generations": 1})
+            websocket.send_json(
+                {
+                    "type": "start_run",
+                    "scenario": "grid_ctf",
+                    "generations": 1,
+                    "client_run_id": "client-run",
+                    "command_id": "start-failed",
+                }
+            )
             response = websocket.receive_json()
 
-    assert response == {"type": "error", "message": "Unable to start run."}
+    assert response == {
+        "type": "error",
+        "message": "Unable to start run.",
+        "client_run_id": "client-run",
+        "command_id": "start-failed",
+    }
     assert "database-secret" not in json.dumps(response)
 
 
@@ -296,18 +715,27 @@ async def test_interactive_work_limiter_caps_pending_work_and_holds_slot_after_c
         return "done"
 
     first = asyncio.create_task(limiter.run(blocking_work))
-    assert await asyncio.to_thread(started.wait, 2)
-    second = asyncio.create_task(limiter.run(lambda: "queued"))
-    await asyncio.sleep(0)
+    second: asyncio.Task[str] | None = None
+    try:
+        assert await asyncio.to_thread(started.wait, 2)
+        second = asyncio.create_task(limiter.run(lambda: "queued"))
+        await asyncio.sleep(0)
 
-    with pytest.raises(InteractiveWorkLimitExceeded):
-        await limiter.run(lambda: "rejected")
+        with pytest.raises(InteractiveWorkLimitExceeded):
+            await limiter.run(lambda: "rejected")
 
-    first.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await first
-    with pytest.raises(InteractiveWorkLimitExceeded):
-        await limiter.run(lambda: "still-rejected")
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        with pytest.raises(InteractiveWorkLimitExceeded):
+            await limiter.run(lambda: "still-rejected")
 
-    release.set()
-    assert await second == "queued"
+        release.set()
+        assert await second == "queued"
+    finally:
+        release.set()
+        tasks = [first, *([second] if second is not None else [])]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

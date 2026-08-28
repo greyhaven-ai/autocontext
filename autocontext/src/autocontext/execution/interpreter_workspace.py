@@ -189,10 +189,10 @@ class InterpreterWorkspace:
     underscore are treated as private scratch and excluded from
     :meth:`variables`, snapshots, and prompt rendering.
 
-    The local child boundary is POSIX-only and may only fork from the process
-    main thread. Unsupported platforms and worker-thread callers fail closed.
-    Candidate-created opaque Python objects are metadata-only in the parent
-    and cannot be used by a later command; plain built-in values persist.
+    The local child boundary requires a supported non-root Linux/macOS host and a
+    single-threaded process main thread. Other callers fail closed.
+    Candidate-created opaque Python objects are metadata-only in the parent and
+    cannot be used by a later command; plain built-in values persist.
     """
 
     def __init__(

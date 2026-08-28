@@ -15,9 +15,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { AppSettingsSchema } from "../src/config/index.js";
+import { ensureSafeArtifactId } from "../src/openclaw/artifact-contract.js";
 import { OpenClawService } from "../src/openclaw/service.js";
 
 const roots: string[] = [];
+const artifactIdParity = JSON.parse(readFileSync(
+  join(import.meta.dirname, "../../fixtures/openclaw-artifact-id-parity.json"),
+  "utf-8",
+)) as { accepted: string[]; rejected: string[] };
 
 function temporaryRoot(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -68,6 +73,35 @@ afterEach(() => {
 });
 
 describe("OpenClaw private artifact storage", () => {
+  it("uses the same storage-safe artifact ID grammar as the Python contract", () => {
+    for (const artifactId of artifactIdParity.accepted) {
+      expect(ensureSafeArtifactId(artifactId)).toBe(artifactId);
+    }
+    for (const artifactId of artifactIdParity.rejected) {
+      expect(() => ensureSafeArtifactId(artifactId)).toThrow("invalid artifact id");
+    }
+  });
+
+  it("reads legacy dotted artifact files without allowing new dotted writes", () => {
+    const root = temporaryRoot("autoctx-openclaw-legacy-dot-");
+    const knowledge = join(root, "knowledge");
+    const artifactDir = join(knowledge, "_openclaw_artifacts");
+    mkdirSync(artifactDir, { recursive: true });
+    const legacy = policyArtifact({ id: "policy.v1" });
+    writeFileSync(
+      join(artifactDir, "policy.v1.json"),
+      JSON.stringify(legacy),
+      "utf-8",
+    );
+    const api = service(knowledge);
+
+    expect(api.fetchArtifact("policy.v1")).toMatchObject({ id: "policy.v1" });
+    expect(() => api.publishArtifact(policyArtifact({ id: "policy.v2" })))
+      .toThrow("invalid artifact id");
+    expect(() => api.fetchArtifact("../policy.v1"))
+      .toThrow("invalid legacy artifact id");
+  });
+
   it("rejects a symbolic-link knowledge root", () => {
     const container = temporaryRoot("autoctx-openclaw-root-link-");
     const outside = join(container, "outside");

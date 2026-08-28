@@ -355,7 +355,7 @@ def list_runs(request: Request) -> list[dict[str, Any]]:
             scenario = run_dict["scenario"]
 
             # Get generation summary
-            with store.connect() as conn:
+            with store.connection() as conn:
                 gen_rows = conn.execute(
                     "SELECT generation_index, best_score, elo, duration_seconds "
                     "FROM generations WHERE run_id = ? ORDER BY generation_index",
@@ -391,7 +391,7 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
     """Detailed run status with generation-level breakdown."""
     store = _get_store(request)
 
-    with store.connect() as conn:
+    with store.connection() as conn:
         run_row = conn.execute(
             "SELECT run_id, scenario, target_generations, status, created_at FROM runs WHERE run_id = ?",
             (run_id,),
@@ -402,7 +402,7 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
 
     run_dict = dict(run_row)
 
-    with store.connect() as conn:
+    with store.connection() as conn:
         gen_rows = conn.execute(
             "SELECT generation_index, mean_score, best_score, elo, wins, losses, "
             "gate_decision, status, duration_seconds, evaluator_epoch, quarantined "
@@ -462,7 +462,7 @@ def compare_generations(run_id: str, gen_a: int, gen_b: int, request: Request) -
     """Compare two generations side-by-side."""
     store = _get_store(request)
 
-    with store.connect() as conn:
+    with store.connection() as conn:
         row_a = conn.execute(
             "SELECT generation_index, mean_score, best_score, elo, gate_decision "
             "FROM generations WHERE run_id = ? AND generation_index = ?",
@@ -507,7 +507,7 @@ def resume_info(run_id: str, request: Request) -> dict[str, Any]:
     """Resume affordances for a run."""
     store = _get_store(request)
 
-    with store.connect() as conn:
+    with store.connection() as conn:
         run_row = conn.execute(
             "SELECT run_id, scenario, target_generations, status FROM runs WHERE run_id = ?",
             (run_id,),
@@ -520,7 +520,7 @@ def resume_info(run_id: str, request: Request) -> dict[str, Any]:
     status = run_dict["status"]
     target = run_dict["target_generations"]
 
-    with store.connect() as conn:
+    with store.connection() as conn:
         gen_rows = conn.execute(
             "SELECT generation_index, gate_decision FROM generations WHERE run_id = ? ORDER BY generation_index DESC LIMIT 1",
             (run_id,),
@@ -565,7 +565,7 @@ def writeup(run_id: str, request: Request) -> dict[str, Any]:
     store = _get_store(request)
     artifacts = _get_artifacts(request)
 
-    with store.connect() as conn:
+    with store.connection() as conn:
         run_row = conn.execute(
             "SELECT run_id, scenario FROM runs WHERE run_id = ?",
             (run_id,),
@@ -642,7 +642,7 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
         raise HTTPException(status_code=400, detail="Consultation is not enabled")
 
     # Validate run exists
-    with store.connect() as conn:
+    with store.connection() as conn:
         run_row = conn.execute("SELECT run_id, scenario FROM runs WHERE run_id = ?", (run_id,)).fetchone()
     if not run_row:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
@@ -650,7 +650,7 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
     # Determine generation
     generation = body.generation
     if generation is None:
-        with store.connect() as conn:
+        with store.connection() as conn:
             gen_row = conn.execute(
                 "SELECT MAX(generation_index) as max_gen FROM generations WHERE run_id = ?", (run_id,)
             ).fetchone()
@@ -661,7 +661,7 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
                 )
             generation = int(gen_row["max_gen"])
     else:
-        with store.connect() as conn:
+        with store.connection() as conn:
             existing_generation = conn.execute(
                 "SELECT 1 FROM generations WHERE run_id = ? AND generation_index = ?",
                 (run_id, generation),
@@ -687,7 +687,7 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
         raise HTTPException(status_code=503, detail="Consultation provider not configured (missing API key)")
 
     # Gather context from generations
-    with store.connect() as conn:
+    with store.connection() as conn:
         gen_rows = conn.execute(
             "SELECT generation_index, mean_score, best_score, elo, gate_decision "
             "FROM generations WHERE run_id = ? ORDER BY generation_index ASC",
@@ -699,7 +699,7 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
 
     # Get current best strategy summary
     strategy_summary = ""
-    with store.connect() as conn:
+    with store.connection() as conn:
         strat_row = conn.execute(
             """
             SELECT ao.content

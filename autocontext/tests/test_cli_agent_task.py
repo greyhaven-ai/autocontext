@@ -147,7 +147,7 @@ class TestAgentTaskPersistence:
         assert result.exit_code == 0, result.output
 
         store = SQLiteStore(settings.db_path)
-        with store.connect() as conn:
+        with store.connection() as conn:
             run_row = conn.execute("SELECT * FROM runs WHERE run_id = ?", ("task-run-001",)).fetchone()
             gen_row = conn.execute(
                 "SELECT * FROM generations WHERE run_id = ? AND generation_index = 1",
@@ -188,7 +188,7 @@ class TestAgentTaskPersistence:
         assert "judge exploded" in err["error"]
 
         store = SQLiteStore(settings.db_path)
-        with store.connect() as conn:
+        with store.connection() as conn:
             gen_row = conn.execute(
                 "SELECT status, gate_decision FROM generations WHERE run_id = ? AND generation_index = 1",
                 ("task-fail-001",),
@@ -374,7 +374,7 @@ class TestAgentTaskGuardrailParity:
 
         # The persisted gate_decision must match the coherent termination.
         store = SQLiteStore(settings.db_path)
-        with store.connect() as conn:
+        with store.connection() as conn:
             gen_row = conn.execute(
                 "SELECT gate_decision FROM generations WHERE run_id = ? AND generation_index = 1",
                 ("task-guardrail-veto-001",),

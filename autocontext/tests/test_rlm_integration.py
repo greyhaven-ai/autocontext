@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 from autocontext.config import AppSettings
+from autocontext.harness.repl.types import ReplCommand
+from autocontext.harness.repl.worker import ReplWorker
 from autocontext.loop import GenerationRunner
 
 
@@ -39,7 +41,7 @@ def test_rlm_enabled_single_generation(tmp_path: Path) -> None:
     assert "elo" in payload
 
     # Verify agent outputs were stored (analyst/architect went through RLM path)
-    with runner.sqlite.connect() as conn:
+    with runner.sqlite.connection() as conn:
         rows = conn.execute(
             "SELECT role FROM agent_outputs WHERE run_id = ? ORDER BY role",
             (run_id,),
@@ -51,7 +53,7 @@ def test_rlm_enabled_single_generation(tmp_path: Path) -> None:
         assert "coach" in roles
 
     # Verify agent role metrics show RLM sessions completed
-    with runner.sqlite.connect() as conn:
+    with runner.sqlite.connection() as conn:
         metrics_rows = conn.execute(
             "SELECT role, status FROM agent_role_metrics WHERE run_id = ? ORDER BY role",
             (run_id,),
@@ -59,6 +61,26 @@ def test_rlm_enabled_single_generation(tmp_path: Path) -> None:
         metric_roles = {row["role"] for row in metrics_rows}
         assert "analyst" in metric_roles
         assert "architect" in metric_roles
+
+
+def test_direct_generation_runner_preserves_local_repl_isolation(tmp_path: Path) -> None:
+    settings = AppSettings(
+        db_path=tmp_path / "runs" / "autocontext.sqlite3",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+        event_stream_path=tmp_path / "runs" / "events.ndjson",
+        agent_provider="deterministic",
+        rlm_enabled=True,
+    )
+
+    runner = GenerationRunner(settings)
+    assert runner.artifacts._writer is None
+
+    result = ReplWorker().run_code(ReplCommand(code="2 + 2"))
+    assert result.error is None
+    assert "4" in result.stdout
 
 
 def test_rlm_two_generations_with_context_accumulation(tmp_path: Path) -> None:

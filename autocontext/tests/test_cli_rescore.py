@@ -213,7 +213,7 @@ def test_rescore_loads_custom_scenarios_from_configured_root(tmp_path: Path, mon
 
 def _read_revisions(tmp_path: Path, run_id: str, generation_index: int) -> list[dict]:
     store = _store(tmp_path)
-    with store.connect() as conn:
+    with store.connection() as conn:
         rows = conn.execute(
             "SELECT * FROM generation_score_revisions WHERE run_id = ? AND generation_index = ? ORDER BY id",
             (run_id, generation_index),

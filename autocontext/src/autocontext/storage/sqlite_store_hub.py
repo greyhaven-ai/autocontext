@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import AbstractContextManager
 from typing import Any
 
 
 class SQLiteHubStoreMixin:
-    def connect(self) -> sqlite3.Connection:
+    def connection(self) -> AbstractContextManager[sqlite3.Connection]:
         raise NotImplementedError
 
     @staticmethod
@@ -52,7 +53,7 @@ class SQLiteHubStoreMixin:
         )
         merged_metadata = metadata if metadata is not None else (dict(existing["metadata"]) if existing is not None else {})
 
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO hub_sessions(
@@ -83,7 +84,7 @@ class SQLiteHubStoreMixin:
             )
 
     def get_hub_session(self, session_id: str) -> dict[str, Any] | None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT * FROM hub_sessions WHERE session_id = ?",
                 (session_id,),
@@ -93,7 +94,7 @@ class SQLiteHubStoreMixin:
             return self._parse_hub_session_row(dict(row))
 
     def list_hub_sessions(self) -> list[dict[str, Any]]:
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute("SELECT * FROM hub_sessions ORDER BY updated_at DESC").fetchall()
             return [self._parse_hub_session_row(dict(row)) for row in rows]
 
@@ -142,7 +143,7 @@ class SQLiteHubStoreMixin:
         metadata: dict[str, Any] | None = None,
         created_at: str = "",
     ) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO hub_packages(
@@ -187,7 +188,7 @@ class SQLiteHubStoreMixin:
             )
 
     def get_hub_package_record(self, package_id: str) -> dict[str, Any] | None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT * FROM hub_packages WHERE package_id = ?",
                 (package_id,),
@@ -197,7 +198,7 @@ class SQLiteHubStoreMixin:
             return self._parse_hub_package_row(dict(row))
 
     def list_hub_package_records(self) -> list[dict[str, Any]]:
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute("SELECT * FROM hub_packages ORDER BY created_at DESC").fetchall()
             return [self._parse_hub_package_row(dict(row)) for row in rows]
 
@@ -222,7 +223,7 @@ class SQLiteHubStoreMixin:
         metadata: dict[str, Any] | None = None,
         created_at: str = "",
     ) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO hub_results(
@@ -258,7 +259,7 @@ class SQLiteHubStoreMixin:
             )
 
     def get_hub_result_record(self, result_id: str) -> dict[str, Any] | None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT * FROM hub_results WHERE result_id = ?",
                 (result_id,),
@@ -268,7 +269,7 @@ class SQLiteHubStoreMixin:
             return self._parse_hub_result_row(dict(row))
 
     def list_hub_result_records(self) -> list[dict[str, Any]]:
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute("SELECT * FROM hub_results ORDER BY created_at DESC").fetchall()
             return [self._parse_hub_result_row(dict(row)) for row in rows]
 
@@ -289,7 +290,7 @@ class SQLiteHubStoreMixin:
         metadata: dict[str, Any] | None = None,
         created_at: str = "",
     ) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO hub_promotions(
@@ -317,7 +318,7 @@ class SQLiteHubStoreMixin:
             )
 
     def get_hub_promotion_record(self, event_id: str) -> dict[str, Any] | None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT * FROM hub_promotions WHERE event_id = ?",
                 (event_id,),
@@ -327,6 +328,6 @@ class SQLiteHubStoreMixin:
             return self._parse_hub_promotion_row(dict(row))
 
     def list_hub_promotion_records(self) -> list[dict[str, Any]]:
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute("SELECT * FROM hub_promotions ORDER BY created_at DESC").fetchall()
             return [self._parse_hub_promotion_row(dict(row)) for row in rows]

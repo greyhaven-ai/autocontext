@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -17,6 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   DistillJobStore,
   ensureSafeDistillJobId,
+  MAX_DISTILL_JOB_FILES,
 } from "../src/openclaw/distill-job-store.js";
 
 const roots: string[] = [];
@@ -89,6 +91,63 @@ describe("DistillJobStore path and persistence security", () => {
     expect(store.listJobs()).toEqual([]);
   });
 
+  it("reads legacy dotted artifact IDs while keeping new jobs and results strict", () => {
+    const container = root("autoctx-distill-legacy-artifacts-");
+    const knowledge = join(container, "knowledge");
+    const store = new DistillJobStore(knowledge);
+    const legacy = store.createJob({ scenario: "grid_ctf" });
+    const legacyPath = join(
+      knowledge,
+      "_openclaw_distill_jobs",
+      `${legacy.job_id}.json`,
+    );
+    writeFileSync(legacyPath, JSON.stringify({
+      ...legacy,
+      status: "completed",
+      source_artifact_ids: ["policy.v1"],
+      result_artifact_id: "model.v1",
+    }), "utf-8");
+
+    expect(store.getJob(legacy.job_id)).toMatchObject({
+      source_artifact_ids: ["policy.v1"],
+      result_artifact_id: "model.v1",
+    });
+    expect(store.listJobs()).toHaveLength(1);
+    expect(() => store.createJob({
+      scenario: "grid_ctf",
+      sourceArtifactIds: ["policy.v2"],
+    })).toThrow("invalid artifact id");
+
+    const strict = store.createJob({ scenario: "grid_ctf" });
+    store.transition(strict.job_id, "running");
+    expect(() => store.transition(strict.job_id, "completed", {
+      resultArtifactId: "model.v2",
+    })).toThrow("invalid artifact id");
+  });
+
+  it("treats explicit null terminal fields as omission without breaking invariants", () => {
+    const container = root("autoctx-distill-null-terminal-");
+    const store = new DistillJobStore(join(container, "knowledge"));
+    const completedJob = store.createJob({ scenario: "grid_ctf" });
+    store.transition(completedJob.job_id, "running", { resultArtifactId: "model-1" });
+
+    expect(store.transition(completedJob.job_id, "completed", {
+      resultArtifactId: null,
+    })).toMatchObject({
+      status: "completed",
+      result_artifact_id: "model-1",
+    });
+
+    const failedJob = store.createJob({ scenario: "grid_ctf" });
+    store.transition(failedJob.job_id, "running", { errorMessage: "worker failed" });
+    expect(store.transition(failedJob.job_id, "failed", {
+      errorMessage: null,
+    })).toMatchObject({
+      status: "failed",
+      error_message: "worker failed",
+    });
+  });
+
   it("writes private job files atomically and enforces the serialized JSON cap", () => {
     const container = root("autoctx-distill-size-");
     const knowledge = join(container, "knowledge");
@@ -121,4 +180,21 @@ describe("DistillJobStore path and persistence security", () => {
 
     expect(() => store.listJobs()).toThrow("symbolic-link entry");
   });
+
+  it("counts non-file entries before admitting a job at the scan limit", () => {
+    const container = root("autoctx-distill-capacity-");
+    const knowledge = join(container, "knowledge");
+    const jobs = join(knowledge, "_openclaw_distill_jobs");
+    mkdirSync(jobs, { recursive: true });
+    for (let index = 0; index < MAX_DISTILL_JOB_FILES - 1; index += 1) {
+      const jobId = index.toString(16).padStart(32, "0");
+      writeFileSync(join(jobs, `${jobId}.json`), "{}", "utf-8");
+    }
+    mkdirSync(join(jobs, "structural-entry"));
+    const store = new DistillJobStore(knowledge);
+
+    expect(() => store.createJob({ scenario: "grid_ctf" }))
+      .toThrow(`reached ${MAX_DISTILL_JOB_FILES} file limit`);
+    expect(readdirSync(jobs)).toHaveLength(MAX_DISTILL_JOB_FILES);
+  }, 15_000);
 });

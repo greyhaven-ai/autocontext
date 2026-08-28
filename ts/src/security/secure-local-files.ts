@@ -11,6 +11,7 @@ import {
   readdirSync,
   realpathSync,
   renameSync,
+  type Dirent,
   type Stats,
   unlinkSync,
   writeFileSync,
@@ -222,6 +223,37 @@ export function listSecureDirectoryNames(
   components: readonly string[],
   maxEntries = 10_000,
 ): string[] {
+  return readSecureDirectoryEntries(root, components, maxEntries)
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name);
+}
+
+/** Count every directory entry, including subdirectories, under the same scan bound. */
+export function countSecureDirectoryEntries(
+  root: string,
+  components: readonly string[],
+  maxEntries = 10_000,
+): number {
+  return readSecureDirectoryEntries(root, components, maxEntries).length;
+}
+
+/** Check one validated entry name while retaining the directory scan bound. */
+export function hasSecureDirectoryEntry(
+  root: string,
+  components: readonly string[],
+  entryName: string,
+  maxEntries = 10_000,
+): boolean {
+  validateComponent(entryName);
+  return readSecureDirectoryEntries(root, components, maxEntries)
+    .some((entry) => entry.name === entryName);
+}
+
+function readSecureDirectoryEntries(
+  root: string,
+  components: readonly string[],
+  maxEntries: number,
+): Dirent[] {
   const directory = resolveSecureDirectory(root, components, false);
   if (!directory) return [];
   assertDirectoryStable(directory);
@@ -235,7 +267,7 @@ export function listSecureDirectoryNames(
     }
   }
   assertDirectoryStable(directory);
-  return entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+  return entries;
 }
 
 export function readSecureTextFile(

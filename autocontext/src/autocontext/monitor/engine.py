@@ -239,22 +239,35 @@ class MonitorEngine:
 # ---------------------------------------------------------------------------
 
 _engine: MonitorEngine | None = None
+_engine_stack: list[MonitorEngine] = []
+_engine_lock = threading.Lock()
 
 
 def get_engine() -> MonitorEngine:
     """Return the global MonitorEngine instance."""
-    if _engine is None:
-        raise RuntimeError("MonitorEngine not initialized. Call set_engine() first.")
-    return _engine
+    with _engine_lock:
+        if _engine is None:
+            raise RuntimeError("MonitorEngine not initialized. Call set_engine() first.")
+        return _engine
 
 
 def set_engine(engine: MonitorEngine) -> None:
     """Set the global MonitorEngine instance."""
     global _engine
-    _engine = engine
+    with _engine_lock:
+        _engine_stack[:] = [existing for existing in _engine_stack if existing is not engine]
+        _engine_stack.append(engine)
+        _engine = engine
 
 
-def clear_engine() -> None:
-    """Clear the global MonitorEngine instance."""
+def clear_engine(expected: MonitorEngine | None = None) -> None:
+    """Clear one owned engine, or every registration for legacy callers."""
     global _engine
-    _engine = None
+    with _engine_lock:
+        if expected is None:
+            _engine_stack.clear()
+        else:
+            _engine_stack[:] = [
+                existing for existing in _engine_stack if existing is not expected
+            ]
+        _engine = _engine_stack[-1] if _engine_stack else None

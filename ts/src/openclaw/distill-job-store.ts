@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { ensureSafeArtifactId } from "./artifact-contract.js";
 import {
+  ensureSafeArtifactId,
+  ensureSafeLegacyArtifactReadId,
+} from "./artifact-contract.js";
+import {
+  countSecureDirectoryEntries,
   listSecureDirectoryNames,
   readSecureTextFile,
   writeSecureTextFile,
@@ -33,7 +37,7 @@ export class DistillJobError extends Error {
 const JOB_DIRECTORY = "_openclaw_distill_jobs";
 const VALID_JOB_ID = /^[a-f0-9]{32}$/;
 const MAX_JOB_JSON_BYTES = 512 * 1024;
-const MAX_JOB_FILES = 10_000;
+export const MAX_DISTILL_JOB_FILES = 10_000;
 const MAX_SCENARIO_CHARS = 128;
 const MAX_SOURCE_ARTIFACTS = 1_000;
 
@@ -56,10 +60,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function isSafeArtifactId(value: unknown): value is string {
+function isSafeLegacyArtifactId(value: unknown): value is string {
   if (typeof value !== "string") return false;
   try {
-    ensureSafeArtifactId(value);
+    ensureSafeLegacyArtifactReadId(value);
     return true;
   } catch {
     return false;
@@ -87,8 +91,13 @@ function parseJob(raw: unknown, expectedJobId: string): DistillJob | null {
   ) return null;
   if (typeof raw.status !== "string" || !isDistillJobStatus(raw.status)) return null;
   if (!Array.isArray(raw.source_artifact_ids) || raw.source_artifact_ids.length > MAX_SOURCE_ARTIFACTS) return null;
-  const sourceArtifactIds = raw.source_artifact_ids.filter(isSafeArtifactId);
+  const sourceArtifactIds = raw.source_artifact_ids.filter(isSafeLegacyArtifactId);
   if (sourceArtifactIds.length !== raw.source_artifact_ids.length) return null;
+  if (
+    raw.result_artifact_id !== undefined
+    && raw.result_artifact_id !== null
+    && !isSafeLegacyArtifactId(raw.result_artifact_id)
+  ) return null;
   return {
     job_id: expectedJobId,
     scenario: raw.scenario,
@@ -149,7 +158,7 @@ export class DistillJobStore {
     return listSecureDirectoryNames(
       this.#knowledgeRoot,
       [JOB_DIRECTORY],
-      MAX_JOB_FILES,
+      MAX_DISTILL_JOB_FILES,
     )
       .filter((name) => name.endsWith(".json") && VALID_JOB_ID.test(name.slice(0, -5)))
       .sort()
@@ -177,6 +186,9 @@ export class DistillJobStore {
     const safeJobId = ensureSafeDistillJobId(jobId);
     const job = this.#readJob(safeJobId);
     if (!job) return null;
+    if (opts.resultArtifactId !== undefined && opts.resultArtifactId !== null) {
+      ensureSafeArtifactId(opts.resultArtifactId);
+    }
 
     const allowed = VALID_TRANSITIONS[job.status];
     if (!allowed.has(targetStatus)) {
@@ -184,10 +196,12 @@ export class DistillJobStore {
         `Invalid transition: ${job.status} -> ${targetStatus} (allowed: ${allowed.size > 0 ? [...allowed].join(", ") : "none"})`,
       );
     }
-    if (targetStatus === "completed" && !(opts.resultArtifactId ?? job.result_artifact_id)) {
+    const nextResultArtifactId = opts.resultArtifactId ?? job.result_artifact_id;
+    const nextErrorMessage = opts.errorMessage ?? job.error_message;
+    if (targetStatus === "completed" && !nextResultArtifactId) {
       throw new DistillJobError("Completed distill jobs require a result_artifact_id");
     }
-    if (targetStatus === "failed" && !(opts.errorMessage ?? job.error_message)) {
+    if (targetStatus === "failed" && !nextErrorMessage) {
       throw new DistillJobError("Failed distill jobs require an error_message");
     }
 
@@ -199,10 +213,10 @@ export class DistillJobStore {
     if (targetStatus === "completed" || targetStatus === "failed") {
       job.completed_at = timestamp;
     }
-    if (opts.resultArtifactId !== undefined) {
+    if (opts.resultArtifactId !== undefined && opts.resultArtifactId !== null) {
       job.result_artifact_id = opts.resultArtifactId;
     }
-    if (opts.errorMessage !== undefined) {
+    if (opts.errorMessage !== undefined && opts.errorMessage !== null) {
       job.error_message = opts.errorMessage;
     }
     if (opts.trainingMetrics !== undefined && opts.trainingMetrics !== null) {
@@ -241,6 +255,18 @@ export class DistillJobStore {
     }
     if (Buffer.byteLength(serialized, "utf-8") > MAX_JOB_JSON_BYTES) {
       throw new DistillJobError(`distillation job exceeds ${MAX_JOB_JSON_BYTES} byte limit`);
+    }
+    if (!replace) {
+      const entryCount = countSecureDirectoryEntries(
+        this.#knowledgeRoot,
+        [JOB_DIRECTORY],
+        MAX_DISTILL_JOB_FILES,
+      );
+      if (entryCount >= MAX_DISTILL_JOB_FILES) {
+        throw new DistillJobError(
+          `distillation job store reached ${MAX_DISTILL_JOB_FILES} file limit`,
+        );
+      }
     }
     writeSecureTextFile(
       this.#knowledgeRoot,

@@ -7,7 +7,9 @@ import { z } from "zod";
 
 import { assertSafeScenarioId } from "./scenario-id.js";
 import {
+  countSecureDirectoryEntries,
   ensureSecureDirectory,
+  hasSecureDirectoryEntry,
   listSecureDirectoryNames,
   readSecureTextFile,
   removeSecureFile,
@@ -28,6 +30,7 @@ const MAX_HARNESS_NAME_CHARS = 128;
 const MAX_HARNESS_SOURCE_BYTES = 1024 * 1024;
 const MAX_VERSION_JSON_BYTES = 256 * 1024;
 const MAX_HARNESS_FILES = 2_048;
+const MAX_HARNESS_DIRECTORY_ENTRIES = MAX_HARNESS_FILES + 2;
 const MAX_ARCHIVE_FILES = 10_000;
 const VERSION_FILENAME = "harness_version.json";
 const RESERVED_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -53,15 +56,19 @@ export class HarnessStore {
 
   /** List harness .py file names (without extension). */
   listHarness(): string[] {
-    return listSecureDirectoryNames(
+    const harnesses = listSecureDirectoryNames(
       this.#knowledgeRoot,
       this.#harnessComponents(),
-      MAX_HARNESS_FILES,
+      MAX_HARNESS_DIRECTORY_ENTRIES,
     )
       .filter((filename) => filename.endsWith(".py"))
       .map((filename) => filename.slice(0, -3))
       .filter((name) => HarnessStore.#VALID_NAME.test(name))
       .sort();
+    if (harnesses.length > MAX_HARNESS_FILES) {
+      throw new Error(`harness directory exceeds ${MAX_HARNESS_FILES} harness file limit`);
+    }
+    return harnesses;
   }
 
   #validateName(name: string): string {
@@ -92,22 +99,27 @@ export class HarnessStore {
       VERSION_FILENAME,
       MAX_VERSION_JSON_BYTES,
     );
-    if (raw === null) return {};
+    if (raw === null) return emptyVersionMap();
+    let versions: HarnessVersionMap;
     try {
-      const versions = HarnessVersionMapSchema.parse(JSON.parse(raw));
-      const entries = Object.entries(versions);
-      if (entries.length > MAX_HARNESS_FILES) return {};
-      if (entries.some(([name]) => (
-        name.length > MAX_HARNESS_NAME_CHARS
-        || RESERVED_OBJECT_KEYS.has(name)
-        || !HarnessStore.#VALID_NAME.test(name)
-      ))) {
-        return {};
-      }
-      return versions;
+      versions = HarnessVersionMapSchema.parse(JSON.parse(raw));
     } catch {
-      return {};
+      return emptyVersionMap();
     }
+    const entries = Object.entries(versions);
+    if (entries.length > MAX_HARNESS_FILES) {
+      throw new Error(
+        `harness version metadata exceeds ${MAX_HARNESS_FILES} entry limit`,
+      );
+    }
+    if (entries.some(([name]) => (
+      name.length > MAX_HARNESS_NAME_CHARS
+      || RESERVED_OBJECT_KEYS.has(name)
+      || !HarnessStore.#VALID_NAME.test(name)
+    ))) {
+      return emptyVersionMap();
+    }
+    return copyVersionMap(versions);
   }
 
   /** Write a harness file with version tracking, archiving the previous. */
@@ -127,14 +139,66 @@ export class HarnessStore {
       filename,
       MAX_HARNESS_SOURCE_BYTES,
     );
+    const regularFiles = listSecureDirectoryNames(
+      this.#knowledgeRoot,
+      this.#harnessComponents(),
+      MAX_HARNESS_DIRECTORY_ENTRIES,
+    );
+    const physicalHarnessFiles = regularFiles.filter((entry) => entry.endsWith(".py"));
+    if (currentSource === null && physicalHarnessFiles.length >= MAX_HARNESS_FILES) {
+      throw new Error(`harness directory reached ${MAX_HARNESS_FILES} harness file limit`);
+    }
+    const directoryEntries = countSecureDirectoryEntries(
+      this.#knowledgeRoot,
+      this.#harnessComponents(),
+      MAX_HARNESS_DIRECTORY_ENTRIES,
+    );
+    let entriesToCreate = currentSource === null ? 1 : 0;
+    if (!regularFiles.includes(VERSION_FILENAME)) entriesToCreate += 1;
+    if (
+      currentSource !== null
+      && !hasSecureDirectoryEntry(
+        this.#knowledgeRoot,
+        this.#harnessComponents(),
+        "_archive",
+        MAX_HARNESS_DIRECTORY_ENTRIES,
+      )
+    ) {
+      entriesToCreate += 1;
+    }
+    if (directoryEntries + entriesToCreate > MAX_HARNESS_DIRECTORY_ENTRIES) {
+      throw new Error(
+        `harness directory reached ${MAX_HARNESS_DIRECTORY_ENTRIES} entry limit`,
+      );
+    }
     const versions = this.getVersions();
+    const previousEntry = ownVersionEntry(versions, normalized);
+    const nextVersions = copyVersionMap(versions);
+    nextVersions[normalized] = {
+      version: (previousEntry?.version ?? 0) + 1,
+      generation,
+    };
+    if (Object.keys(nextVersions).length > MAX_HARNESS_FILES) {
+      throw new Error(`harness version metadata reached ${MAX_HARNESS_FILES} entry limit`);
+    }
+    // Validate the complete metadata update before archiving or replacing the
+    // current source so an over-limit map cannot leave partially updated state.
+    const serializedVersions = serializeVersionMap(nextVersions);
 
     if (currentSource !== null) {
+      const archiveEntryCount = countSecureDirectoryEntries(
+        this.#knowledgeRoot,
+        this.#archiveComponents(),
+        MAX_ARCHIVE_FILES,
+      );
+      if (archiveEntryCount >= MAX_ARCHIVE_FILES) {
+        throw new Error(`harness archive reached ${MAX_ARCHIVE_FILES} entry limit`);
+      }
       const archiveVersions = this.#archiveVersions(normalized);
       const nextAvailableArchive = archiveVersions.length === 0
         ? 1
         : Math.max(...archiveVersions) + 1;
-      const expectedArchive = Math.max(versions[normalized]?.version ?? 1, nextAvailableArchive);
+      const expectedArchive = Math.max(previousEntry?.version ?? 1, nextAvailableArchive);
       writeSecureTextFile(
         this.#knowledgeRoot,
         this.#archiveComponents(),
@@ -152,13 +216,11 @@ export class HarnessStore {
       { maxBytes: MAX_HARNESS_SOURCE_BYTES, replace: true },
     );
 
-    const prevVersion = versions[normalized]?.version ?? 0;
-    versions[normalized] = { version: prevVersion + 1, generation };
     writeSecureTextFile(
       this.#knowledgeRoot,
       this.#harnessComponents(),
       VERSION_FILENAME,
-      `${JSON.stringify(versions, null, 2)}\n`,
+      serializedVersions,
       { maxBytes: MAX_VERSION_JSON_BYTES, replace: true },
     );
     return filePath;
@@ -180,6 +242,13 @@ export class HarnessStore {
     if (content === null) return null;
 
     const versions = this.getVersions();
+    const entry = ownVersionEntry(versions, normalized);
+    let serializedVersions: string | null = null;
+    if (entry && entry.version > 1) {
+      const nextVersions = copyVersionMap(versions);
+      nextVersions[normalized] = { ...entry, version: entry.version - 1 };
+      serializedVersions = serializeVersionMap(nextVersions);
+    }
     writeSecureTextFile(
       this.#knowledgeRoot,
       this.#harnessComponents(),
@@ -187,14 +256,12 @@ export class HarnessStore {
       content,
       { maxBytes: MAX_HARNESS_SOURCE_BYTES, replace: true },
     );
-    const entry = versions[normalized];
-    if (entry && entry.version > 1) {
-      entry.version -= 1;
+    if (serializedVersions !== null) {
       writeSecureTextFile(
         this.#knowledgeRoot,
         this.#harnessComponents(),
         VERSION_FILENAME,
-        `${JSON.stringify(versions, null, 2)}\n`,
+        serializedVersions,
         { maxBytes: MAX_VERSION_JSON_BYTES, replace: true },
       );
     }
@@ -229,4 +296,34 @@ export class HarnessStore {
       .map((version) => Number.parseInt(version, 10))
       .filter((version) => Number.isSafeInteger(version) && version > 0);
   }
+}
+
+function serializeVersionMap(versions: HarnessVersionMap): string {
+  if (Object.keys(versions).length > MAX_HARNESS_FILES) {
+    throw new Error(
+      `harness version metadata exceeds ${MAX_HARNESS_FILES} entry limit`,
+    );
+  }
+  const serialized = `${JSON.stringify(versions, null, 2)}\n`;
+  if (Buffer.byteLength(serialized, "utf-8") > MAX_VERSION_JSON_BYTES) {
+    throw new Error(
+      `harness version metadata exceeds ${MAX_VERSION_JSON_BYTES} byte limit`,
+    );
+  }
+  return serialized;
+}
+
+function emptyVersionMap(): HarnessVersionMap {
+  return Object.create(null) as HarnessVersionMap;
+}
+
+function copyVersionMap(versions: HarnessVersionMap): HarnessVersionMap {
+  return Object.assign(emptyVersionMap(), versions);
+}
+
+function ownVersionEntry(
+  versions: HarnessVersionMap,
+  name: string,
+): HarnessVersionEntry | undefined {
+  return Object.hasOwn(versions, name) ? versions[name] : undefined;
 }

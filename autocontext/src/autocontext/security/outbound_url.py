@@ -13,15 +13,19 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import math
+import os
 import queue
 import socket
 import ssl
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import Protocol, cast
+from dataclasses import dataclass, field
+from typing import Any, Protocol, cast
 from urllib.parse import SplitResult, urlsplit
+
+import autocontext.security._outbound_deadline as _outbound_deadline
+import autocontext.security._outbound_validation as _outbound_validation
 
 DEFAULT_OUTBOUND_TIMEOUT_SECONDS = 10.0
 DEFAULT_FIXTURE_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
@@ -77,6 +81,10 @@ class OutboundUrlError(ValueError):
 
 class OutboundHttpError(OutboundUrlError):
     """The remote server returned an unsuccessful HTTP status."""
+
+
+class _ResolverPoolShutdown(OutboundUrlError):
+    """Internal wake-up delivered to resolver callers during pool shutdown."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +160,136 @@ class _ConnectionLike(Protocol):
 Resolver = Callable[[str, int], tuple[str, ...]]
 ConnectionFactory = Callable[[ResolvedOutboundUrl, float], _ConnectionLike]
 
+_DNS_RESOLVER_WORKERS = 4
+_DNS_RESOLVER_PENDING = 4
+_ResolverResult = tuple[bool, tuple[str, ...] | BaseException]
+
+
+@dataclass(slots=True)
+class _ResolverTask:
+    resolver: Resolver
+    hostname: str
+    port: int
+    result_queue: queue.Queue[_ResolverResult] = field(default_factory=lambda: queue.Queue(maxsize=1))
+    cancelled: threading.Event = field(default_factory=threading.Event)
+
+
+class _BoundedResolverPool:
+    """Admission-bounded transient workers for callers that cannot safely fork.
+
+    Successful and failed resolvers are joined before return, so they leave no
+    idle threads behind. A timed-out resolver retains its permit until it really
+    exits; repeated stuck calls therefore saturate this pool and fail fast rather
+    than growing the process without bound.
+    """
+
+    def __init__(self, *, max_workers: int, max_pending: int) -> None:
+        if max_workers < 1 or max_pending < 0:
+            raise ValueError("DNS resolver pool limits must be non-negative and include a worker")
+        self._max_tasks = max_workers + max_pending
+        self._capacity = threading.BoundedSemaphore(self._max_tasks)
+        self._start_lock = threading.Lock()
+        self._tasks: dict[threading.Thread, _ResolverTask] = {}
+        self._closed = False
+        self.thread_name_prefix = f"autocontext-outbound-dns-{id(self):x}"
+
+    def resolve(
+        self,
+        resolver: Resolver,
+        hostname: str,
+        port: int,
+        timeout_seconds: float,
+    ) -> tuple[str, ...]:
+        task = _ResolverTask(resolver=resolver, hostname=hostname, port=port)
+        with self._start_lock:
+            if self._closed:
+                raise OutboundUrlError("DNS resolver pool is unavailable")
+            if not self._capacity.acquire(blocking=False):
+                raise OutboundUrlError("DNS resolver capacity is exhausted; refusing additional outbound work")
+            worker = threading.Thread(
+                target=self._run_task,
+                args=(task,),
+                name=f"{self.thread_name_prefix}-{len(self._tasks) + 1}",
+                daemon=True,
+            )
+            self._tasks[worker] = task
+            try:
+                worker.start()
+            except BaseException:
+                self._tasks.pop(worker, None)
+                self._capacity.release()
+                raise
+
+        try:
+            succeeded, result = task.result_queue.get(timeout=timeout_seconds)
+        except queue.Empty as exc:
+            task.cancelled.set()
+            raise OutboundUrlError(f"DNS resolution timed out for outbound URL host {hostname!r}") from exc
+        if not isinstance(result, _ResolverPoolShutdown):
+            # A normal result is only published as the worker exits, so this
+            # join is immediate and guarantees no idle thread remains. Shutdown
+            # cancellation deliberately wakes the caller before a stuck worker.
+            worker.join()
+        if not succeeded:
+            if isinstance(result, OutboundUrlError):
+                raise result
+            if isinstance(result, BaseException):
+                raise OutboundUrlError(f"could not resolve outbound URL host {hostname!r}") from result
+            raise OutboundUrlError(f"could not resolve outbound URL host {hostname!r}")
+        if isinstance(result, BaseException):  # defensive type narrowing
+            raise OutboundUrlError(f"could not resolve outbound URL host {hostname!r}") from result
+        return result
+
+    def shutdown(self, *, timeout_seconds: float = 1.0) -> None:
+        """Cancel pending work and give active daemon workers a bounded exit window."""
+        with self._start_lock:
+            tasks = tuple(self._tasks.items())
+            self._closed = True
+        for _thread, task in tasks:
+            task.cancelled.set()
+            try:
+                task.result_queue.put_nowait((False, _ResolverPoolShutdown("DNS resolver pool is unavailable")))
+            except queue.Full:
+                # The resolver already published a terminal result.
+                pass
+        deadline = time.monotonic() + timeout_seconds
+        for thread, _task in tasks:
+            thread.join(max(0.0, deadline - time.monotonic()))
+
+    def _run_task(self, task: _ResolverTask) -> None:
+        try:
+            try:
+                result: _ResolverResult = (True, task.resolver(task.hostname, task.port))
+            except BaseException as exc:  # propagate resolver failures on the requesting thread
+                result = (False, exc)
+            if not task.cancelled.is_set():
+                try:
+                    task.result_queue.put_nowait(result)
+                except queue.Full:
+                    # Shutdown may publish its wake-up after the cancellation
+                    # check but before this put. Its failure result wins.
+                    pass
+        finally:
+            self._capacity.release()
+            current = threading.current_thread()
+            with self._start_lock:
+                self._tasks.pop(current, None)
+
+    def _reset_after_fork_child(self) -> None:
+        """Discard parent thread state inherited by a forked child."""
+        self._capacity = threading.BoundedSemaphore(self._max_tasks)
+        self._start_lock = threading.Lock()
+        self._tasks = {}
+        self._closed = False
+
+
+_DNS_RESOLVER_POOL = _BoundedResolverPool(
+    max_workers=_DNS_RESOLVER_WORKERS,
+    max_pending=_DNS_RESOLVER_PENDING,
+)
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_DNS_RESOLVER_POOL._reset_after_fork_child)
+
 
 def resolve_host_addresses(hostname: str, port: int) -> tuple[str, ...]:
     """Resolve all TCP addresses for ``hostname`` without initiating a connection."""
@@ -185,7 +323,7 @@ def validate_outbound_url(
     """
 
     effective_policy = policy or OutboundUrlPolicy()
-    if not isinstance(url, str) or not url or any(character in url for character in ("\x00", "\r", "\n")):
+    if not isinstance(url, str) or not url or _outbound_validation._contains_c0_or_del(url):
         raise OutboundUrlError("outbound URL must be a non-empty string without control characters")
     try:
         parsed = urlsplit(url)
@@ -241,6 +379,8 @@ def validate_outbound_url(
             policy_address = parsed_address.ipv4_mapped
         if policy_address in _METADATA_ADDRESSES:
             raise OutboundUrlError("cloud metadata endpoints are not allowed")
+        if policy_address.is_link_local:
+            raise OutboundUrlError("cloud metadata and other link-local addresses are not allowed")
         if (
             policy_address.is_unspecified
             or policy_address.is_multicast
@@ -276,15 +416,35 @@ def request_outbound_bytes(
 
     effective_policy = policy or OutboundUrlPolicy()
     deadline = time.monotonic() + effective_policy.timeout_seconds
-    resolved = validate_outbound_url(url, policy=effective_policy, resolver=resolver)
-    connection = (connection_factory or _create_pinned_connection)(resolved, _remaining_seconds(deadline))
-    response: _ResponseLike | None = None
     try:
+        request_method, request_headers = _outbound_validation._validated_request(
+            method,
+            headers,
+        )
+    except _outbound_validation._OutboundInputError as exc:
+        raise OutboundUrlError(str(exc)) from exc
+    resolved = validate_outbound_url(url, policy=effective_policy, resolver=resolver)
+    connection: _ConnectionLike | None = None
+    response: _ResponseLike | None = None
+    completed_without_error = False
+    try:
+        remaining = _remaining_seconds(deadline)
+        try:
+            connection = (
+                connection_factory(resolved, remaining)
+                if connection_factory is not None
+                else _create_pinned_connection(resolved, remaining, deadline=deadline)
+            )
+        except OutboundUrlError:
+            raise
+        except Exception as exc:
+            raise OutboundUrlError(f"outbound HTTP request failed: {exc}") from exc
+        _set_socket_deadline(connection, deadline)
         connection.request(
-            method.upper(),
+            request_method,
             _request_target(resolved.parsed),
             body=body,
-            headers=dict(headers or {}),
+            headers=request_headers,
         )
         _set_socket_deadline(connection, deadline)
         response = connection.getresponse()
@@ -297,19 +457,32 @@ def request_outbound_bytes(
             max_bytes=effective_policy.max_response_bytes,
             deadline=deadline,
         )
-        return OutboundResponse(
+        result = OutboundResponse(
             status=response.status,
             headers={key.lower(): value for key, value in response.getheaders()},
             body=response_body,
         )
+        completed_without_error = True
+        return result
     except (OutboundUrlError, OSError, http.client.HTTPException, TimeoutError) as exc:
         if isinstance(exc, OutboundUrlError):
             raise
         raise OutboundUrlError(f"outbound HTTP request failed: {exc}") from exc
     finally:
-        if response is not None:
-            response.close()
-        connection.close()
+        cleanup_error: BaseException | None = None
+        try:
+            if response is not None:
+                response.close()
+        except BaseException as exc:
+            cleanup_error = exc
+        try:
+            if connection is not None:
+                connection.close()
+        except BaseException as exc:
+            if cleanup_error is None:
+                cleanup_error = exc
+        if completed_without_error and cleanup_error is not None:
+            raise OutboundUrlError("outbound HTTP cleanup failed") from cleanup_error
 
 
 def _parse_ip_address(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
@@ -326,31 +499,61 @@ def _resolve_with_timeout(
     port: int,
     timeout_seconds: float,
 ) -> tuple[str, ...]:
-    """Bound potentially blocking platform DNS resolution with a daemon worker."""
+    """Resolve in a killable child when safe, else use the bounded worker pool."""
 
-    result_queue: queue.Queue[tuple[bool, tuple[str, ...] | BaseException]] = queue.Queue(maxsize=1)
-
-    def resolve() -> None:
+    if _single_threaded_fork_resolver_available():
         try:
-            result_queue.put((True, resolver(hostname, port)))
-        except BaseException as exc:  # propagate resolver failures on the requesting thread
-            result_queue.put((False, exc))
+            return _resolve_in_killable_child(resolver, hostname, port, timeout_seconds)
+        except _ForkResolverUnavailable:
+            # A thread may have appeared between the availability check and
+            # fork. Fall back to bounded admission without weakening timeout.
+            pass
 
-    worker = threading.Thread(target=resolve, name="autocontext-outbound-dns", daemon=True)
-    worker.start()
+    return _DNS_RESOLVER_POOL.resolve(resolver, hostname, port, timeout_seconds)
+
+
+class _ForkResolverUnavailable(RuntimeError):
+    """The per-call resolver child could not be started safely."""
+
+
+def _single_threaded_fork_resolver_available() -> bool:
     try:
-        succeeded, result = result_queue.get(timeout=timeout_seconds)
-    except queue.Empty as exc:
+        from autocontext.execution.isolated_python import local_isolation_available
+    except ImportError:
+        return False
+    return local_isolation_available()
+
+
+def _resolve_in_killable_child(
+    resolver: Resolver,
+    hostname: str,
+    port: int,
+    timeout_seconds: float,
+) -> tuple[str, ...]:
+    """Run one resolver call behind the existing bounded JSON child protocol."""
+    from autocontext.execution.isolated_python import (
+        IsolatedExecutionError,
+        IsolatedExecutionTimeout,
+        IsolationUnavailableError,
+        run_isolated_json,
+    )
+
+    try:
+        raw = run_isolated_json(
+            lambda: list(resolver(hostname, port)),
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=64 * 1024,
+        )
+    except IsolatedExecutionTimeout as exc:
         raise OutboundUrlError(f"DNS resolution timed out for outbound URL host {hostname!r}") from exc
-    if not succeeded:
-        if isinstance(result, OutboundUrlError):
-            raise result
-        if isinstance(result, BaseException):
-            raise OutboundUrlError(f"could not resolve outbound URL host {hostname!r}") from result
+    except IsolationUnavailableError as exc:
+        raise _ForkResolverUnavailable from exc
+    except IsolatedExecutionError as exc:
+        raise OutboundUrlError(f"could not resolve outbound URL host {hostname!r}") from exc
+
+    if not isinstance(raw, list) or not all(isinstance(address, str) for address in raw):
         raise OutboundUrlError(f"could not resolve outbound URL host {hostname!r}")
-    if isinstance(result, BaseException):  # defensive type narrowing; unreachable when succeeded is true
-        raise OutboundUrlError(f"could not resolve outbound URL host {hostname!r}") from result
-    return result
+    return tuple(raw)
 
 
 def _is_metadata_hostname(hostname: str) -> bool:
@@ -442,41 +645,131 @@ def _read_response_with_limits(
 
 
 class _PinnedHTTPConnection(http.client.HTTPConnection):
-    def __init__(self, hostname: str, port: int, address: str, timeout: float) -> None:
+    def __init__(
+        self,
+        hostname: str,
+        port: int,
+        address: str,
+        timeout: float,
+        *,
+        deadline: float | None = None,
+    ) -> None:
         super().__init__(hostname, port=port, timeout=timeout)
         self._pinned_address = address
+        self._deadline = deadline if deadline is not None else time.monotonic() + timeout
 
     def connect(self) -> None:
-        self.sock = socket.create_connection(
+        connected_socket = socket.create_connection(
             (self._pinned_address, self.port),
-            self.timeout,
+            _remaining_seconds(self._deadline),
         )
+        try:
+            connected_socket.settimeout(_remaining_seconds(self._deadline))
+        except BaseException:
+            connected_socket.close()
+            raise
+        self.sock = cast(
+            socket.socket,
+            _outbound_deadline._DeadlineSocket(
+                connected_socket,
+                self._deadline,
+                _remaining_seconds,
+            ),
+        )
+
+    def send(self, data: Any) -> None:
+        if self.sock is None:
+            self.connect()
+        assert self.sock is not None
+        self.sock.settimeout(_remaining_seconds(self._deadline))
+        super().send(data)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
-    def __init__(self, hostname: str, port: int, address: str, timeout: float) -> None:
+    def __init__(
+        self,
+        hostname: str,
+        port: int,
+        address: str,
+        timeout: float,
+        *,
+        deadline: float | None = None,
+    ) -> None:
         ssl_context = ssl.create_default_context()
         super().__init__(hostname, port=port, timeout=timeout, context=ssl_context)
         self._pinned_address = address
         self._pinned_ssl_context = ssl_context
+        self._deadline = deadline if deadline is not None else time.monotonic() + timeout
 
     def connect(self) -> None:
         raw_socket = socket.create_connection(
             (self._pinned_address, self.port),
-            self.timeout,
+            _remaining_seconds(self._deadline),
         )
+        wrapped_socket: Any | None = None
         try:
-            self.sock = self._pinned_ssl_context.wrap_socket(raw_socket, server_hostname=self.host)
+            raw_socket.setblocking(False)
+            wrapped_socket = self._pinned_ssl_context.wrap_socket(
+                raw_socket,
+                server_hostname=self.host,
+                do_handshake_on_connect=False,
+            )
+            _outbound_deadline._perform_tls_handshake(
+                wrapped_socket,
+                deadline=self._deadline,
+                remaining_seconds=_remaining_seconds,
+            )
+            wrapped_socket.settimeout(_remaining_seconds(self._deadline))
         except BaseException:
+            if wrapped_socket is not None and wrapped_socket is not raw_socket:
+                wrapped_socket.close()
             raw_socket.close()
             raise
+        self.sock = cast(
+            socket.socket,
+            _outbound_deadline._DeadlineSocket(
+                wrapped_socket,
+                self._deadline,
+                _remaining_seconds,
+            ),
+        )
+
+    def send(self, data: Any) -> None:
+        if self.sock is None:
+            self.connect()
+        assert self.sock is not None
+        self.sock.settimeout(_remaining_seconds(self._deadline))
+        super().send(data)
 
 
-def _create_pinned_connection(resolved: ResolvedOutboundUrl, timeout: float) -> _ConnectionLike:
+def _create_pinned_connection(
+    resolved: ResolvedOutboundUrl,
+    timeout: float,
+    *,
+    deadline: float | None = None,
+) -> _ConnectionLike:
     address = resolved.addresses[0]
     if resolved.parsed.scheme == "https":
-        return cast(_ConnectionLike, _PinnedHTTPSConnection(resolved.hostname, resolved.port, address, timeout))
-    return cast(_ConnectionLike, _PinnedHTTPConnection(resolved.hostname, resolved.port, address, timeout))
+        return cast(
+            _ConnectionLike,
+            _PinnedHTTPSConnection(
+                resolved.hostname,
+                resolved.port,
+                address,
+                timeout,
+                deadline=deadline,
+            ),
+        )
+    return cast(
+        _ConnectionLike,
+        _PinnedHTTPConnection(
+            resolved.hostname,
+            resolved.port,
+            address,
+            timeout,
+            deadline=deadline,
+        ),
+    )
 
 
 __all__ = [

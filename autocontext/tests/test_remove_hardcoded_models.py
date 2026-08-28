@@ -8,6 +8,7 @@ meaning "inherit from provider default at runtime". Only provider-specific code
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -163,7 +164,8 @@ class TestProviderEmptyModelFallback:
         """When complete() is called with model='', the provider should use its default."""
         from autocontext.providers.anthropic import AnthropicProvider
 
-        provider = AnthropicProvider(api_key="test", default_model_name="claude-sonnet-5")
+        with patch("autocontext.providers.anthropic.anthropic.Anthropic", return_value=MagicMock()):
+            provider = AnthropicProvider(api_key="test", default_model_name="claude-sonnet-5")
         # The provider's complete() should convert "" to its default model
         assert provider.default_model() == "claude-sonnet-5"
 
@@ -171,7 +173,8 @@ class TestProviderEmptyModelFallback:
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
 
         try:
-            provider = OpenAICompatibleProvider(api_key="test", default_model_name="gpt-5.6-terra")
+            with patch("autocontext.providers.openai_compat.openai.OpenAI", return_value=MagicMock()):
+                provider = OpenAICompatibleProvider(api_key="test", default_model_name="gpt-5.6-terra")
         except Exception:
             pytest.skip("openai package not installed")
         assert provider.default_model() == "gpt-5.6-terra"

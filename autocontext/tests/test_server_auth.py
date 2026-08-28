@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -73,7 +75,55 @@ def test_bearer_token_is_exact() -> None:
 def test_tokenless_client_peer_must_be_loopback() -> None:
     assert tokenless_client_is_local("127.0.0.1")
     assert tokenless_client_is_local("::1")
+    assert tokenless_client_is_local("testclient")
+    assert not tokenless_client_is_local(None)
     assert not tokenless_client_is_local("203.0.113.8")
+
+
+async def test_direct_asgi_launch_rejects_tokenless_missing_peer_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _configure_paths(monkeypatch, tmp_path)
+    monkeypatch.delenv(SERVER_AUTH_TOKEN_ENV, raising=False)
+    from autocontext.server.app import create_app
+
+    application = create_app()
+    transport = httpx.ASGITransport(app=application, client=None)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        assert (await client.get("/health")).status_code == 200
+        denied = await client.get("/api/runs")
+    assert denied.status_code == 403
+    assert denied.json() == {"detail": "Token required for non-loopback clients"}
+
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "websocket.connect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    await application(
+        {
+            "type": "websocket",
+            "asgi": {"version": "3.0", "spec_version": "2.4"},
+            "http_version": "1.1",
+            "scheme": "ws",
+            "server": ("testserver", 80),
+            "client": None,
+            "root_path": "",
+            "path": "/ws/events",
+            "raw_path": b"/ws/events",
+            "query_string": b"",
+            "headers": [],
+            "subprotocols": [],
+            "state": {},
+        },
+        receive,
+        send,
+    )
+    assert sent == [{"type": "websocket.close", "code": 4403, "reason": ""}]
 
 
 def test_direct_asgi_launch_rejects_tokenless_non_loopback_peers(

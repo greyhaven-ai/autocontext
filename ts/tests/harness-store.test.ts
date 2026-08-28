@@ -37,6 +37,30 @@ describe("HarnessStore", () => {
       writeFileSync(join(dir, "score_action.py"), "def s(): ...");
       expect(store.listHarness()).toEqual(["score_action", "validate_move"]);
     });
+
+    it("allows the full harness capacity plus bounded structural entries", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(join(dir, "_archive"), { recursive: true });
+      writeFileSync(join(dir, "harness_version.json"), "{}", "utf-8");
+      for (let index = 0; index < 2_048; index += 1) {
+        writeFileSync(join(dir, `h${index}.py`), "pass\n", "utf-8");
+      }
+
+      expect(store.listHarness()).toHaveLength(2_048);
+    }, 15_000);
+
+    it("rejects more than the physical harness-file capacity", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(dir, { recursive: true });
+      for (let index = 0; index < 2_049; index += 1) {
+        writeFileSync(join(dir, `h${index}.py`), "pass\n", "utf-8");
+      }
+
+      expect(() => store.listHarness()).toThrow("exceeds 2048 harness file limit");
+      expect(() => store.writeVersioned("new_harness", "safe", 1))
+        .toThrow("reached 2048 harness file limit");
+      expect(readdirSync(dir)).toHaveLength(2_049);
+    }, 15_000);
   });
 
   describe("writeVersioned", () => {
@@ -45,6 +69,7 @@ describe("HarnessStore", () => {
       expect(existsSync(path)).toBe(true);
       expect(readFileSync(path, "utf-8")).toBe("def v(): ...");
       const versions = store.getVersions();
+      expect(Object.getPrototypeOf(versions)).toBeNull();
       expect(versions.validate_move).toEqual({ version: 1, generation: 1 });
     });
 
@@ -80,6 +105,132 @@ describe("HarnessStore", () => {
 
       expect(store.getVersions()).toEqual({});
     });
+
+    it("fails closed without replacing valid over-limit version metadata", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(dir, { recursive: true });
+      const versions = Object.fromEntries(Array.from(
+        { length: 2_049 },
+        (_, index) => [`h${index}`, { version: 1, generation: index }],
+      ));
+      const metadataPath = join(dir, "harness_version.json");
+      const originalMetadata = JSON.stringify(versions);
+      writeFileSync(metadataPath, originalMetadata, "utf-8");
+
+      expect(() => store.getVersions()).toThrow("exceeds 2048 entry limit");
+      expect(() => store.writeVersioned("new_harness", "safe", 1))
+        .toThrow("exceeds 2048 entry limit");
+      expect(readFileSync(metadataPath, "utf-8")).toBe(originalMetadata);
+      expect(existsSync(join(dir, "new_harness.py"))).toBe(false);
+    });
+
+    it("rejects a new harness before crossing the version-entry limit", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(dir, { recursive: true });
+      const versions = Object.fromEntries(Array.from(
+        { length: 2_048 },
+        (_, index) => [`h${index}`, { version: 1, generation: index }],
+      ));
+      const metadataPath = join(dir, "harness_version.json");
+      const originalMetadata = JSON.stringify(versions);
+      writeFileSync(metadataPath, originalMetadata, "utf-8");
+
+      expect(() => store.writeVersioned("new_harness", "safe", 1))
+        .toThrow("reached 2048 entry limit");
+      expect(readFileSync(metadataPath, "utf-8")).toBe(originalMetadata);
+      expect(existsSync(join(dir, "new_harness.py"))).toBe(false);
+    });
+
+    it("does not let inherited object names bypass the final entry limit", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(dir, { recursive: true });
+      const versions = Object.fromEntries(Array.from(
+        { length: 2_048 },
+        (_, index) => [`h${index}`, { version: 1, generation: index }],
+      ));
+      const metadataPath = join(dir, "harness_version.json");
+      const originalMetadata = JSON.stringify(versions);
+      writeFileSync(metadataPath, originalMetadata, "utf-8");
+
+      expect(() => store.writeVersioned("toString", "safe", 1))
+        .toThrow("reached 2048 entry limit");
+      expect(readFileSync(metadataPath, "utf-8")).toBe(originalMetadata);
+      expect(existsSync(join(dir, "toString.py"))).toBe(false);
+    });
+
+    it("rejects a new harness before structural entries cross the scan limit", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(join(dir, "_archive"), { recursive: true });
+      const versions = Object.fromEntries(Array.from(
+        { length: 2_047 },
+        (_, index) => [`h${index}`, { version: 1, generation: index }],
+      ));
+      const metadataPath = join(dir, "harness_version.json");
+      const originalMetadata = JSON.stringify(versions);
+      writeFileSync(metadataPath, originalMetadata, "utf-8");
+      for (let index = 0; index < 2_047; index += 1) {
+        writeFileSync(join(dir, `h${index}.py`), "pass\n", "utf-8");
+      }
+      writeFileSync(join(dir, "untracked.txt"), "junk", "utf-8");
+
+      expect(() => store.writeVersioned("new_harness", "safe", 1))
+        .toThrow("harness directory reached 2050 entry limit");
+      expect(readFileSync(metadataPath, "utf-8")).toBe(originalMetadata);
+      expect(existsSync(join(dir, "new_harness.py"))).toBe(false);
+    }, 15_000);
+
+    it("reserves space for missing metadata before adding a new source", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(dir, { recursive: true });
+      for (let index = 0; index < 2_048; index += 1) {
+        writeFileSync(join(dir, `junk${index}.txt`), "junk", "utf-8");
+      }
+      writeFileSync(join(dir, "existing.py"), "pass\n", "utf-8");
+
+      expect(() => store.writeVersioned("new_harness", "safe", 1))
+        .toThrow("reached 2050 entry limit");
+      expect(existsSync(join(dir, "new_harness.py"))).toBe(false);
+      expect(existsSync(join(dir, "harness_version.json"))).toBe(false);
+      expect(readdirSync(dir)).toHaveLength(2_049);
+    }, 15_000);
+
+    it("reserves space for the first archive directory on replacement", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "existing.py"), "old\n", "utf-8");
+      writeFileSync(
+        join(dir, "harness_version.json"),
+        JSON.stringify({ existing: { version: 1, generation: 0 } }),
+        "utf-8",
+      );
+      for (let index = 0; index < 2_048; index += 1) {
+        writeFileSync(join(dir, `junk${index}.txt`), "junk", "utf-8");
+      }
+
+      expect(() => store.writeVersioned("existing", "new", 1))
+        .toThrow("reached 2050 entry limit");
+      expect(readFileSync(join(dir, "existing.py"), "utf-8")).toBe("old\n");
+      expect(existsSync(join(dir, "_archive"))).toBe(false);
+      expect(readdirSync(dir)).toHaveLength(2_050);
+    }, 15_000);
+
+    it("rejects updates when the archive has reached its scan limit", () => {
+      store.writeVersioned("existing", "old", 0);
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      const archiveDir = join(dir, "_archive");
+      mkdirSync(archiveDir);
+      for (let index = 0; index < 10_000; index += 1) {
+        writeFileSync(join(archiveDir, `junk${index}.txt`), "junk", "utf-8");
+      }
+      const metadataPath = join(dir, "harness_version.json");
+      const originalMetadata = readFileSync(metadataPath, "utf-8");
+
+      expect(() => store.writeVersioned("existing", "new", 1))
+        .toThrow("archive reached 10000 entry limit");
+      expect(readFileSync(join(dir, "existing.py"), "utf-8")).toBe("old");
+      expect(readFileSync(metadataPath, "utf-8")).toBe(originalMetadata);
+      expect(readdirSync(archiveDir)).toHaveLength(10_000);
+    }, 30_000);
 
     it.each(["", "../escape", "bad/name", "contains space", "123abc", "__proto__", "constructor"])(
       "rejects invalid harness name %s",

@@ -15,23 +15,26 @@ def test_persist_generation_creates_files_with_buffer(tmp_path: Path) -> None:
         claude_skills_path=tmp_path / ".claude" / "skills",
         enable_buffered_writes=True,
     )
-    store.persist_generation(
-        run_id="run_1",
-        generation_index=1,
-        metrics={"score": 0.5},
-        replay_payload={"moves": []},
-        analysis_md="# Analysis",
-        coach_md="Coach output",
-        architect_md="Architect output",
-        scenario_name="grid_ctf",
-    )
-    store.flush_writes()
+    try:
+        store.persist_generation(
+            run_id="run_1",
+            generation_index=1,
+            metrics={"score": 0.5},
+            replay_payload={"moves": []},
+            analysis_md="# Analysis",
+            coach_md="Coach output",
+            architect_md="Architect output",
+            scenario_name="grid_ctf",
+        )
+        store.flush_writes()
 
-    gen_dir = tmp_path / "runs" / "run_1" / "generations" / "gen_1"
-    assert (gen_dir / "metrics.json").exists()
-    assert (gen_dir / "replays" / "grid_ctf_1.json").exists()
-    assert (tmp_path / "knowledge" / "grid_ctf" / "analysis" / "gen_1.md").exists()
-    assert (tmp_path / "knowledge" / "grid_ctf" / "coach_history.md").exists()
+        gen_dir = tmp_path / "runs" / "run_1" / "generations" / "gen_1"
+        assert (gen_dir / "metrics.json").exists()
+        assert (gen_dir / "replays" / "grid_ctf_1.json").exists()
+        assert (tmp_path / "knowledge" / "grid_ctf" / "analysis" / "gen_1.md").exists()
+        assert (tmp_path / "knowledge" / "grid_ctf" / "coach_history.md").exists()
+    finally:
+        store.shutdown_writer()
 
 
 def test_persist_generation_without_buffer(tmp_path: Path) -> None:
@@ -78,7 +81,10 @@ def test_playbook_write_stays_synchronous(tmp_path: Path) -> None:
         claude_skills_path=tmp_path / ".claude" / "skills",
         enable_buffered_writes=True,
     )
-    store.write_playbook("grid_ctf", "# Strategy\nBe aggressive.\n")
-    # Should be immediately available (not buffered)
-    content = store.read_playbook("grid_ctf")
-    assert "Be aggressive" in content
+    try:
+        store.write_playbook("grid_ctf", "# Strategy\nBe aggressive.\n")
+        # Should be immediately available (not buffered)
+        content = store.read_playbook("grid_ctf")
+        assert "Be aggressive" in content
+    finally:
+        store.shutdown_writer()

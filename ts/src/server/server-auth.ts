@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 export const SERVER_AUTH_TOKEN_ENV = "AUTOCONTEXT_SERVER_TOKEN";
+export const SERVER_ALLOWED_ORIGINS_ENV = "AUTOCONTEXT_SERVER_ALLOWED_ORIGINS";
 export const SERVER_AUTH_SUBPROTOCOL_PREFIX = "autocontext.bearer.";
 
 const MIN_SERVER_AUTH_TOKEN_LENGTH = 32;
@@ -14,6 +15,36 @@ export function resolveServerAuthToken(explicitToken?: string): string | null {
     );
   }
   return token;
+}
+
+/**
+ * Resolve the exact browser origins allowed to use the control plane through a
+ * reverse proxy. These origins supplement the server's loopback-origin rules;
+ * they do not change the bind address or authentication requirements.
+ */
+export function resolveServerAllowedOrigins(
+  explicitOrigins?: readonly string[],
+): ReadonlySet<string> {
+  const configured = explicitOrigins ?? parseAllowedOriginsEnv(
+    process.env[SERVER_ALLOWED_ORIGINS_ENV],
+  );
+  const origins = new Set<string>();
+  for (const value of configured) {
+    origins.add(normalizeServerBrowserOrigin(value));
+  }
+  return origins;
+}
+
+/** Return whether a browser-supplied Origin exactly matches the allowlist. */
+export function isExplicitlyAllowedServerOrigin(
+  origin: string,
+  allowedOrigins: ReadonlySet<string>,
+): boolean {
+  try {
+    return allowedOrigins.has(normalizeServerBrowserOrigin(origin));
+  } catch {
+    return false;
+  }
 }
 
 export function assertSecureServerBind(host: string, authToken: string | null): void {
@@ -77,6 +108,44 @@ function readBearerToken(value: string | undefined): string | null {
   if (!value) return null;
   const match = /^Bearer ([^\s]+)$/.exec(value);
   return match?.[1] ?? null;
+}
+
+function parseAllowedOriginsEnv(value: string | undefined): string[] {
+  if (value === undefined || value.trim() === "") return [];
+  const origins = value.split(",").map((origin) => origin.trim());
+  if (origins.some((origin) => origin === "")) {
+    throw new Error(
+      `${SERVER_ALLOWED_ORIGINS_ENV} must be a comma-separated list of browser origins`,
+    );
+  }
+  return origins;
+}
+
+function normalizeServerBrowserOrigin(value: string): string {
+  const trimmed = value.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error(
+      `${SERVER_ALLOWED_ORIGINS_ENV} contains an invalid browser origin: ${JSON.stringify(value)}`,
+    );
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+    || parsed.username !== ""
+    || parsed.password !== ""
+    || parsed.pathname !== "/"
+    || parsed.search !== ""
+    || parsed.hash !== ""
+    || parsed.origin === "null"
+    || parsed.hostname.includes("*")
+  ) {
+    throw new Error(
+      `${SERVER_ALLOWED_ORIGINS_ENV} entries must be exact http(s) browser origins without credentials, wildcards, paths, queries, or fragments: ${JSON.stringify(value)}`,
+    );
+  }
+  return parsed.origin;
 }
 
 function readProtocolHeader(value: string | readonly string[] | undefined): string[] {

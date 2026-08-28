@@ -21,7 +21,7 @@ Two rows must never change, and are asserted against ``_BEFORE`` on purpose:
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -291,5 +291,6 @@ def test_openai_compatible_default_matches_provider_factory(monkeypatch: pytest.
     from autocontext.providers.registry import create_provider
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    provider = create_provider("openai-compatible", api_key="test-key")
+    with patch("autocontext.providers.openai_compat.openai.OpenAI", return_value=MagicMock()):
+        provider = create_provider("openai-compatible", api_key="test-key")
     assert PROVIDER_DEFAULT_MODEL["openai-compatible"] == provider.default_model() == "gpt-5.6-terra"

@@ -22,6 +22,7 @@ from autocontext.security.confined_files import (
     read_confined_text,
     unlink_confined_file,
 )
+from autocontext.server._interactive_run_commands import dispatch_run_command
 from autocontext.server.auth import (
     request_is_authorized,
     resolve_server_auth_token,
@@ -37,32 +38,21 @@ from autocontext.server.notebook_api import notebook_router
 from autocontext.server.openclaw_api import router as openclaw_router
 from autocontext.server.protocol import (
     SERVER_CAPABILITIES,
-    AckMsg,
     CancelScenarioCmd,
-    ChatAgentCmd,
-    ChatResponseMsg,
     ConfirmScenarioCmd,
     CreateScenarioCmd,
     EnvironmentsMsg,
     ErrorMsg,
     EventMsg,
     HelloMsg,
-    InjectHintCmd,
     ListScenariosCmd,
-    OverrideGateCmd,
-    PauseCmd,
-    ResumeCmd,
     ReviseScenarioCmd,
-    RunAcceptedMsg,
     RunStoppedPayload,
     ScenarioErrorMsg,
     ScenarioGeneratingMsg,
     ScenarioPreviewMsg,
     ScenarioReadyMsg,
     ScoringComponent,
-    StartRunCmd,
-    StateMsg,
-    StopCmd,
     StrategyParam,
     parse_client_message,
 )
@@ -222,7 +212,7 @@ def create_app(
     monitor_engine = None
     if app_settings.monitor_enabled:
         try:
-            from autocontext.monitor.engine import MonitorEngine, set_engine
+            from autocontext.monitor.engine import MonitorEngine
 
             monitor_engine = MonitorEngine(
                 sqlite=store,
@@ -230,12 +220,36 @@ def create_app(
                 default_heartbeat_timeout=app_settings.monitor_heartbeat_timeout,
                 max_conditions=app_settings.monitor_max_conditions,
             )
-            monitor_engine.start()
-            set_engine(monitor_engine)
-            logger.info("Monitor engine started")
         except Exception:
             logger.warning("failed to initialize MonitorEngine", exc_info=True)
     application.state.monitor_engine = monitor_engine
+    monitor_started = False
+
+    @application.on_event("startup")
+    def _startup_monitor() -> None:
+        nonlocal monitor_started
+        if monitor_engine is None or monitor_started:
+            return
+        try:
+            from autocontext.monitor.engine import set_engine
+
+            monitor_engine.start()
+            set_engine(monitor_engine)
+            monitor_started = True
+            logger.info("Monitor engine started")
+        except Exception:
+            # A partially started engine must not leave a background thread or
+            # global registration behind after a failed application startup.
+            from autocontext.monitor.engine import clear_engine
+
+            try:
+                monitor_engine.stop()
+            except Exception:
+                logger.warning("failed to stop partially started MonitorEngine", exc_info=True)
+            finally:
+                clear_engine(monitor_engine)
+                monitor_started = False
+            logger.warning("failed to start MonitorEngine", exc_info=True)
 
     def _read_replay_file(run_id: str, generation: int) -> Path:
         if not run_id or len(run_id) > 128 or not run_id.replace("_", "").replace("-", "").isalnum():
@@ -490,84 +504,16 @@ def create_app(
                         await websocket.send_json(ErrorMsg(message="Unknown or invalid interactive command.").model_dump())
                         continue
 
+                    if await dispatch_run_command(
+                        cmd,
+                        websocket=websocket,
+                        controller=controller,
+                        run_manager=run_manager,
+                        interactive_work=interactive_work,
+                    ):
+                        continue
+
                     match cmd:
-                        case PauseCmd():
-                            controller.pause()
-                            await websocket.send_json(StateMsg(paused=True).model_dump())
-
-                        case ResumeCmd():
-                            controller.resume()
-                            await websocket.send_json(StateMsg(paused=False).model_dump())
-
-                        case StopCmd(client_run_id=client_run_id, command_id=command_id):
-                            outcome = run_manager.stop_run(client_run_id, command_id, None) if run_manager else "not_active"
-                            if outcome in ("accepted", "duplicate"):
-                                await websocket.send_json(
-                                    AckMsg(action="stop", client_run_id=client_run_id, command_id=command_id).model_dump()
-                                )
-                            elif outcome == "scope_mismatch":
-                                await websocket.send_json(
-                                    ErrorMsg(
-                                        message="stop targets a different run than the active one",
-                                        client_run_id=client_run_id,
-                                        command_id=command_id,
-                                    ).model_dump()
-                                )
-                            else:  # not_active
-                                await websocket.send_json(
-                                    ErrorMsg(
-                                        message="no active run to stop",
-                                        client_run_id=client_run_id,
-                                        command_id=command_id,
-                                    ).model_dump()
-                                )
-
-                        case InjectHintCmd(text=text):
-                            if text:
-                                controller.inject_hint(text)
-                                await websocket.send_json(AckMsg(action="inject_hint").model_dump())
-
-                        case OverrideGateCmd(decision=decision):
-                            controller.set_gate_override(decision)
-                            await websocket.send_json(AckMsg(action="override_gate", decision=decision).model_dump())
-
-                        case ChatAgentCmd(role=role, message=message):
-                            if role and message:
-                                try:
-                                    response = await interactive_work.run(controller.submit_chat, role, message)
-                                    await websocket.send_json(ChatResponseMsg(role=role, text=response).model_dump())
-                                except InteractiveWorkLimitExceeded:
-                                    await websocket.send_json(
-                                        ErrorMsg(message="Interactive server is busy; try again later.").model_dump()
-                                    )
-                                except Exception:
-                                    logger.warning("interactive chat failed", exc_info=True)
-                                    await websocket.send_json(ErrorMsg(message="Chat request failed.").model_dump())
-
-                        case StartRunCmd(scenario=scenario, generations=generations) as start_cmd:
-                            if run_manager is None:
-                                await websocket.send_json(ErrorMsg(message="Run manager not available.").model_dump())
-                            elif run_manager.is_active:
-                                await websocket.send_json(ErrorMsg(message="A run is already active.").model_dump())
-                            else:
-                                try:
-                                    rid = await interactive_work.run(
-                                        run_manager.start_run,
-                                        scenario,
-                                        generations,
-                                        require_playbook_approval=start_cmd.require_playbook_approval,
-                                        client_run_id=start_cmd.client_run_id,
-                                    )
-                                    await websocket.send_json(
-                                        RunAcceptedMsg(run_id=rid, scenario=scenario, generations=generations).model_dump()
-                                    )
-                                except InteractiveWorkLimitExceeded:
-                                    await websocket.send_json(
-                                        ErrorMsg(message="Interactive server is busy; try again later.").model_dump()
-                                    )
-                                except (ValueError, RuntimeError):
-                                    logger.warning("interactive run start failed", exc_info=True)
-                                    await websocket.send_json(ErrorMsg(message="Unable to start run.").model_dump())
 
                         case ListScenariosCmd():
                             if run_manager:
@@ -699,12 +645,31 @@ def create_app(
 
     @application.on_event("shutdown")
     def _shutdown_monitor() -> None:
-        if monitor_engine is not None:
+        nonlocal monitor_started
+        if monitor_engine is not None and monitor_started:
             from autocontext.monitor.engine import clear_engine
 
-            monitor_engine.stop()
-            clear_engine()
+            try:
+                monitor_engine.stop()
+            except Exception:
+                logger.warning("failed to stop MonitorEngine", exc_info=True)
+            finally:
+                clear_engine(monitor_engine)
+                monitor_started = False
             logger.info("Monitor engine stopped")
+
+    @application.on_event("shutdown")
+    def _shutdown_run_manager() -> None:
+        if run_manager is None:
+            if controller is not None:
+                controller.abort_pending_chats(
+                    "interactive server ended before the chat request completed"
+                )
+            return
+        try:
+            run_manager.shutdown()
+        except Exception:
+            logger.exception("failed to shut down interactive RunManager")
 
     def _api_info() -> dict[str, Any]:
         return {

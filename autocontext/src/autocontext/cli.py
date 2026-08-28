@@ -449,7 +449,6 @@ def run(
             )
             raise typer.Exit(code=2) from blocked
 
-    # Agent-task scenario detection (AC-231)
     if _is_agent_task(scenario):
         if serve:
             msg = "--serve is not supported for agent-task scenarios"
@@ -487,21 +486,26 @@ def run(
     if serve:
         from autocontext.loop.controller import LoopController
         from autocontext.server.app import create_app
-
         runner = _runner(preset)
         controller = LoopController()
         runner.controller = controller
+        controller.begin_run_session()
 
         def _loop_target() -> None:
-            runner.run(scenario_name=scenario, generations=gens, run_id=run_id)
+            try:
+                runner.run(scenario_name=scenario, generations=gens, run_id=run_id)
+            finally:
+                controller.abort_pending_chats("interactive run ended")
 
         loop_thread = threading.Thread(target=_loop_target, daemon=True)
         loop_thread.start()
-
         interactive_app = create_app(controller=controller, events=runner.events)
         console.print(f"[green]Interactive server started on port {port}[/green]")
         console.print(f"[dim]API: http://localhost:{port}/api/runs | WS: ws://localhost:{port}/ws/interactive[/dim]")
-        uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info", **_UVICORN_WS_LIMITS)
+        try:
+            uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info", **_UVICORN_WS_LIMITS)
+        finally:
+            controller.abort_pending_chats("interactive server ended")
     else:
         with cli_error_boundary(json_output, action="run"):
             summary = _runner(preset).run(scenario_name=scenario, generations=gens, run_id=run_id)
@@ -832,7 +836,7 @@ def ecosystem(
         table.add_column("Best Score")
         table.add_column("Elo")
         for rs in summary.run_summaries:
-            with SQLiteStore(settings.db_path).connect() as conn:
+            with SQLiteStore(settings.db_path).connection() as conn:
                 row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = ?", (rs.run_id,)).fetchone()
             provider_label = row["agent_provider"] if row else "?"
             table.add_row(
@@ -1212,10 +1216,7 @@ def wait(
         raise typer.Exit(code=1)
 
 
-# ---------------------------------------------------------------------------
 # Backported from TS package (AC-382)
-# ---------------------------------------------------------------------------
-
 
 @app.command()
 def judge(

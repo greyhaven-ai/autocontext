@@ -9,7 +9,9 @@ export interface ValidatedOpenClawArtifact {
   data: Record<string, unknown>;
 }
 
-const SAFE_FILE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// Keep this grammar identical to Python's portable OpenClaw artifact models.
+const SAFE_FILE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const LEGACY_SAFE_FILE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_ARTIFACT_ID_CHARS = 128;
 const MAX_SCENARIO_ID_CHARS = 128;
 const MAX_NAME_CHARS = 512;
@@ -95,6 +97,18 @@ function validateProvenance(value: unknown): Record<string, unknown> {
 export function ensureSafeArtifactId(artifactId: string): string {
   if (artifactId.length > MAX_ARTIFACT_ID_CHARS || !SAFE_FILE_ID.test(artifactId)) {
     throw new Error(`invalid artifact id: ${artifactId}`);
+  }
+  return artifactId;
+}
+
+/**
+ * Validate an identifier used only to read data written by older TypeScript
+ * releases. Dots remain storage-safe but are intentionally forbidden for all
+ * new portable artifact writes.
+ */
+export function ensureSafeLegacyArtifactReadId(artifactId: string): string {
+  if (artifactId.length > MAX_ARTIFACT_ID_CHARS || !LEGACY_SAFE_FILE_ID.test(artifactId)) {
+    throw new Error(`invalid legacy artifact id: ${artifactId}`);
   }
   return artifactId;
 }

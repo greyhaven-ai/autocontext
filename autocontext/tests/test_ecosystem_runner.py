@@ -36,7 +36,7 @@ def test_migration_005_adds_agent_provider_to_runs(tmp_path: Path) -> None:
     settings = _make_settings(tmp_path)
     store = SQLiteStore(settings.db_path)
     store.migrate(_migrations_dir())
-    with store.connect() as conn:
+    with store.connection() as conn:
         # Should be able to read agent_provider column
         conn.execute(
             "INSERT INTO runs(run_id, scenario, target_generations, executor_mode, status, agent_provider) "
@@ -51,7 +51,7 @@ def test_migration_005_adds_provider_to_knowledge_snapshots(tmp_path: Path) -> N
     settings = _make_settings(tmp_path)
     store = SQLiteStore(settings.db_path)
     store.migrate(_migrations_dir())
-    with store.connect() as conn:
+    with store.connection() as conn:
         # Create a run to satisfy FK
         conn.execute(
             "INSERT INTO runs(run_id, scenario, target_generations, executor_mode, status) "
@@ -73,7 +73,7 @@ def test_migration_005_defaults_for_existing_rows(tmp_path: Path) -> None:
     settings = _make_settings(tmp_path)
     store = SQLiteStore(settings.db_path)
     store.migrate(_migrations_dir())
-    with store.connect() as conn:
+    with store.connection() as conn:
         # Insert a run without specifying agent_provider — should default to ''
         conn.execute(
             "INSERT INTO runs(run_id, scenario, target_generations, executor_mode, status) "
@@ -92,7 +92,7 @@ def test_create_run_stores_agent_provider(tmp_path: Path) -> None:
     store = SQLiteStore(settings.db_path)
     store.migrate(_migrations_dir())
     store.create_run("prov_run", "grid_ctf", 1, "local", agent_provider="anthropic")
-    with store.connect() as conn:
+    with store.connection() as conn:
         row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = 'prov_run'").fetchone()
         assert row is not None
         assert row["agent_provider"] == "anthropic"
@@ -103,7 +103,7 @@ def test_create_run_default_agent_provider(tmp_path: Path) -> None:
     store = SQLiteStore(settings.db_path)
     store.migrate(_migrations_dir())
     store.create_run("default_prov_run", "grid_ctf", 1, "local")
-    with store.connect() as conn:
+    with store.connection() as conn:
         row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = 'default_prov_run'").fetchone()
         assert row is not None
         assert row["agent_provider"] == ""
@@ -118,7 +118,7 @@ def test_save_knowledge_snapshot_with_provider(tmp_path: Path) -> None:
         "grid_ctf", "snap_prov_run", 0.7, 1050.0, "hash_prov",
         agent_provider="agent_sdk", rlm_enabled=True,
     )
-    with store.connect() as conn:
+    with store.connection() as conn:
         row = conn.execute(
             "SELECT agent_provider, rlm_enabled FROM knowledge_snapshots WHERE run_id = 'snap_prov_run'"
         ).fetchone()
@@ -156,7 +156,7 @@ def test_generation_runner_stores_provider_in_run(tmp_path: Path) -> None:
     runner = GenerationRunner(settings)
     runner.migrate(_migrations_dir())
     runner.run(scenario_name="grid_ctf", generations=1, run_id="wired_run")
-    with runner.sqlite.connect() as conn:
+    with runner.sqlite.connection() as conn:
         row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = 'wired_run'").fetchone()
         assert row is not None
         assert row["agent_provider"] == "deterministic"
@@ -167,7 +167,7 @@ def test_generation_runner_stores_provider_in_snapshot(tmp_path: Path) -> None:
     runner = GenerationRunner(settings)
     runner.migrate(_migrations_dir())
     runner.run(scenario_name="grid_ctf", generations=1, run_id="snap_wired_run")
-    with runner.sqlite.connect() as conn:
+    with runner.sqlite.connection() as conn:
         row = conn.execute(
             "SELECT agent_provider, rlm_enabled FROM knowledge_snapshots WHERE run_id = 'snap_wired_run'"
         ).fetchone()
@@ -305,7 +305,7 @@ def test_ecosystem_provider_tracked_in_db(tmp_path: Path) -> None:
     summary = runner.run()
     store = SQLiteStore(base.db_path)
     for rs in summary.run_summaries:
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = ?", (rs.run_id,)).fetchone()
             assert row is not None
             assert row["agent_provider"] == "deterministic"

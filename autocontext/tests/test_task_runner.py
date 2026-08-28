@@ -143,7 +143,7 @@ class TestTaskQueue:
         assert task["attempts"] == 1
 
     def test_python_worker_dequeue_allows_malformed_config(self, store):
-        with store.connect() as conn:
+        with store.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO task_queue(id, spec_name, config_json)

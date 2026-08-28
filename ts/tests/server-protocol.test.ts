@@ -886,6 +886,96 @@ describe("InteractiveServer", () => {
     }
   });
 
+  it("admits an explicitly configured HTTPS browser origin through a reverse proxy", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { WebSocket } = await import("ws");
+    const browserOrigin = "https://operator.example";
+    const mgr = new RunManager({
+      dbPath: join(dir, "proxy-origin.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "proxy-origin-runs"),
+      knowledgeRoot: join(dir, "proxy-origin-knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({
+      runManager: mgr,
+      port: 0,
+      allowedOrigins: [browserOrigin],
+    });
+    await server.start();
+    const socket = new WebSocket(server.url, { origin: browserOrigin });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once("open", resolve);
+        socket.once("error", reject);
+      });
+
+      const httpUrl = server.url
+        .replace(/^ws:/, "http:")
+        .replace("/ws/interactive", "/api/openclaw/artifacts");
+      const preflight = await fetch(httpUrl, {
+        method: "OPTIONS",
+        headers: {
+          Origin: browserOrigin,
+          "Access-Control-Request-Method": "POST",
+        },
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get("access-control-allow-origin")).toBe(browserOrigin);
+
+      const response = await fetch(httpUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: browserOrigin,
+        },
+        body: "{}",
+      });
+      expect(response.status).not.toBe(403);
+      expect(response.headers.get("access-control-allow-origin")).toBe(browserOrigin);
+
+      const wrongSchemeResponse = await fetch(httpUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "http://operator.example",
+        },
+        body: "{}",
+      });
+      expect(wrongSchemeResponse.status).toBe(403);
+
+      const nearbyOrigin = "https://operator.example.evil";
+      const deniedPreflight = await fetch(httpUrl, {
+        method: "OPTIONS",
+        headers: {
+          Origin: nearbyOrigin,
+          "Access-Control-Request-Method": "POST",
+        },
+      });
+      expect(deniedPreflight.status).toBe(204);
+      expect(deniedPreflight.headers.get("access-control-allow-origin"))
+        .not.toBe(nearbyOrigin);
+
+      const deniedSocket = new WebSocket(server.url, { origin: nearbyOrigin });
+      try {
+        const status = await new Promise<number>((resolve, reject) => {
+          deniedSocket.once("unexpected-response", (_request, deniedResponse) => {
+            deniedResponse.resume();
+            resolve(deniedResponse.statusCode ?? 0);
+          });
+          deniedSocket.once("open", () => reject(new Error("nearby origin opened")));
+          deniedSocket.once("error", () => undefined);
+        });
+        expect(status).toBe(403);
+      } finally {
+        deniedSocket.terminate();
+      }
+    } finally {
+      socket.terminate();
+      await server.stop();
+    }
+  });
+
   it("admits large malformed frames to the bounded normal lane and closes the sender", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
     const { WebSocket } = await import("ws");

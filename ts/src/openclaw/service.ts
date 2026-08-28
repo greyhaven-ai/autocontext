@@ -16,7 +16,11 @@ import {
   readSecureTextFile,
   writeSecureTextFile,
 } from "../security/secure-local-files.js";
-import { ensureSafeArtifactId, validateOpenClawArtifactPayload } from "./artifact-contract.js";
+import {
+  ensureSafeArtifactId,
+  ensureSafeLegacyArtifactReadId,
+  validateOpenClawArtifactPayload,
+} from "./artifact-contract.js";
 import {
   DistillJobError,
   DistillJobStore,
@@ -321,7 +325,7 @@ export class OpenClawService {
   fetchArtifact(artifactId: string): Record<string, unknown> | null {
     return readArtifactRecord(
       this.#knowledgeRoot,
-      `${ensureSafeArtifactId(artifactId)}.json`,
+      `${ensureSafeLegacyArtifactReadId(artifactId)}.json`,
     );
   }
 
@@ -441,8 +445,8 @@ export class OpenClawService {
       ? null
       : readRecord(body, "training_metrics");
     return this.#distillJobs.transition(jobId, status, {
-      resultArtifactId: readOptionalString(body, "result_artifact_id") ?? null,
-      errorMessage: readOptionalString(body, "error_message") ?? null,
+      resultArtifactId: readOptionalString(body, "result_artifact_id"),
+      errorMessage: readOptionalString(body, "error_message"),
       trainingMetrics,
     });
   }

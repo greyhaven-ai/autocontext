@@ -1,9 +1,9 @@
 """Killable local isolation for restricted Python snippets.
 
-This module is deliberately small and POSIX-only.  It forks a short-lived
-child so callers can pass scenario objects without serializing them, while the
-parent retains control of wall-clock timeout and process termination.  Child
-results cross the boundary as size-limited JSON -- never pickle -- so a
+This module supports a deliberately narrow set of non-root Linux and macOS
+hosts. It forks a short-lived child so callers can pass scenario objects without
+serializing them, while the parent retains control of timeout and termination.
+Child results cross the boundary as size-limited JSON -- never pickle -- so a
 compromised child cannot trigger deserialization code in the parent.
 
 This is containment, not a filesystem or network sandbox.  The child receives
@@ -17,19 +17,37 @@ from __future__ import annotations
 import json
 import math
 import os
-import select
+import selectors
 import signal
+import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from typing import Any, Literal
+
+import autocontext.execution._isolation_platform as _isolation_platform
+import autocontext.execution._isolation_seccomp as _isolation_seccomp
+from autocontext.execution._isolation_protocol import (
+    decode_isolated_response as _decode_isolated_response,
+)
+from autocontext.execution._isolation_protocol import (
+    describe_wait_status as _describe_wait_status,
+)
+from autocontext.execution._isolation_protocol import write_all as _write_all
+from autocontext.execution._process_group import signal_owned_process_group
 
 DEFAULT_MAX_MEMORY_MB = 256
 DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
 DEFAULT_MAX_CHILD_TASKS = 64
 _ERROR_MESSAGE_LIMIT = 2_000
 _PROTOCOL_VERSION = 1
+_ChildState = Literal["running", "exited", "ownership_lost"]
+_STRANDED_CHILDREN: set[int] = set()
+_STRANDED_CHILDREN_LOCK = threading.RLock()
+_STRANDED_CHILD_REAPER: threading.Thread | None = None
+_ISOLATION_OWNERSHIP_POISONED = False
 
 
 class IsolationUnavailableError(RuntimeError):
@@ -48,15 +66,212 @@ class IsolatedOutputLimitError(IsolatedExecutionError):
     """Raised when the child attempts to return more than its IPC allowance."""
 
 
+class _ChildOwnershipLost(IsolatedExecutionError):
+    """The isolation leader was reaped outside this boundary."""
+
+
 def local_isolation_available() -> bool:
-    """Return whether this call site can safely start the local child boundary."""
-    return (
+    """Return whether this process can safely start the local child boundary."""
+    native_thread_count = _native_thread_count()
+    admission_is_safe = (
         os.name == "posix"
         and hasattr(os, "fork")
-        and hasattr(os, "waitid")
-        and hasattr(os, "WNOWAIT")
+        and _child_ownership_primitives_available()
         and threading.current_thread() is threading.main_thread()
+        and threading.active_count() == 1
+        and native_thread_count == 1
+        and _sigchld_disposition_is_safe()
+        and _descendant_containment_supported()
     )
+    if not admission_is_safe:
+        return False
+    return _registered_children_are_clear() and not _ISOLATION_OWNERSHIP_POISONED
+
+
+def _registered_children_are_clear() -> bool:
+    """Reap completed stranded leaders and block while ownership is uncertain."""
+    global _ISOLATION_OWNERSHIP_POISONED
+    with _STRANDED_CHILDREN_LOCK:
+        if _ISOLATION_OWNERSHIP_POISONED:
+            return False
+        for pid in tuple(_STRANDED_CHILDREN):
+            child_state = _child_state_without_reaping(pid)
+            if child_state == "running":
+                continue
+            if child_state == "ownership_lost":
+                _ISOLATION_OWNERSHIP_POISONED = True
+                _STRANDED_CHILDREN.discard(pid)
+                return False
+            # Keep the exited leader unreaped while killing any surviving group
+            # members, so its numeric process-group id cannot be reused.
+            try:
+                _signal_process_group(pid, signal.SIGKILL)
+            except IsolatedExecutionError:
+                _ISOLATION_OWNERSHIP_POISONED = True
+                return False
+            try:
+                os.waitpid(pid, 0)
+            except ChildProcessError:
+                _ISOLATION_OWNERSHIP_POISONED = True
+                _STRANDED_CHILDREN.discard(pid)
+                return False
+            _STRANDED_CHILDREN.discard(pid)
+        return not _STRANDED_CHILDREN
+
+
+def _register_stranded_child(pid: int) -> None:
+    global _STRANDED_CHILD_REAPER
+    reaper_to_start: threading.Thread | None = None
+    with _STRANDED_CHILDREN_LOCK:
+        _STRANDED_CHILDREN.add(pid)
+        if _STRANDED_CHILD_REAPER is None:
+            reaper_to_start = threading.Thread(
+                target=_reap_stranded_children,
+                name="autocontext-isolated-child-reaper",
+                daemon=True,
+            )
+            _STRANDED_CHILD_REAPER = reaper_to_start
+    if reaper_to_start is not None:
+        try:
+            reaper_to_start.start()
+        except RuntimeError:
+            # The registry still blocks later forks and lets the next
+            # availability probe reap the child synchronously.
+            with _STRANDED_CHILDREN_LOCK:
+                if _STRANDED_CHILD_REAPER is reaper_to_start:
+                    _STRANDED_CHILD_REAPER = None
+
+
+def _reap_stranded_children() -> None:
+    """Bound zombie lifetime after a child misses the termination deadline."""
+    global _STRANDED_CHILD_REAPER
+    try:
+        while True:
+            if _registered_children_are_clear():
+                return
+            with _STRANDED_CHILDREN_LOCK:
+                if _ISOLATION_OWNERSHIP_POISONED or not _STRANDED_CHILDREN:
+                    return
+            time.sleep(0.05)
+    finally:
+        with _STRANDED_CHILDREN_LOCK:
+            if _STRANDED_CHILD_REAPER is threading.current_thread():
+                _STRANDED_CHILD_REAPER = None
+
+
+def _child_ownership_lost(message: str) -> _ChildOwnershipLost:
+    global _ISOLATION_OWNERSHIP_POISONED
+    with _STRANDED_CHILDREN_LOCK:
+        _ISOLATION_OWNERSHIP_POISONED = True
+    return _ChildOwnershipLost(message)
+
+
+def _sigchld_disposition_is_safe() -> bool:
+    """A custom/ignored SIGCHLD disposition may reap the leader behind us."""
+    try:
+        return signal.getsignal(signal.SIGCHLD) is signal.SIG_DFL
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
+def _child_ownership_primitives_available() -> bool:
+    """Require every primitive used to observe the child without reaping it."""
+    return (
+        getattr(os, "waitid", None) is not None
+        and getattr(os, "P_PID", None) is not None
+        and getattr(os, "WNOWAIT", None) is not None
+        and getattr(os, "WEXITED", None) is not None
+        and getattr(os, "WNOHANG", None) is not None
+    )
+
+
+def _native_thread_count() -> int | None:
+    return _isolation_platform._native_thread_count()
+
+
+def _darwin_native_thread_count() -> int | None:
+    return _isolation_platform._darwin_native_thread_count()
+
+
+def _safe_unprivileged_uid() -> int | None:
+    return _isolation_platform._safe_unprivileged_uid()
+
+
+def _descendant_containment_supported() -> bool:
+    """Return whether the child can be prevented from escaping its kill group."""
+    if _safe_unprivileged_uid() is None:
+        return False
+    if sys.platform.startswith("linux"):
+        try:
+            machine = os.uname().machine.lower()
+        except (AttributeError, OSError):
+            return False
+        capability_masks = _linux_capability_masks()
+        return (
+            machine in {"aarch64", "amd64", "arm64", "x86_64"}
+            and capability_masks is not None
+            and not any(capability_masks)
+        )
+    if sys.platform == "darwin":
+        try:
+            import resource
+
+            return hasattr(resource, "RLIMIT_NPROC")
+        except (AttributeError, ImportError, OSError):
+            return False
+    return False
+
+
+@contextmanager
+def _temporary_isolation_directory() -> Iterator[str]:
+    """Enter the private work directory before allocating result-pipe FDs."""
+    temporary_directory: tempfile.TemporaryDirectory[str] | None = None
+    try:
+        temporary_directory = tempfile.TemporaryDirectory(
+            prefix="autocontext-isolated-",
+            ignore_cleanup_errors=True,
+        )
+        work_dir = temporary_directory.__enter__()
+    except OSError as exc:
+        if temporary_directory is not None:
+            temporary_directory.cleanup()
+        raise IsolationUnavailableError(
+            "unable to create the isolation working directory"
+        ) from exc
+    try:
+        yield work_dir
+    finally:
+        temporary_directory.__exit__(None, None, None)
+
+
+def _open_isolation_result_pipe() -> tuple[int, int]:
+    """Create a non-stdio result pipe even when the host launched without stdio."""
+    read_fd, write_fd = os.pipe()
+    descriptors = [read_fd, write_fd]
+    opened_descriptors = set(descriptors)
+    try:
+        if any(fd <= 2 for fd in descriptors):
+            import fcntl
+
+            for index, descriptor in enumerate(descriptors):
+                if descriptor > 2:
+                    continue
+                replacement = fcntl.fcntl(descriptor, fcntl.F_DUPFD_CLOEXEC, 3)
+                opened_descriptors.add(replacement)
+                descriptors[index] = replacement
+            for descriptor in (read_fd, write_fd):
+                if descriptor > 2:
+                    continue
+                os.close(descriptor)
+                opened_descriptors.discard(descriptor)
+        return descriptors[0], descriptors[1]
+    except BaseException:
+        for descriptor in opened_descriptors:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        raise
 
 
 def run_isolated_json(
@@ -68,14 +283,16 @@ def run_isolated_json(
 ) -> Any:
     """Run ``fn`` in a killable child and return its JSON-compatible result.
 
-    The function fails closed on non-POSIX platforms and from worker threads.
+    The function fails closed on unsupported or multithreaded processes.
     ``fork`` is used so scenario and strategy objects need not be picklable.
     Only bounded JSON is accepted from the child; Python pickle is never used
     across the trust boundary.
     """
     if not local_isolation_available():
         raise IsolationUnavailableError(
-            "local Python isolation requires POSIX waitid support and the process main thread"
+            "local Python isolation requires the main thread of a single-threaded, "
+            "non-root supported Linux or macOS host with native-thread accounting, "
+            "fork/waitid, and enforceable child-process containment"
         )
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be a positive finite number")
@@ -84,33 +301,66 @@ def run_isolated_json(
     if max_output_bytes < 1_024:
         raise ValueError("max_output_bytes must be at least 1024")
 
-    try:
-        read_fd, write_fd = os.pipe()
-    except OSError as exc:
-        raise IsolationUnavailableError("unable to create the isolation result pipe") from exc
-    with tempfile.TemporaryDirectory(
-        prefix="autocontext-isolated-",
-        ignore_cleanup_errors=True,
-    ) as work_dir:
+    with _temporary_isolation_directory() as work_dir:
         try:
-            pid = os.fork()
+            read_fd, write_fd = _open_isolation_result_pipe()
         except OSError as exc:
-            os.close(read_fd)
-            os.close(write_fd)
+            raise IsolationUnavailableError(
+                "unable to create the isolation result pipe"
+            ) from exc
+        try:
+            child_exit = os._exit
+            # Recheck immediately adjacent to fork. Native pthreads created via
+            # extensions/ctypes are invisible to ``threading.active_count()``;
+            # CPython's post-fork warning is diagnostic only and explicitly
+            # clears warning exceptions, so it cannot enforce this boundary.
+            if _native_thread_count() != 1:
+                raise IsolationUnavailableError(
+                    "native thread state changed before isolated child startup"
+                )
+            if not _sigchld_disposition_is_safe():
+                raise IsolationUnavailableError(
+                    "SIGCHLD disposition changed before isolated child startup"
+                )
+            if not _child_ownership_primitives_available():
+                raise IsolationUnavailableError(
+                    "child ownership primitives changed before isolated child startup"
+                )
+            pid = os.fork()
+        except (OSError, IsolationUnavailableError) as exc:
+            for descriptor in (read_fd, write_fd):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            if isinstance(exc, IsolationUnavailableError):
+                raise
             raise IsolationUnavailableError("unable to start the isolated child") from exc
         if pid == 0:
-            os.close(read_fd)
-            _run_child(
-                write_fd,
-                work_dir,
-                fn,
-                timeout_seconds=timeout_seconds,
-                max_memory_mb=max_memory_mb,
-                max_output_bytes=max_output_bytes,
-            )
+            try:
+                try:
+                    os.close(read_fd)
+                except OSError:
+                    child_exit(1)
+                _run_child(
+                    write_fd,
+                    work_dir,
+                    fn,
+                    timeout_seconds=timeout_seconds,
+                    max_memory_mb=max_memory_mb,
+                    max_output_bytes=max_output_bytes,
+                )
+            finally:
+                child_exit(1)
 
-        os.close(write_fd)
         try:
+            try:
+                os.close(write_fd)
+            except OSError as exc:
+                _terminate_process_tree(pid)
+                raise IsolatedExecutionError(
+                    "unable to close the parent isolation pipe"
+                ) from exc
             try:
                 raw, status = _collect_child(
                     pid,
@@ -118,8 +368,14 @@ def run_isolated_json(
                     timeout_seconds=timeout_seconds,
                     max_output_bytes=max_output_bytes,
                 )
-            except (IsolatedExecutionTimeout, IsolatedOutputLimitError):
-                # These paths already terminate and reap before raising.
+            except (
+                IsolatedExecutionTimeout,
+                IsolatedOutputLimitError,
+                _ChildOwnershipLost,
+            ):
+                # Timeout/output-limit paths normally terminate and reap. Lost
+                # ownership poisons this boundary instead of risking a numeric
+                # pid/process-group signal after external reaping.
                 raise
             except BaseException:
                 # Operator interrupts and low-level select/read/wait failures
@@ -132,13 +388,16 @@ def run_isolated_json(
             except OSError:
                 pass
 
+    if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
+        detail = _describe_wait_status(status)
+        raise IsolatedExecutionError(f"isolated child failed after execution ({detail})")
     if not raw:
         detail = _describe_wait_status(status)
         raise IsolatedExecutionError(f"isolated child exited without a response ({detail})")
 
     try:
-        response = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        response = _decode_isolated_response(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise IsolatedExecutionError("isolated child returned malformed JSON") from exc
     if not isinstance(response, dict) or response.get("version") != _PROTOCOL_VERSION:
         raise IsolatedExecutionError("isolated child returned an invalid protocol response")
@@ -148,6 +407,8 @@ def run_isolated_json(
         return response.get("value")
     if response_status == "output_limit":
         raise IsolatedOutputLimitError("isolated child result exceeded the output limit")
+    if response_status == "unavailable":
+        raise IsolationUnavailableError("isolated child could not enforce process containment")
     if response_status == "error":
         error_type = response.get("error_type", "Exception")
         message = response.get("message", "isolated execution failed")
@@ -169,28 +430,40 @@ def _run_child(
     """Child entrypoint.  This function never returns to inherited caller code."""
     try:
         try:
-            os.setsid()
-        except OSError:
-            pass
-        _harden_child(
-            write_fd,
-            work_dir,
-            timeout_seconds=timeout_seconds,
-            max_memory_mb=max_memory_mb,
-            max_output_bytes=max_output_bytes,
-        )
-        try:
-            response: dict[str, Any] = {
-                "version": _PROTOCOL_VERSION,
-                "status": "ok",
-                "value": fn(),
-            }
-        except BaseException as exc:  # child must report failures without escaping the boundary
+            try:
+                os.setsid()
+            except OSError as exc:
+                raise IsolationUnavailableError(
+                    "unable to create the isolated child process group"
+                ) from exc
+            if os.getpgrp() != os.getpid():
+                raise IsolationUnavailableError(
+                    "unable to verify the isolated child process group"
+                )
+            _harden_child(
+                write_fd,
+                work_dir,
+                timeout_seconds=timeout_seconds,
+                max_memory_mb=max_memory_mb,
+                max_output_bytes=max_output_bytes,
+            )
+            try:
+                response: dict[str, Any] = {
+                    "version": _PROTOCOL_VERSION,
+                    "status": "ok",
+                    "value": fn(),
+                }
+            except BaseException as exc:  # child must report failures without escaping the boundary
+                response = {
+                    "version": _PROTOCOL_VERSION,
+                    "status": "error",
+                    "error_type": type(exc).__name__[:128],
+                    "message": str(exc)[:_ERROR_MESSAGE_LIMIT],
+                }
+        except IsolationUnavailableError:
             response = {
                 "version": _PROTOCOL_VERSION,
-                "status": "error",
-                "error_type": type(exc).__name__[:128],
-                "message": str(exc)[:_ERROR_MESSAGE_LIMIT],
+                "status": "unavailable",
             }
 
         try:
@@ -235,7 +508,7 @@ def _harden_child(
     max_memory_mb: int,
     max_output_bytes: int,
 ) -> None:
-    """Reduce ambient capabilities and apply best-effort POSIX limits."""
+    """Reduce ambient capabilities and apply mandatory/best-effort limits."""
     devnull = os.open(os.devnull, os.O_RDWR)
     try:
         for standard_fd in (0, 1, 2):
@@ -269,13 +542,7 @@ def _close_inherited_fds(preserve_fd: int) -> None:
                 except OSError:
                     pass
         return
-
-    # Conservative fallback for POSIX systems without an fd pseudo-filesystem.
-    upper_bound = 4_096
-    if preserve_fd > 3:
-        os.closerange(3, preserve_fd)
-    if preserve_fd + 1 < upper_bound:
-        os.closerange(preserve_fd + 1, upper_bound)
+    raise IsolationUnavailableError("unable to enumerate inherited file descriptors")
 
 
 def _apply_resource_limits(
@@ -286,8 +553,8 @@ def _apply_resource_limits(
 ) -> None:
     try:
         import resource
-    except ImportError:
-        return
+    except ImportError as exc:
+        raise IsolationUnavailableError("process resource limits are unavailable") from exc
 
     memory_bytes = max_memory_mb * 1024 * 1024
     cpu_seconds = max(1, math.ceil(timeout_seconds))
@@ -301,15 +568,6 @@ def _apply_resource_limits(
         limit = getattr(resource, name, None)
         if limit is not None:
             requested.append((limit, memory_bytes))
-    process_limit = getattr(resource, "RLIMIT_NPROC", None)
-    if process_limit is not None:
-        # RLIMIT_NPROC also counts pthreads on Linux.  A zero limit therefore
-        # broke supported injected capabilities such as ``llm_batch`` before
-        # they could start their bounded helper pool.  Keep a small ceiling as
-        # defense in depth; this is a per-UID kernel limit, not a substitute for
-        # the per-cgroup/process isolation required for hostile multi-tenant code.
-        requested.append((process_limit, DEFAULT_MAX_CHILD_TASKS))
-
     for resource_id, value in requested:
         try:
             _, hard = resource.getrlimit(resource_id)
@@ -319,12 +577,70 @@ def _apply_resource_limits(
             # Some kernels expose a limit but do not enforce or permit lowering it.
             continue
 
+    _apply_linux_process_limit(resource)
+    _apply_descendant_containment(resource)
 
-def _write_all(fd: int, payload: bytes) -> None:
-    view = memoryview(payload)
-    while view:
-        written = os.write(fd, view)
-        view = view[written:]
+
+def _apply_descendant_containment(resource_module: Any) -> None:
+    """Prevent descendants from leaving the process group killed by the parent."""
+    if sys.platform.startswith("linux"):
+        _install_linux_process_group_filter()
+        return
+    if sys.platform == "darwin":
+        process_limit = getattr(resource_module, "RLIMIT_NPROC", None)
+        if process_limit is None or _safe_unprivileged_uid() is None:
+            raise IsolationUnavailableError("process-count containment is unavailable")
+        try:
+            resource_module.setrlimit(process_limit, (1, 1))
+            soft, hard = resource_module.getrlimit(process_limit)
+        except (OSError, ValueError) as exc:
+            raise IsolationUnavailableError("unable to enforce the child process limit") from exc
+        if soft > 1 or hard > 1:
+            raise IsolationUnavailableError("unable to verify the child process limit")
+        return
+    raise IsolationUnavailableError("process descendant containment is unsupported")
+
+
+def _install_linux_process_group_filter() -> None:
+    try:
+        _isolation_seccomp._install_linux_process_group_filter()
+    except _isolation_seccomp._LinuxContainmentUnavailable as exc:
+        raise IsolationUnavailableError(str(exc)) from exc
+
+
+def _linux_process_group_filter_rules(
+    machine: str,
+    *,
+    errno_value: int,
+) -> tuple[tuple[int, int, int, int], ...]:
+    try:
+        return _isolation_seccomp._linux_process_group_filter_rules(
+            machine,
+            errno_value=errno_value,
+        )
+    except _isolation_seccomp._LinuxContainmentUnavailable as exc:
+        raise IsolationUnavailableError(str(exc)) from exc
+
+
+def _apply_linux_process_limit(resource_module: Any) -> None:
+    try:
+        _isolation_seccomp._apply_linux_process_limit(
+            resource_module,
+            max_child_tasks=DEFAULT_MAX_CHILD_TASKS,
+            safe_unprivileged_uid=_safe_unprivileged_uid,
+            capability_masks=_linux_capability_masks,
+            same_uid_task_count=_linux_same_uid_task_count,
+        )
+    except _isolation_seccomp._LinuxContainmentUnavailable as exc:
+        raise IsolationUnavailableError(str(exc)) from exc
+
+
+def _linux_capability_masks() -> tuple[int, int, int, int] | None:
+    return _isolation_seccomp._linux_capability_masks()
+
+
+def _linux_same_uid_task_count() -> int | None:
+    return _isolation_seccomp._linux_same_uid_task_count(_safe_unprivileged_uid)
 
 
 def _collect_child(
@@ -339,108 +655,146 @@ def _collect_child(
     exited = False
     eof = False
 
-    # Observe child exit without reaping it.  Keeping the leader as a zombie
-    # reserves ``pid`` until every process-group cleanup decision is complete,
-    # so a later killpg cannot target a newly reused group id.
-    while not exited or not eof:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            _terminate_process_tree(pid)
-            raise IsolatedExecutionTimeout(
-                f"isolated execution exceeded {timeout_seconds:.3g}s"
-            )
+    # Keep the exited leader as a zombie so its pid/pgid cannot be reused.
+    with selectors.DefaultSelector() as selector:
+        selector.register(read_fd, selectors.EVENT_READ)
+        while not exited or not eof:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _terminate_process_tree(pid)
+                raise IsolatedExecutionTimeout(
+                    f"isolated execution exceeded {timeout_seconds:.3g}s"
+                )
 
-        if not exited:
-            exited = _child_exited_without_reaping(pid)
-
-        readable, _, _ = select.select([read_fd], [], [], min(remaining, 0.05))
-        if readable:
-            chunk = os.read(read_fd, 65_536)
-            if chunk:
-                output.extend(chunk)
-                if len(output) > max_output_bytes:
-                    _terminate_process_tree(pid)
-                    raise IsolatedOutputLimitError(
-                        "isolated child response exceeded the output limit"
+            if not exited:
+                child_state = _child_state_without_reaping(pid)
+                if child_state == "ownership_lost":
+                    raise _child_ownership_lost(
+                        "isolated child ownership was lost before cleanup"
                     )
-            else:
-                eof = True
+                exited = child_state == "exited"
 
-        if exited and not eof and not readable:
-            # A descendant may have inherited the pipe.  The child is complete;
-            # terminate its process group so the response cannot be held open.
-            _signal_process_group(pid, signal.SIGKILL)
+            readable = selector.select(min(remaining, 0.05))
+            if readable:
+                chunk = os.read(read_fd, 65_536)
+                if chunk:
+                    output.extend(chunk)
+                    if len(output) > max_output_bytes:
+                        _terminate_process_tree(pid)
+                        raise IsolatedOutputLimitError(
+                            "isolated child response exceeded the output limit"
+                        )
+                else:
+                    eof = True
 
-    _, status = os.waitpid(pid, 0)
+            if exited and not eof and not readable:
+                # A descendant may have inherited the pipe. The child is complete;
+                # terminate its process group so the response cannot be held open.
+                _signal_process_group(pid, signal.SIGKILL)
+
+    # EOF only proves that descendants closed the result descriptor; it does not
+    # prove that the process group is empty. Keep the exited leader unreaped while
+    # killing any remaining group members so the pgid cannot be reused underneath
+    # this cleanup decision.
+    if _child_state_without_reaping(pid) == "ownership_lost":
+        raise _child_ownership_lost(
+            "isolated child ownership was lost before cleanup"
+        )
+    _signal_process_group(pid, signal.SIGKILL)
+    try:
+        _, status = os.waitpid(pid, 0)
+    except ChildProcessError as exc:
+        raise _child_ownership_lost(
+            "isolated child ownership was lost before it could be reaped"
+        ) from exc
     return bytes(output), status
 
 
-def _child_exited_without_reaping(pid: int) -> bool:
-    """Use waitid/WNOWAIT so the child pid cannot be reused before cleanup."""
+def _child_state_without_reaping(pid: int) -> _ChildState:
+    """Observe exit while distinguishing an externally reaped leader."""
     waitid = getattr(os, "waitid", None)
     no_wait = getattr(os, "WNOWAIT", None)
     process_id_type = getattr(os, "P_PID", None)
-    if waitid is None or no_wait is None or process_id_type is None:
-        return False
+    if (
+        waitid is None
+        or no_wait is None
+        or process_id_type is None
+        or getattr(os, "WEXITED", None) is None
+        or getattr(os, "WNOHANG", None) is None
+    ):
+        return "ownership_lost"
     try:
         info = waitid(process_id_type, pid, os.WEXITED | os.WNOHANG | no_wait)
-    except ChildProcessError:
-        return True
-    return info is not None
+    except (ChildProcessError, OSError, TypeError, ValueError):
+        return "ownership_lost"
+    return "exited" if info is not None else "running"
 
 
 def _terminate_process_tree(pid: int) -> None:
     """Terminate the child group while its unreaped leader prevents id reuse."""
-    if not _child_is_still_owned(pid):
-        return
-    _signal_process_group(pid, signal.SIGTERM)
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+    child_state = _child_state_without_reaping(pid)
+    if child_state == "ownership_lost":
+        raise _child_ownership_lost(
+            "isolated child ownership was lost before termination"
+        )
+    group_signaled = _signal_process_group(pid, signal.SIGTERM)
+    if not group_signaled and _child_state_without_reaping(pid) == "running":
+        _signal_process(pid, signal.SIGTERM)
 
     # Give cooperative descendants a short grace period, but always follow
     # with SIGKILL.  Reaping the leader first would permit process-group id
     # reuse and make that final group signal unsafe.
     deadline = time.monotonic() + 0.2
-    while time.monotonic() < deadline and not _child_exited_without_reaping(pid):
+    while time.monotonic() < deadline:
+        child_state = _child_state_without_reaping(pid)
+        if child_state == "ownership_lost":
+            raise _child_ownership_lost(
+                "isolated child ownership was lost during termination"
+            )
+        if child_state == "exited":
+            break
         time.sleep(0.01)
 
-    _signal_process_group(pid, signal.SIGKILL)
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+    if _child_state_without_reaping(pid) == "ownership_lost":
+        raise _child_ownership_lost(
+            "isolated child ownership was lost during termination"
+        )
+    group_signaled = _signal_process_group(pid, signal.SIGKILL)
+    if not group_signaled and _child_state_without_reaping(pid) == "running":
+        _signal_process(pid, signal.SIGKILL)
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        child_state = _child_state_without_reaping(pid)
+        if child_state == "ownership_lost":
+            raise _child_ownership_lost(
+                "isolated child ownership was lost during final termination"
+            )
+        if child_state == "exited":
+            break
+        time.sleep(0.01)
+    if child_state != "exited":
+        _register_stranded_child(pid)
+        raise IsolatedExecutionError("isolated child did not exit after SIGKILL")
     try:
         os.waitpid(pid, 0)
-    except ChildProcessError:
-        pass
+    except ChildProcessError as exc:
+        raise _child_ownership_lost("isolated child ownership was lost before it could be reaped") from exc
 
 
-def _child_is_still_owned(pid: int) -> bool:
-    """Return false once the pid is no longer an unreaped child of this process."""
-    waitid = getattr(os, "waitid", None)
-    process_id_type = getattr(os, "P_PID", None)
-    no_wait = getattr(os, "WNOWAIT", None)
-    if waitid is None or process_id_type is None or no_wait is None:
-        return False
+def _signal_process_group(pid: int, signum: int) -> bool:
     try:
-        waitid(process_id_type, pid, os.WEXITED | os.WNOHANG | no_wait)
-    except ChildProcessError:
+        return signal_owned_process_group(pid, signum)
+    except PermissionError as exc:
+        _register_stranded_child(pid)
+        raise IsolatedExecutionError("isolated process-group signaling was denied") from exc
+
+
+def _signal_process(pid: int, signum: int) -> bool:
+    try:
+        os.kill(pid, signum)
+    except ProcessLookupError:
         return False
+    except PermissionError as exc:
+        _register_stranded_child(pid)
+        raise IsolatedExecutionError("isolated process signaling was denied") from exc
     return True
-
-
-def _signal_process_group(pid: int, signum: int) -> None:
-    try:
-        os.killpg(pid, signum)
-    except (ProcessLookupError, PermissionError):
-        pass
-
-
-def _describe_wait_status(status: int) -> str:
-    if os.WIFSIGNALED(status):
-        return f"signal {os.WTERMSIG(status)}"
-    if os.WIFEXITED(status):
-        return f"exit {os.WEXITSTATUS(status)}"
-    return "unknown status"

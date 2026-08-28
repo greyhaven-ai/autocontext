@@ -1,6 +1,7 @@
 """Tests for AC-193: OpenClaw agent adapter for running agents inside autocontext harness."""
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -339,22 +340,33 @@ class TestTimeoutBehavior:
     def test_timeout_raises_adapter_error(self) -> None:
         from autocontext.openclaw.agent_adapter import OpenClawAdapterError, OpenClawClient
 
+        workers: list[threading.Thread] = []
+
         def slow_execute(**kwargs: Any) -> dict[str, Any]:
-            time.sleep(1.0)
+            workers.append(threading.current_thread())
+            time.sleep(0.1)
             return _make_trace()
 
         agent = MagicMock()
         agent.execute.side_effect = slow_execute
         client = OpenClawClient(agent=agent, max_retries=0, timeout_seconds=0.05)
 
-        with pytest.raises(OpenClawAdapterError, match="timed out"):
-            client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
+        try:
+            with pytest.raises(OpenClawAdapterError, match="timed out"):
+                client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
+        finally:
+            for worker in workers:
+                worker.join(timeout=1.0)
+        assert workers and not workers[0].is_alive()
 
     def test_timeout_returns_promptly(self) -> None:
         from autocontext.openclaw.agent_adapter import OpenClawAdapterError, OpenClawClient
 
+        workers: list[threading.Thread] = []
+
         def slow_execute(**kwargs: Any) -> dict[str, Any]:
-            time.sleep(1.0)
+            workers.append(threading.current_thread())
+            time.sleep(0.1)
             return _make_trace()
 
         agent = MagicMock()
@@ -362,11 +374,16 @@ class TestTimeoutBehavior:
         client = OpenClawClient(agent=agent, max_retries=0, timeout_seconds=0.05)
 
         t0 = time.monotonic()
-        with pytest.raises(OpenClawAdapterError, match="timed out"):
-            client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
-        elapsed = time.monotonic() - t0
+        try:
+            with pytest.raises(OpenClawAdapterError, match="timed out"):
+                client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
+            elapsed = time.monotonic() - t0
+        finally:
+            for worker in workers:
+                worker.join(timeout=1.0)
 
         assert elapsed < 0.5
+        assert workers and not workers[0].is_alive()
 
 
 # ---------------------------------------------------------------------------

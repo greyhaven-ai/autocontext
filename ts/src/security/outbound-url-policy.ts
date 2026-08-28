@@ -121,6 +121,7 @@ interface PinnedLookupAddress {
 async function resolveSafeOutboundTarget(
   value: string | URL,
   options: SafeOutboundUrlOptions,
+  signal?: AbortSignal,
 ): Promise<SafeOutboundTarget> {
   const url = assertPublicHttpUrl(value);
   const hostname = normalizeHostname(url.hostname);
@@ -142,6 +143,7 @@ async function resolveSafeOutboundTarget(
       resolver(hostname),
       resolveTimeoutMs,
       `outbound URL hostname resolution timed out: ${hostname}`,
+      signal,
     );
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -194,31 +196,42 @@ export function createSafeOutboundFetch(
   const fetchImpl: OutboundFetch = options.fetch ?? undiciOutboundFetch;
 
   const safeFetch: OutboundFetch = async (input, init = {}) => {
-    const deadline = createRequestDeadline(init.signal, requestTimeoutMs);
     const redirectMode = init.redirect ?? "follow";
     let currentUrl = assertPublicHttpUrl(input);
-    let currentInit: RequestInit = {
-      ...init,
-      redirect: "manual",
-      dispatcher,
-      signal: deadline.signal,
-    };
+    const requestHeaders = normalizeOutboundRequestHeaders(init.headers);
+    const deadline = createRequestDeadline(init.signal, requestTimeoutMs);
 
     try {
+      let currentInit: RequestInit = {
+        ...init,
+        redirect: "manual",
+        dispatcher,
+        headers: requestHeaders,
+        signal: deadline.signal,
+      };
       for (let redirectCount = 0; ; redirectCount += 1) {
+        throwIfAborted(deadline.signal);
         // Resolve exactly once for this request hop, validate every answer, and
         // make Undici's actual socket lookup return only those validated values.
         // Keeping the original URL preserves the HTTP Host header and TLS SNI.
-        const target = await resolveSafeOutboundTarget(currentUrl, options);
+        const target = await resolveSafeOutboundTarget(
+          currentUrl,
+          options,
+          deadline.signal,
+        );
         currentUrl = target.url;
         pinnedAddresses.set(target.hostname, target.addresses);
-        const response = await fetchImpl(currentUrl, currentInit);
+        const response = await withAbortSignal(
+          fetchImpl(currentUrl, currentInit),
+          deadline.signal,
+        );
         if (!REDIRECT_STATUSES.has(response.status)) {
           return await prepareBoundedResponse(
             response,
             maxResponseBytes,
             allowedResponseContentTypes,
             deadline.cancel,
+            deadline.signal,
           );
         }
         if (redirectMode === "manual") {
@@ -227,6 +240,7 @@ export function createSafeOutboundFetch(
             maxResponseBytes,
             undefined,
             deadline.cancel,
+            deadline.signal,
           );
         }
 
@@ -237,14 +251,17 @@ export function createSafeOutboundFetch(
             maxResponseBytes,
             undefined,
             deadline.cancel,
+            deadline.signal,
           );
         }
         if (redirectMode === "error") {
-          await cancelBodyQuietly(response);
+          await cancelBodyQuietly(response, deadline.signal);
+          throwIfAborted(deadline.signal);
           throw new Error("outbound request redirect was not allowed");
         }
         if (redirectCount >= maxRedirects) {
-          await cancelBodyQuietly(response);
+          await cancelBodyQuietly(response, deadline.signal);
+          throwIfAborted(deadline.signal);
           throw new Error(`outbound request exceeded ${maxRedirects} redirects`);
         }
 
@@ -252,18 +269,27 @@ export function createSafeOutboundFetch(
         try {
           nextUrl = new URL(location, currentUrl);
         } catch {
-          await cancelBodyQuietly(response);
+          await cancelBodyQuietly(response, deadline.signal);
+          throwIfAborted(deadline.signal);
           throw new Error("outbound request returned an invalid redirect URL");
         }
-        nextUrl = assertPublicHttpUrl(nextUrl);
+        try {
+          nextUrl = assertPublicHttpUrl(nextUrl);
+        } catch (error) {
+          await cancelBodyQuietly(response, deadline.signal);
+          throwIfAborted(deadline.signal);
+          throw error;
+        }
         const crossOrigin = nextUrl.origin !== currentUrl.origin;
         if (crossOrigin) {
-          await cancelBodyQuietly(response);
+          await cancelBodyQuietly(response, deadline.signal);
+          throwIfAborted(deadline.signal);
           throw new Error("outbound request cross-origin redirect was not allowed");
         }
         currentInit = redirectInit(currentInit, response.status);
         currentUrl = nextUrl;
-        await cancelBodyQuietly(response);
+        await cancelBodyQuietly(response, deadline.signal);
+        throwIfAborted(deadline.signal);
       }
     } catch (error) {
       deadline.cancel();
@@ -476,17 +502,30 @@ function normalizeAllowedContentTypes(
   });
 }
 
+function normalizeOutboundRequestHeaders(
+  values: RequestInit["headers"],
+): Headers | undefined {
+  if (values === undefined) return undefined;
+  const headers = new Headers(values);
+  if (headers.has("host")) {
+    throw new Error("outbound request must not override the URL host");
+  }
+  return headers;
+}
+
 async function prepareBoundedResponse(
   response: Response,
   maxResponseBytes: number,
   allowedContentTypes: readonly string[] | undefined,
   onComplete: () => void,
+  signal: AbortSignal,
 ): Promise<Response> {
   const rawLength = response.headers.get("content-length");
   if (rawLength !== null) {
     const normalizedLength = rawLength.trim();
     if (!/^\d+$/.test(normalizedLength) || Number(normalizedLength) > maxResponseBytes) {
-      await cancelBodyQuietly(response);
+      await cancelBodyQuietly(response, signal);
+      throwIfAborted(signal);
       throw new Error(`outbound response exceeded ${maxResponseBytes} bytes`);
     }
   }
@@ -495,7 +534,8 @@ async function prepareBoundedResponse(
     const rawContentType = response.headers.get("content-type");
     const contentType = rawContentType?.split(";", 1)[0]?.trim().toLowerCase();
     if (!contentType || !allowedContentTypes.some((allowed) => contentTypeMatches(contentType, allowed))) {
-      await cancelBodyQuietly(response);
+      await cancelBodyQuietly(response, signal);
+      throwIfAborted(signal);
       throw new Error("outbound response content type was not allowed");
     }
   }
@@ -516,7 +556,7 @@ async function prepareBoundedResponse(
   const boundedBody = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
-        const chunk = await reader.read();
+        const chunk = await withAbortSignal(reader.read(), signal);
         if (chunk.done) {
           complete();
           controller.close();
@@ -525,7 +565,7 @@ async function prepareBoundedResponse(
         receivedBytes += chunk.value.byteLength;
         if (receivedBytes > maxResponseBytes) {
           const error = new Error(`outbound response exceeded ${maxResponseBytes} bytes`);
-          await reader.cancel(error);
+          await withAbortSignal(reader.cancel(error), signal);
           complete();
           controller.error(error);
           return;
@@ -538,7 +578,7 @@ async function prepareBoundedResponse(
     },
     async cancel(reason) {
       try {
-        await reader.cancel(reason);
+        await withAbortSignal(reader.cancel(reason), signal);
       } finally {
         complete();
       }
@@ -573,17 +613,52 @@ async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
   message: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let abort: (() => void) | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => reject(new Error(message)), timeoutMs);
     timer.unref?.();
   });
+  const aborted = new Promise<never>((_resolve, reject) => {
+    if (!signal) return;
+    abort = () => reject(abortReason(signal));
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
   try {
-    return await Promise.race([promise, timeout]);
+    return await Promise.race([promise, timeout, aborted]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    if (abort !== undefined) signal?.removeEventListener("abort", abort);
   }
+}
+
+async function withAbortSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  let abort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(abortReason(signal));
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    if (abort !== undefined) signal.removeEventListener("abort", abort);
+  }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw abortReason(signal);
+}
+
+function abortReason(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  if (typeof signal.reason === "string" && signal.reason) {
+    return new Error(signal.reason);
+  }
+  return new Error("outbound request was aborted");
 }
 
 function assertPositiveBoundedInteger(value: number, name: string, maximum: number): void {
@@ -742,9 +817,18 @@ function redirectInit(init: RequestInit, status: number): RequestInit {
   };
 }
 
-async function cancelBodyQuietly(response: Response): Promise<void> {
+async function cancelBodyQuietly(
+  response: Response,
+  signal?: AbortSignal,
+): Promise<void> {
   try {
-    await response.body?.cancel();
+    const cancellation = response.body?.cancel();
+    if (cancellation === undefined) return;
+    if (signal === undefined) {
+      await cancellation;
+    } else {
+      await withAbortSignal(cancellation, signal);
+    }
   } catch {
     // Redirect policy errors should remain the reported failure.
   }

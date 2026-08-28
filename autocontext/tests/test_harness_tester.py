@@ -325,7 +325,7 @@ class TestHarnessTesterEdgeCases:
         assert not worker.is_alive()
         assert len(reports) == 1
         assert reports[0].failed == 1
-        assert any("main thread" in failure.error for failure in reports[0].failures)
+        assert any("single-threaded" in failure.error for failure in reports[0].failures)
 
     def test_empty_states(self) -> None:
         tester = HarnessTester()

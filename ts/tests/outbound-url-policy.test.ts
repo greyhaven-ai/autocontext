@@ -25,6 +25,35 @@ describe("outbound URL policy", () => {
     expect(() => assertPublicHttpUrl("not a url")).toThrow("valid http(s) URL");
   });
 
+  it("does not attach deadline listeners for an invalid request URL", async () => {
+    const controller = new AbortController();
+    const addListener = vi.spyOn(controller.signal, "addEventListener");
+    const safeFetch = createSafeOutboundFetch({
+      fetch: async () => new Response("unreachable"),
+      resolveHostname: publicResolver,
+      requestTimeoutMs: 60_000,
+    });
+
+    await expect(safeFetch("file:///etc/passwd", { signal: controller.signal }))
+      .rejects.toThrow("http: or https:");
+    expect(addListener).not.toHaveBeenCalled();
+  });
+
+  it("rejects Host overrides before hostname resolution or fetch", async () => {
+    const resolver = vi.fn(publicResolver);
+    const baseFetch = vi.fn<OutboundFetch>(async () => new Response("unreachable"));
+    const safeFetch = createSafeOutboundFetch({
+      fetch: baseFetch,
+      resolveHostname: resolver,
+    });
+
+    await expect(safeFetch("https://example.com/", {
+      headers: { Host: "169.254.169.254" },
+    })).rejects.toThrow("must not override the URL host");
+    expect(resolver).not.toHaveBeenCalled();
+    expect(baseFetch).not.toHaveBeenCalled();
+  });
+
   it.each([
     "http://localhost/",
     "http://service.localhost./",
@@ -152,6 +181,25 @@ describe("outbound URL policy", () => {
     await expect(oversized("https://example.com/")).rejects.toThrow("exceeded 10 bytes");
   });
 
+  it("keeps the request deadline while cancelling a rejected response body", async () => {
+    const hangingBody = new ReadableStream<Uint8Array>({
+      cancel: async () => await new Promise(() => undefined),
+    });
+    const safeFetch = createSafeOutboundFetch({
+      fetch: async () => new Response(hangingBody, {
+        headers: { "content-length": "100" },
+      }),
+      resolveHostname: publicResolver,
+      maxResponseBytes: 10,
+      requestTimeoutMs: 20,
+    });
+    const startedAt = Date.now();
+
+    await expect(safeFetch("https://example.com/"))
+      .rejects.toThrow("exceeded 20ms");
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
   it("stops a chunked response when its body crosses the byte limit", async () => {
     const baseFetch: OutboundFetch = async () => new Response(new ReadableStream({
       start(controller) {
@@ -170,6 +218,22 @@ describe("outbound URL policy", () => {
     await expect(response.arrayBuffer()).rejects.toThrow("exceeded 5 bytes");
   });
 
+  it("keeps the request deadline while a response body read hangs", async () => {
+    const hangingBody = new ReadableStream<Uint8Array>({
+      pull: async () => await new Promise(() => undefined),
+    });
+    const safeFetch = createSafeOutboundFetch({
+      fetch: async () => new Response(hangingBody),
+      resolveHostname: publicResolver,
+      requestTimeoutMs: 20,
+    });
+    const response = await safeFetch("https://example.com/");
+    const startedAt = Date.now();
+
+    await expect(response.arrayBuffer()).rejects.toThrow("exceeded 20ms");
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
   it("applies a total request deadline to the fetch and response body", async () => {
     const baseFetch: OutboundFetch = async (_url, init) => await new Promise((_resolve, reject) => {
       const signal = init?.signal;
@@ -186,6 +250,43 @@ describe("outbound URL policy", () => {
     await expect(safeFetch("https://example.com/")).rejects.toThrow("exceeded 10ms");
   });
 
+  it("applies the caller AbortSignal while hostname resolution is pending", async () => {
+    const controller = new AbortController();
+    const safeFetch = createSafeOutboundFetch({
+      fetch: async () => new Response("unreachable"),
+      resolveHostname: async () => await new Promise(() => undefined),
+      resolveTimeoutMs: 60_000,
+      requestTimeoutMs: 60_000,
+    });
+
+    const request = safeFetch("https://example.com/", { signal: controller.signal });
+    controller.abort(new Error("caller stopped outbound request"));
+
+    await expect(request).rejects.toThrow("caller stopped outbound request");
+  });
+
+  it("keeps one overall deadline while resolving redirect hops", async () => {
+    let resolutions = 0;
+    const resolver: OutboundHostResolver = async () => {
+      resolutions += 1;
+      if (resolutions === 1) return [{ address: "93.184.216.34", family: 4 }];
+      return await new Promise(() => undefined);
+    };
+    const safeFetch = createSafeOutboundFetch({
+      fetch: async () => new Response(null, {
+        status: 302,
+        headers: { location: "/after-redirect" },
+      }),
+      resolveHostname: resolver,
+      resolveTimeoutMs: 60_000,
+      requestTimeoutMs: 20,
+    });
+
+    await expect(safeFetch("https://example.com/before-redirect"))
+      .rejects.toThrow("exceeded 20ms");
+    expect(resolutions).toBe(2);
+  });
+
   it("blocks redirect escapes before making a request to the private target", async () => {
     const baseFetch = vi.fn<OutboundFetch>(async () => new Response(null, {
       status: 302,
@@ -198,6 +299,25 @@ describe("outbound URL policy", () => {
 
     await expect(safeFetch("https://example.com/start")).rejects.toThrow("not public");
     expect(baseFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a redirect body when the target fails URL policy", async () => {
+    let cancellations = 0;
+    const redirectBody = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancellations += 1;
+      },
+    });
+    const safeFetch = createSafeOutboundFetch({
+      fetch: async () => new Response(redirectBody, {
+        status: 302,
+        headers: { location: "http://127.0.0.1/private" },
+      }),
+      resolveHostname: publicResolver,
+    });
+
+    await expect(safeFetch("https://example.com/start")).rejects.toThrow("not public");
+    expect(cancellations).toBe(1);
   });
 
   it("rejects cross-origin redirects so arbitrary authentication headers cannot leak", async () => {

@@ -105,7 +105,16 @@ class GenerationRunner:
             self.loaded_extensions = list(loaded_extensions or [])
         self.sqlite = SQLiteStore(settings.db_path)
         self.trajectory_builder = ScoreTrajectoryBuilder(self.sqlite)
-        self.artifacts = artifact_store_from_settings(settings, enable_buffered_writes=True, hook_bus=self.hook_bus)
+        # GenerationRunner coordinates several optional fork-based isolation
+        # boundaries (exec RLM, code strategies, policy refinement, and harness
+        # validators). A permanent artifact-writer thread would make those
+        # forks unsafe and force them to fail closed. Keep writes synchronous
+        # so direct CLI runners remain eligible to create isolated children.
+        self.artifacts = artifact_store_from_settings(
+            settings,
+            enable_buffered_writes=False,
+            hook_bus=self.hook_bus,
+        )
         self.agents = AgentOrchestrator.from_settings(
             settings, artifacts=self.artifacts, sqlite=self.sqlite, hook_bus=self.hook_bus
         )

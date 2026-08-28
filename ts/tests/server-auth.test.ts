@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assertSecureServerBind,
+  isExplicitlyAllowedServerOrigin,
   isLoopbackHost,
   isServerRequestAuthorized,
+  resolveServerAllowedOrigins,
   resolveServerAuthToken,
   selectServerAuthSubprotocol,
   serverAuthSubprotocol,
+  SERVER_ALLOWED_ORIGINS_ENV,
   SERVER_AUTH_TOKEN_ENV,
 } from "../src/server/server-auth.js";
 
@@ -14,6 +17,7 @@ const TOKEN = "0123456789abcdef0123456789abcdef";
 describe("control-plane server authentication", () => {
   afterEach(() => {
     delete process.env[SERVER_AUTH_TOKEN_ENV];
+    delete process.env[SERVER_ALLOWED_ORIGINS_ENV];
   });
 
   it("refuses unauthenticated non-loopback binds", () => {
@@ -59,5 +63,33 @@ describe("control-plane server authentication", () => {
       websocketProtocolHeader: `${protocol}=`,
     })).toBe(false);
     expect(isServerRequestAuthorized({ authToken: TOKEN })).toBe(false);
+  });
+
+  it("parses an exact HTTPS browser-origin allowlist for reverse proxies", () => {
+    process.env[SERVER_ALLOWED_ORIGINS_ENV] =
+      "https://operator.example, https://operator.example:8443/";
+
+    const allowed = resolveServerAllowedOrigins();
+
+    expect([...allowed]).toEqual([
+      "https://operator.example",
+      "https://operator.example:8443",
+    ]);
+    expect(isExplicitlyAllowedServerOrigin("https://operator.example", allowed)).toBe(true);
+    expect(isExplicitlyAllowedServerOrigin("http://operator.example", allowed)).toBe(false);
+    expect(isExplicitlyAllowedServerOrigin("https://evil.example", allowed)).toBe(false);
+  });
+
+  it.each([
+    "wss://operator.example",
+    "https://*.operator.example",
+    "https://user:secret@operator.example",
+    "https://operator.example/control-plane",
+    "https://operator.example?tenant=one",
+    "https://operator.example/#fragment",
+  ])("rejects non-origin server allowlist entry %s", (origin) => {
+    expect(() => resolveServerAllowedOrigins([origin])).toThrow(
+      SERVER_ALLOWED_ORIGINS_ENV,
+    );
   });
 });

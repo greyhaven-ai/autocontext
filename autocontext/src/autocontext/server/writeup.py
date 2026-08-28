@@ -59,7 +59,7 @@ def _generate_legacy_writeup(
 ) -> str:
     """Assemble a markdown writeup from existing run artifacts."""
     # 1. Get run info
-    with sqlite.connect() as conn:
+    with sqlite.connection() as conn:
         run_row = conn.execute(
             "SELECT run_id, scenario, target_generations, status, created_at "
             "FROM runs WHERE run_id = ?",

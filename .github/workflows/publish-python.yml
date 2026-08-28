@@ -57,7 +57,10 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: uv export --locked --all-groups --all-extras --format cyclonedx1.5 --output-file autocontext-python.cdx.json
       - name: Build Python package
-        run: uv build
+        run: >-
+          uv build
+          --build-constraints ../infra/docker/build-requirements.lock
+          --require-hashes
       - name: Upload Python dist
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

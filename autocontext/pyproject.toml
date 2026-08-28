@@ -30,10 +30,11 @@ dependencies = [
   "rich>=13.9.4",
   "typer>=0.16.0",
   "uvicorn>=0.35.0",
+  "websockets>=16.0",
 ]
 
 [project.optional-dependencies]
-browser = ["httpx>=0.28.1", "websockets>=16.0"]
+browser = ["httpx>=0.28.1"]
 primeintellect = ["prime-sandboxes>=0.2.27"]
 mcp = ["mcp>=1.28.1"]
 agent-sdk = ["claude-agent-sdk>=0.1.0"]

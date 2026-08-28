@@ -98,6 +98,10 @@ def test_safe_stop_not_advertised_without_a_run_manager(
                 "command_id": "command-stop-1",
                 "message": "no active run to stop",
             }
+        controller.request_stop.assert_not_called()
+        assert controller.mock_calls == []
 
     controller.request_stop.assert_not_called()
-    assert controller.mock_calls == []
+    controller.abort_pending_chats.assert_called_once_with(
+        "interactive server ended before the chat request completed"
+    )

@@ -140,7 +140,14 @@ async def _connect_websocket(websocket_url: str, *, open_timeout: float, max_siz
             "Install it with `pip install 'autocontext[browser]'`."
         ) from exc
     connect = cast(Any, websockets_client).connect
-    return await connect(websocket_url, open_timeout=open_timeout, max_size=max_size)
+    # CDP attaches directly to the debugger endpoint; proxy discovery can leak
+    # local control traffic and starts persistent platform workers on macOS.
+    return await connect(
+        websocket_url,
+        open_timeout=open_timeout,
+        max_size=max_size,
+        proxy=None,
+    )
 
 
 def _error_message(error: dict[str, Any]) -> str:

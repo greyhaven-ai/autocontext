@@ -185,6 +185,47 @@ describe("OpenClaw distill sidecar argv templates", () => {
     },
   );
 
+  it("preserves existing terminal fields when a later update omits them", () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-openclaw-distill-result-"));
+    temporaryRoots.push(root);
+    spawnMock.mockImplementation(() => fakeChildProcess());
+    const service = new OpenClawService({
+      knowledgeRoot: join(root, "knowledge"),
+      settings: AppSettingsSchema.parse({
+        openclawDistillSidecarCommand: JSON.stringify(["distill-worker"]),
+      }),
+      openStore: () => {
+        throw new Error("not used");
+      },
+    });
+    const pending = service.triggerDistillation({ scenario: "grid_ctf" });
+    const jobId = pending.job_id as string;
+
+    service.updateDistillJob(jobId, {
+      status: "running",
+      result_artifact_id: "model-1",
+    });
+    const completed = service.updateDistillJob(jobId, { status: "completed" });
+
+    expect(completed).toMatchObject({
+      status: "completed",
+      result_artifact_id: "model-1",
+    });
+
+    const secondPending = service.triggerDistillation({ scenario: "grid_ctf" });
+    const secondJobId = secondPending.job_id as string;
+    service.updateDistillJob(secondJobId, {
+      status: "running",
+      error_message: "worker failed",
+    });
+    const failed = service.updateDistillJob(secondJobId, { status: "failed" });
+
+    expect(failed).toMatchObject({
+      status: "failed",
+      error_message: "worker failed",
+    });
+  });
+
   it("fails the job without spawning when a scenario is option-shaped", () => {
     const root = mkdtempSync(join(tmpdir(), "autoctx-openclaw-distill-"));
     temporaryRoots.push(root);

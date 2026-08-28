@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import AbstractContextManager
 from typing import Any
 
 _DEQUEUE_TASK_SQL = """
@@ -48,7 +49,7 @@ _DEQUEUE_PYTHON_WORKER_TASK_SQL = """
 
 
 class SQLiteTaskQueueStoreMixin:
-    def connect(self) -> sqlite3.Connection:
+    def connection(self) -> AbstractContextManager[sqlite3.Connection]:
         raise NotImplementedError
 
     # ---- Task Queue CRUD ----
@@ -63,7 +64,7 @@ class SQLiteTaskQueueStoreMixin:
     ) -> None:
         """Add a task to the queue."""
         config_json = json.dumps(config) if config else None
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO task_queue(id, spec_name, priority, config_json, scheduled_at)
@@ -90,7 +91,7 @@ class SQLiteTaskQueueStoreMixin:
         return self._claim_task(_DEQUEUE_PYTHON_WORKER_TASK_SQL)
 
     def _claim_task(self, statement: str) -> dict[str, Any] | None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             # AC-906: single-statement claim (the ambient-queue idiom). The
             # UPDATE takes the write lock atomically, so two runners cannot
             # claim the same row, and attempts is burned AT CLAIM so a handler
@@ -108,7 +109,7 @@ class SQLiteTaskQueueStoreMixin:
         result_json: str | None = None,
     ) -> None:
         """Mark a task as completed with results."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 UPDATE task_queue
@@ -136,7 +137,7 @@ class SQLiteTaskQueueStoreMixin:
         cannot crash-loop forever.
         """
         limit = max_attempts if max_attempts is not None else 2**31
-        with self.connect() as conn:
+        with self.connection() as conn:
             cursor = conn.execute(
                 """
                 UPDATE task_queue
@@ -172,7 +173,7 @@ class SQLiteTaskQueueStoreMixin:
         ``None`` keeps the legacy terminal behavior.
         """
         if max_attempts is not None:
-            with self.connect() as conn:
+            with self.connection() as conn:
                 conn.execute(
                     """
                     UPDATE task_queue
@@ -189,7 +190,7 @@ class SQLiteTaskQueueStoreMixin:
                     (max_attempts, max_attempts, max_attempts, retry_backoff_s, error, task_id),
                 )
             return
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 UPDATE task_queue
@@ -204,7 +205,7 @@ class SQLiteTaskQueueStoreMixin:
 
     def get_task(self, task_id: str) -> dict[str, Any] | None:
         """Get a task by ID."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute("SELECT * FROM task_queue WHERE id = ?", (task_id,)).fetchone()
             return dict(row) if row else None
 
@@ -225,12 +226,12 @@ class SQLiteTaskQueueStoreMixin:
             params.append(spec_name)
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
 
     def pending_task_count(self) -> int:
         """Count pending tasks in the queue."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute("SELECT COUNT(*) as cnt FROM task_queue WHERE status = 'pending'").fetchone()
             return row["cnt"] if row else 0

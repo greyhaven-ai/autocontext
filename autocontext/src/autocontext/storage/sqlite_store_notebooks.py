@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import AbstractContextManager
 from typing import Any
 
 
 class SQLiteNotebookStoreMixin:
-    def connect(self) -> sqlite3.Connection:
+    def connection(self) -> AbstractContextManager[sqlite3.Connection]:
         raise NotImplementedError
 
     @staticmethod
@@ -92,7 +93,7 @@ class SQLiteNotebookStoreMixin:
         observations_json = json.dumps(merged_observations)
         follow_ups_json = json.dumps(merged_follow_ups)
 
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO session_notebooks(
@@ -129,7 +130,7 @@ class SQLiteNotebookStoreMixin:
 
     def get_notebook(self, session_id: str) -> dict[str, Any] | None:
         """Get a session notebook by session id."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT * FROM session_notebooks WHERE session_id = ?",
                 (session_id,),
@@ -140,13 +141,13 @@ class SQLiteNotebookStoreMixin:
 
     def list_notebooks(self) -> list[dict[str, Any]]:
         """List all session notebooks."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute("SELECT * FROM session_notebooks ORDER BY updated_at DESC").fetchall()
             return [self._parse_notebook_row(dict(r)) for r in rows]
 
     def list_notebooks_for_run(self, run_id: str) -> list[dict[str, Any]]:
         """List notebooks whose current best run matches the provided run id."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM session_notebooks WHERE best_run_id = ? ORDER BY updated_at DESC",
                 (run_id,),
@@ -155,7 +156,7 @@ class SQLiteNotebookStoreMixin:
 
     def delete_notebook(self, session_id: str) -> bool:
         """Delete a session notebook. Returns True if a row was deleted."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 "DELETE FROM session_notebooks WHERE session_id = ?",
                 (session_id,),

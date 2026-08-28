@@ -18,5 +18,7 @@ primary_region = "ord"
   destination = "/data"
 
 [processes]
+  # Before deploying the dashboard, provision a unique token with:
+  # fly secrets set AUTOCONTEXT_SERVER_TOKEN="$(openssl rand -hex 32)"
   app = "run --scenario grid_ctf --gens 1"
   dashboard = "serve --host 0.0.0.0 --port 8000"

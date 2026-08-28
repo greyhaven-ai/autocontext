@@ -129,6 +129,16 @@ jobs:
           tests/test_kernel_lineage_lock.py
           tests/test_kernel_benchmark_contract.py
           -q
+      - name: Portable confined storage tests
+        run: >-
+          uv run pytest
+          tests/test_confined_files.py
+          tests/test_knowledge_endpoint.py::test_put_writes_knowledge_files_and_get_round_trips
+          tests/test_fixture_loader.py::TestFixtureCache::test_put_and_get_roundtrip
+          tests/test_distill_jobs.py::TestDistillJobManager::test_create_job
+          tests/test_distill_jobs.py::TestDistillJobManager::test_get_job
+          tests/test_distill_jobs.py::TestDistillJobManager::test_list_jobs
+          -q
 
   package-boundaries:
     runs-on: ubuntu-latest

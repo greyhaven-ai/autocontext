@@ -1,6 +1,8 @@
 """Tests for settings simplification (AC-25)."""
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from autocontext.agents.llm_client import AnthropicClient, build_client_from_settings
@@ -56,7 +58,8 @@ def test_blank_agent_provider_uses_default_before_client_construction(blank: str
     settings = AppSettings(agent_provider=blank, anthropic_api_key="test-key")
 
     assert settings.agent_provider == "anthropic"
-    assert isinstance(build_client_from_settings(settings), AnthropicClient)
+    with patch("autocontext.agents.llm_client.Anthropic", return_value=MagicMock()):
+        assert isinstance(build_client_from_settings(settings), AnthropicClient)
 
 
 def test_blank_primary_provider_env_falls_through_to_compatibility_alias(

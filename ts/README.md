@@ -158,6 +158,22 @@ browser-compatible WebSockets with the
 for a single trusted operator; use TLS, an authenticated reverse proxy, and
 external authorization for broader access.
 
+When a TLS-terminating reverse proxy serves a browser UI from a public origin,
+allow that exact browser origin explicitly before starting `autoctx serve`:
+
+```bash
+export AUTOCONTEXT_SERVER_ALLOWED_ORIGINS="https://operator.example,https://operator.example:8443"
+```
+
+The value is a comma-separated list of exact `http://` or `https://` origins;
+credentials, paths, queries, fragments, and wildcards are rejected. A browser
+connecting over WSS sends the corresponding HTTPS `Origin`, so configure
+`https://operator.example`, not the WebSocket endpoint or a `wss://` URL. This
+allowlist supplements local-origin checks and controls HTTP mutation, CORS, and
+WebSocket origin validation. It does not change the bind address, infer trust
+from forwarded headers, replace `AUTOCONTEXT_SERVER_TOKEN`, or authorize a
+request by itself.
+
 Local and remote mode use the same WebSocket transport, durable transcript
 view model, command registry, and HTTP cockpit read models. The renderer never
 opens SQLite or calls `RunManager` directly. The alternate-screen layout keeps

@@ -7,6 +7,7 @@ and ``load_settings`` — without requiring a live Hermes instance.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,6 +24,17 @@ except ImportError:
     _HAS_OPENAI = False
 
 _skip_no_openai = pytest.mark.skipif(not _HAS_OPENAI, reason="openai package not installed")
+
+
+@pytest.fixture(autouse=True)
+def _avoid_real_network_client() -> Iterator[MagicMock]:
+    """These factory tests exercise wiring, not the host's proxy configuration."""
+    if not _HAS_OPENAI:
+        yield MagicMock()
+        return
+    with patch("autocontext.providers.openai_compat.openai.OpenAI", autospec=True) as constructor:
+        constructor.return_value = MagicMock()
+        yield constructor
 
 
 def _settings(**overrides: object) -> AppSettings:
@@ -42,7 +54,10 @@ class TestHermesProviderFactory:
     """Verify create_provider builds a working provider for Hermes-like endpoints."""
 
     @_skip_no_openai
-    def test_create_provider_openai_compatible_for_hermes(self) -> None:
+    def test_create_provider_openai_compatible_for_hermes(
+        self,
+        _avoid_real_network_client: MagicMock,
+    ) -> None:
         """create_provider('openai-compatible') with Hermes base_url should construct."""
         from autocontext.providers.registry import create_provider
 
@@ -54,6 +69,10 @@ class TestHermesProviderFactory:
         )
         assert provider is not None
         assert provider.default_model() == "hermes-3-llama-3.1-8b"
+        _avoid_real_network_client.assert_called_once_with(
+            api_key="hermes-test-key",
+            base_url="http://localhost:8080/v1",
+        )
 
     @_skip_no_openai
     def test_hermes_provider_sends_correct_model(self) -> None:
@@ -114,7 +133,11 @@ class TestHermesEnvVarRoundTrip:
         assert settings.agent_default_model == "hermes-3-llama-3.1-8b"
 
     @_skip_no_openai
-    def test_hermes_build_client_from_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_hermes_build_client_from_settings(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        _avoid_real_network_client: MagicMock,
+    ) -> None:
         """build_client_from_settings should construct a ProviderBridgeClient for Hermes."""
         from autocontext.agents.llm_client import build_client_from_settings
         from autocontext.agents.provider_bridge import ProviderBridgeClient
@@ -127,6 +150,10 @@ class TestHermesEnvVarRoundTrip:
         )
         client = build_client_from_settings(settings)
         assert isinstance(client, ProviderBridgeClient)
+        _avoid_real_network_client.assert_called_once_with(
+            api_key="hermes-key",
+            base_url="http://localhost:8080/v1",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +175,10 @@ class TestHermesJudgePath:
         assert settings.judge_model == "hermes-3-llama-3.1-70b"
 
     @_skip_no_openai
-    def test_create_judge_provider_for_hermes(self) -> None:
+    def test_create_judge_provider_for_hermes(
+        self,
+        _avoid_real_network_client: MagicMock,
+    ) -> None:
         """create_provider should build a judge-capable provider for Hermes."""
         from autocontext.providers.registry import create_provider
 
@@ -159,6 +189,10 @@ class TestHermesJudgePath:
             model="hermes-3-llama-3.1-70b",
         )
         assert provider.default_model() == "hermes-3-llama-3.1-70b"
+        _avoid_real_network_client.assert_called_once_with(
+            api_key="hermes-judge-key",
+            base_url="http://localhost:8080/v1",
+        )
 
 
 # ---------------------------------------------------------------------------

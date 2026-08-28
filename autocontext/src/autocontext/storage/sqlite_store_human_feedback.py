@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import AbstractContextManager
 from typing import Any
 
 
 class SQLiteHumanFeedbackStoreMixin:
-    def connect(self) -> sqlite3.Connection:
+    def connection(self) -> AbstractContextManager[sqlite3.Connection]:
         raise NotImplementedError
 
     # -- Human feedback --
@@ -21,7 +22,7 @@ class SQLiteHumanFeedbackStoreMixin:
         """Store human feedback on an agent task output. Returns the row id."""
         if human_score is not None and not (0.0 <= human_score <= 1.0):
             raise ValueError(f"human_score must be in [0.0, 1.0], got {human_score}")
-        with self.connect() as conn:
+        with self.connection() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO human_feedback(scenario_name, generation_id, agent_output, human_score, human_notes)
@@ -33,7 +34,7 @@ class SQLiteHumanFeedbackStoreMixin:
 
     def get_human_feedback(self, scenario_name: str, limit: int = 10) -> list[dict[str, Any]]:
         """Retrieve recent human feedback for a scenario."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT id, scenario_name, generation_id, agent_output, human_score, human_notes, created_at
@@ -48,7 +49,7 @@ class SQLiteHumanFeedbackStoreMixin:
 
     def get_calibration_examples(self, scenario_name: str, limit: int = 5) -> list[dict[str, Any]]:
         """Retrieve feedback with both score and notes — suitable for judge calibration."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT id, scenario_name, agent_output, human_score, human_notes, created_at

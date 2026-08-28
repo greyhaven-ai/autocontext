@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 
 from autocontext.storage.sqlite_store import SQLiteStore
@@ -22,7 +23,7 @@ class TestAttemptsAccounting:
     def test_fresh_task_has_zero_attempts_and_claim_increments(self, tmp_path) -> None:
         store = _store(tmp_path)
         _enqueue(store)
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT attempts FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["attempts"] == 0
         claimed = store.dequeue_task()
@@ -45,7 +46,7 @@ class TestRetryAndDeadLetter:
         _enqueue(store)
         store.dequeue_task()
         store.fail_task("task_1", "provider blip", max_attempts=3, retry_backoff_s=0)
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT status, error, attempts FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] == "pending"
         assert row["error"] == "provider blip"
@@ -58,7 +59,7 @@ class TestRetryAndDeadLetter:
             claimed = store.dequeue_task()
             assert claimed is not None, f"attempt {attempt + 1} should claim"
             store.fail_task("task_1", f"error {attempt + 1}", max_attempts=3, retry_backoff_s=0)
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT status, error FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] == "failed"
         assert row["error"] == "error 3"
@@ -69,7 +70,7 @@ class TestRetryAndDeadLetter:
         _enqueue(store)
         store.dequeue_task()
         store.fail_task("task_1", "hard error")
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT status FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] == "failed"
 
@@ -81,7 +82,7 @@ class TestStaleRunningRecovery:
         store.dequeue_task()
         recovered = store.requeue_stale_running(older_than_seconds=0)
         assert recovered == 1
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT status FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] == "pending"
         assert store.dequeue_task() is not None
@@ -91,7 +92,7 @@ class TestStaleRunningRecovery:
         _enqueue(store)
         store.dequeue_task()
         assert store.requeue_stale_running(older_than_seconds=3600) == 0
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT status FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] == "running"
 
@@ -104,7 +105,7 @@ class TestBackoffAndSweepDeadLetter:
         store.fail_task("task_1", "blip", max_attempts=3)
         # default backoff schedules the retry in the future
         assert store.dequeue_task() is None
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT status, scheduled_at FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] == "pending" and row["scheduled_at"] is not None
 
@@ -115,7 +116,7 @@ class TestBackoffAndSweepDeadLetter:
             assert store.dequeue_task() is not None
             # simulate crash: no fail(), just the startup sweep
             store.requeue_stale_running(older_than_seconds=0, max_attempts=3)
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT status, error FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] == "failed"
         assert "crash-looped" in row["error"]
@@ -152,7 +153,7 @@ class TestRunnerIntegration:
         runner.stale_running_after_s = 0
         runner.max_consecutive_empty = 1
         runner.run()
-        with store.connect() as conn:
+        with store.connection() as conn:
             row = conn.execute("SELECT status FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] in ("completed", "failed")
         assert store.requeue_stale_running(older_than_seconds=3600) == 0
@@ -181,14 +182,14 @@ class TestBootstrapSchemaParity:
         migrated = _store(tmp_path / "migrated")
         boot_path = tmp_path / "boot" / "db.sqlite3"
         boot_path.parent.mkdir(parents=True)
-        with sqlite3.connect(boot_path) as conn:
+        with closing(sqlite3.connect(boot_path)) as conn, conn:
             bootstrap_core_schema(conn)
 
         def columns(db_path, table):
-            with sqlite3.connect(db_path) as conn:
+            with closing(sqlite3.connect(db_path)) as conn, conn:
                 return sorted(row[1] for row in conn.execute(f"PRAGMA table_info({table})"))
 
-        with sqlite3.connect(migrated.db_path) as conn:
+        with closing(sqlite3.connect(migrated.db_path)) as conn, conn:
             tables = sorted(
                 row[0]
                 for row in conn.execute(
@@ -207,7 +208,7 @@ class TestBootstrapSchemaParity:
         from autocontext.storage.sqlite_store import SQLiteStore
 
         db_path = tmp_path / "boot.sqlite3"
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn, conn:
             bootstrap_core_schema(conn)
         store = SQLiteStore(db_path)
         store.enqueue_task("t1", "spec")

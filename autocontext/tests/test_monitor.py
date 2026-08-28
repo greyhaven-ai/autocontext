@@ -483,7 +483,7 @@ class TestMonitorEngine:
 
 class TestMonitorStorage:
     def test_monitor_tables_exist(self, sqlite_store: SQLiteStore) -> None:
-        with sqlite_store.connect() as conn:
+        with sqlite_store.connection() as conn:
             tables = {
                 row["name"]
                 for row in conn.execute(

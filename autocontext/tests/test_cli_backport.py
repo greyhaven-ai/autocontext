@@ -54,22 +54,35 @@ class TestJudgeCommand:
         result = runner.invoke(app, ["judge"])
         assert result.exit_code != 0
 
-    def test_judge_missing_provider_gives_clear_error(self) -> None:
-        """Judge without API key should give a clear error, not a stack trace."""
-        result = runner.invoke(
-            app,
-            [
-                "judge",
-                "--task-prompt",
-                "Write a haiku",
-                "--output",
-                "Test output",
-                "--rubric",
-                "Score it",
-            ],
-        )
-        # Should fail cleanly (no API key configured)
-        assert result.exit_code != 0
+    def test_judge_provider_error_gives_clear_error(self) -> None:
+        """Provider configuration errors should be rendered without a stack trace."""
+        from autocontext.providers.base import ProviderError
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch(
+                "autocontext.providers.registry.get_provider",
+                side_effect=ProviderError(
+                    "Anthropic provider requires an API key. Set ANTHROPIC_API_KEY."
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "judge",
+                    "--task-prompt",
+                    "Write a haiku",
+                    "--output",
+                    "Test output",
+                    "--rubric",
+                    "Score it",
+                ],
+            )
+        # Should fail cleanly when provider construction reports bad configuration.
+        assert result.exit_code == 1
+        assert "ANTHROPIC_API_KEY" in result.stdout
+        assert "Traceback" not in result.stdout
 
 
 class TestImproveCommand:

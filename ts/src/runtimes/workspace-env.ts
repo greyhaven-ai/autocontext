@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 import {
   RuntimeComponentLifecycleState,
@@ -215,6 +216,8 @@ type MemoryState = {
 const DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES = 4096;
 const DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES = 1024 * 1024;
 const DEFAULT_RUNTIME_PROCESS_TERMINATION_GRACE_MS = 250;
+const RUNTIME_PROCESS_OUTPUT_LIMIT_DIAGNOSTIC =
+  "Command output exceeded the 1 MiB per-stream limit";
 const DEFAULT_RUNTIME_SHELL_ENV_KEYS = [
   "PATH",
   "LANG",
@@ -1336,8 +1339,8 @@ function runSpawnedProcess(options: {
       if (timeout) clearTimeout(timeout);
       options.signal?.removeEventListener("abort", abort);
       if (forceKillTimeout && !child.pid) clearTimeout(forceKillTimeout);
-      const stdout = Buffer.concat(stdoutChunks, stdoutBytes).toString("utf8");
-      const stderr = Buffer.concat(stderrChunks, stderrBytes).toString("utf8");
+      const stdout = decodeBoundedProcessOutput(stdoutChunks, stdoutBytes);
+      const stderr = decodeBoundedProcessOutput(stderrChunks, stderrBytes);
       resolve({ stdout, stderr: stderr || error.message, exitCode: 1 });
     });
     child.on("close", (code) => {
@@ -1345,12 +1348,15 @@ function runSpawnedProcess(options: {
       options.signal?.removeEventListener("abort", abort);
       // Keep an armed escalation timer alive: descendants with detached stdio can
       // outlive the direct child while remaining in its process group.
-      const stdout = Buffer.concat(stdoutChunks, stdoutBytes).toString("utf8");
-      const stderr = Buffer.concat(stderrChunks, stderrBytes).toString("utf8");
+      const stdout = decodeBoundedProcessOutput(stdoutChunks, stdoutBytes);
+      const stderr = decodeBoundedProcessOutput(stderrChunks, stderrBytes);
       if (outputExceeded) {
         resolve({
           stdout,
-          stderr: stderr || "Command output exceeded the 1 MiB per-stream limit",
+          stderr: appendBoundedProcessDiagnostic(
+            stderr,
+            RUNTIME_PROCESS_OUTPUT_LIMIT_DIAGNOSTIC,
+          ),
           exitCode: 125,
         });
         return;
@@ -1366,6 +1372,27 @@ function runSpawnedProcess(options: {
       resolve({ stdout, stderr, exitCode: code ?? 1 });
     });
   });
+}
+
+function decodeBoundedProcessOutput(chunks: Buffer[], byteLength: number): string {
+  const decoder = new StringDecoder("utf8");
+  const completeUtf8Prefix = decoder.write(Buffer.concat(chunks, byteLength));
+  return truncateUtf8(
+    completeUtf8Prefix,
+    DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES,
+  ).text;
+}
+
+function appendBoundedProcessDiagnostic(stderr: string, diagnostic: string): string {
+  const diagnosticBytes = Buffer.byteLength(diagnostic, "utf-8");
+  const separatorBytes = stderr ? 1 : 0;
+  const availableStderrBytes = Math.max(
+    0,
+    DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES - diagnosticBytes - separatorBytes,
+  );
+  const boundedStderr = truncateUtf8(stderr, availableStderrBytes).text;
+  const separator = boundedStderr && !boundedStderr.endsWith("\n") ? "\n" : "";
+  return `${boundedStderr}${separator}${diagnostic}`;
 }
 
 function signalSpawnedProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -1553,8 +1580,19 @@ function safeJsonOrString(value: unknown): string {
 function truncateUtf8(value: string, limitBytes: number): { text: string; truncated: boolean } {
   const buffer = Buffer.from(value, "utf-8");
   if (buffer.byteLength <= limitBytes) return { text: value, truncated: false };
+  let boundary = limitBytes;
+  // Buffer.from(string) is valid UTF-8. If the first excluded byte is a
+  // continuation byte, walk back to the start of that partial code point so
+  // decoding cannot insert a three-byte U+FFFD beyond the requested budget.
+  while (
+    boundary > 0
+    && boundary < buffer.byteLength
+    && (buffer[boundary]! & 0xc0) === 0x80
+  ) {
+    boundary -= 1;
+  }
   return {
-    text: buffer.subarray(0, limitBytes).toString("utf-8"),
+    text: buffer.subarray(0, boundary).toString("utf-8"),
     truncated: true,
   };
 }

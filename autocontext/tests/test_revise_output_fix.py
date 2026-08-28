@@ -355,16 +355,24 @@ class TestPatchLegacyEvaluateOutput:
         mock_result.reasoning = "patched evaluation"
         mock_result.dimension_scores = {}
         mock_result.internal_retries = 0
+        mock_result.evaluator_epoch = None
 
         mock_settings = MagicMock()
         mock_settings.judge_model = "configured-model"
+        mock_settings.judge_max_tokens = 4096
         mock_provider = MagicMock()
         mock_provider.default_model.return_value = "default-model"
 
         task = patched_cls()
         with (
-            patch("autocontext.config.load_settings", return_value=mock_settings),
-            patch("autocontext.providers.registry.get_provider", return_value=mock_provider),
+            patch(
+                "autocontext.scenarios.custom.agent_task_revision.load_settings",
+                return_value=mock_settings,
+            ),
+            patch(
+                "autocontext.scenarios.custom.agent_task_revision.get_provider",
+                return_value=mock_provider,
+            ),
             patch("autocontext.execution.judge.LLMJudge.evaluate", return_value=mock_result),
         ):
             result = task.evaluate_output("test output", {})

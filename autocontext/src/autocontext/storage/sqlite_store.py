@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -34,12 +35,34 @@ class SQLiteStore(
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON;")
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS};")
+        """Open a configured connection owned by the caller.
+
+        As with ``sqlite3.connect()``, entering this connection as a context
+        manager controls a transaction but does not close it. Callers that
+        need an operation-scoped transaction should use :meth:`connection`.
+        """
+        conn = sqlite3.connect(
+            self.db_path,
+            timeout=SQLITE_BUSY_TIMEOUT_MS / 1000,
+        )
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON;")
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS};")
+        except BaseException:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+            raise
         return conn
+
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        """Yield one transaction-scoped connection and always close it."""
+        with closing(self.connect()) as conn, conn:
+            yield conn
 
     def ensure_core_tables(self) -> None:
         """Create the current core schema when migration files are unavailable."""
@@ -47,19 +70,19 @@ class SQLiteStore(
         if migrations_dir.exists() and any(migrations_dir.glob("*.sql")):
             self.migrate(migrations_dir)
             return
-        with self.connect() as conn:
+        with self.connection() as conn:
             bootstrap_core_schema(conn)
 
     def migrate(self, migrations_dir: Path) -> None:
         if not migrations_dir.exists() or not any(migrations_dir.glob("*.sql")):
-            with self.connect() as conn:
+            with self.connection() as conn:
                 bootstrap_core_schema(conn)
             return
-        with self.connect() as conn:
+        with self.connection() as conn:
             apply_python_migration_files(conn, migrations_dir)
 
     def create_run(self, run_id: str, scenario: str, generations: int, executor_mode: str, agent_provider: str = "") -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO runs(run_id, scenario, target_generations, executor_mode, status, agent_provider)
@@ -69,7 +92,7 @@ class SQLiteStore(
             )
 
     def generation_exists(self, run_id: str, generation_index: int) -> bool:
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT 1 FROM generations WHERE run_id = ? AND generation_index = ?",
                 (run_id, generation_index),
@@ -78,7 +101,7 @@ class SQLiteStore(
 
     def get_generation(self, run_id: str, generation_index: int) -> dict[str, Any] | None:
         """Return a single generation row by run_id and index."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT * FROM generations WHERE run_id = ? AND generation_index = ?",
                 (run_id, generation_index),
@@ -91,7 +114,7 @@ class SQLiteStore(
         Used so a receipt (e.g. run_stopped) reports total persisted progress
         rather than only the generations executed in the current invocation.
         """
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM generations WHERE run_id = ? AND status = 'completed'",
                 (run_id,),
@@ -107,7 +130,7 @@ class SQLiteStore(
         gate_decision: str,
     ) -> None:
         """Update only the terminal state fields for an existing generation row."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 UPDATE generations
@@ -137,7 +160,7 @@ class SQLiteStore(
         evaluator_epoch: str | None = None,
         quarantined: bool | None = None,
     ) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO generations(
@@ -187,7 +210,7 @@ class SQLiteStore(
         Scoped by scenario (via the runs table) so a content-hash epoch shared across scenarios only
         clears the promoted scenario's rows. Returns the number of rows cleared.
         """
-        with self.connect() as conn:
+        with self.connection() as conn:
             cur = conn.execute(
                 "UPDATE generations SET quarantined = NULL "
                 "WHERE evaluator_epoch = ? AND quarantined IS NOT NULL "
@@ -214,7 +237,7 @@ class SQLiteStore(
         any derived table (``knowledge_snapshots`` etc.); the live score of record is left untouched. The
         ``SELECT`` matches no row when the generation does not exist, so nothing is inserted (returns False).
         """
-        with self.connect() as conn:
+        with self.connection() as conn:
             cur = conn.execute(
                 "INSERT INTO generation_score_revisions "
                 "(run_id, generation_index, revision_epoch, revision_score, previous_epoch, "
@@ -231,7 +254,7 @@ class SQLiteStore(
         generation_index: int,
     ) -> list[GenerationScoreRevisionRow]:
         """Return the archived score revisions for a generation, oldest first."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 "SELECT id, run_id, generation_index, revision_epoch, revision_score, "
                 "previous_epoch, previous_score, previous_quarantined, created_by, created_at "
@@ -249,7 +272,7 @@ class SQLiteStore(
         """
         if active_epoch is None:
             return {}
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 "SELECT id, run_id, generation_index, revision_epoch, revision_score, "
                 "previous_epoch, previous_score, previous_quarantined, created_by, created_at "
@@ -269,7 +292,7 @@ class SQLiteStore(
         generation_index: int,
         duration_seconds: float,
     ) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 UPDATE generations
@@ -291,7 +314,7 @@ class SQLiteStore(
         strategy_json: str = "",
         replay_json: str = "",
     ) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO matches(
@@ -323,7 +346,7 @@ class SQLiteStore(
         """Persist per-stage validation results from the staged pipeline."""
         if not results:
             return
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.executemany(
                 """
                 INSERT INTO staged_validation_results(
@@ -353,7 +376,7 @@ class SQLiteStore(
         generation_index: int,
     ) -> list[dict[str, Any]]:
         """Retrieve staged validation results for a generation, ordered by stage."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT stage_order, stage_name, status, duration_ms, error, error_code
@@ -367,7 +390,7 @@ class SQLiteStore(
 
     def get_staged_validation_results_for_run(self, run_id: str) -> list[dict[str, Any]]:
         """Retrieve all staged validation results for a run, ordered by generation and stage."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT generation_index, stage_order, stage_name, status, duration_ms, error, error_code, created_at
@@ -419,7 +442,7 @@ class SQLiteStore(
 
     def get_agent_outputs_by_role(self, run_id: str, role: str) -> list[dict[str, Any]]:
         """Return agent_outputs rows for a given run and role, ordered by generation."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT generation_index, role, content
@@ -439,7 +462,7 @@ class SQLiteStore(
         """
         from autocontext.storage.agent_output_queries import latest_agent_outputs
 
-        with self.connect() as conn:
+        with self.connection() as conn:
             return latest_agent_outputs(conn, run_id)
 
     def append_agent_role_metric(
@@ -524,7 +547,7 @@ class SQLiteStore(
     ) -> None:
         if not outputs and not role_metrics:
             return
-        with self.connect() as conn:
+        with self.connection() as conn:
             self._append_agent_outputs(conn, run_id, generation_index, outputs)
             self._append_agent_role_metrics(conn, run_id, generation_index, role_metrics)
 
@@ -536,7 +559,7 @@ class SQLiteStore(
         reason: str,
         retry_count: int,
     ) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO generation_recovery(run_id, generation_index, decision, reason, retry_count)
@@ -547,7 +570,7 @@ class SQLiteStore(
 
     def get_recovery_markers_for_run(self, run_id: str) -> list[dict[str, Any]]:
         """Return recovery markers for a run, ordered by generation."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT generation_index, decision, reason, retry_count, created_at
@@ -561,7 +584,7 @@ class SQLiteStore(
 
     def get_matches_for_run(self, run_id: str) -> list[dict[str, Any]]:
         """Return all match records for a run, ordered by generation and seed."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM matches WHERE run_id = ? ORDER BY generation_index, seed",
                 (run_id,),
@@ -570,7 +593,7 @@ class SQLiteStore(
 
     def get_generation_metrics(self, run_id: str) -> list[GenerationMetricsRow]:
         """Return all generation records for a run, ordered by generation index."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM generations WHERE run_id = ? ORDER BY generation_index",
                 (run_id,),
@@ -579,7 +602,7 @@ class SQLiteStore(
 
     def get_agent_role_metrics(self, run_id: str) -> list[dict[str, Any]]:
         """Return agent role metrics for a run, ordered by generation and row id."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT generation_index, role, model, input_tokens, output_tokens,
@@ -594,7 +617,7 @@ class SQLiteStore(
 
     def get_generation_trajectory(self, run_id: str) -> list[dict[str, Any]]:
         """Return generation trajectory with score deltas."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT
@@ -631,7 +654,7 @@ class SQLiteStore(
 
     def get_strategy_score_history(self, run_id: str) -> list[dict[str, Any]]:
         """Return strategy content with scores, joining agent_outputs and generations."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT ao.generation_index, ao.content, g.best_score, g.gate_decision
@@ -654,7 +677,7 @@ class SQLiteStore(
 
     def get_self_play_strategy_history(self, run_id: str) -> list[dict[str, Any]]:
         """Return prior competitor strategies with Elo for self-play scheduling."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT ao.generation_index, ao.content, g.best_score, g.gate_decision, g.elo
@@ -687,7 +710,7 @@ class SQLiteStore(
         scoring_backend: str = "elo",
         rating_uncertainty: float | None = None,
     ) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO knowledge_snapshots(
@@ -709,7 +732,7 @@ class SQLiteStore(
             )
 
     def get_best_knowledge_snapshot(self, scenario: str) -> dict[str, Any] | None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 """
                 SELECT
@@ -732,7 +755,7 @@ class SQLiteStore(
 
     def get_ecosystem_snapshots(self, scenario: str) -> list[dict[str, Any]]:
         """Return all knowledge snapshots for a scenario with provider info, ordered by created_at ASC."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT
@@ -756,7 +779,7 @@ class SQLiteStore(
 
     def get_best_competitor_output(self, scenario: str) -> str | None:
         """Return the competitor output from the best-scoring generation across all runs for a scenario."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 """
                 SELECT ao.content
@@ -781,7 +804,7 @@ class SQLiteStore(
 
     def count_completed_runs(self, scenario: str) -> int:
         """Return count of completed runs for a scenario."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) as cnt FROM runs WHERE scenario = ? AND status = 'completed'",
                 (scenario,),
@@ -790,7 +813,7 @@ class SQLiteStore(
 
     def mark_run_stopped(self, run_id: str) -> bool:
         """First-wins stop transition: only a still-running run can be stopped. Returns True if it won the race."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             cur = conn.execute(
                 "UPDATE runs SET status = 'stopped', updated_at = datetime('now') WHERE run_id = ? AND status = 'running'",
                 (run_id,),
@@ -798,7 +821,7 @@ class SQLiteStore(
             return cur.rowcount > 0
 
     def mark_run_completed(self, run_id: str) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 "UPDATE runs SET status = 'completed', updated_at = datetime('now') "
                 "WHERE run_id = ? AND (status IS NULL OR status != 'stopped')",
@@ -806,11 +829,34 @@ class SQLiteStore(
             )
 
     def mark_run_failed(self, run_id: str) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute("UPDATE runs SET status = 'failed', updated_at = datetime('now') WHERE run_id = ?", (run_id,))
 
+    def mark_running_run_and_generations_failed(self, run_id: str) -> bool:
+        """Fail only durable work still running after its worker process dies."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE generations
+                SET status = 'failed',
+                    gate_decision = 'stalled',
+                    updated_at = datetime('now')
+                WHERE run_id = ? AND status = 'running'
+                """,
+                (run_id,),
+            )
+            cursor = conn.execute(
+                """
+                UPDATE runs
+                SET status = 'failed', updated_at = datetime('now')
+                WHERE run_id = ? AND status = 'running'
+                """,
+                (run_id,),
+            )
+            return cursor.rowcount > 0
+
     def mark_run_running(self, run_id: str, target_generations: int | None = None) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             if target_generations is None:
                 conn.execute(
                     "UPDATE runs SET status = 'running', updated_at = datetime('now') WHERE run_id = ?",
@@ -830,7 +876,7 @@ class SQLiteStore(
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Return a single run row by id."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT * FROM runs WHERE run_id = ?",
                 (run_id,),
@@ -842,7 +888,7 @@ class SQLiteStore(
 
     def list_runs(self, *, limit: int = 50) -> list[RunRow]:
         """List recent runs, newest first."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 "SELECT run_id, scenario, target_generations, executor_mode, status, created_at "
                 "FROM runs ORDER BY created_at DESC LIMIT ?",
@@ -852,7 +898,7 @@ class SQLiteStore(
 
     def run_status(self, run_id: str) -> list[dict[str, Any]]:
         """Return per-generation status for a run."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 """
                 SELECT generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status,
@@ -867,7 +913,7 @@ class SQLiteStore(
 
     def list_solved(self) -> list[dict[str, Any]]:
         """Return best knowledge snapshots per scenario."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 "SELECT scenario, best_score, best_elo, run_id, created_at FROM knowledge_snapshots ORDER BY best_score DESC"
             ).fetchall()
@@ -893,7 +939,7 @@ class SQLiteStore(
 
     def get_run_best_score(self, run_id: str) -> float | None:
         """Return the best score recorded for a run, if any."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 """
                 SELECT MAX(best_score) AS best_score

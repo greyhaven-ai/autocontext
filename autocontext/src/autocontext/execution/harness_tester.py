@@ -203,8 +203,9 @@ class HarnessTester:
 
         # ── Run each state in a fresh child ─────────────────────────────
         # ``parallel_workers`` remains an accepted compatibility knob.  The
-        # current local isolation primitive may only fork from the main thread,
-        # so calls are serialized rather than falling back to unsafe threads.
+        # current local isolation primitive may only fork from a single-threaded
+        # process main thread, so calls are serialized rather than falling back
+        # to unsafe threads.
         all_failures: list[HarnessTestFailure] = []
         passed = 0
         for sample in sample_states:

@@ -23,9 +23,9 @@ services:
       AUTOCONTEXT_EXECUTOR_MODE: local
       AUTOCONTEXT_AGENT_PROVIDER: deterministic
     volumes:
-      - ../../runs:/workspace/runs
-      - ../../knowledge:/workspace/knowledge
-      - ../../skills:/workspace/skills
+      - autocontext-runs:/workspace/runs
+      - autocontext-knowledge:/workspace/knowledge
+      - autocontext-skills:/workspace/skills
     command: run --scenario grid_ctf --gens 1
   dashboard:
     <<: *runtime-security
@@ -40,10 +40,15 @@ services:
       AUTOCONTEXT_AGENT_PROVIDER: deterministic
       AUTOCONTEXT_SERVER_TOKEN: ${AUTOCONTEXT_SERVER_TOKEN:?set a random value of at least 32 characters}
     volumes:
-      - ../../runs:/workspace/runs
-      - ../../knowledge:/workspace/knowledge
-      - ../../skills:/workspace/skills
-      - ../../autocontext/dashboard:/workspace/dashboard
+      - autocontext-runs:/workspace/runs
+      - autocontext-knowledge:/workspace/knowledge
+      - autocontext-skills:/workspace/skills
+      - ../../autocontext/dashboard:/workspace/dashboard:ro
     command: serve --host 0.0.0.0 --port 8000
     ports:
       - "127.0.0.1:8000:8000"
+
+volumes:
+  autocontext-runs:
+  autocontext-knowledge:
+  autocontext-skills:

@@ -210,6 +210,7 @@ class TestPreflightSkips:
         with (
             patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+            patch("autocontext.loop.stage_preflight.get_provider"),
         ):
             mock_result = MagicMock()
             mock_result.harness_source = "def validate_strategy(s, sc): return True, []\n"

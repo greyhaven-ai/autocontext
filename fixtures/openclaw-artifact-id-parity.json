@@ -1,0 +1,20 @@
+{
+  "accepted": [
+    "a",
+    "Policy_1",
+    "policy-1",
+    "1",
+    "A_b-C9"
+  ],
+  "rejected": [
+    "",
+    "policy.v1",
+    "-policy",
+    "_policy",
+    "policy/name",
+    "policy\\name",
+    "policy name",
+    "policy:v1",
+    "policý"
+  ]
+}

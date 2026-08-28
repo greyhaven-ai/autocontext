@@ -13,13 +13,17 @@ autocontext supports four shipped execution modes for game scenarios, plus judge
 
 `PolicyExecutor` policies and `HarnessLoader` validators do not execute in the
 long-lived autocontext process on supported local platforms. Each load or call
-runs in a fresh, killable POSIX child process. The parent enforces the wall
+runs in a fresh, killable child process. The parent enforces the wall
 timeout, terminates the child process group, and accepts only bounded JSON over
 the result pipe. Pickle is never used across this trust boundary. Before code
 runs, the child receives an empty environment, a private working directory,
 closed inherited file descriptors, and best-effort CPU, address-space, data,
-file-size, open-file, and process-count limits. Results default to a 1 MiB cap
-and child memory defaults to 256 MiB.
+file-size, and open-file limits. Linux also applies a verified same-UID task
+ceiling plus inherited seccomp rules that deny `setsid`/`setpgid` (including
+x32 and compatibility-ABI bypasses) and user-namespace creation/entry through
+`clone`, `clone3`, `unshare`, or `setns`; macOS sets `RLIMIT_NPROC=1`, forbidding
+descendant processes while still permitting helper threads. Results default to
+a 1 MiB cap and child memory defaults to 256 MiB.
 
 The same boundary is used when `HarnessTester` evaluates synthesized harnesses
 and when staged validation loads or invokes a code candidate's
@@ -43,19 +47,43 @@ objects with paths to `__builtins__`.
 This boundary is defense in depth around the existing AST checks and restricted
 builtins; it is not a host sandbox:
 
-- POSIX resource-limit behavior varies by kernel. In particular, address-space
+- Resource-limit behavior varies by kernel. In particular, address-space
   and data limits are best effort and are not a portable hard memory guarantee.
 - The child runs as the invoking OS user. If Python restrictions are bypassed,
   it may still address host filesystem paths or create network connections.
 - Restricted Python and module facades reduce known interpreter escape paths;
   they are not a kernel-enforced filesystem or egress boundary, and future
   runtime gadgets must be treated as a residual risk.
+- Wall-time and process-group cleanup are enforced by the live parent process.
+  An abrupt host or parent-process termination can leave local execution or
+  provider descendants running: Linux parent-death signals do not cover an
+  entire descendant tree, and macOS has no equivalent portable primitive.
+  Forced cleanup of an interactive runner also cannot guarantee termination of
+  provider subprocesses that deliberately created a separate session or gained
+  credentials/MAC protection that makes them unsignalable by the parent. Use a
+  container, cgroup/service manager with whole-tree cleanup, Windows Job Object,
+  or a microVM when the lifecycle boundary must include every detached or
+  differently privileged descendant.
 - Setting `PolicyExecutor(..., safe_builtins=False)` intentionally weakens the
   interpreter restriction and is suitable only for trusted local policies.
-- Local policy/harness execution fails closed on non-POSIX platforms, POSIX
-  platforms without `waitid`/`WNOWAIT`, and when invoked from a Python worker
-  thread, where the current fork-based boundary is unavailable. No in-process
-  fallback is used.
+- Local policy/harness execution is supported only for non-root Linux
+  x86-64/AArch64 hosts with readable `/proc` task/capability accounting, no
+  inheritable, permitted, effective, or ambient Linux capabilities, enforceable
+  `RLIMIT_NPROC`, and
+  seccomp `prctl`, or non-root macOS hosts with Mach native
+  thread accounting and enforceable `RLIMIT_NPROC`. Both require `fork` plus
+  `waitid`/`WNOWAIT`, the default `SIGCHLD` disposition, and exactly one OS
+  thread. Root, FreeBSD/other POSIX, external child reapers, unverifiable limits,
+  unknown native threads, and unsupported ABIs fail closed.
+  The interactive run manager launches generation work in a dedicated spawned
+  process so supported TUI execution reaches this boundary. It likewise requires
+  the default `SIGCHLD` disposition before spawning and rechecks immediately at
+  process start. It is incompatible with any library or host component that
+  explicitly reaps its child with `waitpid`: in a multithreaded server there is
+  no atomic portable operation that both reserves the exited leader's process-
+  group ID and signals the group. Deployments that require protection from an
+  independent child reaper need external cgroup or Job Object ownership. No
+  in-process fallback is used.
 
 Other executable-code features retain separate trust classifications. Loading
 a persisted custom scenario through `scenarios.custom.loader`, the custom

@@ -506,7 +506,8 @@ setTimeout(() => process.exit(0), 1_300);
 const { spawn } = require("node:child_process");
 process.on("SIGTERM", () => {});
 spawn(process.execPath, ["output-descendant.cjs"], { cwd: __dirname, stdio: "ignore" });
-process.stdout.write("x".repeat(2 * 1024 * 1024));
+process.stderr.write("pre-limit warning\\n" + "€".repeat(400_000));
+process.stdout.write("€".repeat(400_000));
 setTimeout(() => process.exit(0), 1_500);
 `);
 
@@ -516,7 +517,11 @@ setTimeout(() => process.exit(0), 1_500);
 
       expect(result.exitCode).toBe(125);
       expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(1024 * 1024);
-      expect(result.stderr).toContain("output exceeded");
+      expect(result.stdout).not.toContain("�");
+      expect(Buffer.byteLength(result.stderr)).toBeLessThanOrEqual(1024 * 1024);
+      expect(result.stderr).not.toContain("�");
+      expect(result.stderr).toContain("pre-limit warning");
+      expect(result.stderr).toContain("Command output exceeded the 1 MiB per-stream limit");
       await delay(750);
       expect(existsSync(marker)).toBe(false);
     } finally {
