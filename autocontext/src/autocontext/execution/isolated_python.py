@@ -27,7 +27,9 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, Literal
 
+import autocontext.execution._isolation_fork as _isolation_fork
 import autocontext.execution._isolation_platform as _isolation_platform
+import autocontext.execution._isolation_resources as _isolation_resources
 import autocontext.execution._isolation_seccomp as _isolation_seccomp
 from autocontext.execution._isolation_protocol import (
     decode_isolated_response as _decode_isolated_response,
@@ -412,84 +414,14 @@ def run_isolated_json(
     raise IsolatedExecutionError("isolated child returned an unknown response status")
 
 
-def _clear_inherited_interpreter_hooks() -> None:
-    """Remove parent tracing/profiling callbacks copied across ``fork``."""
-    sys.settrace(None)
-    sys.setprofile(None)
-    threading.settrace(None)
-    threading.setprofile(None)
-
-
-def _restore_interpreter_hooks(hooks: tuple[Any, Any, Any, Any]) -> None:
-    """Restore trace/profile callbacks after a parent-side fork attempt."""
-    sys_trace, sys_profile, thread_trace, thread_profile = hooks
-    threading.setprofile(thread_profile)
-    threading.settrace(thread_trace)
-    sys.setprofile(sys_profile)
-    sys.settrace(sys_trace)
-
-
 def _fork_with_clean_interpreter_hooks() -> int:
-    """Fork without exposing the child to parent instrumentation callbacks."""
-    hooks = (
-        sys.gettrace(),
-        sys.getprofile(),
-        threading.gettrace(),
-        threading.getprofile(),
+    return _isolation_fork.fork_with_clean_interpreter_hooks(
+        native_thread_count=_native_thread_count,
+        sigchld_disposition_is_safe=_sigchld_disposition_is_safe,
+        child_ownership_primitives_available=_child_ownership_primitives_available,
+        terminate_process_tree=_terminate_process_tree,
+        unavailable_error=IsolationUnavailableError,
     )
-    try:
-        _clear_inherited_interpreter_hooks()
-    except BaseException as exc:
-        try:
-            _restore_interpreter_hooks(hooks)
-        except BaseException as restore_exc:
-            raise IsolationUnavailableError(
-                "unable to disable or restore interpreter hooks before fork"
-            ) from restore_exc
-        raise IsolationUnavailableError(
-            "unable to disable interpreter hooks before fork"
-        ) from exc
-    try:
-        # Recheck immediately adjacent to fork and after disabling callbacks
-        # that could mutate these preconditions. Native pthreads created via
-        # extensions/ctypes are invisible to ``threading.active_count()``;
-        # CPython's post-fork warning is diagnostic only and explicitly clears
-        # warning exceptions, so it cannot enforce this boundary.
-        if _native_thread_count() != 1:
-            raise IsolationUnavailableError(
-                "native thread state changed before isolated child startup"
-            )
-        if not _sigchld_disposition_is_safe():
-            raise IsolationUnavailableError(
-                "SIGCHLD disposition changed before isolated child startup"
-            )
-        if not _child_ownership_primitives_available():
-            raise IsolationUnavailableError(
-                "child ownership primitives changed before isolated child startup"
-            )
-        pid = os.fork()
-    except BaseException:
-        try:
-            _restore_interpreter_hooks(hooks)
-        except BaseException as restore_exc:
-            raise IsolationUnavailableError(
-                "unable to restore interpreter hooks after fork failure"
-            ) from restore_exc
-        raise
-    if pid != 0:
-        try:
-            _restore_interpreter_hooks(hooks)
-        except BaseException as exc:
-            try:
-                _terminate_process_tree(pid)
-            except BaseException as cleanup_exc:
-                raise IsolationUnavailableError(
-                    "unable to restore interpreter hooks or clean up the child"
-                ) from cleanup_exc
-            raise IsolationUnavailableError(
-                "unable to restore interpreter hooks after fork; child terminated"
-            ) from exc
-    return pid
 
 
 def _run_child(
@@ -505,7 +437,7 @@ def _run_child(
     # Instrumentation callbacks can retain parent locks and deadlock a helper
     # thread after fork. They are also ambient parent code that does not belong
     # inside the isolated execution boundary.
-    _clear_inherited_interpreter_hooks()
+    _isolation_fork.clear_inherited_interpreter_hooks()
     try:
         try:
             try:
@@ -624,21 +556,9 @@ def _close_inherited_fds(preserve_fd: int) -> None:
 
 
 def _linux_virtual_memory_bytes() -> int:
-    """Return address space already inherited by the forked Linux child."""
-    try:
-        with open("/proc/self/statm", encoding="ascii") as statm_file:
-            fields = statm_file.readline().split()
-        page_count = int(fields[0])
-        page_size = os.sysconf("SC_PAGE_SIZE")
-    except (IndexError, OSError, UnicodeError, ValueError) as exc:
-        raise IsolationUnavailableError(
-            "unable to establish inherited Linux address-space usage"
-        ) from exc
-    if page_count < 1 or not isinstance(page_size, int) or page_size < 1:
-        raise IsolationUnavailableError(
-            "unable to establish inherited Linux address-space usage"
-        )
-    return page_count * page_size
+    return _isolation_resources.linux_virtual_memory_bytes(
+        unavailable_error=IsolationUnavailableError
+    )
 
 
 def _apply_resource_limits(
@@ -647,63 +567,16 @@ def _apply_resource_limits(
     max_memory_mb: int,
     max_output_bytes: int,
 ) -> None:
-    try:
-        import resource
-    except ImportError as exc:
-        raise IsolationUnavailableError("process resource limits are unavailable") from exc
-
-    memory_bytes = max_memory_mb * 1024 * 1024
-    inherited_address_space_bytes = (
-        _linux_virtual_memory_bytes() if sys.platform.startswith("linux") else None
+    _isolation_resources.apply_resource_limits(
+        timeout_seconds=timeout_seconds,
+        max_memory_mb=max_memory_mb,
+        max_output_bytes=max_output_bytes,
+        platform=sys.platform,
+        unavailable_error=IsolationUnavailableError,
+        virtual_memory_bytes=_linux_virtual_memory_bytes,
+        apply_linux_process_limit=_apply_linux_process_limit,
+        apply_descendant_containment=_apply_descendant_containment,
     )
-    cpu_seconds = max(1, math.ceil(timeout_seconds))
-    requested: list[tuple[int, int]] = [
-        (resource.RLIMIT_CORE, 0),
-        (resource.RLIMIT_CPU, cpu_seconds),
-        (resource.RLIMIT_FSIZE, max_output_bytes),
-        (resource.RLIMIT_NOFILE, 32),
-    ]
-    memory_limits: tuple[tuple[str, int], ...]
-    if inherited_address_space_bytes is not None:
-        # A fork already owns the parent's mappings. Treat the configured
-        # memory budget as bounded child growth; an absolute limit below the
-        # inherited address space prevents even a small helper thread. RLIMIT_AS
-        # covers both mmap and data growth, so a separate Linux DATA cap would
-        # reintroduce the same inherited-baseline bug.
-        memory_limits = (
-            ("RLIMIT_AS", inherited_address_space_bytes + memory_bytes),
-        )
-    else:
-        memory_limits = (
-            ("RLIMIT_AS", memory_bytes),
-            ("RLIMIT_DATA", memory_bytes),
-        )
-    for name, value in memory_limits:
-        limit = getattr(resource, name, None)
-        if limit is not None:
-            requested.append((limit, value))
-    for resource_id, value in requested:
-        try:
-            soft, hard = resource.getrlimit(resource_id)
-            effective = value
-            for inherited_limit in (soft, hard):
-                if inherited_limit != resource.RLIM_INFINITY:
-                    effective = min(effective, inherited_limit)
-            if (
-                inherited_address_space_bytes is not None
-                and resource_id == getattr(resource, "RLIMIT_AS", None)
-                and effective <= inherited_address_space_bytes
-            ):
-                raise IsolationUnavailableError(
-                    "the inherited address-space limit leaves no child memory allowance"
-                )
-            resource.setrlimit(resource_id, (effective, effective))
-        except (OSError, ValueError):
-            # Some kernels expose a limit but do not enforce or permit lowering it.
-            continue
-
-    _apply_linux_process_limit(resource)
-    _apply_descendant_containment(resource)
 
 
 def _apply_descendant_containment(resource_module: Any) -> None:

@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+import autocontext.execution._isolation_fork as isolation_fork_module
 import autocontext.execution._process_group as process_group_module
 import autocontext.execution.isolated_python as isolation_module
 from autocontext.execution.isolated_python import (
@@ -497,7 +498,7 @@ def test_fork_failure_restores_exact_parent_interpreter_hooks(
         assert threading.gettrace() is trace_hook
         assert threading.getprofile() is profile_hook
     finally:
-        isolation_module._restore_interpreter_hooks(previous_hooks)
+        isolation_fork_module.restore_interpreter_hooks(previous_hooks)
 
 
 def test_hook_disable_failure_restores_exact_parent_hooks(
@@ -526,8 +527,8 @@ def test_hook_disable_failure_restores_exact_parent_hooks(
     threading.settrace(trace_hook)
     threading.setprofile(profile_hook)
     monkeypatch.setattr(
-        isolation_module,
-        "_clear_inherited_interpreter_hooks",
+        isolation_fork_module,
+        "clear_inherited_interpreter_hooks",
         fail_after_partial_clear,
     )
     try:
@@ -538,7 +539,7 @@ def test_hook_disable_failure_restores_exact_parent_hooks(
         assert threading.gettrace() is trace_hook
         assert threading.getprofile() is profile_hook
     finally:
-        isolation_module._restore_interpreter_hooks(previous_hooks)
+        isolation_fork_module.restore_interpreter_hooks(previous_hooks)
 
 
 def test_parent_hook_restore_failure_terminates_started_child(
@@ -550,12 +551,12 @@ def test_parent_hook_restore_failure_terminates_started_child(
         threading.gettrace(),
         threading.getprofile(),
     )
-    restore_hooks = isolation_module._restore_interpreter_hooks
+    restore_hooks = isolation_fork_module.restore_interpreter_hooks
     terminated: list[int] = []
     monkeypatch.setattr(isolation_module.os, "fork", lambda: 424_242)
     monkeypatch.setattr(
-        isolation_module,
-        "_restore_interpreter_hooks",
+        isolation_fork_module,
+        "restore_interpreter_hooks",
         lambda _hooks: (_ for _ in ()).throw(RuntimeError("restore failed")),
     )
     monkeypatch.setattr(isolation_module, "_terminate_process_tree", terminated.append)
@@ -587,7 +588,8 @@ def test_hook_side_effects_are_rechecked_immediately_before_fork(
         if (
             worker is None
             and event == "call"
-            and frame.f_code is isolation_module._clear_inherited_interpreter_hooks.__code__
+            and frame.f_code
+            is isolation_fork_module.clear_inherited_interpreter_hooks.__code__
         ):
             worker = threading.Thread(target=wait_for_release)
             worker.start()
