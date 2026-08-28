@@ -5,7 +5,8 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 
 def _native_thread_count() -> int | None:
@@ -130,7 +131,10 @@ def _release_darwin_thread_ports(
 def _safe_unprivileged_uid() -> int | None:
     """Return the stable real UID used by process-count limits, or fail closed."""
     if sys.platform.startswith("linux"):
-        getresuid = getattr(os, "getresuid", None)
+        getresuid = cast(
+            Callable[[], tuple[int, int, int]] | None,
+            getattr(os, "getresuid", None),
+        )
         if getresuid is None:
             return None
         try:
