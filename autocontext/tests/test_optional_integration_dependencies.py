@@ -5,8 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PACKAGE_ROOT / "src"
 
@@ -70,7 +68,32 @@ assert 'autocontext.execution.executors.local' not in sys.modules
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="LocalExecutor currently requires POSIX resource limits")
+def test_local_executor_imports_without_posix_resource_and_execution_fails_closed() -> None:
+    _run_python_with_blocked_imports(
+        ["resource"],
+        """
+import autocontext.server.app
+from autocontext.execution.executors.local import _execute_in_subprocess
+
+try:
+    _execute_in_subprocess(
+        'unreachable.scenario',
+        'UnreachableScenario',
+        None,
+        {},
+        0,
+        64,
+        None,
+        None,
+    )
+except RuntimeError as exc:
+    assert str(exc) == 'LocalExecutor requires POSIX resource limits'
+else:
+    raise AssertionError('LocalExecutor executed without POSIX resource limits')
+""",
+    )
+
+
 def test_execution_supervisor_package_exports_remain_available() -> None:
     import autocontext.execution as execution
     import autocontext.execution.supervisor as supervisor

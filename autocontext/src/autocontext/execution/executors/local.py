@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import resource
 import sys
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, TimeoutError
@@ -38,6 +37,11 @@ def _execute_in_subprocess(
     initial_state: dict[str, Any] | None,
     scenario_instance_state: dict[str, Any] | None,
 ) -> Result:
+    try:
+        resource = import_module("resource")
+    except ImportError as exc:
+        raise RuntimeError("LocalExecutor requires POSIX resource limits") from exc
+
     memory_bytes = int(max_memory_mb * 1024 * 1024)
     try:
         resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
