@@ -446,7 +446,7 @@ class TestConsultationRunner:
 
 class TestConsultationStorage:
     def test_consultation_log_table_exists(self, sqlite_store: SQLiteStore) -> None:
-        with sqlite_store.connect() as conn:
+        with sqlite_store.connection() as conn:
             cursor = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='consultation_log'"
             )
@@ -542,7 +542,7 @@ class TestConsultationStorage:
         assert abs(total - 0.15) < 1e-9
 
     def test_consultation_index_exists(self, sqlite_store: SQLiteStore) -> None:
-        with sqlite_store.connect() as conn:
+        with sqlite_store.connection() as conn:
             row = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_consultation_log_run'"
             ).fetchone()

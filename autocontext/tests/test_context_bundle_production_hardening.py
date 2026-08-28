@@ -1518,7 +1518,10 @@ def test_runtime_evaluator_observes_stop_between_competitor_and_translator() -> 
 
 def test_runtime_evaluator_rejects_unbounded_direct_anthropic_before_model_call() -> None:
     scenario = _ScoreScenario()
-    client = AnthropicClient("not-used", max_retries=0)
+    # The transport must never be used here; avoid starting process-global
+    # platform workers in the real SDK during this structural rejection test.
+    with patch("autocontext.agents.llm_client.Anthropic", return_value=MagicMock()):
+        client = AnthropicClient("not-used", max_retries=0)
     evaluator = build_runtime_context_bundle_evaluator(
         scenario_name="demo",
         scenario=scenario,

@@ -8,6 +8,7 @@ is small enough that document-style storage is appropriate.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from autocontext.session.types import Session
@@ -22,7 +23,7 @@ class SessionStore:
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
@@ -36,14 +37,21 @@ class SessionStore:
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+        except BaseException:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+            raise
         return conn
 
     def save(self, session: Session) -> None:
         """Persist a session (insert or update)."""
         data = session.model_dump_json()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute(
                 """
                 INSERT INTO sessions (session_id, goal, status, data_json, created_at, updated_at)
@@ -59,7 +67,7 @@ class SessionStore:
 
     def load(self, session_id: str) -> Session | None:
         """Load a session by ID. Returns None if not found."""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 "SELECT data_json FROM sessions WHERE session_id = ?",
                 (session_id,),
@@ -77,13 +85,13 @@ class SessionStore:
             params.append(status)
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(query, params).fetchall()
         return [Session.model_validate_json(row["data_json"]) for row in rows]
 
     def delete(self, session_id: str) -> bool:
         """Delete a session. Returns True if found and deleted."""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
             row = conn.execute("SELECT changes()").fetchone()
             return bool(row[0] > 0) if row else False

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from autocontext.storage.migration_ledgers import TYPESCRIPT_BASELINE_MIGRATIONS
@@ -13,7 +14,7 @@ TYPESCRIPT_MIGRATIONS_DIR = REPO_ROOT / "ts" / "migrations"
 
 
 def _apply_typescript_migrations(db_path: Path) -> None:
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS schema_version (
@@ -28,7 +29,7 @@ def _apply_typescript_migrations(db_path: Path) -> None:
 
 
 def _ledger_values(db_path: Path, table: str, column: str) -> set[str]:
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         return {row[0] for row in conn.execute(f"SELECT {column} FROM {table}").fetchall()}
 
 

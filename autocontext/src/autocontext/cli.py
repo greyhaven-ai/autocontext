@@ -74,12 +74,13 @@ from autocontext.preflight import PreflightBlocked, run_preflight
 from autocontext.providers.base import ProviderError
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
+from autocontext.server.resource_limits import MAX_INTERACTIVE_FRAME_BYTES, MAX_PENDING_WEBSOCKET_MESSAGES
 from autocontext.simplicity import append_simplicity_guidance, simplicity_mode_metadata
 from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
 from autocontext.util.json_io import read_json
 
 logger = logging.getLogger(__name__)
-
+_UVICORN_WS_LIMITS: dict[str, Any] = {"ws_max_size": MAX_INTERACTIVE_FRAME_BYTES, "ws_max_queue": MAX_PENDING_WEBSOCKET_MESSAGES}
 if TYPE_CHECKING:
     from autocontext.extensions import HookBus
     from autocontext.providers.base import LLMProvider
@@ -448,7 +449,6 @@ def run(
             )
             raise typer.Exit(code=2) from blocked
 
-    # Agent-task scenario detection (AC-231)
     if _is_agent_task(scenario):
         if serve:
             msg = "--serve is not supported for agent-task scenarios"
@@ -486,21 +486,26 @@ def run(
     if serve:
         from autocontext.loop.controller import LoopController
         from autocontext.server.app import create_app
-
         runner = _runner(preset)
         controller = LoopController()
         runner.controller = controller
+        controller.begin_run_session()
 
         def _loop_target() -> None:
-            runner.run(scenario_name=scenario, generations=gens, run_id=run_id)
+            try:
+                runner.run(scenario_name=scenario, generations=gens, run_id=run_id)
+            finally:
+                controller.abort_pending_chats("interactive run ended")
 
         loop_thread = threading.Thread(target=_loop_target, daemon=True)
         loop_thread.start()
-
         interactive_app = create_app(controller=controller, events=runner.events)
         console.print(f"[green]Interactive server started on port {port}[/green]")
         console.print(f"[dim]API: http://localhost:{port}/api/runs | WS: ws://localhost:{port}/ws/interactive[/dim]")
-        uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
+        try:
+            uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info", **_UVICORN_WS_LIMITS)
+        finally:
+            controller.abort_pending_chats("interactive server ended")
     else:
         with cli_error_boundary(json_output, action="run"):
             summary = _runner(preset).run(scenario_name=scenario, generations=gens, run_id=run_id)
@@ -702,13 +707,11 @@ def status(
 
 
 def _run_http_serve(host: str, port: int) -> None:
-    """Backend for `autoctx serve` and `autoctx serve http`.
+    """Backend shared by the legacy and explicit HTTP serve forms."""
+    from autocontext.server.auth import assert_secure_server_bind
 
-    Extracted so the canonical sub-Typer group can route bare
-    `autoctx serve` (legacy form) and `autoctx serve http`
-    (explicit subcommand) through the same code path.
-    """
-    uvicorn.run("autocontext.server.app:app", host=host, port=port, reload=False)
+    assert_secure_server_bind(host)
+    uvicorn.run("autocontext.server.app:app", host=host, port=port, reload=False, **_UVICORN_WS_LIMITS)
 
 
 # AC-697 slice 6: `serve` is a sub-Typer group with `invoke_without_command`
@@ -833,7 +836,7 @@ def ecosystem(
         table.add_column("Best Score")
         table.add_column("Elo")
         for rs in summary.run_summaries:
-            with SQLiteStore(settings.db_path).connect() as conn:
+            with SQLiteStore(settings.db_path).connection() as conn:
                 row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = ?", (rs.run_id,)).fetchone()
             provider_label = row["agent_provider"] if row else "?"
             table.add_row(
@@ -882,7 +885,7 @@ def tui(
     console.print(f"[dim]WebSocket: ws://localhost:{port}/ws/interactive[/dim]")
     console.print("[dim]For interactive TUI, use the TypeScript package: npx autoctx tui[/dim]")
 
-    uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
+    uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info", **_UVICORN_WS_LIMITS)
 
 
 @app.command("ab-test")
@@ -1213,10 +1216,7 @@ def wait(
         raise typer.Exit(code=1)
 
 
-# ---------------------------------------------------------------------------
 # Backported from TS package (AC-382)
-# ---------------------------------------------------------------------------
-
 
 @app.command()
 def judge(

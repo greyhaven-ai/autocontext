@@ -1,6 +1,7 @@
 """Tests for AC-193: OpenClaw agent adapter for running agents inside autocontext harness."""
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -339,22 +340,33 @@ class TestTimeoutBehavior:
     def test_timeout_raises_adapter_error(self) -> None:
         from autocontext.openclaw.agent_adapter import OpenClawAdapterError, OpenClawClient
 
+        workers: list[threading.Thread] = []
+
         def slow_execute(**kwargs: Any) -> dict[str, Any]:
-            time.sleep(1.0)
+            workers.append(threading.current_thread())
+            time.sleep(0.1)
             return _make_trace()
 
         agent = MagicMock()
         agent.execute.side_effect = slow_execute
         client = OpenClawClient(agent=agent, max_retries=0, timeout_seconds=0.05)
 
-        with pytest.raises(OpenClawAdapterError, match="timed out"):
-            client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
+        try:
+            with pytest.raises(OpenClawAdapterError, match="timed out"):
+                client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
+        finally:
+            for worker in workers:
+                worker.join(timeout=1.0)
+        assert workers and not workers[0].is_alive()
 
     def test_timeout_returns_promptly(self) -> None:
         from autocontext.openclaw.agent_adapter import OpenClawAdapterError, OpenClawClient
 
+        workers: list[threading.Thread] = []
+
         def slow_execute(**kwargs: Any) -> dict[str, Any]:
-            time.sleep(1.0)
+            workers.append(threading.current_thread())
+            time.sleep(0.1)
             return _make_trace()
 
         agent = MagicMock()
@@ -362,11 +374,16 @@ class TestTimeoutBehavior:
         client = OpenClawClient(agent=agent, max_retries=0, timeout_seconds=0.05)
 
         t0 = time.monotonic()
-        with pytest.raises(OpenClawAdapterError, match="timed out"):
-            client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
-        elapsed = time.monotonic() - t0
+        try:
+            with pytest.raises(OpenClawAdapterError, match="timed out"):
+                client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
+            elapsed = time.monotonic() - t0
+        finally:
+            for worker in workers:
+                worker.join(timeout=1.0)
 
         assert elapsed < 0.5
+        assert workers and not workers[0].is_alive()
 
 
 # ---------------------------------------------------------------------------
@@ -508,6 +525,7 @@ class TestProviderBridgeRegistration:
         settings.openclaw_agent_command = ""
         settings.openclaw_agent_http_endpoint = "http://localhost:8080/execute"
         settings.openclaw_agent_http_headers = '{"Authorization":"Bearer token"}'
+        settings.openclaw_allow_private_network_endpoint = True
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
@@ -535,6 +553,7 @@ class TestOpenClawSettings:
         assert hasattr(s, "openclaw_agent_command")
         assert hasattr(s, "openclaw_agent_http_endpoint")
         assert hasattr(s, "openclaw_agent_http_headers")
+        assert hasattr(s, "openclaw_allow_private_network_endpoint")
         assert hasattr(s, "openclaw_compatibility_version")
         assert hasattr(s, "openclaw_timeout_seconds")
         assert hasattr(s, "openclaw_max_retries")
@@ -544,6 +563,7 @@ class TestOpenClawSettings:
         assert s.openclaw_agent_command == ""
         assert s.openclaw_agent_http_endpoint == ""
         assert s.openclaw_agent_http_headers == ""
+        assert s.openclaw_allow_private_network_endpoint is False
         assert s.openclaw_compatibility_version == "1.0"
         assert s.openclaw_timeout_seconds == 30.0
         assert s.openclaw_max_retries == 2
@@ -560,6 +580,7 @@ class TestOpenClawSettings:
             "AUTOCONTEXT_OPENCLAW_AGENT_COMMAND": "hermes-fly --json",
             "AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT": "http://localhost:8080/execute",
             "AUTOCONTEXT_OPENCLAW_AGENT_HTTP_HEADERS": '{"Authorization":"Bearer token"}',
+            "AUTOCONTEXT_OPENCLAW_ALLOW_PRIVATE_NETWORK_ENDPOINT": "true",
             "AUTOCONTEXT_OPENCLAW_COMPATIBILITY_VERSION": "1.1",
             "AUTOCONTEXT_OPENCLAW_TIMEOUT_SECONDS": "60.0",
             "AUTOCONTEXT_OPENCLAW_MAX_RETRIES": "5",
@@ -573,6 +594,7 @@ class TestOpenClawSettings:
         assert s.openclaw_agent_command == "hermes-fly --json"
         assert s.openclaw_agent_http_endpoint == "http://localhost:8080/execute"
         assert s.openclaw_agent_http_headers == '{"Authorization":"Bearer token"}'
+        assert s.openclaw_allow_private_network_endpoint is True
         assert s.openclaw_compatibility_version == "1.1"
         assert s.openclaw_timeout_seconds == 60.0
         assert s.openclaw_max_retries == 5

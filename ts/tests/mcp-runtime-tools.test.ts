@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   connectMcpRuntimeTools,
@@ -18,6 +18,21 @@ function mockClient(overrides: Partial<McpRuntimeToolClient> = {}): McpRuntimeTo
 }
 
 describe("MCP runtime tools", () => {
+  it.each([
+    "file:///tmp/mcp.sock",
+    "http://localhost:3000/rpc",
+    "http://127.0.0.1:3000/rpc",
+    "http://169.254.169.254/latest/meta-data/",
+    "http://10.0.0.8/rpc",
+    "http://[::1]/rpc",
+    "https://mcp.example.test/rpc#secret",
+  ])("rejects unsafe MCP endpoints before invoking a client factory: %s", async (url) => {
+    const clientFactory = vi.fn(async () => mockClient());
+
+    await expect(connectMcpRuntimeTools({ url, clientFactory })).rejects.toThrow(/http|public|fragment/);
+    expect(clientFactory).not.toHaveBeenCalled();
+  });
+
   it("connects with trusted headers and normalizes duplicate tool names", async () => {
     const seen: Array<{ url: string; headers: Record<string, string> }> = [];
     let closed = false;
@@ -81,9 +96,9 @@ describe("MCP runtime tools", () => {
     expect(closed).toBe(true);
   });
 
-  it("redacts URL credentials and query strings from tool provenance", async () => {
+  it("redacts URL query strings from tool provenance", async () => {
     const toolSet = await connectMcpRuntimeTools({
-      url: "https://user:password@mcp.example.test/rpc?token=url-secret#frag",
+      url: "https://mcp.example.test/rpc?token=url-secret",
       clientFactory: async () =>
         mockClient({
           listTools: async () => ({
@@ -94,7 +109,6 @@ describe("MCP runtime tools", () => {
 
     expect(toolSet.tools[0]!.provenance?.source).toBe("mcp:https://mcp.example.test/rpc");
     expect(JSON.stringify(toolSet.tools)).not.toContain("url-secret");
-    expect(JSON.stringify(toolSet.tools)).not.toContain("password");
   });
 
   it("converts MCP content and structured results into model-safe text", async () => {
@@ -245,6 +259,58 @@ describe("MCP runtime tools", () => {
           },
         }),
     })).rejects.toThrow("repeated cursor");
+
+    expect(closed).toBe(true);
+  });
+
+  it("bounds retained tool discovery metadata", async () => {
+    let closed = false;
+    const tools = Array.from({ length: 129 }, (_value, index) => ({
+      name: `tool_${index}`,
+      description: "d".repeat(16 * 1024),
+      inputSchema: { type: "object" },
+    }));
+
+    await expect(connectMcpRuntimeTools({
+      url: "https://mcp.example.test/rpc",
+      clientFactory: async () => mockClient({
+        listTools: async () => ({ tools }),
+        close: async () => {
+          closed = true;
+        },
+      }),
+    })).rejects.toThrow("retained bytes");
+
+    expect(closed).toBe(true);
+  });
+
+  it("rejects oversized individual tool schemas", async () => {
+    await expect(connectMcpRuntimeTools({
+      url: "https://mcp.example.test/rpc",
+      clientFactory: async () => mockClient({
+        listTools: async () => ({
+          tools: [{
+            name: "oversized",
+            inputSchema: { description: "x".repeat(64 * 1024) },
+          }],
+        }),
+      }),
+    })).rejects.toThrow("oversized tool input schema");
+  });
+
+  it("enforces one overall deadline across tool discovery", async () => {
+    let closed = false;
+
+    await expect(connectMcpRuntimeTools({
+      url: "https://mcp.example.test/rpc",
+      timeoutMs: 10,
+      clientFactory: async () => mockClient({
+        listTools: () => new Promise(() => {}),
+        close: async () => {
+          closed = true;
+        },
+      }),
+    })).rejects.toThrow("overall deadline");
 
     expect(closed).toBe(true);
   });

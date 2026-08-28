@@ -4,7 +4,7 @@ Six concerns under test, each isolated:
   1. ``FixtureManifest.from_json`` — parse manifest files.
   2. ``FixtureCache`` — read/write cache files, scenario-scoped paths.
   3. ``load_fixtures`` — orchestrate fetch + cache + checksum.
-  4. ``UrlFetcher`` — default urllib fetcher (with patched urlopen).
+  4. ``UrlFetcher`` — bounded public-network fetcher.
   5. ``render_fixtures`` — prompt block emission.
   6. ``apply_to_context`` — populate a GenerationContext-shaped fixtures dict.
 """
@@ -32,6 +32,7 @@ from autocontext.loop.fixture_loader import (
     load_scenario_fixtures,
     render_fixtures,
 )
+from autocontext.security.outbound_url import OutboundResponse, OutboundUrlError
 
 
 def _sha256(data: bytes) -> str:
@@ -284,16 +285,25 @@ class TestLoadScenarioFixtures:
 
 
 class TestUrlFetcher:
-    def test_fetches_via_urlopen(self) -> None:
+    def test_fetches_via_safe_outbound_client(self) -> None:
         fetcher = UrlFetcher()
         body = b"the body"
-        fake_response = type("R", (), {"read": lambda self: body, "__enter__": lambda self: self, "__exit__": lambda *a: None})()
-        with patch("autocontext.loop.fixture_loader.urlopen", return_value=fake_response):
+        with patch(
+            "autocontext.loop.fixture_loader.request_outbound_bytes",
+            return_value=OutboundResponse(status=200, headers={}, body=body),
+        ) as request:
             assert fetcher.fetch("https://example.com/x") == body
 
-    def test_urlopen_failure_raises_fixture_fetch_error(self) -> None:
+        policy = request.call_args.kwargs["policy"]
+        assert "text/plain" in policy.allowed_content_types
+        assert policy.allow_private_networks is False
+
+    def test_outbound_policy_failure_raises_fixture_fetch_error(self) -> None:
         fetcher = UrlFetcher()
-        with patch("autocontext.loop.fixture_loader.urlopen", side_effect=OSError("boom")):
+        with patch(
+            "autocontext.loop.fixture_loader.request_outbound_bytes",
+            side_effect=OutboundUrlError("private target blocked"),
+        ):
             with pytest.raises(FixtureFetchError):
                 fetcher.fetch("https://example.com/x")
 
@@ -356,19 +366,33 @@ class TestLocalFilePaths:
     def test_file_uri_is_read_from_disk(self, tmp_path: Path) -> None:
         target = tmp_path / "fixture.bin"
         target.write_bytes(b"local-bytes")
-        fetcher = UrlFetcher()
+        fetcher = UrlFetcher(allow_local_files=True)
         assert fetcher.fetch(f"file://{target}") == b"local-bytes"
 
     def test_bare_path_is_read_from_disk(self, tmp_path: Path) -> None:
         target = tmp_path / "fixture.bin"
         target.write_bytes(b"local-bytes")
-        fetcher = UrlFetcher()
+        fetcher = UrlFetcher(allow_local_files=True)
         assert fetcher.fetch(str(target)) == b"local-bytes"
 
     def test_missing_local_file_raises_fixture_fetch_error(self, tmp_path: Path) -> None:
-        fetcher = UrlFetcher()
+        fetcher = UrlFetcher(allow_local_files=True)
         with pytest.raises(FixtureFetchError):
             fetcher.fetch(str(tmp_path / "does-not-exist.bin"))
+
+    def test_local_paths_require_explicit_trusted_opt_in(self, tmp_path: Path) -> None:
+        target = tmp_path / "fixture.bin"
+        target.write_bytes(b"local-bytes")
+
+        with pytest.raises(FixtureFetchError, match="trusted-local opt-in"):
+            UrlFetcher().fetch(str(target))
+
+    def test_local_file_reads_are_bounded(self, tmp_path: Path) -> None:
+        target = tmp_path / "fixture.bin"
+        target.write_bytes(b"too-large")
+
+        with pytest.raises(FixtureFetchError, match="byte limit"):
+            UrlFetcher(allow_local_files=True, max_response_bytes=4).fetch(str(target))
 
 
 class TestCachePathTraversal:
@@ -409,6 +433,61 @@ class TestCachePathTraversal:
             cache.get("../outside", "key")
 
 
+class TestCacheSymlinkSafety:
+    def test_rejects_symlinked_scenario_directory(self, tmp_path: Path) -> None:
+        cache_root = tmp_path / "cache"
+        outside = tmp_path / "outside"
+        cache_root.mkdir()
+        outside.mkdir()
+        try:
+            (cache_root / "scen").symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+
+        cache = FixtureCache(cache_root)
+        fixture = Fixture(
+            key="key",
+            bytes_=b"payload",
+            provenance=FixtureProvenance(source="s", fetched_at="t", sha256=_sha256(b"payload")),
+        )
+        with pytest.raises(FixtureFetchError, match="unsafe"):
+            cache.get("scen", "key")
+        with pytest.raises(FixtureFetchError, match="unsafe"):
+            cache.put("scen", fixture)
+        assert list(outside.iterdir()) == []
+
+    @pytest.mark.parametrize("target_name", ["key.bin", "key.provenance.json"])
+    def test_rejects_symlinked_cache_files(self, tmp_path: Path, target_name: str) -> None:
+        cache_root = tmp_path / "cache"
+        scenario_dir = cache_root / "scen"
+        scenario_dir.mkdir(parents=True)
+        outside = tmp_path / "outside-secret"
+        outside.write_bytes(b"do-not-overwrite")
+        try:
+            (scenario_dir / target_name).symlink_to(outside)
+        except OSError as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+
+        if target_name != "key.bin":
+            (scenario_dir / "key.bin").write_bytes(b"old")
+        if target_name != "key.provenance.json":
+            (scenario_dir / "key.provenance.json").write_text(
+                json.dumps({"source": "s", "fetched_at": "t", "sha256": _sha256(b"old")}),
+            )
+
+        cache = FixtureCache(cache_root)
+        fixture = Fixture(
+            key="key",
+            bytes_=b"new",
+            provenance=FixtureProvenance(source="s", fetched_at="t", sha256=_sha256(b"new")),
+        )
+        with pytest.raises(FixtureFetchError, match="unsafe"):
+            cache.get("scen", "key")
+        with pytest.raises(FixtureFetchError, match="unsafe"):
+            cache.put("scen", fixture)
+        assert outside.read_bytes() == b"do-not-overwrite"
+
+
 class TestCacheIntegrity:
     """PR #968 review (P2): cache freshness must hash the cached bytes,
     not trust the provenance JSON."""
@@ -431,4 +510,3 @@ class TestCacheIntegrity:
         result = load_fixtures(manifest, fetcher=fetcher, cache=FixtureCache(cache_root), scenario="scen")
         assert fetcher.calls == ["https://example.com/k1", "https://example.com/k1"]
         assert result[0].bytes_ == body
-

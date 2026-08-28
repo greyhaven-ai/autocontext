@@ -6,6 +6,8 @@ AC-329: RunPreset, LONG_RUN_PRESET, SHORT_RUN_PRESET, apply_preset
 
 from __future__ import annotations
 
+import json
+
 # ===========================================================================
 # AC-327: CostBudget
 # ===========================================================================
@@ -94,8 +96,9 @@ class TestEvaluateCostEffectiveness:
         from autocontext.loop.cost_control import evaluate_cost_effectiveness
 
         result = evaluate_cost_effectiveness(cost_usd=1.0, score_delta=0.0)
-        assert result["cost_per_delta_point"] == float("inf")
+        assert result["cost_per_delta_point"] is None
         assert result["efficient"] is False
+        assert json.loads(json.dumps(result, allow_nan=False)) == result
 
 
 class TestShouldThrottle:

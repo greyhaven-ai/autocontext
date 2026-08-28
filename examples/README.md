@@ -159,6 +159,7 @@ cd autocontext
 export AUTOCONTEXT_DB_PATH=/srv/autoctx/runs/autocontext.sqlite3
 export AUTOCONTEXT_RUNS_ROOT=/srv/autoctx/runs
 export AUTOCONTEXT_KNOWLEDGE_ROOT=/srv/autoctx/knowledge
+export AUTOCONTEXT_SERVER_TOKEN="$(openssl rand -hex 32)"
 
 uv run autoctx serve --host 0.0.0.0 --port 8000
 uv run autoctx worker --poll-interval 5 --concurrency 2
@@ -264,11 +265,14 @@ autoctx tui
 Or attach the client to an existing TypeScript server:
 
 ```bash
+export AUTOCONTEXT_SERVER_TOKEN="$(openssl rand -hex 32)"
 autoctx tui --connect https://host.example
 ```
 
-Non-loopback endpoints must use HTTPS/WSS. Python exposes its existing CLI and
-API surfaces but does not yet ship this TUI. See the [operator TUI
+Non-loopback endpoints must use HTTPS/WSS and the client token must match the
+server's `AUTOCONTEXT_SERVER_TOKEN`; credentials in endpoint URLs are rejected.
+Python exposes its existing CLI and API surfaces but does not yet ship this TUI.
+See the [operator TUI
 guide](../ts/README.md#operator-tui) for commands, key bindings, replay, and
 security behavior.
 

@@ -242,7 +242,7 @@ def test_retry_preserves_other_agent_outputs(tmp_path: Path) -> None:
     runner.run(scenario_name="grid_ctf", generations=2, run_id="preserve_test")
 
     # Query agent_outputs for gen 2
-    with runner.sqlite.connect() as conn:
+    with runner.sqlite.connection() as conn:
         rows = conn.execute(
             "SELECT role, content FROM agent_outputs WHERE run_id = ? AND generation_index = 2",
             ("preserve_test",),

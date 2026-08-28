@@ -210,6 +210,7 @@ class TestPreflightSkips:
         with (
             patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+            patch("autocontext.loop.stage_preflight.get_provider"),
         ):
             mock_result = MagicMock()
             mock_result.harness_source = "def validate_strategy(s, sc): return True, []\n"
@@ -519,17 +520,13 @@ class TestPreflightFixtures:
             )
         )
 
-        # Patch the fetcher's underlying urlopen so the test stays hermetic.
-        fake_response = type(
-            "R",
-            (),
-            {
-                "read": lambda self: body,
-                "__enter__": lambda self: self,
-                "__exit__": lambda *a: None,
-            },
-        )()
-        with patch("autocontext.loop.fixture_loader.urlopen", return_value=fake_response):
+        # Patch the bounded outbound client so the test stays hermetic.
+        from autocontext.security.outbound_url import OutboundResponse
+
+        with patch(
+            "autocontext.loop.fixture_loader.request_outbound_bytes",
+            return_value=OutboundResponse(status=200, headers={}, body=body),
+        ):
             stage_preflight(ctx, events=events, artifacts=store)
 
         # Acceptance: ctx.fixtures["challenge_19_data"].bytes_ == body

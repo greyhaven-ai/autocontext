@@ -16,6 +16,7 @@ def _make_manager(tmp_path) -> tuple[RunManager, MagicMock]:
     manager.controller = controller
     manager.events = events
     manager._active = False
+    manager._commands_open = True
     manager._active_client_run_id = None
     manager._processed_stop_command_ids = set()
     manager._lock = threading.Lock()
@@ -61,6 +62,19 @@ def test_stop_run_none_client_run_id_targets_active_run(tmp_path) -> None:
     rm._processed_stop_command_ids = set()
 
     assert rm.stop_run(None, "c2", None) == "accepted"
+    controller.request_stop.assert_called_once()
+
+
+def test_stop_run_retains_only_the_first_unique_command_id(tmp_path) -> None:
+    rm, controller = _make_manager(tmp_path)
+    rm._active = True
+    rm._active_client_run_id = "r1"
+
+    assert rm.stop_run("r1", "first", None) == "accepted"
+    for index in range(10_000):
+        assert rm.stop_run("r1", f"later-{index}", None) == "duplicate"
+
+    assert rm._processed_stop_command_ids == {"first"}
     controller.request_stop.assert_called_once()
 
 

@@ -10,10 +10,9 @@
  * Provider configs match Pi's documented OAuth endpoints and public client IDs.
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
-import { join } from "node:path";
+import { readPrivateTextFile, writePrivateTextFile } from "./private-file.js";
 
 // ---------------------------------------------------------------------------
 // PKCE utilities
@@ -152,19 +151,47 @@ export interface CallbackResult {
 export interface WaitForCallbackOpts {
   port: number;
   path: string;
+  expectedState: string;
   timeoutMs?: number;
 }
 
+function statesMatch(expected: string, received: string): boolean {
+  const expectedBytes = Buffer.from(expected, "utf8");
+  const receivedBytes = Buffer.from(received, "utf8");
+  return expectedBytes.length === receivedBytes.length
+    && timingSafeEqual(expectedBytes, receivedBytes);
+}
+
 export function waitForCallback(opts: WaitForCallbackOpts): Promise<CallbackResult> {
-  const { port, path, timeoutMs = 120_000 } = opts;
+  const { port, path, expectedState, timeoutMs = 120_000 } = opts;
+
+  if (!expectedState) {
+    return Promise.reject(new Error("OAuth callback expected state is required"));
+  }
 
   return new Promise<CallbackResult>((resolve, reject) => {
     let server: Server;
-    let timeout: ReturnType<typeof setTimeout>;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    let stateConsumed = false;
 
     const cleanup = () => {
-      clearTimeout(timeout);
-      server.close();
+      if (timeout) clearTimeout(timeout);
+      if (server.listening) server.close();
+    };
+
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const resolveOnce = (result: CallbackResult) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
     };
 
     server = createServer((req, res) => {
@@ -179,31 +206,55 @@ export function waitForCallback(opts: WaitForCallbackOpts): Promise<CallbackResu
       const state = url.searchParams.get("state");
       const error = url.searchParams.get("error");
 
+      if (stateConsumed) {
+        res.writeHead(409, { "Connection": "close" });
+        res.end("OAuth callback state has already been consumed");
+        return;
+      }
+
+      if (state === null) {
+        res.writeHead(400, { "Connection": "close" });
+        res.end("Missing state parameter");
+        return;
+      }
+
+      if (!statesMatch(expectedState, state)) {
+        res.writeHead(400, { "Connection": "close" });
+        res.end("Invalid state parameter");
+        return;
+      }
+
+      // A matching state is a one-time credential. Consume it before handling
+      // any provider result so duplicate or malformed callbacks cannot reuse it.
+      stateConsumed = true;
+
       if (error) {
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end("<html><body><h1>Authentication failed</h1><p>You can close this tab.</p></body></html>");
-        cleanup();
-        reject(new Error(`OAuth error: ${error}`));
+        rejectOnce(new Error(`OAuth error: ${error}`));
         return;
       }
 
       if (!code) {
-        res.writeHead(400);
+        res.writeHead(400, { "Connection": "close" });
         res.end("Missing code parameter");
+        rejectOnce(new Error("OAuth callback rejected: missing code parameter"));
         return;
       }
 
-      res.writeHead(200, { "Content-Type": "text/html" });
+      res.writeHead(200, {
+        "Connection": "close",
+        "Content-Type": "text/html",
+      });
       res.end("<html><body><h1>Authentication successful!</h1><p>You can close this tab and return to the terminal.</p></body></html>");
-      cleanup();
-      resolve({ code, state: state ?? "" });
+      resolveOnce({ code, state });
     });
 
+    server.once("error", (error) => rejectOnce(error));
     server.listen(port, "127.0.0.1");
 
     timeout = setTimeout(() => {
-      server.close();
-      reject(new Error("OAuth callback timeout — no redirect received"));
+      rejectOnce(new Error("OAuth callback timeout — no redirect received"));
     }, timeoutMs);
   });
 }
@@ -227,11 +278,9 @@ interface TokenStore {
 }
 
 function readTokenStore(configDir: string): TokenStore {
-  const filePath = join(configDir, OAUTH_TOKENS_FILE);
-  if (!existsSync(filePath)) {
-    return { providers: {} };
-  }
-  const raw = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+  const content = readPrivateTextFile(configDir, OAUTH_TOKENS_FILE);
+  if (content === null) return { providers: {} };
+  const raw = JSON.parse(content) as Record<string, unknown>;
   const providers: Record<string, OAuthTokens> = {};
   const rawProviders = (raw.providers ?? {}) as Record<string, Record<string, unknown>>;
   for (const [name, entry] of Object.entries(rawProviders)) {
@@ -248,10 +297,7 @@ function readTokenStore(configDir: string): TokenStore {
 }
 
 function writeTokenStore(configDir: string, store: TokenStore): void {
-  mkdirSync(configDir, { recursive: true });
-  const filePath = join(configDir, OAUTH_TOKENS_FILE);
-  writeFileSync(filePath, JSON.stringify(store, null, 2), "utf-8");
-  chmodSync(filePath, 0o600);
+  writePrivateTextFile(configDir, OAUTH_TOKENS_FILE, JSON.stringify(store, null, 2));
 }
 
 export function saveOAuthTokens(

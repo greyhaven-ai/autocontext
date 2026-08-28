@@ -483,7 +483,7 @@ describe("AC-407: credential management", () => {
     const env = { AUTOCONTEXT_CONFIG_DIR: configDir };
 
     const { exitCode } = runCli(
-      ["login", "--provider", "anthropic", "--key", "sk-test-123", "--config-dir", configDir],
+      ["login", "--provider", "anthropic", "--key", "sk-ant-test-123", "--config-dir", configDir],
       { env },
     );
     expect(exitCode).toBe(0);
@@ -499,7 +499,7 @@ describe("AC-407: credential management", () => {
     expect(runResult.stderr).not.toContain("API key required");
   });
 
-  it("login preserves command-based API key lookups instead of materializing them", () => {
+  it("login rejects command-based API key values without persisting them", () => {
     const configDir = join(dir, "config");
     const env = { AUTOCONTEXT_CONFIG_DIR: configDir };
 
@@ -515,17 +515,8 @@ describe("AC-407: credential management", () => {
       ],
       { env },
     );
-    expect(exitCode).toBe(0);
-
-    const store = JSON.parse(readFileSync(join(configDir, "credentials.json"), "utf-8"));
-    expect(store.providers.anthropic.apiKey).toBe("!echo sk-test-shell");
-
-    const runResult = runCli(
-      ["run", "--provider", "anthropic", "--scenario", "nonexistent_scenario_xyz"],
-      { env },
-    );
-    expect(runResult.stderr).toContain("Unknown scenario: nonexistent_scenario_xyz");
-    expect(runResult.stderr).not.toContain("ANTHROPIC_API_KEY");
+    expect(exitCode).toBe(1);
+    expect(existsSync(join(configDir, "credentials.json"))).toBe(false);
   });
 
   it("login supports interactive prompts when flags are omitted", async () => {
@@ -534,7 +525,7 @@ describe("AC-407: credential management", () => {
       ["login", "--config-dir", configDir],
       [
         { when: "Provider:", answer: "anthropic\n" },
-        { when: "API key:", answer: "sk-test-interactive\n" },
+        { when: "API key:", answer: "sk-ant-test-interactive\n" },
       ],
       {
         env: { AUTOCONTEXT_CONFIG_DIR: configDir },
@@ -547,7 +538,7 @@ describe("AC-407: credential management", () => {
 
     const store = JSON.parse(readFileSync(join(configDir, "credentials.json"), "utf-8"));
     expect(store.providers.anthropic).toBeDefined();
-    expect(store.providers.anthropic.apiKey).toBe("sk-test-interactive");
+    expect(store.providers.anthropic.apiKey).toBe("sk-ant-test-interactive");
   });
 
   it("validates Ollama connectivity and stores the normalized base URL", async () => {
@@ -621,6 +612,24 @@ describe("AC-407: credential management", () => {
         null,
         2,
       ),
+      "utf-8",
+    );
+
+    const { stdout, exitCode } = runCli(["logout", "--config-dir", configDir], {
+      env: { AUTOCONTEXT_CONFIG_DIR: configDir },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Logged out from anthropic");
+    expect(existsSync(join(configDir, "credentials.json"))).toBe(false);
+  });
+
+  it("logout removes a legacy command-shaped credential without evaluating it", () => {
+    const configDir = join(dir, "legacy-command-config");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "credentials.json"),
+      JSON.stringify({ provider: "anthropic", apiKey: "!exit 99" }),
       "utf-8",
     );
 

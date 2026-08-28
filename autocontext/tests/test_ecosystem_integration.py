@@ -51,7 +51,7 @@ def test_full_ecosystem_two_cycles(tmp_path: Path) -> None:
 
     # All 4 runs should be in DB
     store = SQLiteStore(base.db_path)
-    with store.connect() as conn:
+    with store.connection() as conn:
         rows = conn.execute("SELECT run_id FROM runs WHERE run_id LIKE 'eco_%'").fetchall()
     assert len(rows) == 4
 

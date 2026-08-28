@@ -44,15 +44,6 @@ from .remote_execution import (
     RemoteResourceRequest,
 )
 from .remote_failure import RemoteExecutionAccountingError, RemoteExecutionError, RemoteExecutionFailure
-from .research_workspace import (
-    ResearchWorkspace,
-    ResearchWorkspaceBenchmark,
-    ResearchWorkspaceSnapshot,
-    WorkspaceCapabilityRequest,
-    WorkspaceResourceLimits,
-    benchmark_research_workspace,
-    grant_workspace_access,
-)
 from .research_workspace_models import (
     ResearchSandboxBackend,
     ResearchSandboxExecutionRequest,
@@ -80,8 +71,28 @@ from .sandbox_adapter_contracts import (
 from .task_queue_store import TaskQueueEnqueueStore, TaskQueueStore
 
 if TYPE_CHECKING:
+    from .research_workspace import (
+        ResearchWorkspace,
+        ResearchWorkspaceBenchmark,
+        ResearchWorkspaceSnapshot,
+        WorkspaceCapabilityRequest,
+        WorkspaceResourceLimits,
+        benchmark_research_workspace,
+        grant_workspace_access,
+    )
     from .supervisor import ExecutionInput, ExecutionOutput, ExecutionSupervisor
 
+_LAZY_RESEARCH_WORKSPACE_EXPORTS = frozenset(
+    {
+        "ResearchWorkspace",
+        "ResearchWorkspaceBenchmark",
+        "ResearchWorkspaceSnapshot",
+        "WorkspaceCapabilityRequest",
+        "WorkspaceResourceLimits",
+        "benchmark_research_workspace",
+        "grant_workspace_access",
+    }
+)
 _LAZY_SUPERVISOR_EXPORTS = frozenset({"ExecutionInput", "ExecutionOutput", "ExecutionSupervisor"})
 
 __all__ = [
@@ -158,6 +169,26 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
+    if name in _LAZY_RESEARCH_WORKSPACE_EXPORTS:
+        from .research_workspace import (
+            ResearchWorkspace,
+            ResearchWorkspaceBenchmark,
+            ResearchWorkspaceSnapshot,
+            WorkspaceCapabilityRequest,
+            WorkspaceResourceLimits,
+            benchmark_research_workspace,
+            grant_workspace_access,
+        )
+
+        return {
+            "ResearchWorkspace": ResearchWorkspace,
+            "ResearchWorkspaceBenchmark": ResearchWorkspaceBenchmark,
+            "ResearchWorkspaceSnapshot": ResearchWorkspaceSnapshot,
+            "WorkspaceCapabilityRequest": WorkspaceCapabilityRequest,
+            "WorkspaceResourceLimits": WorkspaceResourceLimits,
+            "benchmark_research_workspace": benchmark_research_workspace,
+            "grant_workspace_access": grant_workspace_access,
+        }[name]
     if name in _LAZY_SUPERVISOR_EXPORTS:
         from .supervisor import ExecutionInput, ExecutionOutput, ExecutionSupervisor
 
@@ -170,4 +201,4 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
-    return sorted({*globals(), *_LAZY_SUPERVISOR_EXPORTS})
+    return sorted({*globals(), *_LAZY_RESEARCH_WORKSPACE_EXPORTS, *_LAZY_SUPERVISOR_EXPORTS})

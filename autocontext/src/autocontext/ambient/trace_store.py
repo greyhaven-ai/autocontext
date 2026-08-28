@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,7 +45,7 @@ class TraceStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
@@ -52,7 +53,7 @@ class TraceStore:
 
     def append(self, source: str, kind: str, payload: dict[str, Any], produced_by: str, redaction_findings: int) -> int:
         created_at = datetime.now(UTC).isoformat()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cursor = conn.execute(
                 "INSERT INTO ambient_traces (source, kind, payload, produced_by, redaction_findings, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
@@ -76,7 +77,7 @@ class TraceStore:
         source column and the cursor row are both keyed by source_key.
         """
         created_at = datetime.now(UTC).isoformat()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             inserted = 0
             for kind, payload, produced_by, redaction_findings in records:
                 conn.execute(
@@ -94,7 +95,7 @@ class TraceStore:
         return inserted
 
     def count(self, source: str | None = None) -> int:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             if source is None:
                 row = conn.execute("SELECT COUNT(*) FROM ambient_traces").fetchone()
             else:
@@ -102,7 +103,7 @@ class TraceStore:
             return int(row[0])
 
     def recent(self, limit: int) -> list[TraceRecord]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 "SELECT record_id, source, kind, payload, produced_by, redaction_findings, created_at "
                 "FROM ambient_traces ORDER BY record_id DESC LIMIT ?",
@@ -134,7 +135,7 @@ class TraceStore:
             clauses.append("produced_by = ?")
             params.append(produced_by)
         params.append(limit)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(
                 "SELECT record_id, source, kind, payload, produced_by, redaction_findings, created_at "
                 f"FROM ambient_traces WHERE {' AND '.join(clauses)} ORDER BY record_id ASC LIMIT ?",
@@ -143,12 +144,12 @@ class TraceStore:
         return [TraceRecord(r[0], r[1], r[2], json.loads(r[3]), r[4], r[5], r[6]) for r in rows]
 
     def get_cursor(self, source: str) -> str | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute("SELECT cursor FROM ambient_source_cursors WHERE source = ?", (source,)).fetchone()
             return None if row is None else str(row[0])
 
     def set_cursor(self, source: str, cursor: str) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute(
                 "INSERT INTO ambient_source_cursors (source, cursor) VALUES (?, ?) "
                 "ON CONFLICT(source) DO UPDATE SET cursor = excluded.cursor",
@@ -163,11 +164,11 @@ class TraceStore:
         to_delete = int(total * fraction)
         if to_delete <= 0:
             return 0
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute(
                 "DELETE FROM ambient_traces WHERE record_id IN (SELECT record_id FROM ambient_traces ORDER BY record_id LIMIT ?)",
                 (to_delete,),
             )
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute("VACUUM")
         return to_delete

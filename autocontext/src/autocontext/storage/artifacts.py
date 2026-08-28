@@ -39,7 +39,7 @@ from autocontext.storage.scenario_paths import (
     resolve_scenario_root,
     resolve_scenario_skill_dir,
 )
-from autocontext.util.json_io import read_json, read_json_guarded, write_json, write_text_atomic
+from autocontext.util.json_io import read_json, read_json_guarded, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -953,84 +953,6 @@ class ArtifactStore(
             reports.append(path.read_text(encoding="utf-8"))
         combined = "\n\n---\n\n".join(reports)
         return compact_prompt_components({"session_reports": combined})["session_reports"]
-
-    # --- Harness versioning ---------------------------------------------------
-
-    def _harness_store(self, scenario_name: str) -> VersionedFileStore:
-        """Lazily create a per-scenario VersionedFileStore for harness files."""
-        key = f"harness:{scenario_name}"
-        if key not in self._playbook_stores:
-            self._playbook_stores[key] = VersionedFileStore(
-                root=self.harness_dir(scenario_name),
-                max_versions=self._max_playbook_versions,
-                versions_dir_name="_archive",
-                version_prefix="v",
-                version_suffix=".py",
-            )
-        return self._playbook_stores[key]
-
-    def _harness_version_path(self, scenario_name: str) -> Path:
-        return self.harness_dir(scenario_name) / "harness_version.json"
-
-    def get_harness_version(self, scenario_name: str) -> dict[str, Any]:
-        """Read harness_version.json — tracks current version per function."""
-        path = self._harness_version_path(scenario_name)
-        if not path.exists():
-            return {}
-        data = read_json_guarded(path)
-        return data if isinstance(data, dict) else {}
-
-    def _update_harness_version(
-        self,
-        scenario_name: str,
-        name: str,
-        version: int,
-        generation: int,
-    ) -> None:
-        versions = self.get_harness_version(scenario_name)
-        versions[name] = {"version": version, "generation": generation}
-        path = self._harness_version_path(scenario_name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(path, versions)
-
-    def write_harness_versioned(
-        self,
-        scenario_name: str,
-        name: str,
-        source: str,
-        generation: int,
-    ) -> Path:
-        """Write a harness file with version tracking, archiving the previous version."""
-        normalized = self._validate_harness_name(name)
-        store = self._harness_store(scenario_name)
-        filename = f"{normalized}.py"
-        store.write(filename, source)
-        version = store.version_count(filename) + 1
-        self._update_harness_version(scenario_name, normalized, version, generation)
-        return self.harness_dir(scenario_name) / filename
-
-    def rollback_harness(self, scenario_name: str, name: str) -> str | None:
-        """Restore previous version of a harness file from archive.
-
-        Returns the restored content, or None if no archived version exists.
-        """
-        normalized = self._validate_harness_name(name)
-        store = self._harness_store(scenario_name)
-        filename = f"{normalized}.py"
-        if not store.rollback(filename):
-            return None
-        # Update version metadata
-        versions_info = self.get_harness_version(scenario_name)
-        entry = versions_info.get(normalized)
-        if isinstance(entry, dict) and isinstance(entry.get("version"), int) and entry["version"] > 1:
-            entry["version"] -= 1
-            self._update_harness_version(
-                scenario_name,
-                normalized,
-                entry["version"],
-                entry.get("generation", 0),  # type: ignore[arg-type]
-            )
-        return store.read(filename)
 
     def read_tuning(self, scenario_name: str) -> str:
         """Read tuning config JSON, or empty string if none."""

@@ -4,7 +4,16 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { asDbPath } from "../src/domain/ids.js";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -1913,6 +1922,55 @@ describe("HTTP API — OpenClaw", () => {
 
     expect(updated.status).toBe(400);
     expect((updated.body as Record<string, unknown>).detail).toContain("Invalid transition");
+  });
+
+  it("GET/PATCH /api/openclaw/distill/:job_id reject encoded path traversal", async () => {
+    const sentinelPath = join(dir, "knowledge", "sentinel.json");
+    const sentinel = JSON.stringify({
+      job_id: "../sentinel",
+      scenario: "sensitive-scenario",
+      status: "pending",
+      source_artifact_ids: [],
+      training_config: {},
+      training_metrics: {},
+    });
+    writeFileSync(sentinelPath, sentinel, "utf-8");
+    const traversal = "%2e%2e%2fsentinel";
+
+    const fetched = await fetchJson(`${baseUrl}/api/openclaw/distill/${traversal}`);
+    expect(fetched.status).toBe(400);
+    expect(fetched.body).not.toMatchObject({ scenario: "sensitive-scenario" });
+
+    const patched = await patchJson(`${baseUrl}/api/openclaw/distill/${traversal}`, {
+      status: "failed",
+      error_message: "attacker-controlled",
+    });
+    expect(patched.status).toBe(400);
+    expect(readFileSync(sentinelPath, "utf-8")).toBe(sentinel);
+  });
+
+  it("GET/PATCH /api/openclaw/distill/:job_id reject symbolic-link job files", async () => {
+    const triggered = await postJson(`${baseUrl}/api/openclaw/distill`, {
+      scenario: "grid_ctf",
+    });
+    const jobId = readStringProperty(triggered.body, "job_id");
+    const jobPath = join(dir, "knowledge", "_openclaw_distill_jobs", `${jobId}.json`);
+    const sentinelPath = join(dir, "distill-sentinel.json");
+    const sentinel = JSON.stringify({ secret: "must-not-be-read-or-changed" });
+    writeFileSync(sentinelPath, sentinel, "utf-8");
+    unlinkSync(jobPath);
+    symlinkSync(sentinelPath, jobPath);
+
+    const fetched = await fetchJson(`${baseUrl}/api/openclaw/distill/${jobId}`);
+    expect(fetched.status).toBe(400);
+    expect(fetched.body).not.toMatchObject({ secret: "must-not-be-read-or-changed" });
+
+    const patched = await patchJson(`${baseUrl}/api/openclaw/distill/${jobId}`, {
+      status: "failed",
+      error_message: "attacker-controlled",
+    });
+    expect(patched.status).toBe(400);
+    expect(readFileSync(sentinelPath, "utf-8")).toBe(sentinel);
   });
 
   it("GET /api/openclaw/artifacts/:artifact_id returns 404 for unknown artifacts", async () => {

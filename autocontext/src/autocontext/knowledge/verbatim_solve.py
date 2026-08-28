@@ -41,6 +41,7 @@ from autocontext.scenarios.custom.agent_task_revision import (
 )
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 from autocontext.scenarios.custom.agent_task_validator import validate_execution
+from autocontext.scenarios.custom.codegen_security import validate_generated_scenario_name
 from autocontext.scenarios.custom.family_pipeline import (
     validate_for_family,
     validate_source_for_family,
@@ -132,6 +133,8 @@ def _compile_and_register_agent_task(
     canonical compile-and-register routine — DRY for the parts that
     genuinely repeat.
     """
+    validate_generated_scenario_name(name)
+
     # 3. Codegen
     source = generate_agent_task_class(spec, name=name)
 

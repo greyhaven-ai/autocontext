@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -9,14 +10,14 @@ if TYPE_CHECKING:
 
 
 class SQLiteMonitorStoreMixin:
-    def connect(self) -> sqlite3.Connection:
+    def connection(self) -> AbstractContextManager[sqlite3.Connection]:
         raise NotImplementedError
 
     # ---- Monitor Conditions + Alerts (AC-209) ----
 
     def insert_monitor_condition(self, condition: MonitorCondition) -> str:
         """Persist a MonitorCondition. Returns the condition id."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO monitor_conditions(id, name, condition_type, params_json, scope, active)
@@ -48,7 +49,7 @@ class SQLiteMonitorStoreMixin:
             query += " AND scope = ?"
             params.append(scope)
         query += " ORDER BY created_at DESC"
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(query, params).fetchall()
             results = []
             for row in rows:
@@ -72,13 +73,13 @@ class SQLiteMonitorStoreMixin:
         if scope is not None:
             query += " AND scope = ?"
             params.append(scope)
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(query, params).fetchone()
             return int(row["cnt"]) if row is not None else 0
 
     def get_monitor_condition(self, condition_id: str) -> dict[str, Any] | None:
         """Get a single monitor condition by id. Returns parsed params."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT * FROM monitor_conditions WHERE id = ?",
                 (condition_id,),
@@ -92,7 +93,7 @@ class SQLiteMonitorStoreMixin:
 
     def deactivate_monitor_condition(self, condition_id: str) -> bool:
         """Deactivate a monitor condition. Returns True if found and updated."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 "UPDATE monitor_conditions SET active = 0 WHERE id = ?",
                 (condition_id,),
@@ -102,7 +103,7 @@ class SQLiteMonitorStoreMixin:
 
     def insert_monitor_alert(self, alert: MonitorAlert) -> str:
         """Persist a MonitorAlert. Returns the alert id."""
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO monitor_alerts(id, condition_id, condition_name, condition_type,
@@ -144,7 +145,7 @@ class SQLiteMonitorStoreMixin:
             params.append(since)
         query += " ORDER BY fired_at DESC LIMIT ?"
         params.append(limit)
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(query, params).fetchall()
             results = []
             for row in rows:

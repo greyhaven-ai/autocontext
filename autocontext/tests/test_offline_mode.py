@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ast
 import socket
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -44,6 +45,22 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "autocontext"
 @pytest.fixture
 def offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AUTOCONTEXT_OFFLINE", "1")
+
+
+@pytest.fixture(autouse=True)
+def _avoid_real_openai_client() -> Iterator[None]:
+    """Offline boundary tests do not need host proxy discovery."""
+    from autocontext.providers import openai_compat
+
+    if not openai_compat._HAS_OPENAI:
+        yield
+        return
+
+    def _client(**kwargs: Any) -> Mock:
+        return Mock(base_url=kwargs.get("base_url", "https://api.openai.com/v1"))
+
+    with patch("autocontext.providers.openai_compat.openai.OpenAI", side_effect=_client):
+        yield
 
 
 @pytest.fixture

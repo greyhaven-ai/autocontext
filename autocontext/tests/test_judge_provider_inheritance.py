@@ -1,6 +1,8 @@
 """AC-586 — judge_provider='auto' inherits from agent_provider."""
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from autocontext.config.settings import AppSettings
 
 
@@ -73,6 +75,10 @@ class TestGetProviderAutoInheritance:
 
     def test_auto_falls_back_to_anthropic_for_anthropic_agent(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-anthropic")
+        monkeypatch.setattr(
+            "autocontext.providers.anthropic.anthropic.Anthropic",
+            MagicMock(return_value=MagicMock()),
+        )
         from autocontext.providers.registry import get_provider
         from autocontext.providers.retry import RetryProvider
 
@@ -85,6 +91,10 @@ class TestGetProviderAutoInheritance:
         # Deterministic agents have no judge counterpart; default to anthropic
         # so the error surface is unchanged for users who had this setup pre-AC-586.
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-anthropic")
+        monkeypatch.setattr(
+            "autocontext.providers.anthropic.anthropic.Anthropic",
+            MagicMock(return_value=MagicMock()),
+        )
         from autocontext.providers.registry import get_provider
         from autocontext.providers.retry import RetryProvider
 
@@ -99,6 +109,10 @@ class TestExplicitJudgeProviderOverride:
     def test_explicit_anthropic_wins_over_claude_cli_agent(self, tmp_path, monkeypatch) -> None:
         # Someone set AUTOCONTEXT_JUDGE_PROVIDER=anthropic explicitly: don't auto-inherit.
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-anthropic")
+        monkeypatch.setattr(
+            "autocontext.providers.anthropic.anthropic.Anthropic",
+            MagicMock(return_value=MagicMock()),
+        )
         from autocontext.providers.registry import get_provider
         from autocontext.providers.retry import RetryProvider
 
@@ -124,25 +138,27 @@ class TestExplicitJudgeProviderOverride:
 
 
 class TestUnknownAgentProviderWithAutoJudge:
-    def test_auto_with_unknown_agent_raises_clear_error(self, tmp_path) -> None:
+    def test_auto_with_unknown_agent_raises_clear_error(self, tmp_path, monkeypatch) -> None:
         # Agent set to a value that isn't a known judge-capable type; we fall
         # back to anthropic (the pre-AC-586 default) rather than failing cryptically.
-        from autocontext.providers.base import ProviderError
         from autocontext.providers.registry import get_provider
+        from autocontext.providers.retry import RetryProvider
 
         # Use openai as agent — not a runtime-bridged provider, but valid judge.
-        # Expect fallback to anthropic (judge list's historical default).
+        # Expect fallback to anthropic (judge list's historical default), while
+        # keeping the real SDK and its native helper threads outside this test.
         settings = AppSettings(
             knowledge_root=tmp_path / "k",
             agent_provider="openai",
             judge_provider="auto",
         )
-        # No key set → expect an Anthropic-style error, not a cryptic "unknown provider type: 'auto'".
-        try:
-            get_provider(settings)
-        except ProviderError as exc:
-            assert "auto" not in str(exc).lower()
-        except Exception:
-            # Any Anthropic-SDK-level error is also fine; the key assertion is
-            # that we never surface a "'auto'" provider type error.
-            pass
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-anthropic")
+        with patch(
+            "autocontext.providers.anthropic.anthropic.Anthropic",
+            autospec=True,
+        ) as constructor:
+            constructor.return_value = MagicMock()
+            provider = get_provider(settings)
+
+        assert isinstance(provider, RetryProvider)
+        constructor.assert_called_once_with(api_key="test-key-anthropic")

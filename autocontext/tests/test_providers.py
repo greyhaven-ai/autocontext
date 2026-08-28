@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -121,19 +122,50 @@ class TestCallableProvider:
 class TestRegistry:
     def test_create_anthropic_provider(self):
         # Just test that it creates without error (won't call API)
-        p = create_provider("anthropic", api_key="test-key", model="claude-test")
+        with patch("autocontext.providers.anthropic.anthropic.Anthropic", return_value=MagicMock()):
+            p = create_provider("anthropic", api_key="test-key", model="claude-test")
         assert p.default_model() == "claude-test"
         assert "AnthropicProvider" in p.name  # may be wrapped in RetryProvider
 
+    @pytest.mark.parametrize(
+        "credential_env",
+        (
+            {"ANTHROPIC_AUTH_TOKEN": "test-token"},
+            {"ANTHROPIC_PROFILE": "test-profile"},
+            {
+                "ANTHROPIC_IDENTITY_TOKEN": "test-identity",
+                "ANTHROPIC_FEDERATION_RULE_ID": "test-rule",
+                "ANTHROPIC_ORGANIZATION_ID": "test-org",
+            },
+        ),
+    )
+    def test_anthropic_alternative_credentials_are_delegated_to_sdk(
+        self,
+        monkeypatch,
+        credential_env,
+    ):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("AUTOCONTEXT_ANTHROPIC_API_KEY", raising=False)
+        for key, value in credential_env.items():
+            monkeypatch.setenv(key, value)
+        constructor = MagicMock(return_value=MagicMock())
+        monkeypatch.setattr("autocontext.providers.anthropic.anthropic.Anthropic", constructor)
+
+        create_provider("anthropic")
+
+        constructor.assert_called_once_with(api_key=None)
+
     @_skip_no_openai
     def test_create_ollama_provider(self):
-        p = create_provider("ollama", model="llama3.1")
+        with patch("autocontext.providers.openai_compat.openai.OpenAI", return_value=MagicMock()):
+            p = create_provider("ollama", model="llama3.1")
         assert p.default_model() == "llama3.1"
         assert "OpenAICompatibleProvider" in p.name  # may be wrapped in RetryProvider
 
     @_skip_no_openai
     def test_create_vllm_provider(self):
-        p = create_provider("vllm", base_url="http://gpu-box:8000/v1", model="mistral-7b")
+        with patch("autocontext.providers.openai_compat.openai.OpenAI", return_value=MagicMock()):
+            p = create_provider("vllm", base_url="http://gpu-box:8000/v1", model="mistral-7b")
         assert p.default_model() == "mistral-7b"
 
     def test_unknown_provider_raises(self):
@@ -141,17 +173,19 @@ class TestRegistry:
             create_provider("magic-llm")
 
     def test_case_insensitive(self):
-        p = create_provider("ANTHROPIC", api_key="test")
+        with patch("autocontext.providers.anthropic.anthropic.Anthropic", return_value=MagicMock()):
+            p = create_provider("ANTHROPIC", api_key="test")
         assert "AnthropicProvider" in p.name  # may be wrapped in RetryProvider
 
     @_skip_no_openai
     def test_create_openai_compat(self):
-        p = create_provider(
-            "openai-compatible",
-            api_key="sk-test",
-            base_url="http://localhost:8080/v1",
-            model="custom-model",
-        )
+        with patch("autocontext.providers.openai_compat.openai.OpenAI", return_value=MagicMock()):
+            p = create_provider(
+                "openai-compatible",
+                api_key="sk-test",
+                base_url="http://localhost:8080/v1",
+                model="custom-model",
+            )
         assert p.default_model() == "custom-model"
 
 
@@ -247,7 +281,8 @@ class TestSettingsIntegration:
         monkeypatch.setenv("AUTOCONTEXT_JUDGE_PROVIDER", "anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         settings = AppSettings(judge_model="claude-test")
-        provider = get_provider(settings)
+        with patch("autocontext.providers.anthropic.anthropic.Anthropic", return_value=MagicMock()):
+            provider = get_provider(settings)
         assert "AnthropicProvider" in provider.name  # may be wrapped in RetryProvider
         assert provider.default_model() == "claude-test"
 
@@ -257,7 +292,8 @@ class TestSettingsIntegration:
         from autocontext.providers.registry import get_provider
 
         settings = AppSettings(judge_provider="ollama", judge_model="llama3.1")
-        provider = get_provider(settings)
+        with patch("autocontext.providers.openai_compat.openai.OpenAI", return_value=MagicMock()):
+            provider = get_provider(settings)
         assert "OpenAICompatibleProvider" in provider.name  # may be wrapped in RetryProvider
         assert provider.default_model() == "llama3.1"
 

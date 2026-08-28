@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+from autocontext.security.outbound_url import OutboundResponse
+
 # ===========================================================================
 # OpenClawRequest / OpenClawResponse
 # ===========================================================================
@@ -141,6 +143,41 @@ class TestHTTPOpenClawAdapter:
         mock_post.assert_called_once()
         _, kwargs = mock_post.call_args
         assert kwargs["headers"] == {"Authorization": "Bearer test-token"}
+
+    def test_execute_passes_private_network_opt_in_and_response_limit(self) -> None:
+        from autocontext.openclaw.adapters import HTTPOpenClawAdapter, OpenClawRequest
+
+        adapter = HTTPOpenClawAdapter(
+            endpoint="http://localhost:8080/execute",
+            allow_private_networks=True,
+            max_response_bytes=4096,
+        )
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"output": "http response", "tool_calls": []}
+
+        with patch("autocontext.openclaw.adapters._http_post", return_value=mock_resp) as mock_post:
+            adapter.execute(OpenClawRequest(task_prompt="test"))
+
+        assert mock_post.call_args.kwargs["allow_private_networks"] is True
+        assert mock_post.call_args.kwargs["max_response_bytes"] == 4096
+
+    def test_http_post_enforces_json_response_policy(self) -> None:
+        from autocontext.openclaw.adapters import _http_post
+
+        with patch(
+            "autocontext.openclaw.adapters.request_outbound_bytes",
+            return_value=OutboundResponse(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=b'{"output":"ok"}',
+            ),
+        ) as request:
+            response = _http_post("https://agent.example/execute", "{}", 4.0)
+
+        assert response.json() == {"output": "ok"}
+        policy = request.call_args.kwargs["policy"]
+        assert policy.allowed_content_types == ("application/json", "application/*+json")
+        assert policy.allow_private_networks is False
 
 
 # ===========================================================================

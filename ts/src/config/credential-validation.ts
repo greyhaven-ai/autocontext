@@ -1,7 +1,7 @@
 import {
   KNOWN_PROVIDERS,
   type KnownProvider,
-} from "./credential-provider-discovery.js";
+} from "./credential-provider-registry.js";
 
 export interface ValidationResult {
   valid: boolean;
@@ -24,10 +24,10 @@ const NO_KEY_PROVIDERS = new Set(
   ),
 );
 
-export async function validateApiKey(
+export function validateApiKeyValue(
   provider: string,
   apiKey: string,
-): Promise<ValidationResult> {
+): ValidationResult {
   const normalizedProvider = provider.toLowerCase();
 
   if (NO_KEY_PROVIDERS.has(normalizedProvider)) {
@@ -47,4 +47,11 @@ export async function validateApiKey(
   }
 
   return { valid: true };
+}
+
+export async function validateApiKey(
+  provider: string,
+  apiKey: string,
+): Promise<ValidationResult> {
+  return validateApiKeyValue(provider, apiKey);
 }

@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 
+import { serverAuthSubprotocol } from "../server/server-auth.js";
 import {
   TRANSCRIPT_PROTOCOL_QUERY_PARAM,
   TRANSCRIPT_PROTOCOL_QUERY_VALUE,
@@ -26,14 +27,16 @@ export interface TuiTransport {
 export interface WebSocketTuiTransportOptions {
   readonly reconnectBaseMs?: number;
   readonly reconnectMaxMs?: number;
-  readonly createSocket?: (url: string) => WebSocket;
+  readonly authToken?: string | null;
+  readonly createSocket?: (url: string, protocols?: string | string[]) => WebSocket;
 }
 
 export class WebSocketTuiTransport implements TuiTransport {
   readonly endpoint: string;
   readonly #reconnectBaseMs: number;
   readonly #reconnectMaxMs: number;
-  readonly #createSocket: (url: string) => WebSocket;
+  readonly #authProtocol: string | null;
+  readonly #createSocket: (url: string, protocols?: string | string[]) => WebSocket;
   readonly #messageListeners = new Set<(message: ServerMessage) => void>();
   readonly #connectionListeners = new Set<(event: TuiTransportConnectionEvent) => void>();
   #socket: WebSocket | null = null;
@@ -43,12 +46,15 @@ export class WebSocketTuiTransport implements TuiTransport {
   #initialConnect: { resolve: () => void; reject: (error: Error) => void } | null = null;
 
   constructor(endpoint: string, options: WebSocketTuiTransportOptions = {}) {
+    assertTuiEndpointHasNoCredentials(endpoint);
     const normalizedEndpoint = normalizeTuiEndpoint(endpoint);
     assertSecureTuiEndpoint(normalizedEndpoint);
     this.endpoint = normalizedEndpoint;
     this.#reconnectBaseMs = options.reconnectBaseMs ?? 250;
     this.#reconnectMaxMs = options.reconnectMaxMs ?? 5_000;
-    this.#createSocket = options.createSocket ?? ((url) => new WebSocket(url));
+    this.#authProtocol = options.authToken ? serverAuthSubprotocol(options.authToken) : null;
+    this.#createSocket = options.createSocket ?? ((url, protocols) =>
+      protocols === undefined ? new WebSocket(url) : new WebSocket(url, protocols));
   }
 
   connect(): Promise<void> {
@@ -117,7 +123,7 @@ export class WebSocketTuiTransport implements TuiTransport {
     });
     let socket: WebSocket;
     try {
-      socket = this.#createSocket(this.endpoint);
+      socket = this.#createSocket(this.endpoint, this.#authProtocol ?? undefined);
     } catch (error) {
       this.#handleOpenFailure(error);
       return;
@@ -236,6 +242,20 @@ export function assertSecureTuiEndpoint(endpoint: string): void {
   const url = new URL(normalizeTuiEndpoint(endpoint));
   if (url.protocol === "ws:" && !isLoopbackHostname(url.hostname)) {
     throw new Error("Remote TUI endpoints must use wss or https");
+  }
+}
+
+/** Credentials belong in AUTOCONTEXT_SERVER_TOKEN, never a logged endpoint URL. */
+export function assertTuiEndpointHasNoCredentials(endpoint: string): void {
+  const url = new URL(endpoint);
+  if (
+    url.username !== "" ||
+    url.password !== "" ||
+    [...url.searchParams.keys()].some(isSensitiveQueryParameter)
+  ) {
+    throw new Error(
+      "TUI endpoint credentials are not allowed; set AUTOCONTEXT_SERVER_TOKEN instead",
+    );
   }
 }
 

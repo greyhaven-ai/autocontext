@@ -16,15 +16,12 @@ permissions:
 jobs:
   build-python:
     runs-on: ubuntu-latest
-    env:
-      # Avoid resolving freshly uploaded PyPI artifacts during active supply-chain incidents.
-      UV_EXCLUDE_NEWER: "2026-06-20T00:00:00Z"
     defaults:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Validate tag matches Python package version
@@ -48,16 +45,35 @@ jobs:
               sys.exit(1)
           PY
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: false
+      - name: Install pinned audit dependencies
+        run: uv sync --locked --group dev
+      - name: Audit every dependency group and extra
+        run: |
+          uv export --quiet --locked --all-groups --all-extras --no-emit-project --format requirements-txt --output-file /tmp/autocontext-all-requirements.lock
+          uv run --frozen pip-audit -r /tmp/autocontext-all-requirements.lock --disable-pip --strict
+      - name: Generate CycloneDX SBOM
+        run: uv export --locked --all-groups --all-extras --format cyclonedx1.5 --output-file autocontext-python.cdx.json
       - name: Build Python package
-        run: uv build
+        run: >-
+          uv build
+          --build-constraints ../infra/docker/build-requirements.lock
+          --require-hashes
       - name: Upload Python dist
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: python-dist
-          path: autocontext/dist/*
+          path: |
+            autocontext/dist/*.whl
+            autocontext/dist/*.tar.gz
+          retention-days: 7
+      - name: Upload Python SBOM
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: python-sbom
+          path: autocontext/autocontext-python.cdx.json
           retention-days: 7
 
   publish-pypi:
@@ -69,11 +85,12 @@ jobs:
       id-token: write
     steps:
       - name: Download Python dist
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: python-dist
           path: dist
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist
+          attestations: true

@@ -6,6 +6,7 @@ PhaseTimer, PhasedRunner, split_budget utility.
 
 from __future__ import annotations
 
+import threading
 import time
 
 # ===========================================================================
@@ -310,18 +311,25 @@ class TestPhasedRunner:
 
         runner = PhasedRunner()
         budget = PhaseBudget(phase_name="scaffolding", budget_seconds=0.05)
+        workers: list[threading.Thread] = []
 
         def slow_fn() -> dict:
-            time.sleep(0.2)
+            workers.append(threading.current_thread())
+            time.sleep(0.1)
             return {"done": True}
 
         started_at = time.monotonic()
-        result = runner.run_phase(budget, slow_fn)
-        elapsed = time.monotonic() - started_at
+        try:
+            result = runner.run_phase(budget, slow_fn)
+            elapsed = time.monotonic() - started_at
+        finally:
+            for worker in workers:
+                worker.join(timeout=1.0)
         assert result.status == "timeout"
         assert result.error is not None
         assert "timeout" in result.error.lower() or "budget" in result.error.lower()
         assert elapsed < 0.15
+        assert workers and not workers[0].is_alive()
 
     def test_run_phase_failure(self) -> None:
         from autocontext.execution.phased_execution import (
@@ -429,12 +437,19 @@ class TestPhasedRunner:
 
         plan = split_budget(0.1, ["scaffolding", "execution"], ratios=[0.5, 0.5])
         runner = PhasedRunner()
+        workers: list[threading.Thread] = []
 
         def slow_scaffolding() -> dict:
-            time.sleep(0.2)
+            workers.append(threading.current_thread())
+            time.sleep(0.1)
             return {}
 
-        result = runner.run_all(plan, {"scaffolding": slow_scaffolding, "execution": lambda: {}})
+        try:
+            result = runner.run_all(plan, {"scaffolding": slow_scaffolding, "execution": lambda: {}})
+        finally:
+            for worker in workers:
+                worker.join(timeout=1.0)
         scaffolding = next(r for r in result.phase_results if r.phase_name == "scaffolding")
         assert scaffolding.status == "timeout"
         assert "scaffolding" in scaffolding.error.lower()
+        assert workers and not workers[0].is_alive()

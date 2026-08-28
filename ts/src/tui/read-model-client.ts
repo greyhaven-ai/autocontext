@@ -84,6 +84,7 @@ export interface TuiRunInspectionReadModel {
 export interface TuiReadModelClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly watchIntervalMs?: number;
+  readonly authToken?: string | null;
 }
 
 export interface TuiWatchOptions {
@@ -95,11 +96,13 @@ export class TuiReadModelClient {
   readonly baseUrl: string;
   readonly #fetch: typeof fetch;
   readonly #watchIntervalMs: number;
+  readonly #authToken: string | null;
 
   constructor(endpoint: string, options: TuiReadModelClientOptions = {}) {
     this.baseUrl = tuiHttpBaseUrl(endpoint);
     this.#fetch = options.fetchImpl ?? fetch;
     this.#watchIntervalMs = options.watchIntervalMs ?? 2_000;
+    this.#authToken = options.authToken ?? null;
   }
 
   listRuns(): Promise<TuiReadResult<readonly TuiRunSummary[]>> {
@@ -203,7 +206,15 @@ export class TuiReadModelClient {
 
   async #request<T>(path: string, init?: RequestInit): Promise<TuiReadResult<T>> {
     try {
-      const response = await this.#fetch(new URL(path, `${this.baseUrl}/`), init);
+      let requestInit = init;
+      if (this.#authToken !== null) {
+        const headers = new Headers(init?.headers);
+        if (!headers.has("Authorization")) {
+          headers.set("Authorization", `Bearer ${this.#authToken}`);
+        }
+        requestInit = { ...init, headers };
+      }
+      const response = await this.#fetch(new URL(path, `${this.baseUrl}/`), requestInit);
       const body = await readResponseBody(response);
       if (response.ok) return { ok: true, value: body as T };
       const detail = readDetail(body) ?? `server returned HTTP ${response.status}`;

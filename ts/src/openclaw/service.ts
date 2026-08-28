@@ -1,17 +1,26 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { getConceptModel } from "../concepts/model.js";
 import type { AppSettings } from "../config/index.js";
 import { HarnessStore } from "../knowledge/harness-store.js";
-import { getCapabilities } from "../mcp/capabilities.js";
+import { getCapabilities, type Capabilities } from "../mcp/capabilities.js";
 import type { SQLiteStore } from "../storage/index.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import { detectFamily } from "../scenarios/family-interfaces.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
-import { ensureSafeArtifactId, validateOpenClawArtifactPayload } from "./artifact-contract.js";
+import {
+  listSecureDirectoryNames,
+  readSecureTextFile,
+  writeSecureTextFile,
+} from "../security/secure-local-files.js";
+import {
+  ensureSafeArtifactId,
+  ensureSafeLegacyArtifactReadId,
+  validateOpenClawArtifactPayload,
+} from "./artifact-contract.js";
 import {
   DistillJobError,
   DistillJobStore,
@@ -20,10 +29,12 @@ import {
   type DistillJobStatus,
 } from "./distill-job-store.js";
 
-const require = createRequire(import.meta.url);
-const pkg = require("../../package.json") as { version: string };
-
 const DISCOVERY_VERSION = "0.1.0";
+const ARTIFACT_DIRECTORY = "_openclaw_artifacts";
+const MAX_ARTIFACT_JSON_BYTES = 2 * 1024 * 1024;
+const MAX_ARTIFACT_FILES = 10_000;
+const MAX_DISTILL_SOURCE_ARTIFACTS = 1_000;
+const MAX_DISTILL_JSON_BYTES = 512 * 1024;
 
 export interface OpenClawServiceOpts {
   knowledgeRoot: string;
@@ -91,11 +102,18 @@ function readStringList(body: Record<string, unknown>, key: string): string[] {
   if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
     throw new Error(`${key} must be a list of strings`);
   }
-  return value;
+  if (value.length > MAX_DISTILL_SOURCE_ARTIFACTS) {
+    throw new Error(`${key} exceeds ${MAX_DISTILL_SOURCE_ARTIFACTS} item limit`);
+  }
+  return value.map((entry) => ensureSafeArtifactId(entry.trim()));
 }
 
 function toHarnessModuleName(artifactId: string): string {
-  return `openclaw_${artifactId.replace(/[^A-Za-z0-9_]/g, "_")}`;
+  const normalized = artifactId.replace(/[^A-Za-z0-9_]/g, "_");
+  const direct = `openclaw_${normalized}`;
+  if (direct.length <= 128) return direct;
+  const digest = createHash("sha256").update(artifactId).digest("hex").slice(0, 16);
+  return `openclaw_${normalized.slice(0, 96)}_${digest}`;
 }
 
 function humanizeScenarioName(name: string): string {
@@ -106,17 +124,16 @@ function humanizeScenarioName(name: string): string {
     .join(" ");
 }
 
-function artifactDir(knowledgeRoot: string): string {
-  return join(knowledgeRoot, "_openclaw_artifacts");
-}
-
-function artifactPath(knowledgeRoot: string, artifactId: string): string {
-  return join(artifactDir(knowledgeRoot), `${ensureSafeArtifactId(artifactId)}.json`);
-}
-
-function readJsonRecord(path: string): Record<string, unknown> | null {
+function readArtifactRecord(knowledgeRoot: string, filename: string): Record<string, unknown> | null {
+  const raw = readSecureTextFile(
+    knowledgeRoot,
+    [ARTIFACT_DIRECTORY],
+    filename,
+    MAX_ARTIFACT_JSON_BYTES,
+  );
+  if (raw === null) return null;
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf-8"));
+    const parsed = JSON.parse(raw);
     return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
@@ -124,14 +141,14 @@ function readJsonRecord(path: string): Record<string, unknown> | null {
 }
 
 function listArtifactRecords(knowledgeRoot: string): Record<string, unknown>[] {
-  const dir = artifactDir(knowledgeRoot);
-  if (!existsSync(dir)) {
-    return [];
-  }
-  return readdirSync(dir)
+  return listSecureDirectoryNames(
+    knowledgeRoot,
+    [ARTIFACT_DIRECTORY],
+    MAX_ARTIFACT_FILES,
+  )
     .filter((name) => name.endsWith(".json"))
     .sort()
-    .map((name) => readJsonRecord(join(dir, name)))
+    .map((name) => readArtifactRecord(knowledgeRoot, name))
     .filter((record): record is Record<string, unknown> => record !== null);
 }
 
@@ -145,39 +162,73 @@ function buildArtifactSummary(data: Record<string, unknown>, fallbackId: string)
   };
 }
 
-function parseCommandLine(command: string): string[] {
-  const parts: string[] = [];
-  let current = "";
-  let quote: "'" | "\"" | null = null;
-  for (let i = 0; i < command.length; i += 1) {
-    const char = command[i]!;
-    if ((char === "'" || char === "\"") && quote === null) {
-      quote = char;
-      continue;
-    }
-    if (char === quote) {
-      quote = null;
-      continue;
-    }
-    if (/\s/.test(char) && quote === null) {
-      if (current) {
-        parts.push(current);
-        current = "";
-      }
-      continue;
-    }
-    current += char;
+const DISTILL_COMMAND_PLACEHOLDERS = new Set(["{job_id}", "{scenario}"]);
+
+export function parseDistillSidecarCommand(rawCommand: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawCommand);
+  } catch {
+    throw new DistillJobError(
+      "AUTOCONTEXT_OPENCLAW_DISTILL_SIDECAR_COMMAND must be a JSON argv array; " +
+      "shell command strings are not allowed",
+    );
   }
-  if (current) {
-    parts.push(current);
-  }
-  return parts;
+  return validateDistillSidecarArgv(parsed);
 }
 
-function applyCommandTemplate(commandTemplate: string, job: DistillJob): string {
-  return commandTemplate
-    .replaceAll("{job_id}", job.job_id)
-    .replaceAll("{scenario}", job.scenario);
+export function expandDistillSidecarCommand(
+  commandArgv: readonly string[],
+  job: Pick<DistillJob, "job_id" | "scenario">,
+): string[] {
+  const validated = validateDistillSidecarArgv(commandArgv);
+  validateDistillJobValue(job.job_id, "job ID");
+  validateDistillJobValue(job.scenario, "scenario");
+  const replacements = new Map<string, readonly [string, string]>([
+    ["{job_id}", [job.job_id, "job ID"]],
+    ["{scenario}", [job.scenario, "scenario"]],
+  ]);
+  return validated.map((argument) => {
+    const replacement = replacements.get(argument);
+    if (!replacement) return argument;
+    const [value, label] = replacement;
+    if (value.trimStart().startsWith("-")) {
+      throw new DistillJobError(`distill ${label} placeholder value must not be option-shaped`);
+    }
+    return value;
+  });
+}
+
+function validateDistillSidecarArgv(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new DistillJobError("distill sidecar command must be a non-empty JSON argv array");
+  }
+  const validated = value.map((argument, index) => {
+    if (typeof argument !== "string" || !argument || argument.includes("\0")) {
+      throw new DistillJobError(
+        "distill sidecar argv entries must be non-empty strings without NUL bytes",
+      );
+    }
+    if (
+      (argument.includes("{") || argument.includes("}"))
+      && !DISTILL_COMMAND_PLACEHOLDERS.has(argument)
+    ) {
+      throw new DistillJobError(
+        "distill sidecar placeholders must be whole argv entries and may only be {job_id} or {scenario}",
+      );
+    }
+    if (index === 0 && DISTILL_COMMAND_PLACEHOLDERS.has(argument)) {
+      throw new DistillJobError("distill sidecar executable must be a fixed literal argv entry");
+    }
+    return argument;
+  });
+  return validated;
+}
+
+function validateDistillJobValue(value: string, label: string): void {
+  if (!value || value.includes("\0")) {
+    throw new DistillJobError(`distill ${label} must be non-empty and must not contain NUL bytes`);
+  }
 }
 
 export class OpenClawService {
@@ -232,13 +283,26 @@ export class OpenClawService {
 
   publishArtifact(body: Record<string, unknown>): Record<string, unknown> {
     const { artifactId, artifactType, scenario, data } = validateOpenClawArtifactPayload(body);
-    const path = artifactPath(this.#knowledgeRoot, artifactId);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf-8");
-
+    const serialized = `${JSON.stringify(data, null, 2)}\n`;
+    if (Buffer.byteLength(serialized, "utf-8") > MAX_ARTIFACT_JSON_BYTES) {
+      throw new Error(`artifact JSON exceeds ${MAX_ARTIFACT_JSON_BYTES} byte limit`);
+    }
+    let harnessStore: HarnessStore | undefined;
     if (artifactType === "harness" && typeof data.source_code === "string" && data.source_code.trim()) {
-      new HarnessStore(this.#knowledgeRoot, scenario)
-        .writeVersioned(toHarnessModuleName(artifactId), data.source_code, 0);
+      harnessStore = new HarnessStore(this.#knowledgeRoot, scenario);
+      // Resolve existing storage before publishing metadata so a pre-seeded
+      // scenario/harness symlink cannot leave a misleading published record.
+      harnessStore.listHarness();
+    }
+    const path = writeSecureTextFile(
+      this.#knowledgeRoot,
+      [ARTIFACT_DIRECTORY],
+      `${artifactId}.json`,
+      serialized,
+      { maxBytes: MAX_ARTIFACT_JSON_BYTES, replace: true },
+    );
+    if (harnessStore && typeof data.source_code === "string") {
+      harnessStore.writeVersioned(toHarnessModuleName(artifactId), data.source_code, 0);
     }
 
     return {
@@ -259,7 +323,10 @@ export class OpenClawService {
   }
 
   fetchArtifact(artifactId: string): Record<string, unknown> | null {
-    return readJsonRecord(artifactPath(this.#knowledgeRoot, artifactId));
+    return readArtifactRecord(
+      this.#knowledgeRoot,
+      `${ensureSafeLegacyArtifactReadId(artifactId)}.json`,
+    );
   }
 
   distillStatus(params: URLSearchParams): Record<string, unknown> {
@@ -277,6 +344,12 @@ export class OpenClawService {
     const trainingConfig = body.training_config === undefined
       ? {}
       : readRecord(body, "training_config");
+    const trainingConfigJson = JSON.stringify(trainingConfig);
+    if (Buffer.byteLength(trainingConfigJson, "utf-8") > MAX_DISTILL_JSON_BYTES) {
+      throw new DistillJobError(
+        `training_config exceeds ${MAX_DISTILL_JSON_BYTES} byte limit`,
+      );
+    }
     const job = this.#distillJobs.createJob({ scenario, sourceArtifactIds, trainingConfig });
     const commandTemplate = this.#settings.openclawDistillSidecarCommand.trim();
     if (!commandTemplate) {
@@ -293,9 +366,14 @@ export class OpenClawService {
       };
     }
 
-    const command = parseCommandLine(applyCommandTemplate(commandTemplate, job));
-    if (command.length === 0) {
-      const errorMessage = "AUTOCONTEXT_OPENCLAW_DISTILL_SIDECAR_COMMAND is empty after template expansion.";
+    let command: string[];
+    try {
+      command = expandDistillSidecarCommand(
+        parseDistillSidecarCommand(commandTemplate),
+        job,
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       const failed = this.#distillJobs.transition(job.job_id, "failed", { errorMessage });
       return {
         error: errorMessage,
@@ -310,6 +388,7 @@ export class OpenClawService {
       const child = spawn(bin!, args, {
         cwd: dirname(this.#knowledgeRoot),
         detached: true,
+        shell: false,
         stdio: "ignore",
         env: {
           ...process.env,
@@ -318,8 +397,29 @@ export class OpenClawService {
           AUTOCONTEXT_DISTILL_TRAINING_CONFIG: JSON.stringify(job.training_config),
         },
       });
-      child.unref();
-      return { ...(this.#distillJobs.transition(job.job_id, "running") ?? job) };
+      child.once("spawn", () => {
+        try {
+          const current = this.#distillJobs.getJob(job.job_id);
+          if (current?.status === "pending") {
+            this.#distillJobs.transition(job.job_id, "running");
+          }
+          child.unref();
+        } catch (error) {
+          this.#failDistillJobAfterSpawn(job.job_id, error);
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            // The process may already have exited while persistence failed.
+          }
+          child.unref();
+        }
+      });
+      child.once("error", (error) => {
+        this.#failDistillJobAfterSpawn(job.job_id, error);
+      });
+      // Node reports ENOENT/EACCES asynchronously. Keep the durable state
+      // pending until ChildProcess emits the successful `spawn` event.
+      return { ...job };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const failed = this.#distillJobs.transition(job.job_id, "failed", { errorMessage: message });
@@ -345,14 +445,14 @@ export class OpenClawService {
       ? null
       : readRecord(body, "training_metrics");
     return this.#distillJobs.transition(jobId, status, {
-      resultArtifactId: readOptionalString(body, "result_artifact_id") ?? null,
-      errorMessage: readOptionalString(body, "error_message") ?? null,
+      resultArtifactId: readOptionalString(body, "result_artifact_id"),
+      errorMessage: readOptionalString(body, "error_message"),
       trainingMetrics,
     });
   }
 
-  capabilities(): Record<string, unknown> {
-    return getCapabilities() as unknown as Record<string, unknown>;
+  capabilities(): Capabilities {
+    return getCapabilities();
   }
 
   advertiseCapabilities(): Record<string, unknown> {
@@ -431,7 +531,7 @@ export class OpenClawService {
   skillManifest(): Record<string, unknown> {
     return {
       name: "autocontext",
-      version: pkg.version,
+      version: getCapabilities().version,
       description: "autocontext iterative strategy evolution and evaluation system",
       capabilities: [
         "scenario_evaluation",
@@ -542,6 +642,19 @@ export class OpenClawService {
       return fn(store);
     } finally {
       store.close();
+    }
+  }
+
+  #failDistillJobAfterSpawn(jobId: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      const current = this.#distillJobs.getJob(jobId);
+      if (current?.status === "pending" || current?.status === "running") {
+        this.#distillJobs.transition(jobId, "failed", { errorMessage: message });
+      }
+    } catch {
+      // EventEmitter error handlers must never throw: doing so would turn a
+      // sidecar launch failure into an unhandled process-level exception.
     }
   }
 }

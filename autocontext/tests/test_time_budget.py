@@ -349,7 +349,7 @@ class TestMigration:
         store = SQLiteStore(db_path)
         store.migrate(Path("migrations"))
 
-        with store.connect() as conn:
+        with store.connection() as conn:
             cursor = conn.execute("PRAGMA table_info(generations)")
             columns = {row["name"] for row in cursor.fetchall()}
 

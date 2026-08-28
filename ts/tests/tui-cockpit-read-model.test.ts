@@ -134,6 +134,20 @@ describe("TUI HTTP read-model adapter", () => {
     );
   });
 
+  it("authenticates HTTP reads without putting credentials in the URL", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    const client = new TuiReadModelClient("https://host.example", {
+      fetchImpl,
+      authToken: "0123456789abcdef0123456789abcdef",
+    });
+
+    await expect(client.listRuns()).resolves.toMatchObject({ ok: true });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url.toString()).not.toContain("token");
+    expect(new Headers(init.headers).get("Authorization"))
+      .toBe("Bearer 0123456789abcdef0123456789abcdef");
+  });
+
   it("watches changing snapshots until terminal state", async () => {
     const bodies = ["running", "running", "completed"].map((status, index) => ({
       run_id: "run-1",

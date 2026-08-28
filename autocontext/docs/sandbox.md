@@ -9,6 +9,104 @@ autocontext supports four shipped execution modes for game scenarios, plus judge
 - `ssh` executor: runs strategies on an explicitly registered, trusted user-owned host and can fall back to the exact prepared local fixture when enabled.
 - **Agent task evaluation**: Agent task scenarios bypass match execution entirely. `JudgeExecutor` delegates to `AgentTaskInterface.evaluate_output()`, which may use `LLMJudge` for LLM-based scoring against a rubric.
 
+## Executable policy and harness containment
+
+`PolicyExecutor` policies and `HarnessLoader` validators do not execute in the
+long-lived autocontext process on supported local platforms. Each load or call
+runs in a fresh, killable child process. The parent enforces the wall
+timeout, terminates the child process group, and accepts only bounded JSON over
+the result pipe. Pickle is never used across this trust boundary. Before code
+runs, the child receives an empty environment, a private working directory,
+closed inherited file descriptors, and best-effort CPU, memory, file-size, and
+open-file limits. Linux also applies a verified same-UID task
+ceiling plus inherited seccomp rules that deny `setsid`/`setpgid` (including
+x32 and compatibility-ABI bypasses) and user-namespace creation/entry through
+`clone`, `clone3`, `unshare`, or `setns`; macOS sets `RLIMIT_NPROC=1`, forbidding
+descendant processes while still permitting helper threads. Results default to
+a 1 MiB cap. The memory setting defaults to 256 MiB; on Linux it is a virtual
+address-space growth allowance above mappings already inherited at fork,
+bounded by any stricter inherited soft or hard `RLIMIT_AS`, while macOS applies
+it as best-effort absolute address-space and data limits.
+
+The same boundary is used when `HarnessTester` evaluates synthesized harnesses
+and when staged validation loads or invokes a code candidate's
+`choose_action`. These paths deliberately serialize local child launches:
+forking from a thread is rejected, so `HarnessTester.parallel_workers` does not
+cause an unsafe threaded fallback.
+
+Generated simulation and investigation scenarios, agent-task execution
+validation, and each command handled by the legacy `rlm_backend=exec` REPL use
+the same boundary. The exec REPL sends only bounded, tagged plain built-in data
+back to its parent. Candidate-created functions, classes, generators, and
+instances become metadata-only placeholders and are not executable in later
+commands. A timeout kills the child process group; it never abandons a Python
+thread that can continue mutating the parent. Before execution, the REPL uses
+the same import, dunder, dynamic-introspection, and exception-handling AST
+denials as policy/harness code. Its builtins are a positive allowlist, and
+`json`, `math`, `statistics`, `collections`, `re`, and `time` are exposed as
+fresh immutable facades containing only named operations—not full module
+objects with paths to `__builtins__`.
+
+This boundary is defense in depth around the existing AST checks and restricted
+builtins; it is not a host sandbox:
+
+- Resource-limit behavior varies by kernel. In particular, address-space
+  and data limits are best effort and are not a portable hard memory guarantee.
+- The child runs as the invoking OS user. If Python restrictions are bypassed,
+  it may still address host filesystem paths or create network connections.
+- Restricted Python and module facades reduce known interpreter escape paths;
+  they are not a kernel-enforced filesystem or egress boundary, and future
+  runtime gadgets must be treated as a residual risk.
+- Wall-time and process-group cleanup are enforced by the live parent process.
+  An abrupt host or parent-process termination can leave local execution or
+  provider descendants running: Linux parent-death signals do not cover an
+  entire descendant tree, and macOS has no equivalent portable primitive.
+  Forced cleanup of an interactive runner also cannot guarantee termination of
+  provider subprocesses that deliberately created a separate session or gained
+  credentials/MAC protection that makes them unsignalable by the parent. Use a
+  container, cgroup/service manager with whole-tree cleanup, Windows Job Object,
+  or a microVM when the lifecycle boundary must include every detached or
+  differently privileged descendant.
+- Setting `PolicyExecutor(..., safe_builtins=False)` intentionally weakens the
+  interpreter restriction and is suitable only for trusted local policies.
+- Local policy/harness execution is supported only for non-root Linux
+  x86-64/AArch64 hosts with readable `/proc` task/capability accounting, no
+  inheritable, permitted, effective, or ambient Linux capabilities, enforceable
+  `RLIMIT_NPROC`, and
+  seccomp `prctl`, or non-root macOS hosts with Mach native
+  thread accounting and enforceable `RLIMIT_NPROC`. Both require `fork` plus
+  `waitid`/`WNOWAIT`, the default `SIGCHLD` disposition, and exactly one OS
+  thread. Root, FreeBSD/other POSIX, external child reapers, unverifiable limits,
+  unknown native threads, and unsupported ABIs fail closed.
+  The interactive run manager launches generation work in a dedicated spawned
+  process so supported TUI execution reaches this boundary. It likewise requires
+  the default `SIGCHLD` disposition before spawning and rechecks immediately at
+  process start. It is incompatible with any library or host component that
+  explicitly reaps its child with `waitpid`: in a multithreaded server there is
+  no atomic portable operation that both reserves the exited leader's process-
+  group ID and signals the group. Deployments that require protection from an
+  independent child reaper need external cgroup or Job Object ownership. No
+  in-process fallback is used.
+
+Other executable-code features retain separate trust classifications. Loading
+a persisted custom scenario through `scenarios.custom.loader`, the custom
+registry, or the verbatim-solve registration path returns a live Python class
+and therefore imports that module in the control-plane process. Those are
+**trusted local plugin activation** paths, not validation sandboxes. Their
+source generators perform structural validation and literal-safe emission, but
+operators must not point their knowledge root at tenant-writable content or
+load an artifact whose provenance they do not trust. Moving those loaders to a
+child requires a scenario RPC/proxy design rather than returning a Python class
+across the JSON boundary. User extension modules and autoresearch
+`register_import` hooks are also explicitly trusted operator code and run
+in-process.
+
+Use Monty for compatible interpreter-sandboxed strategy code, or a configured
+remote/container/microVM adapter with read-only mounts and denied egress when
+code authors are mutually untrusted. A Gondolin adapter remains the intended
+boundary for deployments that require enforceable filesystem, network, secret,
+and memory isolation.
+
 ## Gondolin Boundary
 
 Gondolin is reserved as an optional microVM sandbox backend for deployments that need stronger isolation, secret policy, and egress policy than the local/Monty paths provide. It is not a hosted scheduler or background-worker control plane by itself.

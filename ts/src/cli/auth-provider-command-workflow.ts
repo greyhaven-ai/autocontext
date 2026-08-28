@@ -10,7 +10,7 @@ Options:
   --config-dir <path>  Config directory (default: ~/.config/autoctx)
 
 Without flags, prompts interactively for provider and key.
-Keys starting with ! are executed as shell commands (e.g. !security find-generic-password).
+API keys are stored as literal values. Command-based key values are rejected.
 
 Examples:
   autoctx login --provider anthropic --key YOUR_ANTHROPIC_API_KEY

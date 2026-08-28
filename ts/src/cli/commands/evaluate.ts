@@ -124,8 +124,10 @@ export async function cmdTui(dbPath: string): Promise<void> {
   const plan = planTuiCommand(values, !!process.stdout.isTTY);
 
   const { InteractiveServer, RunManager } = await import("../../server/index.js");
+  const { resolveServerAuthToken } = await import("../../server/server-auth.js");
   const { loadSettings } = await import("../../config/index.js");
   const settings = loadSettings();
+  const serverAuthToken = resolveServerAuthToken();
   let mgr: InstanceType<typeof RunManager> | null = null;
   if (!plan.connect) {
     const { resolveProviderConfig } = await import("../../providers/index.js");
@@ -175,10 +177,12 @@ export async function cmdTui(dbPath: string): Promise<void> {
     const { WebSocketTuiTransport } = await import("../../tui/transport.js");
     const logDirectory = join(resolve(settings.runsRoot), "_tui", "logs");
     mkdirSync(logDirectory, { recursive: true });
-    const session = new TuiSession(new WebSocketTuiTransport(endpoint));
+    const session = new TuiSession(new WebSocketTuiTransport(endpoint, {
+      authToken: serverAuthToken,
+    }));
     const app = startInteractiveTui({
       session,
-      readModels: new TuiReadModelClient(endpoint),
+      readModels: new TuiReadModelClient(endpoint, { authToken: serverAuthToken }),
       logDirectory,
     });
     const stopOnSignal = () => app.stop();

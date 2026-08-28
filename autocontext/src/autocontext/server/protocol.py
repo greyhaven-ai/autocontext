@@ -13,6 +13,14 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
+from autocontext.server.resource_limits import (
+    MAX_INTERACTIVE_ID_CHARS,
+    MAX_INTERACTIVE_ROLE_CHARS,
+    MAX_INTERACTIVE_SCENARIO_CHARS,
+    MAX_INTERACTIVE_TEXT_CHARS,
+    MAX_START_RUN_GENERATIONS,
+)
+
 PROTOCOL_VERSION = 2
 
 SERVER_CAPABILITIES = ["safe_run_stop_v1", "minimum_iterations_v1"]
@@ -95,8 +103,8 @@ class RunMessageMetadata(BaseModel):
 class RunCommandMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    client_run_id: str | None = None
-    command_id: str | None = None
+    client_run_id: str | None = Field(default=None, min_length=1, max_length=MAX_INTERACTIVE_ID_CHARS)
+    command_id: str | None = Field(default=None, min_length=1, max_length=MAX_INTERACTIVE_ID_CHARS)
 
 
 # ---------------------------------------------------------------------------
@@ -271,15 +279,15 @@ class StopCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["stop"] = "stop"
-    client_run_id: str = Field(min_length=1, max_length=200)
-    command_id: str = Field(min_length=1, max_length=200)
+    client_run_id: str = Field(min_length=1, max_length=MAX_INTERACTIVE_ID_CHARS)
+    command_id: str = Field(min_length=1, max_length=MAX_INTERACTIVE_ID_CHARS)
 
 
 class InjectHintCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["inject_hint"] = "inject_hint"
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=MAX_INTERACTIVE_TEXT_CHARS)
 
 
 class OverrideGateCmd(RunCommandMetadata):
@@ -293,17 +301,17 @@ class ChatAgentCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["chat_agent"] = "chat_agent"
-    role: str
-    message: str = Field(min_length=1)
+    role: str = Field(min_length=1, max_length=MAX_INTERACTIVE_ROLE_CHARS)
+    message: str = Field(min_length=1, max_length=MAX_INTERACTIVE_TEXT_CHARS)
 
 
 class StartRunCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["start_run"] = "start_run"
-    scenario: str
+    scenario: str = Field(min_length=1, max_length=MAX_INTERACTIVE_SCENARIO_CHARS)
     minimum_generations: int | None = Field(default=None, ge=1)
-    generations: int = Field(gt=0)
+    generations: int = Field(gt=0, le=MAX_START_RUN_GENERATIONS)
     require_playbook_approval: bool = False
 
     @model_validator(mode="after")
@@ -323,7 +331,7 @@ class CreateScenarioCmd(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["create_scenario"] = "create_scenario"
-    description: str = Field(min_length=1)
+    description: str = Field(min_length=1, max_length=MAX_INTERACTIVE_TEXT_CHARS)
 
 
 class ConfirmScenarioCmd(BaseModel):
@@ -336,7 +344,7 @@ class ReviseScenarioCmd(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["revise_scenario"] = "revise_scenario"
-    feedback: str = Field(min_length=1)
+    feedback: str = Field(min_length=1, max_length=MAX_INTERACTIVE_TEXT_CHARS)
 
 
 class CancelScenarioCmd(BaseModel):

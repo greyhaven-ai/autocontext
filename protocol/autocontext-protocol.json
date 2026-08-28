@@ -1204,6 +1204,8 @@
           "client_run_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1216,6 +1218,8 @@
           "command_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1232,10 +1236,13 @@
             "type": "string"
           },
           "role": {
+            "maxLength": 128,
+            "minLength": 1,
             "title": "Role",
             "type": "string"
           },
           "message": {
+            "maxLength": 16384,
             "minLength": 1,
             "title": "Message",
             "type": "string"
@@ -1271,6 +1278,7 @@
             "type": "string"
           },
           "description": {
+            "maxLength": 16384,
             "minLength": 1,
             "title": "Description",
             "type": "string"
@@ -1288,6 +1296,8 @@
           "client_run_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1300,6 +1310,8 @@
           "command_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1316,6 +1328,7 @@
             "type": "string"
           },
           "text": {
+            "maxLength": 16384,
             "minLength": 1,
             "title": "Text",
             "type": "string"
@@ -1346,6 +1359,8 @@
           "client_run_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1358,6 +1373,8 @@
           "command_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1395,6 +1412,8 @@
           "client_run_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1407,6 +1426,8 @@
           "command_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1432,6 +1453,8 @@
           "client_run_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1444,6 +1467,8 @@
           "command_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1473,6 +1498,7 @@
             "type": "string"
           },
           "feedback": {
+            "maxLength": 16384,
             "minLength": 1,
             "title": "Feedback",
             "type": "string"
@@ -1490,6 +1516,8 @@
           "client_run_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1502,6 +1530,8 @@
           "command_id": {
             "anyOf": [
               {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1518,6 +1548,8 @@
             "type": "string"
           },
           "scenario": {
+            "maxLength": 128,
+            "minLength": 1,
             "title": "Scenario",
             "type": "string"
           },
@@ -1536,6 +1568,7 @@
           },
           "generations": {
             "exclusiveMinimum": 0,
+            "maximum": 100,
             "title": "Generations",
             "type": "integer"
           },

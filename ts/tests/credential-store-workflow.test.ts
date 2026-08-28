@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -59,8 +67,41 @@ describe("credential store workflow", () => {
     });
   });
 
-  it("resolves literal and shell-command api key values", () => {
+  it("returns literal API keys and rejects command-shaped values", () => {
     expect(resolveApiKeyValue("sk-ant-123")).toBe("sk-ant-123");
-    expect(resolveApiKeyValue("!echo workflow-key")).toBe("workflow-key");
+    expect(() => resolveApiKeyValue("!echo workflow-key")).toThrow(
+      /command-based API key values are not supported/i,
+    );
+  });
+
+  it("refuses invalid credentials before creating the store", () => {
+    expect(() => saveProviderCredentials(dir, "anthropic", { apiKey: "bad-key" })).toThrow(
+      /refusing to persist credentials.*invalid anthropic API key format/i,
+    );
+    expect(existsSync(join(dir, CREDENTIALS_FILE))).toBe(false);
+  });
+
+  it("refuses to follow a symbolic-link credential file", () => {
+    if (process.platform === "win32") return;
+    const outside = join(dir, "outside.json");
+    writeFileSync(outside, "sentinel", "utf-8");
+    symlinkSync(outside, join(dir, CREDENTIALS_FILE));
+
+    expect(() => saveProviderCredentials(dir, "anthropic", {
+      apiKey: "sk-ant-123",
+    })).toThrow(/symbolic-link credential file/i);
+    expect(readFileSync(outside, "utf-8")).toBe("sentinel");
+  });
+
+  it("fails closed when an existing store contains a command-shaped value", () => {
+    writeFileSync(join(dir, CREDENTIALS_FILE), JSON.stringify({
+      providers: {
+        anthropic: { apiKey: "!echo workflow-key" },
+      },
+    }), "utf-8");
+
+    expect(() => loadProviderCredentials(dir, "anthropic")).toThrow(
+      /command-based API key values are not supported/i,
+    );
   });
 });

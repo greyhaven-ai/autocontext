@@ -2,10 +2,30 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from autocontext.harness.repl.types import ReplCommand
 from autocontext.harness.repl.worker import CodeTimeout, ReplWorker
+
+
+def test_worker_is_directly_importable_in_a_fresh_interpreter() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from autocontext.harness.repl.worker import ReplWorker; print(ReplWorker.__name__)",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "ReplWorker"
 
 
 def test_worker_executes_simple_expression() -> None:

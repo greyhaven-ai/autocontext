@@ -10,14 +10,12 @@ fully runnable family.
 
 from __future__ import annotations
 
-import re
-
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 from autocontext.scenarios.custom.operator_loop_spec import OperatorLoopSpec
 
 
 def _class_name(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", name)
-    return "".join(part.capitalize() for part in parts if part) + "OperatorLoop"
+    return generated_class_name(name, "OperatorLoop")
 
 
 def generate_operator_loop_class(spec: OperatorLoopSpec, name: str) -> str:
@@ -55,11 +53,7 @@ from autocontext.scenarios.simulation import (
 
 
 class {class_name}(OperatorLoopInterface):
-    """Generated operator-in-the-loop scenario: {name}
-
-    Simulates an operator with configurable escalation policy.
-    The agent must decide when to act autonomously vs escalate.
-    """
+    """Generated operator-in-the-loop scenario."""
 
     name = {name!r}
 
@@ -217,7 +211,7 @@ class {class_name}(OperatorLoopInterface):
         completed = set(state.get("completed_actions", []))
         max_escalations = state.get("escalation_policy", {{}}).get("max_escalations", 5)
         too_many_escalations = len(state.get("escalation_log", [])) > max_escalations
-        return required.issubset(completed) or state.get("step", 0) >= {spec.max_steps} or too_many_escalations
+        return required.issubset(completed) or state.get("step", 0) >= {spec.max_steps!r} or too_many_escalations
 
     def evaluate_trace(self, trace: ActionTrace, final_state: dict[str, Any]) -> SimulationResult:
         result = self.evaluate_judgment(final_state)
@@ -335,5 +329,5 @@ class {class_name}(OperatorLoopInterface):
         )
 
     def max_steps(self) -> int:
-        return {spec.max_steps}
+        return {spec.max_steps!r}
 '''

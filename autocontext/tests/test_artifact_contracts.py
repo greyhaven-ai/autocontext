@@ -6,6 +6,7 @@ PolicyArtifact, DistilledModelArtifact, and ArtifactManifest.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -17,6 +18,23 @@ from autocontext.artifacts import (
     HarnessArtifact,
     PolicyArtifact,
 )
+
+_ARTIFACT_ID_PARITY = json.loads(
+    (Path(__file__).resolve().parents[2] / "fixtures" / "openclaw-artifact-id-parity.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+def _minimal_harness(*, artifact_id: str) -> HarnessArtifact:
+    return HarnessArtifact(
+        id=artifact_id,
+        name="parity_harness",
+        version=1,
+        scenario="grid_ctf",
+        source_code="def validate(): return True",
+        provenance=ArtifactProvenance(run_id="run_parity", generation=1, scenario="grid_ctf"),
+    )
 
 # ---------------------------------------------------------------------------
 # ArtifactProvenance
@@ -59,6 +77,15 @@ class TestArtifactProvenance:
 
 
 class TestHarnessArtifact:
+    @pytest.mark.parametrize("artifact_id", _ARTIFACT_ID_PARITY["accepted"])
+    def test_artifact_id_cross_runtime_acceptance(self, artifact_id: str) -> None:
+        assert _minimal_harness(artifact_id=artifact_id).id == artifact_id
+
+    @pytest.mark.parametrize("artifact_id", _ARTIFACT_ID_PARITY["rejected"])
+    def test_artifact_id_cross_runtime_rejection(self, artifact_id: str) -> None:
+        with pytest.raises(ValidationError):
+            _minimal_harness(artifact_id=artifact_id)
+
     def test_minimal_harness(self) -> None:
         h = HarnessArtifact(
             name="grid_ctf_validator",

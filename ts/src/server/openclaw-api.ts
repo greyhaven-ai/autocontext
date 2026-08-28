@@ -50,12 +50,12 @@ export function buildOpenClawApiRoutes(opts: {
         ? { status: 400, body: result }
         : { status: 200, body: result };
     }),
-    getDistillJob: (jobId) => {
+    getDistillJob: (jobId) => mapErrorToResponse(() => {
       const job = service.getDistillJob(jobId);
       return job
         ? { status: 200, body: job }
         : { status: 404, body: { detail: `Distillation job '${jobId}' not found` } };
-    },
+    }),
     updateDistillJob: (jobId, body) => mapErrorToResponse(() => {
       const job = service.updateDistillJob(jobId, body);
       return job

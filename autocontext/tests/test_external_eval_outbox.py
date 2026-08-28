@@ -6,6 +6,7 @@ import json
 import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -128,7 +129,7 @@ def test_concurrent_outbox_initializers_share_one_transactional_instance_id(
     path = tmp_path / "concurrent-instance.sqlite3"
     if migrate_v2:
         ExternalEvalLedgerOutbox(path)
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection, connection:
             connection.execute("DROP TABLE remote_eval_outbox_metadata")
             connection.execute(f"PRAGMA user_version={_outbox_store.SCHEMA_VERSION - 1}")
 
@@ -154,7 +155,7 @@ def test_concurrent_outbox_initializers_share_one_transactional_instance_id(
 
     assert len(set(instance_ids)) == 1
     assert token_calls == 1
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == _outbox_store.SCHEMA_VERSION
         assert connection.execute("SELECT COUNT(*) FROM remote_eval_outbox_metadata").fetchone()[0] == 1
 
@@ -317,7 +318,7 @@ def test_schema_v1_integer_numeric_identity_replays_after_float_normalization(tm
     legacy_claim = legacy_outbox.claim("primeintellect", legacy_request)
     legacy_result = _result(legacy_request)
     legacy_outbox.commit("primeintellect", legacy_request, legacy_result, sink_required=False)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("PRAGMA user_version=1")
 
     reconstructed = RemoteExecutionRequest(
@@ -355,7 +356,7 @@ def test_schema_v1_integer_claim_can_be_committed_after_float_normalization(tmp_
     legacy_outbox = ExternalEvalLedgerOutbox(path)
     legacy_claim = legacy_outbox.claim("primeintellect", legacy_request)
     known_result = _result(legacy_request)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("PRAGMA user_version=1")
 
     reconstructed = RemoteExecutionRequest(
@@ -406,7 +407,7 @@ def test_outbox_fails_closed_when_legacy_and_normalized_identities_both_exist(tm
     )
     normalized_path = tmp_path / "normalized.sqlite3"
     ExternalEvalLedgerOutbox(normalized_path).claim("primeintellect", normalized_request)
-    with sqlite3.connect(duplicate_path) as connection:
+    with closing(sqlite3.connect(duplicate_path)) as connection, connection:
         connection.execute("ATTACH DATABASE ? AS normalized", (str(normalized_path),))
         connection.execute(
             """
@@ -547,7 +548,7 @@ def test_outbox_detects_committed_result_corruption(tmp_path: Path) -> None:
     outbox.claim("primeintellect", request)
     outbox.commit("primeintellect", request, _result(request))
 
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE remote_eval_outbox SET result_json = result_json || ' '")
 
     with pytest.raises(ValueError, match="result checksum mismatch"):
@@ -599,7 +600,7 @@ def test_outbox_initializer_rechecks_schema_version_after_acquiring_write_lock(
     path = tmp_path / "schema-race.sqlite3"
     ExternalEvalLedgerOutbox(path)
     original_connect = sqlite3.connect
-    with original_connect(path) as connection:
+    with closing(original_connect(path)) as connection, connection:
         connection.execute("PRAGMA user_version=1")
 
     migrator = original_connect(path, timeout=30.0)
@@ -649,7 +650,7 @@ def test_outbox_initializer_rechecks_schema_version_after_acquiring_write_lock(
     assert len(errors) == 1
     assert isinstance(errors[0], RuntimeError)
     assert "newer than supported" in str(errors[0])
-    with original_connect(path) as connection:
+    with closing(original_connect(path)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == _outbox_store.SCHEMA_VERSION + 1
 
 
@@ -660,7 +661,7 @@ def test_outbox_migrates_prerelease_schema_v1_database(tmp_path: Path) -> None:
     claim = source.claim("primeintellect", request)
     result = _result(request)
     source.commit("primeintellect", request, result)
-    with sqlite3.connect(source_path) as connection:
+    with closing(sqlite3.connect(source_path)) as connection, connection:
         connection.row_factory = sqlite3.Row
         row = connection.execute("SELECT * FROM remote_eval_outbox").fetchone()
         assert row is not None
@@ -674,7 +675,7 @@ def test_outbox_migrates_prerelease_schema_v1_database(tmp_path: Path) -> None:
         ensure_ascii=True,
     )
     legacy_path = tmp_path / "legacy.sqlite3"
-    with sqlite3.connect(legacy_path) as connection:
+    with closing(sqlite3.connect(legacy_path)) as connection, connection:
         connection.executescript(
             """
             CREATE TABLE remote_eval_outbox (
@@ -728,7 +729,7 @@ def test_outbox_migrates_prerelease_schema_v1_database(tmp_path: Path) -> None:
     assert replay is not None
     assert replay.result == result
     assert migrated.ledger_entries() == (result.to_ledger_entry(attempt_id=claim.attempt_id),)
-    with sqlite3.connect(legacy_path) as connection:
+    with closing(sqlite3.connect(legacy_path)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == _outbox_store.SCHEMA_VERSION
         columns = {row[1] for row in connection.execute("PRAGMA table_info(remote_eval_outbox)")}
     assert {"request_json_sha256", "delivery_lease_token", "delivery_lease_expires_at"} <= columns
@@ -739,7 +740,7 @@ def test_outbox_migrates_prerelease_schema_v1_database(tmp_path: Path) -> None:
 def test_current_schema_requires_valid_instance_identity_metadata(tmp_path: Path, corruption: str) -> None:
     path = tmp_path / f"invalid-instance-{corruption}.sqlite3"
     ExternalEvalLedgerOutbox(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         if corruption == "missing":
             connection.execute("DROP TABLE remote_eval_outbox_metadata")
         elif corruption == "empty":
@@ -788,7 +789,7 @@ def test_outbox_checksums_request_payload_for_claim_and_statuses(tmp_path: Path)
     request = _request("request-corruption")
     outbox.claim("primeintellect", request)
 
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE remote_eval_outbox SET request_json = request_json || ' '")
 
     with pytest.raises(ValueError, match="request checksum mismatch"):
@@ -802,7 +803,7 @@ def test_outbox_rejects_validly_checksummed_request_type_corruption(tmp_path: Pa
     outbox = ExternalEvalLedgerOutbox(path)
     outbox.claim("primeintellect", _request("request-type-corruption"))
 
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         raw = connection.execute("SELECT request_json FROM remote_eval_outbox").fetchone()[0]
         payload = json.loads(raw)
         payload["timeout_seconds"] = "30"
@@ -823,12 +824,12 @@ def test_outbox_completed_replay_validates_ledger_checksum_and_projection(tmp_pa
     outbox.claim("primeintellect", request)
     outbox.commit("primeintellect", request, _result(request))
 
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE remote_eval_outbox SET ledger_json = ledger_json || ' '")
     with pytest.raises(ValueError, match="ledger checksum mismatch"):
         outbox.claim("primeintellect", request)
 
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         raw = connection.execute("SELECT ledger_json FROM remote_eval_outbox").fetchone()[0].rstrip()
         payload = json.loads(raw)
         payload["detail"] = "different accounting projection"
@@ -852,7 +853,7 @@ def test_result_model_and_versioned_codec_reject_unknown_status_and_coercible_bo
     request = _request("invalid-boolean")
     outbox.claim("primeintellect", request)
     outbox.commit("primeintellect", request, _result(request))
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         raw = connection.execute("SELECT result_json FROM remote_eval_outbox").fetchone()[0]
         payload = json.loads(raw)
         payload["retryable"] = "false"
@@ -870,7 +871,7 @@ def test_result_model_and_versioned_codec_reject_unknown_status_and_coercible_bo
     request = _request("invalid-ledger-boolean")
     outbox.claim("primeintellect", request)
     outbox.commit("primeintellect", request, _result(request))
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         raw = connection.execute("SELECT ledger_json FROM remote_eval_outbox").fetchone()[0]
         payload = json.loads(raw)
         payload["candidate_succeeded"] = "false"
@@ -984,7 +985,7 @@ def test_sink_delivery_expired_lease_recovers_and_late_failure_cannot_overwrite_
     abandoned = outbox.reserve_sink_delivery(claim.attempt_id)
     assert abandoned is not None
 
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             "UPDATE remote_eval_outbox SET delivery_lease_expires_at = 0 WHERE attempt_id = ?",
             (claim.attempt_id,),

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import re
-
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 from autocontext.scenarios.custom.tool_fragility_spec import ToolFragilitySpec
 
 
 def _class_name(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", name)
-    return "".join(part.capitalize() for part in parts if part) + "ToolFragility"
+    return generated_class_name(name, "ToolFragility")
 
 
 def generate_tool_fragility_class(spec: ToolFragilitySpec, name: str) -> str:
@@ -120,7 +118,7 @@ class {class_name}(ToolFragilityInterface):
     def is_terminal(self, state: dict[str, Any]) -> bool:
         required = set({required_actions!r})
         completed = set(state.get("completed_actions", []))
-        return required.issubset(completed) or state.get("step", 0) >= {spec.max_steps}
+        return required.issubset(completed) or state.get("step", 0) >= {spec.max_steps!r}
 
     def get_tool_contracts(self, state: dict[str, Any]) -> list[ToolContract]:
         versions = state.get("tool_versions", {{}})
@@ -206,5 +204,5 @@ class {class_name}(ToolFragilityInterface):
         return "Evaluate on drift detection, tool adaptation quality, and wasted attempt minimization."
 
     def max_steps(self) -> int:
-        return {spec.max_steps}
+        return {spec.max_steps!r}
 '''

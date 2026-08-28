@@ -4,6 +4,7 @@
 
 import type { OpenClawApiRoutes } from "../openclaw-api.js";
 import { asScenarioName } from "../../domain/ids.js";
+import { ensureSafeDistillJobId } from "../../openclaw/distill-job-store.js";
 import type { HttpRouteContext } from "./http-route-context.js";
 
 export async function tryOpenClawRoutes(
@@ -65,7 +66,14 @@ export async function tryOpenClawRoutes(
   const openClawDistillMatch = ctx.url.match(/^\/api\/openclaw\/distill\/([^/]+)$/);
   if (openClawDistillMatch) {
     const [, rawJobId] = openClawDistillMatch;
-    const jobId = decodeURIComponent(rawJobId!);
+    let jobId: string;
+    try {
+      jobId = ensureSafeDistillJobId(decodeURIComponent(rawJobId!));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "invalid distillation job ID";
+      ctx.json(400, { detail });
+      return true;
+    }
     if (ctx.method === "GET") {
       const response = openClawApi.getDistillJob(jobId);
       ctx.json(response.status, response.body);

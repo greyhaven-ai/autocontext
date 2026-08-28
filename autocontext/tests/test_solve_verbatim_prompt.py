@@ -152,6 +152,29 @@ class TestBuildVerbatimSolveScenario:
         result = build_verbatim_solve_scenario(req, knowledge_root=tmp_path)
         assert result.scenario_name == "explicit_name_foo"
 
+    @pytest.mark.parametrize(
+        "name_override",
+        [
+            "quote'name",
+            "line\nbreak",
+            "name\n    injected = True",
+            "name\nimport os\nclass Injected: pass",
+        ],
+    )
+    def test_source_shaped_name_override_is_rejected(
+        self,
+        tmp_path: Path,
+        name_override: str,
+    ) -> None:
+        request = VerbatimSolveRequest(
+            description="adversarial name",
+            task_prompt="safe task prompt",
+            name_override=name_override,
+        )
+
+        with pytest.raises(ValueError, match="generated scenario name"):
+            build_verbatim_solve_scenario(request, knowledge_root=tmp_path)
+
     def test_default_name_is_derived_from_description(self, tmp_path: Path):
         # Same naming behavior as LLM-designed scenarios — derived from
         # the description so existing log/SQLite tooling continues to work.

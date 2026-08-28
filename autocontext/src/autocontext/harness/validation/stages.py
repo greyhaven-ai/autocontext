@@ -15,8 +15,17 @@ from __future__ import annotations
 import ast
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 
+from autocontext.execution.ast_safety import check_ast_safety
+from autocontext.execution.harness_loader import _SAFE_BUILTINS, _exec_harness_source
+from autocontext.execution.isolated_python import (
+    DEFAULT_MAX_MEMORY_MB,
+    DEFAULT_MAX_OUTPUT_BYTES,
+    IsolatedExecutionTimeout,
+    run_isolated_json,
+)
 from autocontext.harness.validation.staged import (
     StageResult,
     StageStatus,
@@ -520,23 +529,54 @@ def _elapsed(t0: float) -> float:
     return (time.monotonic() - t0) * 1000
 
 
-def _load_choose_action(source: str, *, timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS) -> Any:
-    """Load code and extract choose_action function."""
-    from autocontext.execution.harness_loader import _SAFE_BUILTINS, _exec_harness_source, _HarnessTimeout, _run_with_timeout
-
+def _inspect_choose_action(source: str) -> bool:
+    """Load source in the isolated child and check the entry point."""
     namespace: dict[str, Any] = {"__builtins__": dict(_SAFE_BUILTINS)}
-    try:
-        _run_with_timeout(
-            lambda: _exec_harness_source(source, namespace),
-            timeout_seconds,
-        )
-    except _HarnessTimeout as exc:
-        raise TimeoutError("loading choose_action timed out") from exc
+    _exec_harness_source(source, namespace)
+    return callable(namespace.get("choose_action"))
 
+
+def _execute_choose_action(source: str, state: dict[str, Any]) -> Any:
+    """Load and invoke choose_action inside the isolated child."""
+    namespace: dict[str, Any] = {"__builtins__": dict(_SAFE_BUILTINS)}
+    _exec_harness_source(source, namespace)
     fn = namespace.get("choose_action")
     if not callable(fn):
         raise ValueError("choose_action not found or not callable")
-    return fn
+    return fn(state)
+
+
+@dataclass(frozen=True, slots=True)
+class _IsolatedChooseAction:
+    source: str
+    timeout_seconds: float
+    max_memory_mb: int = DEFAULT_MAX_MEMORY_MB
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES
+
+    def __call__(self, state: dict[str, Any]) -> Any:
+        return run_isolated_json(
+            lambda: _execute_choose_action(self.source, state),
+            timeout_seconds=self.timeout_seconds,
+            max_memory_mb=self.max_memory_mb,
+            max_output_bytes=self.max_output_bytes,
+        )
+
+
+def _load_choose_action(source: str, *, timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS) -> Any:
+    """Validate code in a child and return a callable isolated proxy."""
+    violations = check_ast_safety(source)
+    if violations:
+        raise ValueError(f"AST safety violations: {'; '.join(violations)}")
+    try:
+        found = run_isolated_json(
+            lambda: _inspect_choose_action(source),
+            timeout_seconds=timeout_seconds,
+        )
+    except IsolatedExecutionTimeout as exc:
+        raise TimeoutError("loading choose_action timed out") from exc
+    if found is not True:
+        raise ValueError("choose_action not found or not callable")
+    return _IsolatedChooseAction(source=source, timeout_seconds=timeout_seconds)
 
 
 def _run_choose_action(
@@ -545,10 +585,10 @@ def _run_choose_action(
     *,
     timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS,
 ) -> Any:
-    """Run choose_action with the same timeout discipline as harness loading."""
-    from autocontext.execution.harness_loader import _HarnessTimeout, _run_with_timeout
-
+    """Run a previously validated choose_action proxy in a fresh child."""
+    if not isinstance(fn, _IsolatedChooseAction):
+        raise ValueError("choose_action must use the isolated callable proxy")
     try:
-        return _run_with_timeout(lambda: fn(state), timeout_seconds)
-    except _HarnessTimeout as exc:
+        return fn(state)
+    except IsolatedExecutionTimeout as exc:
         raise TimeoutError("choose_action timed out") from exc

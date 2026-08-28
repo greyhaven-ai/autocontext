@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,14 +43,14 @@ class AmbientQueue:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
     def enqueue(self, stage: str, kind: str, payload: dict[str, Any]) -> int:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cursor = conn.execute(
                 "INSERT INTO ambient_queue (stage, kind, payload) VALUES (?, ?, ?)",
                 (stage, kind, json.dumps(payload)),
@@ -59,7 +60,7 @@ class AmbientQueue:
     def claim(self, stage: str, *, max_attempts: int = 5) -> AmbientJob | None:
         # single atomic statement: a select-then-update pair would let two
         # connections claim the same pending row (toctou double-claim)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             # AC-906: attempts is burned AT CLAIM, and a job that already
             # exhausted its budget dead-letters here. A handler that kills the
             # process never calls fail(), so counting at fail time alone let
@@ -86,12 +87,12 @@ class AmbientQueue:
         Assumes a single resident daemon per database: a second concurrent
         daemon calling this would clobber the first one's in-flight jobs.
         """
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cursor = conn.execute("UPDATE ambient_queue SET status = 'pending' WHERE status = 'running'")
             return int(cursor.rowcount)
 
     def complete(self, job_id: int) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute("UPDATE ambient_queue SET status = 'done' WHERE job_id = ?", (job_id,))
 
     def fail(self, job_id: int, error: str, *, max_attempts: int = 5) -> None:
@@ -99,7 +100,7 @@ class AmbientQueue:
         # 'dead' so it stops being reclaimed and looping forever. attempts is
         # counted at CLAIM time (AC-906), so this only records the error and
         # applies the cap.
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.execute(
                 "UPDATE ambient_queue SET last_error = ? WHERE job_id = ?",
                 (error, job_id),
@@ -110,12 +111,12 @@ class AmbientQueue:
             )
 
     def dead_letter_count(self) -> int:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute("SELECT COUNT(*) FROM ambient_queue WHERE status = 'dead'").fetchone()
             return int(row[0])
 
     def depth(self, stage: str) -> int:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             row = conn.execute(
                 "SELECT COUNT(*) FROM ambient_queue WHERE stage = ? AND status = 'pending'",
                 (stage,),

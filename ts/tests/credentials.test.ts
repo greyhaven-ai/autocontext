@@ -2,7 +2,7 @@
  * Tests for AC-430 Phase 1: Credential hardening.
  *
  * - 0600 file permissions on credentials
- * - Shell-command escape hatch for API key values
+ * - Literal-only API key persistence
  * - Multi-provider credential store
  * - API key validation
  * - listConfiguredProviders for enhanced whoami
@@ -18,7 +18,7 @@ function makeTempDir(): string {
 }
 
 // ---------------------------------------------------------------------------
-// resolveApiKeyValue — shell-command escape hatch
+// resolveApiKeyValue — literal-only API key values
 // ---------------------------------------------------------------------------
 
 describe("resolveApiKeyValue", () => {
@@ -27,21 +27,18 @@ describe("resolveApiKeyValue", () => {
     expect(resolveApiKeyValue("sk-ant-1234")).toBe("sk-ant-1234");
   });
 
-  it("executes shell command when value starts with !", async () => {
+  it("rejects command-shaped values instead of executing them", async () => {
     const { resolveApiKeyValue } = await import("../src/config/credentials.js");
-    const result = resolveApiKeyValue("!echo test-key-from-shell");
-    expect(result).toBe("test-key-from-shell");
+    expect(() => resolveApiKeyValue("!echo test-key-from-shell")).toThrow(
+      /command-based API key values are not supported/i,
+    );
   });
 
-  it("trims whitespace from shell command output", async () => {
+  it("rejects command-shaped values after leading whitespace", async () => {
     const { resolveApiKeyValue } = await import("../src/config/credentials.js");
-    const result = resolveApiKeyValue("!echo '  padded  '");
-    expect(result).toBe("padded");
-  });
-
-  it("throws on shell command failure", async () => {
-    const { resolveApiKeyValue } = await import("../src/config/credentials.js");
-    expect(() => resolveApiKeyValue("!nonexistent-command-xyz-12345")).toThrow();
+    expect(() => resolveApiKeyValue("  !echo padded")).toThrow(
+      /command-based API key values are not supported/i,
+    );
   });
 
   it("returns empty string as-is", async () => {
@@ -88,10 +85,10 @@ describe("Multi-provider credential store", () => {
 
   it("overwrites existing credentials for same provider", async () => {
     const { saveProviderCredentials, loadProviderCredentials } = await import("../src/config/credentials.js");
-    saveProviderCredentials(dir, "anthropic", { apiKey: "old-key" });
-    saveProviderCredentials(dir, "anthropic", { apiKey: "new-key" });
+    saveProviderCredentials(dir, "anthropic", { apiKey: "sk-ant-old-key" });
+    saveProviderCredentials(dir, "anthropic", { apiKey: "sk-ant-new-key" });
     const creds = loadProviderCredentials(dir, "anthropic");
-    expect(creds!.apiKey).toBe("new-key");
+    expect(creds!.apiKey).toBe("sk-ant-new-key");
   });
 
   it("returns null for unknown provider", async () => {
@@ -102,7 +99,7 @@ describe("Multi-provider credential store", () => {
 
   it("records savedAt timestamp", async () => {
     const { saveProviderCredentials, loadProviderCredentials } = await import("../src/config/credentials.js");
-    saveProviderCredentials(dir, "anthropic", { apiKey: "sk-123" });
+    saveProviderCredentials(dir, "anthropic", { apiKey: "sk-ant-123" });
     const creds = loadProviderCredentials(dir, "anthropic");
     expect(creds!.savedAt).toBeDefined();
     expect(new Date(creds!.savedAt!).getTime()).toBeGreaterThan(0);
@@ -120,7 +117,7 @@ describe("Credential file permissions", () => {
 
   it("sets 0600 permissions on credentials file", async () => {
     const { saveProviderCredentials, CREDENTIALS_FILE } = await import("../src/config/credentials.js");
-    saveProviderCredentials(dir, "anthropic", { apiKey: "sk-123" });
+    saveProviderCredentials(dir, "anthropic", { apiKey: "sk-ant-123" });
     const filePath = join(dir, CREDENTIALS_FILE);
     const stats = statSync(filePath);
     // 0o600 = owner read+write only (33152 in decimal on most systems)

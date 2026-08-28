@@ -79,7 +79,7 @@ export async function cmdLogin(): Promise<void> {
   // Validate API key format before saving (AC-430)
   if (request.apiKey) {
     const { validateApiKey, resolveApiKeyValue } = await import("../../config/credentials.js");
-    // Resolve shell-command escape hatch (e.g. "!security find-generic-password -ws 'anthropic'")
+    // Reject command-shaped values before validating the literal key.
     const resolvedKey = resolveApiKeyValue(request.apiKey);
     const validation = await validateApiKey(request.provider, resolvedKey);
     if (!validation.valid) {
@@ -187,19 +187,32 @@ export async function cmdLogout(): Promise<void> {
     process.exit(0);
   }
 
-  const { existsSync, unlinkSync } = await import("node:fs");
-  const { loadPersistedCredentials, resolveConfigDir } = await import("../../config/index.js");
+  const { existsSync, readFileSync, unlinkSync } = await import("node:fs");
+  const { resolveConfigDir } = await import("../../config/index.js");
   const configDir = resolveConfigDir(values["config-dir"]);
   const credentialsPath = join(configDir, "credentials.json");
-  const existing = loadPersistedCredentials(configDir);
 
   if (!existsSync(credentialsPath)) {
     console.log("No stored credentials found.");
     return;
   }
 
+  let provider: string | undefined;
+  try {
+    const stored: unknown = JSON.parse(readFileSync(credentialsPath, "utf-8"));
+    if (
+      stored !== null &&
+      typeof stored === "object" &&
+      "provider" in stored &&
+      typeof stored.provider === "string"
+    ) {
+      provider = stored.provider;
+    }
+  } catch {
+    // Logout is the recovery path for malformed or legacy credential files.
+  }
   unlinkSync(credentialsPath);
-  console.log(buildLogoutMessage(existing?.provider));
+  console.log(buildLogoutMessage(provider));
 }
 
 export async function cmdProviders(): Promise<void> {

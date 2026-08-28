@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- Control-plane WebSockets no longer accept bearer credentials in query strings;
+  browser clients use an authenticated, echoed subprotocol, native clients may
+  use the Authorization header, and the TUI authenticates both HTTP and WebSocket
+  traffic from `AUTOCONTEXT_SERVER_TOKEN` without credential-bearing URLs.
+
 ## [0.17.3] - 2026-08-27
 
 This TypeScript patch release adds a capability-negotiated minimum iteration

@@ -64,7 +64,7 @@ describe("role provider bundle workflow", () => {
     saveAndClear();
     const configDir = mkdtempSync(join(tmpdir(), "role-provider-credentials-"));
     process.env.AUTOCONTEXT_CONFIG_DIR = configDir;
-    saveProviderCredentials(configDir, "anthropic", { apiKey: "sk-test-123" });
+    saveProviderCredentials(configDir, "anthropic", { apiKey: "sk-ant-test-123" });
 
     try {
       const bundle = buildRoleProviderBundle({
@@ -73,7 +73,7 @@ describe("role provider bundle workflow", () => {
         competitorBaseUrl: "",
       });
 
-      expect(bundle.defaultConfig.apiKey).toBe("sk-test-123");
+      expect(bundle.defaultConfig.apiKey).toBe("sk-ant-test-123");
       expect(bundle.roleProviders.competitor?.name).toBe("anthropic");
     } finally {
       rmSync(configDir, { recursive: true, force: true });

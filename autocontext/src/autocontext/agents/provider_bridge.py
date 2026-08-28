@@ -772,6 +772,7 @@ def _build_openclaw_agent(settings: AppSettings) -> object:
             endpoint=endpoint,
             timeout=float(getattr(settings, "openclaw_timeout_seconds", 30.0)),
             headers=headers,
+            allow_private_networks=getattr(settings, "openclaw_allow_private_network_endpoint", False) is True,
         )
         return AdapterBackedOpenClawAgent(
             adapter=http_adapter,

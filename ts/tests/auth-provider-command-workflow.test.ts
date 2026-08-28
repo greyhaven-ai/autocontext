@@ -17,6 +17,8 @@ describe("auth/provider command workflow", () => {
     expect(LOGIN_HELP_TEXT).toContain("autoctx login");
     expect(LOGIN_HELP_TEXT).toContain("--provider");
     expect(LOGIN_HELP_TEXT).toContain("--key");
+    expect(LOGIN_HELP_TEXT).toContain("stored as literal values");
+    expect(LOGIN_HELP_TEXT).not.toContain("executed as shell commands");
     expect(LOGIN_HELP_TEXT.toLowerCase()).toContain("see also");
   });
 

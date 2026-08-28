@@ -10,6 +10,7 @@ import type {
 } from "../src/tui/transport.js";
 import {
   assertSecureTuiEndpoint,
+  assertTuiEndpointHasNoCredentials,
   displayTuiEndpoint,
   WebSocketTuiTransport,
   normalizeTuiEndpoint,
@@ -401,6 +402,28 @@ describe("WebSocket TUI transport", () => {
     );
     expect(() => assertSecureTuiEndpoint("ws://127.20.30.40/ws/interactive")).not.toThrow();
     expect(() => assertSecureTuiEndpoint("ws://[::1]/ws/interactive")).not.toThrow();
+  });
+
+  it("keeps endpoint credentials out of URLs and uses an auth subprotocol", async () => {
+    expect(() => assertTuiEndpointHasNoCredentials("wss://host.example/ws?token=secret"))
+      .toThrow("AUTOCONTEXT_SERVER_TOKEN");
+    expect(() => new WebSocketTuiTransport("wss://user:secret@host.example/ws"))
+      .toThrow("AUTOCONTEXT_SERVER_TOKEN");
+
+    const socket = new FakeSocket();
+    let selectedProtocol: string | string[] | undefined;
+    const transport = new WebSocketTuiTransport("ws://127.0.0.1/ws/interactive", {
+      authToken: "0123456789abcdef0123456789abcdef",
+      createSocket: (_url, protocols) => {
+        selectedProtocol = protocols;
+        return socket as unknown as WebSocket;
+      },
+    });
+    const connected = transport.connect();
+    socket.open();
+    await connected;
+    expect(selectedProtocol).toMatch(/^autocontext\.bearer\.[A-Za-z0-9_-]+$/);
+    transport.disconnect();
   });
 
   it("reconnects with backoff and keeps parsed messages on one typed transport", async () => {

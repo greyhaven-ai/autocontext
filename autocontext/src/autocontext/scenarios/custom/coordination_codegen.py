@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import re
-
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 from autocontext.scenarios.custom.coordination_spec import CoordinationSpec
 
 
 def _class_name(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", name)
-    return "".join(part.capitalize() for part in parts if part) + "Coordination"
+    return generated_class_name(name, "Coordination")
 
 
 def generate_coordination_class(spec: CoordinationSpec, name: str) -> str:
@@ -132,7 +130,7 @@ class {class_name}(CoordinationInterface):
         return (
             required.issubset(completed)
             or state.get("merged", False)
-            or state.get("step", 0) >= {spec.max_steps}
+            or state.get("step", 0) >= {spec.max_steps!r}
         )
 
     def get_worker_contexts(
@@ -285,5 +283,5 @@ class {class_name}(CoordinationInterface):
         )
 
     def max_steps(self) -> int:
-        return {spec.max_steps}
+        return {spec.max_steps!r}
 '''

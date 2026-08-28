@@ -47,7 +47,7 @@ def test_latest_active_revisions_returns_latest_active_epoch_revision(tmp_path: 
     assert store.record_rescore_revision("run-a", 1, 0.5, "e2") is True
     assert store.record_rescore_revision("run-a", 1, 0.55, "e2", created_by="jay") is True
     # A non-active-epoch revision (e_other) must be excluded from the active-epoch view.
-    with store.connect() as conn:
+    with store.connection() as conn:
         conn.execute(
             "INSERT INTO generation_score_revisions "
             "(run_id, generation_index, revision_epoch, revision_score) VALUES (?, ?, ?, ?)",

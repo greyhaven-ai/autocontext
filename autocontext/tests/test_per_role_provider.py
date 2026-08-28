@@ -214,7 +214,8 @@ class TestCreateClientForProvider:
         client = create_role_client("deterministic", settings)
         assert isinstance(client, DeterministicDevClient)
 
-    def test_anthropic_provider_creates_anthropic_client(self) -> None:
+    @patch("autocontext.agents.llm_client.Anthropic", autospec=True)
+    def test_anthropic_provider_creates_anthropic_client(self, constructor: MagicMock) -> None:
         from autocontext.agents.provider_bridge import create_role_client
         from autocontext.config.settings import AppSettings
 
@@ -222,6 +223,7 @@ class TestCreateClientForProvider:
         client = create_role_client("anthropic", settings)
         # Should be AnthropicClient (don't import it to avoid dep)
         assert isinstance(client, LanguageModelClient)
+        constructor.assert_called_once_with(api_key="test-key")
 
     @patch("autocontext.agents.provider_bridge._create_provider_bridge")
     def test_mlx_provider_creates_bridge_client(self, mock_bridge: MagicMock) -> None:
@@ -440,8 +442,13 @@ class TestOrchestratorPerRoleWiring:
         # Coach and architect should share the default
         assert orch.coach.runtime.client is orch.architect.runtime.client
 
+    @patch("autocontext.agents.llm_client.Anthropic", return_value=MagicMock())
     @patch("autocontext.agents.provider_bridge.create_role_client")
-    def test_role_credentials_create_dedicated_client_without_provider_override(self, mock_create: MagicMock) -> None:
+    def test_role_credentials_create_dedicated_client_without_provider_override(
+        self,
+        mock_create: MagicMock,
+        _constructor: MagicMock,
+    ) -> None:
         """Role-scoped credentials should isolate a role even when provider type is inherited."""
         from autocontext.agents.orchestrator import AgentOrchestrator
         from autocontext.config.settings import AppSettings

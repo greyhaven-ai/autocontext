@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-import re
 import textwrap
 
 from autocontext.scenarios.custom.agent_task_spec import (
     AgentTaskSpec,
     normalize_agent_task_runtime_fields,
 )
+from autocontext.scenarios.custom.codegen_security import (
+    generated_class_name,
+    python_string_literal,
+)
 
 
 def _class_name(name: str) -> str:
-    parts = name.split("_")
-    return "".join(p.capitalize() for p in parts) + "AgentTask"
-
-
-def _safe_identifier(name: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    return generated_class_name(name, "AgentTask")
 
 
 def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_task") -> str:
@@ -31,7 +29,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
     spec = normalize_agent_task_runtime_fields(spec)
 
     cls_name = _class_name(name)
-    safe_name = _safe_identifier(name)
+    name_literal = python_string_literal(name)
 
     task_prompt_repr = repr(spec.task_prompt)
     rubric_repr = repr(spec.judge_rubric)
@@ -53,9 +51,9 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
 
 
         class {cls_name}(AgentTaskInterface):
-            """Generated agent task: {safe_name}."""
+            """Generated custom agent task."""
 
-            name = "{safe_name}"
+            name = {name_literal}
             _task_prompt = {task_prompt_repr}
             _rubric = {rubric_repr}
             _output_format = {repr(spec.output_format)}
@@ -162,7 +160,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                 return self._rubric
 
             def initial_state(self, seed: int | None = None) -> dict:
-                state = {{"task_name": "{safe_name}", "output_format": self._output_format}}
+                state = {{"task_name": {name_literal}, "output_format": self._output_format}}
                 if self._sample_input:
                     state["sample_input"] = self._sample_input
                 return state

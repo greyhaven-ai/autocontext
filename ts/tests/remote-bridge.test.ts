@@ -1,82 +1,189 @@
 import { describe, expect, it } from "vitest";
-import { RemoteBridge, RemoteSession, ApprovalRequest, SessionRole } from "../src/session/remote-bridge.js";
+
+import {
+  ApprovalRequest,
+  type AuthenticatedRemoteIdentity,
+  RemoteBridge,
+  RemoteSession,
+  SessionRole,
+} from "../src/session/remote-bridge.js";
+
+interface TestTransport {
+  readonly connectionId: string;
+  readonly claimedOperator?: string;
+  readonly claimedRole?: string;
+}
+
+function identity(overrides: Partial<AuthenticatedRemoteIdentity> = {}): AuthenticatedRemoteIdentity {
+  return {
+    principalId: "principal-bob",
+    operator: "bob",
+    role: SessionRole.CONTROLLER,
+    missionId: "m1",
+    transportSessionId: "transport-bob",
+    ...overrides,
+  };
+}
+
+function bridgeHarness() {
+  const identities = new WeakMap<TestTransport, AuthenticatedRemoteIdentity>();
+  const bridge = new RemoteBridge<TestTransport>("m1", {
+    authenticate: (transport) => identities.get(transport),
+  });
+  return { bridge, identities };
+}
 
 describe("RemoteSession", () => {
-  it("viewer cannot approve", () => {
-    const s = RemoteSession.create({ sessionId: "s1", operator: "alice", role: SessionRole.VIEWER });
-    expect(s.canApprove).toBe(false);
-  });
+  it("derives capabilities from a validated authenticated identity", () => {
+    const viewer = RemoteSession.createAuthenticated(identity({
+      principalId: "principal-alice",
+      operator: "alice",
+      role: SessionRole.VIEWER,
+      transportSessionId: "transport-alice",
+    }));
+    const controller = RemoteSession.createAuthenticated(identity());
 
-  it("controller can approve", () => {
-    const s = RemoteSession.create({ sessionId: "s1", operator: "bob", role: SessionRole.CONTROLLER });
-    expect(s.canApprove).toBe(true);
+    expect(viewer.canApprove).toBe(false);
+    expect(controller.canApprove).toBe(true);
+    expect(Object.isFrozen(controller)).toBe(true);
   });
 });
 
 describe("ApprovalRequest", () => {
-  it("approve flow", () => {
-    const r = ApprovalRequest.create("deploy");
-    expect(r.status).toBe("pending");
-    r.approve("bob");
-    expect(r.status).toBe("approved");
-    expect(r.decidedBy).toBe("bob");
-  });
-
-  it("deny flow", () => {
-    const r = ApprovalRequest.create("deploy");
-    r.deny("alice", "Not ready");
-    expect(r.status).toBe("denied");
-    expect(r.denialReason).toBe("Not ready");
-  });
-
-  it("timeout", () => {
-    const r = ApprovalRequest.create("deploy");
-    r.timeout();
-    expect(r.status).toBe("timed_out");
-  });
-
-  it("decision is terminal", () => {
-    const r = ApprovalRequest.create("deploy");
-    r.approve("bob");
-    expect(() => r.deny("bob", "changed")).toThrow("status=approved");
+  it("cannot be approved directly outside the bridge authority", () => {
+    const request = ApprovalRequest.create("deploy");
+    expect(request.status).toBe("pending");
+    expect("approve" in request).toBe(false);
+    expect("deny" in request).toBe(false);
   });
 });
 
 describe("RemoteBridge", () => {
-  it("connects observer", () => {
-    const bridge = new RemoteBridge("m1");
-    bridge.connect("alice", SessionRole.VIEWER);
-    expect(bridge.connectedSessions).toHaveLength(1);
+  it("fails closed when the transport has no authenticated identity", () => {
+    const { bridge } = bridgeHarness();
+    const transport = { connectionId: "untrusted" };
+
+    expect(() => bridge.connect(transport)).toThrow("not authenticated");
+    expect(bridge.connectedSessions).toHaveLength(0);
   });
 
-  it("routes approval to controllers", () => {
-    const bridge = new RemoteBridge("m1");
-    bridge.connect("bob", SessionRole.CONTROLLER);
-    const req = bridge.requestApproval("deploy");
-    expect(bridge.pendingApprovals).toHaveLength(1);
-    bridge.respond(req.requestId, true, "bob");
-    expect(req.status).toBe("approved");
+  it("ignores self-asserted message identity and uses the transport authenticator", () => {
+    const { bridge, identities } = bridgeHarness();
+    const transport: TestTransport = {
+      connectionId: "viewer-connection",
+      claimedOperator: "admin",
+      claimedRole: SessionRole.CONTROLLER,
+    };
+    identities.set(transport, identity({
+      principalId: "principal-alice",
+      operator: "alice",
+      role: SessionRole.VIEWER,
+      transportSessionId: "viewer-connection",
+    }));
+
+    const session = bridge.connect(transport);
+    const request = bridge.requestApproval("deploy");
+
+    expect(session.operator).toBe("alice");
+    expect(session.role).toBe(SessionRole.VIEWER);
+    expect(() => bridge.respond(request.requestId, true, transport)).toThrow("viewer");
+    expect(request.status).toBe("pending");
+  });
+
+  it("records decisions under the authenticated stable principal", () => {
+    const { bridge, identities } = bridgeHarness();
+    const transport = { connectionId: "controller-connection" };
+    identities.set(transport, identity({ transportSessionId: transport.connectionId }));
+    bridge.connect(transport);
+    const request = bridge.requestApproval("deploy");
+
+    bridge.respond(request.requestId, true, transport);
+
+    expect(request.status).toBe("approved");
+    expect(request.decidedBy).toBe("bob");
+    expect(request.decidedByPrincipal).toBe("principal-bob");
     expect(bridge.pendingApprovals).toHaveLength(0);
   });
 
-  it("viewer cannot respond", () => {
-    const bridge = new RemoteBridge("m1");
-    bridge.connect("alice", SessionRole.VIEWER);
-    const req = bridge.requestApproval("deploy");
-    expect(() => bridge.respond(req.requestId, true, "alice")).toThrow("viewer");
+  it("does not authorize an unbound transport that claims the same operator", () => {
+    const { bridge, identities } = bridgeHarness();
+    const bound = { connectionId: "bound" };
+    const attacker: TestTransport = {
+      connectionId: "attacker",
+      claimedOperator: "bob",
+      claimedRole: SessionRole.CONTROLLER,
+    };
+    identities.set(bound, identity({ transportSessionId: bound.connectionId }));
+    identities.set(attacker, identity({ transportSessionId: attacker.connectionId }));
+    bridge.connect(bound);
+    const request = bridge.requestApproval("deploy");
+
+    expect(() => bridge.respond(request.requestId, true, attacker)).toThrow("not connected");
+    expect(request.status).toBe("pending");
   });
 
-  it("unconnected operator cannot respond", () => {
-    const bridge = new RemoteBridge("m1");
-    bridge.connect("alice", SessionRole.VIEWER);
-    const req = bridge.requestApproval("deploy");
-    expect(() => bridge.respond(req.requestId, true, "mallory")).toThrow("not connected");
+  it("re-authenticates before a decision and rejects revocation or identity changes", () => {
+    const { bridge, identities } = bridgeHarness();
+    const revoked = { connectionId: "revoked" };
+    identities.set(revoked, identity({ transportSessionId: revoked.connectionId }));
+    bridge.connect(revoked);
+    const revokedRequest = bridge.requestApproval("deploy one");
+    identities.delete(revoked);
+
+    expect(() => bridge.respond(revokedRequest.requestId, true, revoked)).toThrow("not authenticated");
+
+    const changed = { connectionId: "changed" };
+    identities.set(changed, identity({ transportSessionId: changed.connectionId }));
+    bridge.connect(changed);
+    const changedRequest = bridge.requestApproval("deploy two");
+    identities.set(changed, identity({
+      role: SessionRole.VIEWER,
+      transportSessionId: changed.connectionId,
+    }));
+
+    expect(() => bridge.respond(changedRequest.requestId, true, changed)).toThrow("identity changed");
+    expect(changedRequest.status).toBe("pending");
   });
 
-  it("disconnect removes session", () => {
-    const bridge = new RemoteBridge("m1");
-    const session = bridge.connect("alice", SessionRole.VIEWER);
-    bridge.disconnect(session.remoteSessionId);
+  it("rejects identities scoped to a different mission", () => {
+    const { bridge, identities } = bridgeHarness();
+    const transport = { connectionId: "wrong-mission" };
+    identities.set(transport, identity({
+      missionId: "m2",
+      transportSessionId: transport.connectionId,
+    }));
+
+    expect(() => bridge.connect(transport)).toThrow("not authorized for this mission");
+  });
+
+  it("denies, times out, and keeps decisions terminal", () => {
+    const { bridge, identities } = bridgeHarness();
+    const transport = { connectionId: "controller" };
+    identities.set(transport, identity({ transportSessionId: transport.connectionId }));
+    bridge.connect(transport);
+
+    const denied = bridge.requestApproval("deploy");
+    bridge.respond(denied.requestId, false, transport, "Not ready");
+    expect(denied.status).toBe("denied");
+    expect(denied.denialReason).toBe("Not ready");
+    expect(() => bridge.respond(denied.requestId, true, transport)).toThrow("status=denied");
+
+    const timedOut = bridge.requestApproval("release");
+    bridge.timeoutApproval(timedOut.requestId);
+    expect(timedOut.status).toBe("timed_out");
+    expect(() => bridge.respond(timedOut.requestId, true, transport)).toThrow("status=timed_out");
+  });
+
+  it("disconnect removes only the transport-bound session", () => {
+    const { bridge, identities } = bridgeHarness();
+    const transport = { connectionId: "controller" };
+    identities.set(transport, identity({ transportSessionId: transport.connectionId }));
+    bridge.connect(transport);
+
+    bridge.disconnect(transport);
+
     expect(bridge.connectedSessions).toHaveLength(0);
+    const request = bridge.requestApproval("deploy");
+    expect(() => bridge.respond(request.requestId, true, transport)).toThrow("not connected");
   });
 });

@@ -15,25 +15,34 @@ class TestProviderRegistryRetry:
         from autocontext.providers.registry import create_provider
         from autocontext.providers.retry import RetryProvider
 
-        provider = create_provider(
-            provider_type="anthropic",
-            api_key="sk-test",
-        )
+        with patch("autocontext.providers.anthropic.anthropic.Anthropic", return_value=MagicMock()):
+            provider = create_provider(
+                provider_type="anthropic",
+                api_key="sk-test",
+            )
         assert isinstance(provider, RetryProvider)
 
     def test_create_provider_can_disable_transport_retries_for_durable_callers(self) -> None:
         from autocontext.providers.registry import create_provider
         from autocontext.providers.retry import RetryProvider
 
-        provider = create_provider(
-            provider_type="anthropic",
+        sdk_client = MagicMock()
+        with patch(
+            "autocontext.providers.anthropic.anthropic.Anthropic",
+            return_value=sdk_client,
+        ) as anthropic_constructor:
+            provider = create_provider(
+                provider_type="anthropic",
+                api_key="sk-test",
+                max_retries=0,
+            )
+
+        anthropic_constructor.assert_called_once_with(
             api_key="sk-test",
             max_retries=0,
         )
-
         assert isinstance(provider, RetryProvider)
         assert provider.max_retries == 0
-        assert provider._provider._client.max_retries == 0
         assert provider._provider._single_dispatch is True
         assert provider.supports_single_dispatch
 
@@ -41,15 +50,24 @@ class TestProviderRegistryRetry:
         from autocontext.providers.registry import create_provider
         from autocontext.providers.retry import RetryProvider
 
-        provider = create_provider(
-            provider_type="openai",
+        sdk_client = MagicMock()
+        with patch(
+            "autocontext.providers.openai_compat.openai.OpenAI",
+            return_value=sdk_client,
+        ) as openai_constructor:
+            provider = create_provider(
+                provider_type="openai",
+                api_key="sk-test",
+                max_retries=0,
+            )
+
+        openai_constructor.assert_called_once_with(
             api_key="sk-test",
+            base_url="https://api.openai.com/v1",
             max_retries=0,
         )
-
         assert isinstance(provider, RetryProvider)
         assert provider.max_retries == 0
-        assert provider._provider._client.max_retries == 0
         assert provider._provider._single_dispatch is True
         assert provider.supports_single_dispatch
 
@@ -57,15 +75,22 @@ class TestProviderRegistryRetry:
         """Ollama uses OpenAI-compatible — skip if openai not installed."""
         import pytest
 
+        pytest.importorskip("openai")
+        from autocontext.providers.registry import create_provider
         from autocontext.providers.retry import RetryProvider
 
-        try:
-            from autocontext.providers.registry import create_provider
-
+        with patch(
+            "autocontext.providers.openai_compat.openai.OpenAI",
+            autospec=True,
+        ) as openai_constructor:
+            openai_constructor.return_value = MagicMock(base_url="http://localhost:11434/v1")
             provider = create_provider(provider_type="ollama", api_key="", model="llama3.1")
-        except Exception:
-            pytest.skip("openai package not available")
+
         assert isinstance(provider, RetryProvider)
+        openai_constructor.assert_called_once_with(
+            api_key="ollama",
+            base_url="http://localhost:11434/v1",
+        )
 
     def test_retry_provider_retries_on_500(self) -> None:
         """RetryProvider should retry on 500 errors."""
@@ -115,7 +140,10 @@ class TestProviderRegistryRetry:
         settings.judge_api_key = ""
         settings.anthropic_api_key = "sk-test"
 
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-test"}):
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-test"}),
+            patch("autocontext.providers.anthropic.anthropic.Anthropic", return_value=MagicMock()),
+        ):
             provider = get_provider(settings)
 
         assert isinstance(provider, RetryProvider)

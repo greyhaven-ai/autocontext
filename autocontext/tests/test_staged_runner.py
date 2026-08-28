@@ -5,8 +5,12 @@ the ValidationRunner with early-exit, and ValidationMetrics with per-stage rejec
 """
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock
 
+import pytest
+
+import autocontext.harness.validation.stages as stages_module
 from autocontext.harness.validation import StageResult, StageStatus, ValidationPipeline
 from autocontext.harness.validation.stages import (
     ContractStage,
@@ -118,6 +122,29 @@ class TestContractStage:
 
 
 class TestDeterministicStage:
+    def test_candidate_source_executes_only_in_children(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        observed_pids: list[int] = []
+        original_exec = stages_module._exec_harness_source
+
+        def tracking_exec(source: str, namespace: dict[str, object]) -> None:
+            observed_pids.append(os.getpid())
+            original_exec(source, namespace)
+
+        monkeypatch.setattr(stages_module, "_exec_harness_source", tracking_exec)
+        scenario = MagicMock()
+        scenario.initial_state.return_value = {}
+
+        result = DeterministicStage(order=2).run(
+            candidate="def choose_action(state):\n    return {'action': 'move'}\n",
+            scenario=scenario,
+        )
+
+        assert result.passed is True
+        assert observed_pids == []
+
     def test_consistent_dict_strategy_passes(self) -> None:
         """Dict strategies are inherently deterministic."""
         stage = DeterministicStage(order=2)

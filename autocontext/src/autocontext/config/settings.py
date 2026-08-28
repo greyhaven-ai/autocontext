@@ -12,6 +12,7 @@ from autocontext.config.output_budgets import OutputBudgetFields
 from autocontext.config.presets import apply_preset
 from autocontext.config.production_execution import ProductionExecutionFields
 from autocontext.config.role_routing import RoleRoutingFields
+from autocontext.config.security import SecurityFields
 from autocontext.config.workspace_interpreter import WorkspaceInterpreterFields
 from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
 
@@ -47,6 +48,7 @@ class HarnessProfile(StrEnum):
 
 
 class AppSettings(
+    SecurityFields,
     RoleRoutingFields,
     WorkspaceInterpreterFields,
     OutputBudgetFields,
@@ -230,7 +232,7 @@ class AppSettings(
     rlm_max_stdout_chars: int = Field(default=8192, ge=1024)
     rlm_sub_model: str = Field(default="claude-haiku-4-5-20251001")
     rlm_code_timeout_seconds: float = Field(default=10.0, ge=1.0)
-    rlm_backend: str = Field(default="exec", description="RLM REPL backend: 'exec' (default) or 'monty' (Monty sandbox)")
+    rlm_backend: Literal["exec", "monty"] = Field(default="exec", description="RLM backend: isolated child or Monty")
     rlm_competitor_enabled: bool = Field(default=False, description="Enable RLM REPL mode for Competitor role")
     playbook_max_versions: int = Field(default=5, ge=1)
     cross_run_inheritance: bool = Field(default=True)
@@ -643,7 +645,7 @@ class AppSettings(
     )
     openclaw_distill_sidecar_command: str = Field(
         default="",
-        description="Command template to launch an external distillation sidecar job",
+        description="JSON argv array with optional whole arguments {job_id} and {scenario}",
     )
     # Provider consultation (AC-212)
     consultation_enabled: bool = Field(default=False, description="Enable provider consultation on stall/uncertainty")

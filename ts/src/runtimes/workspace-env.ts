@@ -1,6 +1,7 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 import {
   RuntimeComponentLifecycleState,
@@ -213,6 +214,22 @@ type MemoryState = {
 };
 
 const DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES = 4096;
+const DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES = 1024 * 1024;
+const DEFAULT_RUNTIME_PROCESS_TERMINATION_GRACE_MS = 250;
+const RUNTIME_PROCESS_OUTPUT_LIMIT_DIAGNOSTIC =
+  "Command output exceeded the 1 MiB per-stream limit";
+const DEFAULT_RUNTIME_SHELL_ENV_KEYS = [
+  "PATH",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "SystemRoot",
+  "ComSpec",
+  "PATHEXT",
+];
 const DEFAULT_RUNTIME_COMMAND_ARG_LIMIT = 12;
 const DEFAULT_RUNTIME_COMMAND_ARG_BYTES = 160;
 const RUNTIME_TOOL_EVENT_SOURCE = Symbol("runtimeToolEventSource");
@@ -617,7 +634,7 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
       return { stdout: "", stderr: "Operation aborted", exitCode: 130 };
     }
     const virtualCwd = options.cwd ? this.resolvePath(options.cwd) : this.cwd;
-    const hostCwd = this.#toHostPath(virtualCwd);
+    const hostCwd = await this.#toFollowedHostPath(virtualCwd);
     const granted = await maybeRunGrantedCommand(
       this.#commands,
       command,
@@ -665,25 +682,30 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
 
   async readFile(filePath: string): Promise<string> {
     assertRuntimeComponentScopeAvailable(this.#componentScope);
-    return fs.readFile(this.#toHostPath(this.resolvePath(filePath)), "utf-8");
+    const virtualPath = this.resolvePath(filePath);
+    return fs.readFile(await this.#toFollowedHostPath(virtualPath), "utf-8");
   }
 
   async readFileBytes(filePath: string): Promise<Uint8Array> {
     assertRuntimeComponentScopeAvailable(this.#componentScope);
-    const content = await fs.readFile(this.#toHostPath(this.resolvePath(filePath)));
+    const virtualPath = this.resolvePath(filePath);
+    const content = await fs.readFile(await this.#toFollowedHostPath(virtualPath));
     return new Uint8Array(content);
   }
 
   async writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
     assertRuntimeComponentScopeAvailable(this.#componentScope);
-    const hostPath = this.#toHostPath(this.resolvePath(filePath));
+    await this.#ensureRootDirectory();
+    const virtualPath = this.resolvePath(filePath);
+    const hostPath = await this.#toFollowedHostPath(virtualPath);
     await fs.mkdir(path.dirname(hostPath), { recursive: true });
-    await fs.writeFile(hostPath, content);
+    await fs.writeFile(await this.#toFollowedHostPath(virtualPath), content);
   }
 
   async stat(filePath: string): Promise<RuntimeFileStat> {
     assertRuntimeComponentScopeAvailable(this.#componentScope);
-    const stat = await fs.lstat(this.#toHostPath(this.resolvePath(filePath)));
+    const virtualPath = this.resolvePath(filePath);
+    const stat = await fs.lstat(await this.#toHostPathWithFollowedParent(virtualPath));
     return {
       isFile: stat.isFile(),
       isDirectory: stat.isDirectory(),
@@ -695,29 +717,39 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
 
   async readdir(dirPath: string): Promise<string[]> {
     assertRuntimeComponentScopeAvailable(this.#componentScope);
-    return (await fs.readdir(this.#toHostPath(this.resolvePath(dirPath)))).sort();
+    const virtualPath = this.resolvePath(dirPath);
+    return (await fs.readdir(await this.#toFollowedHostPath(virtualPath))).sort();
   }
 
   async exists(filePath: string): Promise<boolean> {
     assertRuntimeComponentScopeAvailable(this.#componentScope);
+    const virtualPath = this.resolvePath(filePath);
     try {
-      await fs.access(this.#toHostPath(this.resolvePath(filePath)));
+      await fs.lstat(await this.#toHostPathWithFollowedParent(virtualPath));
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if (isFileSystemError(error, "ENOENT") || isFileSystemError(error, "ENOTDIR")) {
+        return false;
+      }
+      throw error;
     }
   }
 
   async mkdir(dirPath: string, options: { recursive?: boolean } = {}): Promise<void> {
     assertRuntimeComponentScopeAvailable(this.#componentScope);
-    await fs.mkdir(this.#toHostPath(this.resolvePath(dirPath)), {
-      recursive: options.recursive ?? false,
+    const recursive = options.recursive ?? false;
+    if (recursive) await this.#ensureRootDirectory();
+    const virtualPath = this.resolvePath(dirPath);
+    await fs.mkdir(await this.#toFollowedHostPath(virtualPath), {
+      recursive,
     });
+    await this.#toFollowedHostPath(virtualPath);
   }
 
   async rm(filePath: string, options: { recursive?: boolean; force?: boolean } = {}): Promise<void> {
     assertRuntimeComponentScopeAvailable(this.#componentScope);
-    await fs.rm(this.#toHostPath(this.resolvePath(filePath)), {
+    const virtualPath = this.resolvePath(filePath);
+    await fs.rm(await this.#toHostPathWithFollowedParent(virtualPath), {
       recursive: options.recursive ?? false,
       force: options.force ?? false,
     });
@@ -734,10 +766,87 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   #toHostPath(virtualPath: string): string {
     const relative = virtualPath.replace(/^\/+/, "");
     const hostPath = path.resolve(this.#root, relative);
-    const outsideRoot = path.relative(this.#root, hostPath).startsWith("..");
-    if (outsideRoot) throw new Error(`Path escapes workspace root: ${virtualPath}`);
+    if (!isPathWithinRoot(this.#root, hostPath)) {
+      throw new Error(`Path escapes workspace root: ${virtualPath}`);
+    }
     return hostPath;
   }
+
+  async #toFollowedHostPath(virtualPath: string): Promise<string> {
+    const hostPath = this.#toHostPath(virtualPath);
+    return this.#followHostPath(hostPath, virtualPath);
+  }
+
+  async #ensureRootDirectory(): Promise<void> {
+    await fs.mkdir(this.#root, { recursive: true });
+  }
+
+  async #toHostPathWithFollowedParent(virtualPath: string): Promise<string> {
+    const hostPath = this.#toHostPath(virtualPath);
+    if (hostPath === this.#root) {
+      return this.#followHostPath(hostPath, virtualPath);
+    }
+    const followedParent = await this.#followHostPath(path.dirname(hostPath), virtualPath);
+    return path.join(followedParent, path.basename(hostPath));
+  }
+
+  async #followHostPath(hostPath: string, virtualPath: string): Promise<string> {
+    const realRoot = await fs.realpath(this.#root);
+    const relative = path.relative(this.#root, hostPath);
+    const segments = relative ? relative.split(path.sep).filter(Boolean) : [];
+    let resolved = realRoot;
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      if (!segment) continue;
+      const candidate = path.join(resolved, segment);
+      let candidateStat: Awaited<ReturnType<typeof fs.lstat>>;
+      try {
+        candidateStat = await fs.lstat(candidate);
+      } catch (error) {
+        if (isFileSystemError(error, "ENOENT")) {
+          resolved = path.join(resolved, ...segments.slice(index));
+          break;
+        }
+        throw error;
+      }
+
+      if (candidateStat.isSymbolicLink()) {
+        try {
+          resolved = await fs.realpath(candidate);
+        } catch (error) {
+          if (isFileSystemError(error, "ENOENT")) {
+            throw new Error(`Path escapes workspace root: ${virtualPath}`, { cause: error });
+          }
+          throw error;
+        }
+      } else {
+        resolved = candidate;
+      }
+
+      if (!isPathWithinRoot(realRoot, resolved)) {
+        throw new Error(`Path escapes workspace root: ${virtualPath}`);
+      }
+    }
+
+    if (!isPathWithinRoot(realRoot, resolved)) {
+      throw new Error(`Path escapes workspace root: ${virtualPath}`);
+    }
+    return resolved;
+  }
+}
+
+function isPathWithinRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (
+    relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative)
+  );
+}
+
+function isFileSystemError(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === code;
 }
 
 function commandMap(commands: RuntimeCommandGrant[]): Map<string, RuntimeCommandGrant> {
@@ -1115,7 +1224,7 @@ function runShell(
     command,
     args: [],
     cwd,
-    env: { ...process.env, ...(options.env ?? {}) },
+    env: { ...pickProcessEnv(DEFAULT_RUNTIME_SHELL_ENV_KEYS), ...(options.env ?? {}) },
     shell: true,
     signal: options.signal,
     timeoutMs: options.timeoutMs,
@@ -1153,43 +1262,105 @@ function runSpawnedProcess(options: {
   signal?: AbortSignal;
 }): Promise<RuntimeExecResult> {
   return new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
     let timedOut = false;
+    let outputExceeded = false;
+    let terminationRequested = false;
+    let forceKillTimeout: ReturnType<typeof setTimeout> | undefined;
 
     const child = spawn(options.command, options.args, {
       cwd: options.cwd,
       env: options.env,
       shell: options.shell,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
+
+    const requestTermination = () => {
+      if (terminationRequested) return;
+      terminationRequested = true;
+      if (process.platform === "win32") {
+        forceKillWindowsProcessTree(child);
+        return;
+      }
+      signalSpawnedProcessTree(child, "SIGTERM");
+      forceKillTimeout = setTimeout(() => {
+        signalSpawnedProcessTree(child, "SIGKILL");
+        closeSpawnedProcessOutput(child);
+      }, DEFAULT_RUNTIME_PROCESS_TERMINATION_GRACE_MS);
+    };
 
     const timeout = options.timeoutMs
       ? setTimeout(() => {
           timedOut = true;
-          child.kill("SIGTERM");
+          requestTermination();
         }, options.timeoutMs)
       : undefined;
 
     const abort = () => {
-      child.kill("SIGTERM");
+      requestTermination();
     };
-    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) {
+      abort();
+    } else {
+      options.signal?.addEventListener("abort", abort, { once: true });
+    }
 
     child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk);
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const remaining = DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES - stdoutBytes;
+      if (remaining > 0) {
+        const captured = bytes.subarray(0, remaining);
+        stdoutChunks.push(captured);
+        stdoutBytes += captured.length;
+      }
+      if (bytes.length > remaining) {
+        outputExceeded = true;
+        requestTermination();
+      }
     });
     child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const remaining = DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES - stderrBytes;
+      if (remaining > 0) {
+        const captured = bytes.subarray(0, remaining);
+        stderrChunks.push(captured);
+        stderrBytes += captured.length;
+      }
+      if (bytes.length > remaining) {
+        outputExceeded = true;
+        requestTermination();
+      }
     });
     child.on("error", (error) => {
       if (timeout) clearTimeout(timeout);
       options.signal?.removeEventListener("abort", abort);
+      if (forceKillTimeout && !child.pid) clearTimeout(forceKillTimeout);
+      const stdout = decodeBoundedProcessOutput(stdoutChunks, stdoutBytes);
+      const stderr = decodeBoundedProcessOutput(stderrChunks, stderrBytes);
       resolve({ stdout, stderr: stderr || error.message, exitCode: 1 });
     });
     child.on("close", (code) => {
       if (timeout) clearTimeout(timeout);
       options.signal?.removeEventListener("abort", abort);
+      // Keep an armed escalation timer alive: descendants with detached stdio can
+      // outlive the direct child while remaining in its process group.
+      const stdout = decodeBoundedProcessOutput(stdoutChunks, stdoutBytes);
+      const stderr = decodeBoundedProcessOutput(stderrChunks, stderrBytes);
+      if (outputExceeded) {
+        resolve({
+          stdout,
+          stderr: appendBoundedProcessDiagnostic(
+            stderr,
+            RUNTIME_PROCESS_OUTPUT_LIMIT_DIAGNOSTIC,
+          ),
+          exitCode: 125,
+        });
+        return;
+      }
       if (timedOut) {
         resolve({ stdout, stderr: stderr || "Command timed out", exitCode: 124 });
         return;
@@ -1201,6 +1372,87 @@ function runSpawnedProcess(options: {
       resolve({ stdout, stderr, exitCode: code ?? 1 });
     });
   });
+}
+
+function decodeBoundedProcessOutput(chunks: Buffer[], byteLength: number): string {
+  const decoder = new StringDecoder("utf8");
+  const completeUtf8Prefix = decoder.write(Buffer.concat(chunks, byteLength));
+  return truncateUtf8(
+    completeUtf8Prefix,
+    DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES,
+  ).text;
+}
+
+function appendBoundedProcessDiagnostic(stderr: string, diagnostic: string): string {
+  const diagnosticBytes = Buffer.byteLength(diagnostic, "utf-8");
+  const separatorBytes = stderr ? 1 : 0;
+  const availableStderrBytes = Math.max(
+    0,
+    DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES - diagnosticBytes - separatorBytes,
+  );
+  const boundedStderr = truncateUtf8(stderr, availableStderrBytes).text;
+  const separator = boundedStderr && !boundedStderr.endsWith("\n") ? "\n" : "";
+  return `${boundedStderr}${separator}${diagnostic}`;
+}
+
+function signalSpawnedProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid && process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // Fall through to the direct child when a process group is unavailable.
+    }
+  }
+  signalDirectProcess(child, signal);
+}
+
+function signalDirectProcess(child: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    child.kill(signal);
+  } catch {
+    // The process may already have exited between the containment check and signal.
+  }
+}
+
+function closeSpawnedProcessOutput(child: ChildProcess): void {
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+}
+
+function forceKillWindowsProcessTree(child: ChildProcess): void {
+  if (!child.pid) {
+    signalDirectProcess(child, "SIGKILL");
+    return;
+  }
+  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows";
+  const taskkillPath = path.join(systemRoot, "System32", "taskkill.exe");
+  try {
+    const killer = spawn(taskkillPath, ["/pid", String(child.pid), "/t", "/f"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    const fallbackTimeout = setTimeout(() => {
+      signalDirectProcess(child, "SIGKILL");
+      closeSpawnedProcessOutput(child);
+      signalDirectProcess(killer, "SIGKILL");
+    }, DEFAULT_RUNTIME_PROCESS_TERMINATION_GRACE_MS);
+    killer.once("error", () => {
+      clearTimeout(fallbackTimeout);
+      signalDirectProcess(child, "SIGKILL");
+      closeSpawnedProcessOutput(child);
+    });
+    killer.once("close", (code) => {
+      clearTimeout(fallbackTimeout);
+      if (code !== 0) {
+        signalDirectProcess(child, "SIGKILL");
+        closeSpawnedProcessOutput(child);
+      }
+    });
+  } catch {
+    signalDirectProcess(child, "SIGKILL");
+    closeSpawnedProcessOutput(child);
+  }
 }
 
 function normalizeOutputLimit(value: number | undefined): number {
@@ -1328,8 +1580,19 @@ function safeJsonOrString(value: unknown): string {
 function truncateUtf8(value: string, limitBytes: number): { text: string; truncated: boolean } {
   const buffer = Buffer.from(value, "utf-8");
   if (buffer.byteLength <= limitBytes) return { text: value, truncated: false };
+  let boundary = limitBytes;
+  // Buffer.from(string) is valid UTF-8. If the first excluded byte is a
+  // continuation byte, walk back to the start of that partial code point so
+  // decoding cannot insert a three-byte U+FFFD beyond the requested budget.
+  while (
+    boundary > 0
+    && boundary < buffer.byteLength
+    && (buffer[boundary]! & 0xc0) === 0x80
+  ) {
+    boundary -= 1;
+  }
   return {
-    text: buffer.subarray(0, limitBytes).toString("utf-8"),
+    text: buffer.subarray(0, boundary).toString("utf-8"),
     truncated: true,
   };
 }

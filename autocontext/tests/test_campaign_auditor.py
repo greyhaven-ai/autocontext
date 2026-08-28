@@ -4,6 +4,7 @@ import concurrent.futures
 import json
 import multiprocessing
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -28,6 +29,17 @@ def _pid_exists(process_id: int) -> bool:
     return True
 
 
+def _kill_recorded_process(pid_path: Path) -> None:
+    try:
+        process_id = int(pid_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return
+    try:
+        os.kill(process_id, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 class _FakeClient:
     def __init__(
         self,
@@ -43,8 +55,10 @@ class _FakeClient:
         self.finished_event = finished_event
         self.calls = 0
         self.prompts: list[str] = []
+        self.worker_threads: list[threading.Thread] = []
 
     def generate(self, **kwargs: Any) -> Any:
+        self.worker_threads.append(threading.current_thread())
         self.calls += 1
         self.prompts.append(kwargs["prompt"])
         if self.started_event is not None:
@@ -59,6 +73,21 @@ class _FakeClient:
         finally:
             if self.finished_event is not None:
                 self.finished_event.set()
+
+    def wait_for_worker_shutdown(
+        self,
+        *,
+        expected_count: int = 1,
+        timeout: float = 1.0,
+    ) -> None:
+        if self.finished_event is not None:
+            assert self.finished_event.wait(timeout=timeout)
+        deadline = time.monotonic() + timeout
+        workers = tuple(self.worker_threads)
+        assert len(workers) >= expected_count
+        for worker in workers:
+            worker.join(max(0.0, deadline - time.monotonic()))
+        assert not any(worker.is_alive() for worker in workers)
 
 
 class _MalformedClient(_FakeClient):
@@ -308,7 +337,8 @@ def test_leakage_and_infrastructure_misclassification_are_detected(tmp_path: Pat
 def test_timeout_falls_back_without_changing_deterministic_state(tmp_path: Path) -> None:
     from autocontext.audit.campaign_auditor import CampaignAuditor, CampaignAuditStore
 
-    client = _FakeClient(delay=0.05)
+    finished = threading.Event()
+    client = _FakeClient(delay=0.05, finished_event=finished)
     auditor = CampaignAuditor(
         _config(timeout_seconds=0.001),
         client=client,
@@ -321,12 +351,14 @@ def test_timeout_falls_back_without_changing_deterministic_state(tmp_path: Path)
     assert audit is not None and audit.status == "timed_out"
     assert audit.policy_outcome == "advisory"
     assert deterministic_state == {"score": 0.8, "active_bundle": "sha256:bundle"}
+    client.wait_for_worker_shutdown()
 
 
 def test_transient_timeout_is_not_reused_as_a_permanent_cache_entry(tmp_path: Path) -> None:
     from autocontext.audit.campaign_auditor import CampaignAuditor, CampaignAuditStore
 
-    client = _FakeClient(delay=0.05)
+    finished = threading.Event()
+    client = _FakeClient(delay=0.05, finished_event=finished)
     auditor = CampaignAuditor(
         _config(timeout_seconds=0.001),
         client=client,
@@ -335,6 +367,8 @@ def test_transient_timeout_is_not_reused_as_a_permanent_cache_entry(tmp_path: Pa
 
     packet = _packet()
     first = auditor.review(packet)
+    client.wait_for_worker_shutdown()
+    finished.clear()
     second = auditor.review(packet)
     restored = auditor.store.read_by_fingerprint(packet.campaign_id, packet.fingerprint)
 
@@ -342,6 +376,7 @@ def test_transient_timeout_is_not_reused_as_a_permanent_cache_entry(tmp_path: Pa
     assert second is not None and second.status == "timed_out"
     assert client.calls == 2
     assert restored is not None and restored.audit == second
+    client.wait_for_worker_shutdown(expected_count=2)
 
 
 def test_legacy_evidence_lookup_prefers_completed_retry_after_timeout(tmp_path: Path) -> None:
@@ -351,7 +386,10 @@ def test_legacy_evidence_lookup_prefers_completed_retry_after_timeout(tmp_path: 
     config = _config(timeout_seconds=0.001)
     packet = _packet()
 
-    timed_out = CampaignAuditor(config, client=_FakeClient(delay=0.05), store=store).review(packet)
+    finished = threading.Event()
+    legacy_client = _FakeClient(delay=0.05, finished_event=finished)
+    timed_out = CampaignAuditor(config, client=legacy_client, store=store).review(packet)
+    legacy_client.wait_for_worker_shutdown()
     completed = CampaignAuditor(config, client=_FakeClient(), store=store).review(packet)
     restored = store.read_by_fingerprint(packet.campaign_id, packet.fingerprint)
 
@@ -521,9 +559,11 @@ def test_local_submission_failure_releases_pre_dispatch_budget_claim(
 def test_failure_path_applies_configured_safe_pause_policy(tmp_path: Path) -> None:
     from autocontext.audit.campaign_auditor import CampaignAuditor, CampaignAuditStore
 
+    finished = threading.Event()
+    client = _FakeClient(delay=0.05, finished_event=finished)
     auditor = CampaignAuditor(
         _config(timeout_seconds=0.001, policy="pause_recommended_on_critical"),
-        client=_FakeClient(delay=0.05),
+        client=client,
         store=CampaignAuditStore(tmp_path),
     )
 
@@ -531,6 +571,7 @@ def test_failure_path_applies_configured_safe_pause_policy(tmp_path: Path) -> No
 
     assert audit is not None and audit.status == "timed_out"
     assert audit.policy_outcome == "safe_pause_recommended"
+    client.wait_for_worker_shutdown()
 
 
 def test_packet_strips_free_text_and_refuses_declared_holdout_answers(tmp_path: Path) -> None:
@@ -714,7 +755,7 @@ def test_audit_checkpoint_cancellation_is_terminal_for_that_evidence_decision(tm
     assert canceled.model_call_attempted is True
     assert not canceler.is_alive()
     assert store.call_count(canceled.campaign_id) == 1
-    assert finished.wait(timeout=1.0)
+    client.wait_for_worker_shutdown()
 
 
 def test_pre_dispatch_cancellation_spends_no_audit_budget(tmp_path: Path) -> None:
@@ -901,12 +942,14 @@ def test_process_adapter_reaps_child_after_response_with_live_client_thread() ->
         temperature=0.0,
         role="campaign_auditor",
     )
+    try:
+        response = handle.result(timeout=1.0)
 
-    response = handle.result(timeout=1.0)
-
-    assert isinstance(handle, ProcessAuditorCallHandle)
-    assert response.text
-    assert not handle.is_alive
+        assert isinstance(handle, ProcessAuditorCallHandle)
+        assert response.text
+        assert not handle.is_alive
+    finally:
+        handle.cancel()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="process-group isolation is POSIX-only")
@@ -922,13 +965,16 @@ def test_process_adapter_reaps_provider_descendant_after_response(tmp_path: Path
         temperature=0.0,
         role="campaign_auditor",
     )
+    try:
+        response = handle.result(timeout=2.0)
+        descendant_pid = int(pid_path.read_text(encoding="utf-8"))
 
-    response = handle.result(timeout=2.0)
-    descendant_pid = int(pid_path.read_text(encoding="utf-8"))
-
-    assert response.text
-    assert not handle.is_alive
-    assert not _pid_exists(descendant_pid)
+        assert response.text
+        assert not handle.is_alive
+        assert not _pid_exists(descendant_pid)
+    finally:
+        handle.cancel()
+        _kill_recorded_process(pid_path)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="process-group isolation is POSIX-only")
@@ -944,16 +990,20 @@ def test_process_adapter_cancel_reaps_provider_descendant(tmp_path: Path) -> Non
         temperature=0.0,
         role="campaign_auditor",
     )
-    deadline = time.monotonic() + 2.0
-    while not pid_path.exists() and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert pid_path.exists()
-    descendant_pid = int(pid_path.read_text(encoding="utf-8"))
-    assert _pid_exists(descendant_pid)
+    try:
+        deadline = time.monotonic() + 2.0
+        while not pid_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert pid_path.exists()
+        descendant_pid = int(pid_path.read_text(encoding="utf-8"))
+        assert _pid_exists(descendant_pid)
 
-    assert handle.cancel() is True
-    assert not handle.is_alive
-    assert not _pid_exists(descendant_pid)
+        assert handle.cancel() is True
+        assert not handle.is_alive
+        assert not _pid_exists(descendant_pid)
+    finally:
+        handle.cancel()
+        _kill_recorded_process(pid_path)
 
 
 def test_process_adapter_fails_closed_before_dispatch_without_process_groups(

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import re
-
+from autocontext.scenarios.custom.codegen_security import generated_class_name
 from autocontext.scenarios.custom.simulation_spec import SimulationSpec
 
 
 def _class_name(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", name)
-    return "".join(part.capitalize() for part in parts if part) + "Simulation"
+    return generated_class_name(name, "Simulation")
 
 
 def generate_simulation_class(spec: SimulationSpec, name: str) -> str:
@@ -104,7 +102,7 @@ class {class_name}(SimulationInterface):
     def is_terminal(self, state: dict[str, Any]) -> bool:
         required = set({required_actions!r})
         completed = set(state.get("completed_actions", []))
-        return required.issubset(completed) or state.get("step", 0) >= {spec.max_steps}
+        return required.issubset(completed) or state.get("step", 0) >= {spec.max_steps!r}
 
     def evaluate_trace(self, trace: ActionTrace, final_state: dict[str, Any]) -> SimulationResult:
         required = set({required_actions!r})
@@ -133,5 +131,5 @@ class {class_name}(SimulationInterface):
         return "Evaluate on completion, correct dependency ordering, and recovery quality."
 
     def max_steps(self) -> int:
-        return {spec.max_steps}
+        return {spec.max_steps!r}
 '''

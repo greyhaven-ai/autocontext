@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
+from autocontext.security.confined_files import ConfinedFileTooLarge
+from autocontext.storage.artifact_harness_codegen import MAX_HARNESS_CONTEXT_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -293,11 +295,16 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str, source_run_id:
 
     # Collect harness files if present
     harness: dict[str, str] = {}
+    harness_bytes = 0
     harness_names = ctx.artifacts.list_harness(scenario_name)
     for h_name in harness_names:
-        h_path = ctx.artifacts.harness_dir(scenario_name) / f"{h_name}.py"
-        if h_path.exists():
-            harness[h_name] = h_path.read_text(encoding="utf-8")
+        source = ctx.artifacts.read_harness(scenario_name, h_name)
+        if source is None:
+            continue
+        harness_bytes += len(source.encode("utf-8"))
+        if harness_bytes > MAX_HARNESS_CONTEXT_BYTES:
+            raise ConfinedFileTooLarge("exported harness source exceeds its byte limit")
+        harness[h_name] = source
 
     return SkillPackage(
         scenario_name=scenario_name,

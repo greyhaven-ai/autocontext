@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from autocontext.security.confined_files import ConfinedFileTooLarge, ConfinedPathError
+from autocontext.storage.artifact_harness_codegen import MAX_HARNESS_SOURCE_BYTES
 from autocontext.storage.artifacts import ArtifactStore
 
 
@@ -85,6 +87,73 @@ class TestWriteHarnessVersioned:
         with pytest.raises(ValueError, match="invalid harness name"):
             store.write_harness_versioned("grid_ctf", name, "code", generation=1)
 
+    def test_rejects_oversized_source(self, store: ArtifactStore) -> None:
+        with pytest.raises(ConfinedFileTooLarge, match="byte limit"):
+            store.write_harness_versioned(
+                "grid_ctf",
+                "validate_move",
+                "x" * (MAX_HARNESS_SOURCE_BYTES + 1),
+                generation=1,
+            )
+
+    def test_rejects_harness_directory_symlink(self, store: ArtifactStore, tmp_path: Path) -> None:
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        scenario_dir = store.knowledge_root / "grid_ctf"
+        scenario_dir.mkdir(parents=True)
+        (scenario_dir / "harness").symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ConfinedPathError):
+            store.write_harness_versioned("grid_ctf", "validate_move", "code", generation=1)
+
+        assert not (outside / "validate_move.py").exists()
+
+    def test_rejects_current_file_symlink(self, store: ArtifactStore, tmp_path: Path) -> None:
+        outside = tmp_path / "outside.py"
+        outside.write_text("secret", encoding="utf-8")
+        harness_dir = store.harness_dir("grid_ctf")
+        harness_dir.mkdir(parents=True)
+        (harness_dir / "validate_move.py").symlink_to(outside)
+
+        with pytest.raises(ConfinedPathError):
+            store.write_harness_versioned("grid_ctf", "validate_move", "replacement", generation=1)
+
+        assert outside.read_text(encoding="utf-8") == "secret"
+
+    def test_rejects_archive_directory_symlink_before_replacing_current(
+        self,
+        store: ArtifactStore,
+        tmp_path: Path,
+    ) -> None:
+        store.write_harness_versioned("grid_ctf", "validate_move", "v1", generation=1)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (store.harness_dir("grid_ctf") / "_archive").symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ConfinedPathError):
+            store.write_harness_versioned("grid_ctf", "validate_move", "v2", generation=2)
+
+        assert store.read_harness("grid_ctf", "validate_move") == "v1"
+        assert list(outside.iterdir()) == []
+
+    def test_rejects_archive_file_symlink_before_replacing_current(
+        self,
+        store: ArtifactStore,
+        tmp_path: Path,
+    ) -> None:
+        store.write_harness_versioned("grid_ctf", "validate_move", "v1", generation=1)
+        outside = tmp_path / "outside.py"
+        outside.write_text("secret", encoding="utf-8")
+        archive_dir = store.harness_dir("grid_ctf") / "_archive"
+        archive_dir.mkdir()
+        (archive_dir / "v0001_validate_move.py").symlink_to(outside)
+
+        with pytest.raises(ConfinedPathError):
+            store.write_harness_versioned("grid_ctf", "validate_move", "v2", generation=2)
+
+        assert store.read_harness("grid_ctf", "validate_move") == "v1"
+        assert outside.read_text(encoding="utf-8") == "secret"
+
 
 class TestRollbackHarness:
     """rollback_harness restores previous versions from archive."""
@@ -131,10 +200,32 @@ class TestRollbackHarness:
         r2 = store.rollback_harness("grid_ctf", "validate_move")
         assert r2 == "v1"
 
+    def test_rollback_reads_legacy_flat_archive_name(self, store: ArtifactStore) -> None:
+        store.write_harness_versioned("grid_ctf", "validate_move", "current", generation=2)
+        archive_dir = store.harness_dir("grid_ctf") / "_archive"
+        archive_dir.mkdir()
+        (archive_dir / "v0001.py").write_text("legacy", encoding="utf-8")
+
+        assert store.rollback_harness("grid_ctf", "validate_move") == "legacy"
+
     @pytest.mark.parametrize("name", ["", "../escape", "bad/name", "contains space", "123abc"])
     def test_rejects_invalid_harness_name(self, store: ArtifactStore, name: str) -> None:
         with pytest.raises(ValueError, match="invalid harness name"):
             store.rollback_harness("grid_ctf", name)
+
+    def test_rollback_rejects_current_file_symlink(self, store: ArtifactStore, tmp_path: Path) -> None:
+        store.write_harness_versioned("grid_ctf", "validate_move", "v1", generation=1)
+        store.write_harness_versioned("grid_ctf", "validate_move", "v2", generation=2)
+        current = store.harness_dir("grid_ctf") / "validate_move.py"
+        current.unlink()
+        outside = tmp_path / "outside.py"
+        outside.write_text("secret", encoding="utf-8")
+        current.symlink_to(outside)
+
+        with pytest.raises(ConfinedPathError):
+            store.rollback_harness("grid_ctf", "validate_move")
+
+        assert outside.read_text(encoding="utf-8") == "secret"
 
 
 class TestGetHarnessVersion:

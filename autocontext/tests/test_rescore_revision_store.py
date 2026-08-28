@@ -39,7 +39,7 @@ def _seed_generation(store: SQLiteStore) -> None:
 
 
 def _read_revisions(store: SQLiteStore, run_id: str, generation_index: int) -> list[dict[str, object]]:
-    with store.connect() as conn:
+    with store.connection() as conn:
         rows = conn.execute(
             "SELECT * FROM generation_score_revisions WHERE run_id = ? AND generation_index = ? ORDER BY id",
             (run_id, generation_index),

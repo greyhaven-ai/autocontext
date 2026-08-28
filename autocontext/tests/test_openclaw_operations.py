@@ -6,6 +6,7 @@ and corresponding REST endpoints.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -40,6 +41,7 @@ def tool_ctx(tmp_path: Path) -> MtsToolContext:
         knowledge_root=tmp_path / "knowledge",
         skills_root=tmp_path / "skills",
         claude_skills_path=tmp_path / ".claude" / "skills",
+        unsafe_openclaw_executable_artifacts_enabled=True,
     )
     return MtsToolContext(settings)
 
@@ -58,6 +60,21 @@ def _seed_artifact(tool_ctx: MtsToolContext) -> None:
         provenance=prov,
     )
     (artifacts_dir / f"{h.id}.json").write_text(h.model_dump_json(), encoding="utf-8")
+
+
+def _policy_payload(artifact_id: str) -> dict[str, Any]:
+    provenance = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
+    artifact = PolicyArtifact(
+        id="artifact-1",
+        name="safe_policy",
+        version=1,
+        scenario="grid_ctf",
+        source_code="def policy(state): return {}\n",
+        provenance=provenance,
+    )
+    payload: dict[str, Any] = artifact.model_dump()
+    payload["id"] = artifact_id
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +182,39 @@ class TestValidateStrategyOp:
         assert result["harness_loaded"] == [f"openclaw_{harness.id}"]
         assert any("aggression must be <= 0.6" in err for err in result["harness_errors"])
 
+    def test_default_settings_do_not_execute_preexisting_harness_artifacts(self, tmp_path: Path) -> None:
+        from autocontext.mcp.tools import validate_strategy_against_harness
+
+        settings = AppSettings(
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+            harness_validators_enabled=True,
+        )
+        ctx = MtsToolContext(settings)
+        artifacts_dir = settings.knowledge_root / "_openclaw_artifacts"
+        artifacts_dir.mkdir(parents=True)
+        prov = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
+        harness = HarnessArtifact(
+            name="must_not_run",
+            version=1,
+            scenario="grid_ctf",
+            source_code="def validate_strategy(strategy, scenario):\n    return False, ['executed']\n",
+            provenance=prov,
+        )
+        (artifacts_dir / f"{harness.id}.json").write_text(harness.model_dump_json(), encoding="utf-8")
+
+        result = validate_strategy_against_harness(
+            scenario_name="grid_ctf",
+            strategy={"aggression": 0.5, "defense": 0.5, "path_bias": 0.5},
+            ctx=ctx,
+        )
+
+        assert result["valid"] is True
+        assert result["harness_loaded"] == []
+        assert result["harness_errors"] == []
+
 
 # ---------------------------------------------------------------------------
 # MCP tool: mts_publish_artifact
@@ -172,6 +222,23 @@ class TestValidateStrategyOp:
 
 
 class TestPublishArtifact:
+    def test_executable_artifacts_are_disabled_by_default(self, tmp_path: Path) -> None:
+        from autocontext.mcp.tools import publish_artifact
+
+        settings = AppSettings(
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+        )
+        ctx = MtsToolContext(settings)
+
+        result = publish_artifact(ctx, _policy_payload("artifact-1"))
+
+        assert "error" in result
+        assert "no isolated execution backend" in result["error"]
+        assert not (settings.knowledge_root / "_openclaw_artifacts").exists()
+
     def test_publish_harness_artifact(self, tool_ctx: MtsToolContext) -> None:
         from autocontext.mcp.tools import publish_artifact
 
@@ -240,6 +307,106 @@ class TestPublishArtifact:
 
         assert tool_ctx.artifacts.read_harness("grid_ctf", f"openclaw_{h.id}") is not None
 
+    @pytest.mark.parametrize(
+        "artifact_id",
+        [
+            "",
+            ".",
+            "..",
+            ".hidden",
+            "artifact.json",
+            "../escape",
+            "nested/escape",
+            r"nested\escape",
+            r"C:\escape",
+            "/absolute/path",
+            "_leading",
+            "-leading",
+            "a" * 129,
+        ],
+    )
+    def test_publish_rejects_unsafe_artifact_ids(
+        self,
+        tool_ctx: MtsToolContext,
+        artifact_id: str,
+    ) -> None:
+        from autocontext.mcp.tools import publish_artifact
+
+        result = publish_artifact(tool_ctx, _policy_payload(artifact_id))
+
+        assert "error" in result
+        assert not (tool_ctx.settings.knowledge_root / "_openclaw_artifacts").exists()
+
+    def test_publish_absolute_artifact_id_cannot_write_outside_store(
+        self,
+        tool_ctx: MtsToolContext,
+        tmp_path: Path,
+    ) -> None:
+        from autocontext.mcp.tools import publish_artifact
+
+        outside_stem = tmp_path / "outside" / "overwritten"
+        outside_stem.parent.mkdir()
+
+        result = publish_artifact(tool_ctx, _policy_payload(str(outside_stem)))
+
+        assert "error" in result
+        assert not outside_stem.with_suffix(".json").exists()
+
+    def test_publish_rejects_artifact_store_symlink_escape(
+        self,
+        tool_ctx: MtsToolContext,
+        tmp_path: Path,
+    ) -> None:
+        from autocontext.mcp.tools import publish_artifact
+
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        tool_ctx.settings.knowledge_root.mkdir(parents=True, exist_ok=True)
+        (tool_ctx.settings.knowledge_root / "_openclaw_artifacts").symlink_to(
+            outside_dir,
+            target_is_directory=True,
+        )
+
+        result = publish_artifact(tool_ctx, _policy_payload("artifact-1"))
+
+        assert "error" in result
+        assert list(outside_dir.iterdir()) == []
+
+    def test_publish_rejects_artifact_file_symlink_escape(
+        self,
+        tool_ctx: MtsToolContext,
+        tmp_path: Path,
+    ) -> None:
+        from autocontext.mcp.tools import publish_artifact
+
+        artifacts_dir = tool_ctx.settings.knowledge_root / "_openclaw_artifacts"
+        artifacts_dir.mkdir(parents=True)
+        outside_file = tmp_path / "outside.json"
+        outside_file.write_text("sentinel", encoding="utf-8")
+        (artifacts_dir / "artifact-1.json").symlink_to(outside_file)
+
+        result = publish_artifact(tool_ctx, _policy_payload("artifact-1"))
+
+        assert "error" in result
+        assert outside_file.read_text(encoding="utf-8") == "sentinel"
+
+    def test_publish_rejects_in_store_artifact_symlink_alias(
+        self,
+        tool_ctx: MtsToolContext,
+    ) -> None:
+        from autocontext.mcp.tools import publish_artifact
+
+        artifacts_dir = tool_ctx.settings.knowledge_root / "_openclaw_artifacts"
+        artifacts_dir.mkdir(parents=True)
+        target = artifacts_dir / "artifact-2.json"
+        target.write_text("sentinel", encoding="utf-8")
+        (artifacts_dir / "artifact-1.json").symlink_to(target)
+
+        result = publish_artifact(tool_ctx, _policy_payload("artifact-1"))
+
+        assert "error" in result
+        assert target.read_text(encoding="utf-8") == "sentinel"
+
 
 # ---------------------------------------------------------------------------
 # MCP tool: mts_fetch_artifact
@@ -280,6 +447,46 @@ class TestFetchArtifact:
         fetched = fetch_artifact(tool_ctx, pub_result["artifact_id"])
         assert fetched["name"] == "roundtrip_test"
         assert fetched["source_code"] == "def check(): pass\n"
+
+    @pytest.mark.parametrize(
+        "artifact_id",
+        [
+            "",
+            ".",
+            "..",
+            ".hidden",
+            "artifact.json",
+            "../escape",
+            "nested/escape",
+            r"nested\escape",
+            "/absolute",
+        ],
+    )
+    def test_fetch_rejects_unsafe_artifact_ids(self, tool_ctx: MtsToolContext, artifact_id: str) -> None:
+        from autocontext.mcp.tools import fetch_artifact
+
+        result = fetch_artifact(tool_ctx, artifact_id)
+
+        assert "error" in result
+        assert "Invalid artifact id" in result["error"]
+
+    def test_fetch_rejects_artifact_file_symlink_escape(
+        self,
+        tool_ctx: MtsToolContext,
+        tmp_path: Path,
+    ) -> None:
+        from autocontext.mcp.tools import fetch_artifact
+
+        artifacts_dir = tool_ctx.settings.knowledge_root / "_openclaw_artifacts"
+        artifacts_dir.mkdir(parents=True)
+        outside_file = tmp_path / "outside.json"
+        outside_file.write_text('{"name": "escaped"}', encoding="utf-8")
+        (artifacts_dir / "artifact-1.json").symlink_to(outside_file)
+
+        result = fetch_artifact(tool_ctx, "artifact-1")
+
+        assert "error" in result
+        assert result.get("name") != "escaped"
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +537,42 @@ class TestListArtifacts:
         listed = list_artifacts(tool_ctx, artifact_type="policy")
         assert len(listed) == 1
         assert listed[0]["name"] == "p1"
+
+    def test_list_ignores_artifact_file_symlink_escape(
+        self,
+        tool_ctx: MtsToolContext,
+        tmp_path: Path,
+    ) -> None:
+        from autocontext.mcp.tools import list_artifacts
+
+        artifacts_dir = tool_ctx.settings.knowledge_root / "_openclaw_artifacts"
+        artifacts_dir.mkdir(parents=True)
+        outside_file = tmp_path / "outside.json"
+        outside_file.write_text(
+            '{"id":"artifact-1","name":"escaped","artifact_type":"policy"}',
+            encoding="utf-8",
+        )
+        (artifacts_dir / "artifact-1.json").symlink_to(outside_file)
+
+        assert list_artifacts(tool_ctx) == []
+
+    def test_hyphenated_harness_id_uses_safe_module_name(self, tool_ctx: MtsToolContext) -> None:
+        from autocontext.mcp.tools import publish_artifact
+
+        prov = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
+        harness = HarnessArtifact(
+            id="artifact-1",
+            name="h1",
+            version=1,
+            scenario="grid_ctf",
+            source_code="def validate_strategy(strategy, scenario):\n    return True, []\n",
+            provenance=prov,
+        )
+
+        result = publish_artifact(tool_ctx, harness.model_dump())
+
+        assert result["status"] == "published"
+        assert tool_ctx.artifacts.read_harness("grid_ctf", "openclaw_artifact_1") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +710,7 @@ class TestRESTEndpoints:
         data = resp.json()
         assert data["valid"] is True
 
-    def test_publish_artifact_endpoint(self, client: TestClient) -> None:
+    def test_publish_executable_artifact_endpoint_is_disabled_by_default(self, client: TestClient) -> None:
         prov = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
         h = HarnessArtifact(
             name="rest_test",
@@ -480,9 +723,8 @@ class TestRESTEndpoints:
             "/api/openclaw/artifacts",
             json=h.model_dump(mode="json"),
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "published"
+        assert resp.status_code == 400
+        assert "no isolated execution backend" in resp.json()["detail"]
 
     def test_list_artifacts_endpoint(self, client: TestClient) -> None:
         resp = client.get("/api/openclaw/artifacts")
@@ -516,12 +758,14 @@ class TestRESTEndpoints:
             knowledge_root=tmp_path / "knowledge_one",
             skills_root=tmp_path / "skills_one",
             claude_skills_path=tmp_path / ".claude" / "skills_one",
+            unsafe_openclaw_executable_artifacts_enabled=True,
         )
         settings_two = AppSettings(
             runs_root=tmp_path / "runs_two",
             knowledge_root=tmp_path / "knowledge_two",
             skills_root=tmp_path / "skills_two",
             claude_skills_path=tmp_path / ".claude" / "skills_two",
+            unsafe_openclaw_executable_artifacts_enabled=True,
         )
 
         monkeypatch.setattr(app_module, "load_settings", lambda: settings_one)
