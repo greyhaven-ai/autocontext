@@ -62,7 +62,7 @@ jobs:
           --build-constraints ../infra/docker/build-requirements.lock
           --require-hashes
       - name: Upload Python dist
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-dist
           path: |
@@ -70,7 +70,7 @@ jobs:
             autocontext/dist/*.tar.gz
           retention-days: 7
       - name: Upload Python SBOM
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-sbom
           path: autocontext/autocontext-python.cdx.json
