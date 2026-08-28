@@ -14,6 +14,14 @@ export function buildRunEventStatePatch(
       return {
         runId: (payload.run_id as string) ?? state.runId,
         scenario: (payload.scenario as string) ?? state.scenario,
+        minimumGenerations: numberField(
+          payload.minimum_generations,
+          state.minimumGenerations,
+        ),
+        targetGenerations: numberField(
+          payload.target_generations,
+          state.targetGenerations,
+        ),
         phase: "run",
       };
     case "generation_started":
@@ -41,6 +49,10 @@ export function buildRunEventStatePatch(
     default:
       return null;
   }
+}
+
+function numberField(value: unknown, fallback: number | null | undefined): number | null | undefined {
+  return typeof value === "number" ? value : fallback;
 }
 
 export function mergeRunManagerState(

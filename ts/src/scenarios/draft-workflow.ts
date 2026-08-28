@@ -139,7 +139,14 @@ export function buildScenarioPreviewInfo(
     "max_rounds",
   );
   if (maxRounds !== undefined) {
-    constraints.push(`Improvement loop: up to ${maxRounds} attempts.`);
+    const minRounds = readFiniteNumberValue(
+      draft.preview.spec,
+      "minRounds",
+      "min_rounds",
+    ) ?? 1;
+    constraints.push(minRounds > 1
+      ? `Improvement loop: ${minRounds}-${maxRounds} attempts.`
+      : `Improvement loop: up to ${maxRounds} attempts.`);
   }
   const qualityThreshold = readFiniteNumberValue(
     draft.preview.spec,

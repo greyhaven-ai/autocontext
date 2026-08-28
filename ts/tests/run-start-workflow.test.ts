@@ -218,7 +218,7 @@ describe("run start workflow", () => {
     expect(createRunner).toHaveBeenCalledWith(
       expect.objectContaining({ agentProvider: "deterministic" }),
     );
-    expect(run).toHaveBeenCalledWith("run_1", 2);
+    expect(run).toHaveBeenCalledWith("run_1", 2, 1);
     expect(close).toHaveBeenCalledOnce();
     expect(closeProviderBundle).toHaveBeenCalledOnce();
     expect(result).toBeUndefined();
@@ -462,6 +462,7 @@ describe("run start workflow", () => {
         spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
       },
       generations: 2,
+      minimumGenerations: 1,
       hookBus: expect.any(HookBus),
       onProgress: expect.any(Function),
     });
@@ -993,6 +994,7 @@ describe("run start workflow", () => {
       1,
       "agent_task",
       "anthropic",
+      1,
     );
     expect(upsertGeneration).toHaveBeenCalledWith(
       "run_saved_artifact",

@@ -61,4 +61,18 @@ describe("shared CLI wire fixtures", () => {
     expect(JSON.parse(renderRunShow(show.run, [show.generation], { json: true }))).toEqual(show);
     expect(JSON.parse(renderStatusResult({ pendingCount: 3 }))).toEqual(queue);
   });
+
+  it("omits the default minimum while exposing an opted-in floor", () => {
+    const status = fixture<{
+      run: RunInspectionRun;
+      latest_generation: RunInspectionGeneration;
+    }>("run-status-v1.json");
+    const defaultRun = { ...status.run, minimum_generations: 1 };
+    const optedInRun = { ...status.run, minimum_generations: 2 };
+
+    expect(JSON.parse(renderRunStatusJsonLine(defaultRun, [status.latest_generation])).run)
+      .not.toHaveProperty("minimum_generations");
+    expect(JSON.parse(renderRunStatusJsonLine(optedInRun, [status.latest_generation])).run)
+      .toHaveProperty("minimum_generations", 2);
+  });
 });

@@ -778,6 +778,12 @@
             "title": "Scenario",
             "type": "string"
           },
+          "minimum_generations": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Minimum Generations",
+            "type": "integer"
+          },
           "generations": {
             "title": "Generations",
             "type": "integer"
@@ -1058,6 +1064,32 @@
             "default": 0,
             "title": "Generation",
             "type": "integer"
+          },
+          "minimum_generations": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Minimum Generations"
+          },
+          "generations": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Generations"
           },
           "phase": {
             "default": "",
@@ -1520,6 +1552,19 @@
             "minLength": 1,
             "title": "Scenario",
             "type": "string"
+          },
+          "minimum_generations": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Minimum Generations"
           },
           "generations": {
             "exclusiveMinimum": 0,

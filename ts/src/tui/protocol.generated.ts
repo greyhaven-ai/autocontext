@@ -73,6 +73,8 @@ export const StateMsgSchema = z.object({
   type: z.literal("state"),
   paused: z.boolean(),
   generation: z.number().int().optional(),
+  minimum_generations: z.number().int().gte(1).optional().nullable(),
+  generations: z.number().int().gte(1).optional().nullable(),
   phase: z.string().optional(),
 }).strict();
 
@@ -104,6 +106,7 @@ export const RunAcceptedMsgSchema = z.object({
   occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
   type: z.literal("run_accepted"),
   scenario: z.string(),
+  minimum_generations: z.number().int().gte(1).optional(),
   generations: z.number().int(),
   command_id: z.string().optional().nullable(),
 }).strict();
@@ -223,6 +226,7 @@ export const StartRunCmdSchema = z.object({
   command_id: z.string().min(1).max(200).optional().nullable(),
   type: z.literal("start_run"),
   scenario: z.string().min(1).max(128),
+  minimum_generations: z.number().int().gte(1).optional().nullable(),
   generations: z.number().int().gt(0).lte(100),
   require_playbook_approval: z.boolean().optional(),
 }).strict();

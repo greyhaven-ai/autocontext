@@ -73,10 +73,15 @@ def evaluate_cost_effectiveness(
     score_delta: float,
     max_cost_per_delta: float = 10.0,
 ) -> dict[str, Any]:
-    """Compute marginal improvement per dollar."""
+    """Compute marginal improvement per dollar.
+
+    ``cost_per_delta_point`` is ``None`` when there is no positive score
+    delta, because the ratio is undefined and must remain JSON-safe for event
+    transport.
+    """
     if score_delta <= 0:
         return {
-            "cost_per_delta_point": float("inf"),
+            "cost_per_delta_point": None,
             "efficient": False,
             "cost_usd": cost_usd,
             "score_delta": score_delta,

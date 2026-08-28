@@ -116,7 +116,7 @@ const EVENT_PAYLOAD_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
   run_failed: ["run_id", "generation", "error"],
   run_stopped: ["run_id", "reason", "command_id", "completed_generations", "best_score"],
-  run_started: ["run_id", "scenario", "target_generations"],
+  run_started: ["run_id", "scenario", "minimum_generations", "target_generations"],
   tournament_completed: [
     "run_id",
     "generation",
@@ -196,6 +196,8 @@ function sanitizeRunTranscriptMessageInternal(message: ServerMessage): ServerMes
         type: "state",
         paused: message.paused,
         generation: message.generation,
+        minimum_generations: message.minimum_generations,
+        generations: message.generations,
         phase: message.phase ? sanitizeRunTranscriptText(message.phase) : undefined,
       };
     case "run_accepted":
@@ -203,6 +205,7 @@ function sanitizeRunTranscriptMessageInternal(message: ServerMessage): ServerMes
         type: "run_accepted",
         run_id: sanitizeRunTranscriptText(message.run_id),
         scenario: sanitizeRunTranscriptText(message.scenario),
+        minimum_generations: message.minimum_generations,
         generations: message.generations,
       };
     case "ack":
@@ -368,6 +371,10 @@ function truncateRunTranscriptMessage(message: ServerMessage): ServerMessage | n
         type: "state",
         paused: message.paused,
         ...(message.generation === undefined ? {} : { generation: message.generation }),
+        ...(message.minimum_generations === undefined
+          ? {}
+          : { minimum_generations: message.minimum_generations }),
+        ...(message.generations === undefined ? {} : { generations: message.generations }),
         ...(message.phase === undefined ? {} : { phase: TRUNCATED_VALUE }),
       };
     case "run_accepted":
@@ -375,6 +382,7 @@ function truncateRunTranscriptMessage(message: ServerMessage): ServerMessage | n
         type: "run_accepted",
         run_id: sanitizeRunTranscriptText(message.run_id).slice(0, MAX_FALLBACK_FIELD_LENGTH),
         scenario: TRUNCATED_VALUE,
+        minimum_generations: message.minimum_generations,
         generations: message.generations,
       };
     case "ack":

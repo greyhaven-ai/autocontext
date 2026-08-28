@@ -166,6 +166,26 @@ describe("ImprovementLoop", () => {
     expect(result.terminationReason).toBe("unchanged_output");
   });
 
+  it("does not treat unchanged output as terminal before minRounds", async () => {
+    const task = makeFakeTask(
+      [{ score: 0.5, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null }],
+      (out) => out,
+    );
+    const loop = new ImprovementLoop({
+      task,
+      minRounds: 3,
+      maxRounds: 5,
+      qualityThreshold: 0.9,
+    });
+
+    const result = await loop.run({ initialOutput: "test", state: {} });
+
+    expect(result.metThreshold).toBe(false);
+    expect(result.totalRounds).toBe(3);
+    expect(result.terminationReason).toBe("unchanged_output");
+    expect(result.judgeCalls).toBe(1);
+  });
+
   it("handles judge parse failure gracefully", async () => {
     const progress: ImprovementLoopProgress[] = [];
     const task = makeFakeTask([

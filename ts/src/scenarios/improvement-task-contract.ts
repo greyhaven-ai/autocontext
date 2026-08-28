@@ -10,7 +10,11 @@ import {
   RubricScaleSchema,
   RubricSpecSchema,
 } from "../judge/rubric-spec.js";
-import { AgentTaskSpecSchema, type AgentTaskSpec } from "./agent-task-spec.js";
+import {
+  AgentTaskSpecObjectSchema,
+  AgentTaskSpecSchema,
+  type AgentTaskSpec,
+} from "./agent-task-spec.js";
 import {
   MAX_TASK_DATA_SOURCES,
   TaskDataSourceContentListSchema,
@@ -27,7 +31,7 @@ const NonEmptyTextSchema = z.string().trim().min(1);
 export const ImprovementTaskDeliverableSchema = z
   .object({
     description: NonEmptyTextSchema,
-    outputFormat: AgentTaskSpecSchema.shape.outputFormat,
+    outputFormat: AgentTaskSpecObjectSchema.shape.outputFormat,
   })
   .strict();
 
@@ -79,12 +83,20 @@ export const ImprovementTaskContractSchema = z
       )
       .default([]),
     criteria: ImprovementTaskCriteriaSchema,
-    qualityThreshold: AgentTaskSpecSchema.shape.qualityThreshold.optional(),
-    iterations: AgentTaskSpecSchema.shape.maxRounds,
-    revisionPrompt: AgentTaskSpecSchema.shape.revisionPrompt,
+    qualityThreshold: AgentTaskSpecObjectSchema.shape.qualityThreshold.optional(),
+    minimumIterations: AgentTaskSpecObjectSchema.shape.minRounds,
+    iterations: AgentTaskSpecObjectSchema.shape.maxRounds,
+    revisionPrompt: AgentTaskSpecObjectSchema.shape.revisionPrompt,
   })
   .strict()
   .superRefine((contract, ctx) => {
+    if ((contract.minimumIterations ?? 1) > contract.iterations) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "minimumIterations must not exceed iterations",
+        path: ["minimumIterations"],
+      });
+    }
     let serializedContract = "";
     try {
       serializedContract = JSON.stringify(contract);
@@ -230,6 +242,7 @@ export function compileImprovementTaskContract(input: unknown): AgentTaskSpec {
     judgeRubric,
     outputFormat: contract.deliverable.outputFormat,
     referenceSources: visibleSourceRefs.length > 0 ? visibleSourceRefs : null,
+    minRounds: contract.minimumIterations ?? 1,
     maxRounds: contract.iterations,
     qualityThreshold,
     revisionPrompt: contract.revisionPrompt ?? null,

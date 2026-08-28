@@ -681,7 +681,7 @@ function terminalOutcome(event: string): TuiRunView["outcome"] {
 
 function lifecycleDetail(event: string, payload: Record<string, unknown>): string | undefined {
   const fieldsByEvent: Readonly<Record<string, readonly string[]>> = {
-    run_started: ["scenario", "target_generations"],
+    run_started: ["scenario", "minimum_generations", "target_generations"],
     generation_started: ["generation"],
     agents_started: ["generation", "roles"],
     role_completed: ["role", "latency_ms"],

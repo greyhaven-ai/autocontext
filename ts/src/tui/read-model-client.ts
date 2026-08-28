@@ -23,6 +23,8 @@ export interface TuiRunSummary {
   readonly run_id: string;
   readonly scenario_name: string;
   readonly status: string;
+  readonly minimum_generations?: number;
+  readonly target_generations?: number;
   readonly generations_completed: number;
   readonly best_score: number;
   readonly best_elo: number;
@@ -35,6 +37,7 @@ export interface TuiRunSummary {
 export interface TuiRunStatusReadModel {
   readonly run_id: string;
   readonly scenario_name: string;
+  readonly minimum_generations?: number;
   readonly target_generations: number;
   readonly status: string;
   readonly created_at: string;

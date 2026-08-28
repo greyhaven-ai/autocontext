@@ -371,6 +371,8 @@ def list_runs(request: Request) -> list[dict[str, Any]]:
                 {
                     "run_id": run_id,
                     "scenario_name": scenario,
+                    "minimum_generations": run_dict["minimum_generations"],
+                    "target_generations": run_dict["target_generations"],
                     "generations_completed": generations_completed,
                     "best_score": best_score,
                     "best_elo": best_elo,
@@ -393,7 +395,7 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
 
     with store.connection() as conn:
         run_row = conn.execute(
-            "SELECT run_id, scenario, target_generations, status, created_at FROM runs WHERE run_id = ?",
+            "SELECT run_id, scenario, minimum_generations, target_generations, status, created_at FROM runs WHERE run_id = ?",
             (run_id,),
         ).fetchone()
 
@@ -421,6 +423,7 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
     return {
         "run_id": run_id,
         "scenario_name": run_dict["scenario"],
+        "minimum_generations": run_dict["minimum_generations"],
         "target_generations": run_dict["target_generations"],
         "status": run_dict["status"],
         "created_at": run_dict["created_at"],

@@ -265,6 +265,7 @@ async def dispatch_run_command(
                         run_manager.start_run,
                         scenario,
                         generations,
+                        minimum_generations=start_cmd.minimum_generations,
                         require_playbook_approval=start_cmd.require_playbook_approval,
                         client_run_id=start_cmd.client_run_id,
                     )
@@ -272,6 +273,7 @@ async def dispatch_run_command(
                         RunAcceptedMsg(
                             run_id=run_id,
                             scenario=scenario,
+                            minimum_generations=start_cmd.minimum_generations or 1,
                             generations=generations,
                             client_run_id=start_cmd.client_run_id,
                             command_id=start_cmd.command_id,

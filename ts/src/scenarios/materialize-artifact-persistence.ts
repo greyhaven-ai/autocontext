@@ -70,6 +70,7 @@ export function persistMaterializedScenarioArtifacts(
         judge_rubric: opts.agentTaskSpec.judgeRubric,
         output_format: opts.agentTaskSpec.outputFormat,
         judge_model: opts.agentTaskSpec.judgeModel,
+        min_rounds: opts.agentTaskSpec.minRounds ?? 1,
         max_rounds: opts.agentTaskSpec.maxRounds,
         quality_threshold: opts.agentTaskSpec.qualityThreshold,
         revision_prompt: opts.agentTaskSpec.revisionPrompt ?? null,

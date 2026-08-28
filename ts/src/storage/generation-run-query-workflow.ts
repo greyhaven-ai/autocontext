@@ -7,11 +7,19 @@ export function createRunRecord(
   generations: number,
   executorMode: string,
   agentProvider = "",
+  minimumGenerations = 1,
 ): void {
   db.prepare(
-    `INSERT OR IGNORE INTO runs(run_id, scenario, target_generations, executor_mode, status, agent_provider)
-     VALUES (?, ?, ?, ?, 'running', ?)`,
-  ).run(runId, scenario, generations, executorMode, agentProvider);
+    `INSERT OR IGNORE INTO runs(
+       run_id,
+       scenario,
+       minimum_generations,
+       target_generations,
+       executor_mode,
+       status,
+       agent_provider
+     ) VALUES (?, ?, ?, ?, ?, 'running', ?)`,
+  ).run(runId, scenario, minimumGenerations, generations, executorMode, agentProvider);
 }
 
 export function getRunRecord<T>(db: Database.Database, runId: string): T | null {

@@ -29,7 +29,7 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 | ------------------- | ------------------------------------- |
 | Python CLI          | `uv tool install autocontext==0.17.0` |
 | Python library/dev  | `uv pip install autocontext==0.17.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.17.2`           |
+| TypeScript/Node CLI | `bun add -g autoctx@0.17.3`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -149,6 +149,17 @@ before exposing a server beyond one trusted operator.
 - **Capability-validated accelerators:** Prime requests bind immutable images, accelerator type/count, region, telemetry, idempotency, and resolved hardware identity; unsupported or drifting configurations fail before paid candidate execution.
 - **Stronger learning evidence across runtimes:** Python and TypeScript share context-bundle, attribution, and negative-result contracts, while Python training adds replayable adaptive confirmation and minimum-effect promotion artifacts.
 <!-- autocontext-whats-new:end -->
+
+### npm 0.17.3 minimum iteration floors
+
+`autoctx@0.17.3` advertises `minimum_iterations_v1`. Structured task contracts
+may set `minimumIterations`, interactive `start_run` commands may override it
+with `minimum_generations`, and the effective value must be between one and the
+maximum iteration count. Normal quality, plateau, unchanged-output, and cached
+verdict convergence cannot stop below the floor; cancellation, provider or
+evaluator failure, and time/token safety exits remain immediate. The effective
+minimum is retained in live protocol metadata and SQLite-backed run history so
+Cockpit clients recover it after restart.
 
 ### npm 0.17.2 structured tasks and durable outcomes
 

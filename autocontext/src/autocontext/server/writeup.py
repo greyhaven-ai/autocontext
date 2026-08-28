@@ -61,7 +61,7 @@ def _generate_legacy_writeup(
     # 1. Get run info
     with sqlite.connection() as conn:
         run_row = conn.execute(
-            "SELECT run_id, scenario, target_generations, status, created_at "
+            "SELECT run_id, scenario, minimum_generations, target_generations, status, created_at "
             "FROM runs WHERE run_id = ?",
             (run_id,),
         ).fetchone()
@@ -77,6 +77,7 @@ def _generate_legacy_writeup(
     sections: list[str] = []
     sections.append(f"# Run Summary: {run_id}\n")
     sections.append(f"- **Scenario**: {scenario}")
+    sections.append(f"- **Minimum generations**: {run['minimum_generations']}")
     sections.append(f"- **Target generations**: {run['target_generations']}")
     sections.append(f"- **Status**: {run['status']}")
     sections.append(f"- **Created**: {run['created_at']}")

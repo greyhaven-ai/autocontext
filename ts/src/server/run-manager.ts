@@ -92,6 +92,8 @@ export interface RunManagerState {
   runId: string | null;
   scenario: string | null;
   generation: number | null;
+  minimumGenerations?: number | null;
+  targetGenerations?: number | null;
   phase: string | null;
 }
 
@@ -113,6 +115,8 @@ export class RunManager {
     runId: null,
     scenario: null,
     generation: null,
+    minimumGenerations: null,
+    targetGenerations: null,
     phase: null,
   };
   readonly #customScenarioRegistry: RunCustomScenarioRegistry;
@@ -343,11 +347,16 @@ export class RunManager {
   async startRun(
     scenario: string,
     generations: number,
-    optsOrRunId: string | { requirePlaybookApproval?: boolean } = {},
+    optsOrRunId: string | {
+      requirePlaybookApproval?: boolean;
+      minimumGenerations?: number;
+    } = {},
     maybeRunId?: string,
   ): Promise<string> {
     const requirePlaybookApproval =
       typeof optsOrRunId === "string" ? false : optsOrRunId.requirePlaybookApproval ?? false;
+    const requestedMinimumGenerations =
+      typeof optsOrRunId === "string" ? undefined : optsOrRunId.minimumGenerations;
     const runId = typeof optsOrRunId === "string" ? optsOrRunId : maybeRunId;
     if (this.#active) {
       throw new Error("A run is already active");
@@ -364,6 +373,12 @@ export class RunManager {
       customScenario,
       customScenarioFamily: family,
     });
+    const persistedMinimumGenerations =
+      plan.kind === "agent_task_custom"
+        ? readMinimumGenerations(plan.entry.spec)
+        : 1;
+    const minimumGenerations = requestedMinimumGenerations ?? persistedMinimumGenerations;
+    assertIterationRange(minimumGenerations, generations);
 
     const id = runId ?? `tui_${Date.now().toString(16).slice(-8)}`;
 
@@ -383,6 +398,8 @@ export class RunManager {
       this.#activateRun(
         id,
         scenario,
+        minimumGenerations,
+        generations,
         providerSupportsImageAttachments(competitorProvider, competitorModel),
       );
       this.#startManagedExecution(
@@ -390,6 +407,7 @@ export class RunManager {
         () => executeBuiltInGameStartRun({
           runId: id,
           scenarioName: plan.scenarioName,
+          minimumGenerations,
           generations,
           requirePlaybookApproval,
           settings,
@@ -412,6 +430,8 @@ export class RunManager {
       this.#activateRun(
         id,
         scenario,
+        minimumGenerations,
+        generations,
         providerSupportsImageAttachments(
           providerBundle.defaultProvider,
           providerBundle.defaultConfig.model,
@@ -425,6 +445,7 @@ export class RunManager {
               runId: id,
               scenarioName: plan.scenarioName,
               entry: plan.entry,
+              minimumGenerations,
               generations,
               provider: providerBundle.defaultProvider,
               settings,
@@ -444,7 +465,7 @@ export class RunManager {
       return id;
     }
 
-    this.#activateRun(id, scenario, false);
+    this.#activateRun(id, scenario, minimumGenerations, generations, false);
     this.#startManagedExecution(
       id,
       () => executeGeneratedCustomStartRun({
@@ -452,6 +473,7 @@ export class RunManager {
         scenarioName: plan.scenarioName,
         entry: plan.entry,
         family: plan.family,
+        minimumGenerations,
         generations,
         knowledgeRoot: this.#opts.knowledgeRoot,
         controller: this.#controller,
@@ -581,6 +603,8 @@ export class RunManager {
   #activateRun(
     runId: string,
     scenario: string,
+    minimumGenerations: number,
+    targetGenerations: number,
     hintSupportsImageAttachments: boolean,
   ): void {
     this.#controller.beginRun(runId);
@@ -591,6 +615,8 @@ export class RunManager {
     this.#updateState(buildQueuedRunStatePatch({
       runId,
       scenario,
+      minimumGenerations,
+      targetGenerations,
       paused: this.#controller.isPaused(),
     }));
   }
@@ -646,5 +672,22 @@ export class RunManager {
     if (this.#active) {
       throw new Error("Cannot change providers while a run is active");
     }
+  }
+}
+
+function readMinimumGenerations(spec: Record<string, unknown>): number {
+  const raw = spec.minRounds ?? spec.min_rounds;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : 1;
+}
+
+function assertIterationRange(minimumGenerations: number, generations: number): void {
+  if (!Number.isInteger(generations) || generations < 1) {
+    throw new Error("generations must be a positive integer");
+  }
+  if (!Number.isInteger(minimumGenerations) || minimumGenerations < 1) {
+    throw new Error("minimum_generations must be a positive integer");
+  }
+  if (minimumGenerations > generations) {
+    throw new Error("minimum_generations must not exceed generations");
   }
 }

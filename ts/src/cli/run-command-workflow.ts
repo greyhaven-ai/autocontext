@@ -114,6 +114,7 @@ type AgentTaskSolveExecutor = (opts: {
   provider: unknown;
   created: { name: string; spec: Record<string, unknown> };
   generations: number;
+  minimumGenerations?: number;
   hookBus?: HookBus | null;
 }) => Promise<{ progress: number; result: Record<string, unknown> }>;
 
@@ -125,6 +126,7 @@ export interface AgentTaskRunStore {
     generations: number,
     executorMode: string,
     agentProvider?: string,
+    minimumGenerations?: number,
   ): void;
   updateRunStatus(runId: string, status: string): void;
   upsertGeneration(
@@ -163,10 +165,16 @@ export async function executeAgentTaskRunCommandWorkflow<
 }): Promise<RunCommandResult> {
   const provider = opts.providerBundle.defaultConfig.providerType;
   const migrationsDir = opts.migrationsDir;
-  const store =
-    opts.createStore && opts.dbPath && opts.migrationsDir ? opts.createStore(opts.dbPath) : null;
+  let store: AgentTaskRunStore | null = null;
 
   try {
+    const minimumGenerations = readMinimumGenerations(opts.spec);
+    if (minimumGenerations > opts.plan.gens) {
+      throw new Error("minimum_generations must not exceed generations");
+    }
+    store = opts.createStore && opts.dbPath && opts.migrationsDir
+      ? opts.createStore(opts.dbPath)
+      : null;
     if (store && migrationsDir) {
       store.migrate(migrationsDir);
     }
@@ -176,6 +184,7 @@ export async function executeAgentTaskRunCommandWorkflow<
       opts.plan.gens,
       "agent_task",
       provider,
+      minimumGenerations,
     );
 
     const result = await opts.executeAgentTaskSolve({
@@ -185,6 +194,7 @@ export async function executeAgentTaskRunCommandWorkflow<
         spec: opts.spec,
       },
       generations: opts.plan.gens,
+      minimumGenerations,
       ...(opts.hookBus ? { hookBus: opts.hookBus } : {}),
     });
     const bestScore = typeof result.result.best_score === "number" ? result.result.best_score : 0;
@@ -220,6 +230,20 @@ export async function executeAgentTaskRunCommandWorkflow<
     store?.close();
     opts.providerBundle.close?.();
   }
+}
+
+function readMinimumGenerations(spec: Record<string, unknown>): number {
+  const raw = spec.minRounds ?? spec.min_rounds;
+  if (raw === undefined || raw === null) return 1;
+  const value = typeof raw === "number"
+    ? raw
+    : typeof raw === "string" && raw.trim().length > 0
+      ? Number(raw)
+      : Number.NaN;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error("minimum_generations must be a positive integer");
+  }
+  return value;
 }
 
 export async function planRunCommand(

@@ -463,6 +463,7 @@ def _run_generation_process(
     settings_payload: dict[str, Any],
     scenario: str,
     generations: int,
+    minimum_generations: int,
     actual_run_id: str,
     require_playbook_approval: bool,
     control_connection: Connection,
@@ -504,6 +505,7 @@ def _run_generation_process(
         summary = runner.run(
             scenario_name=scenario,
             generations=generations,
+            minimum_generations=minimum_generations,
             run_id=actual_run_id,
             require_playbook_approval=require_playbook_approval,
         )

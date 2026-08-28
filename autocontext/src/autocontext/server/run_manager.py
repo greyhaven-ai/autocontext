@@ -626,11 +626,17 @@ class RunManager:
         generations: int,
         run_id: str | None = None,
         *,
+        minimum_generations: int | None = None,
         require_playbook_approval: bool = False,
         client_run_id: str | None = None,
     ) -> str:
         if not 1 <= generations <= MAX_START_RUN_GENERATIONS:
             raise ValueError(f"generations must be between 1 and {MAX_START_RUN_GENERATIONS}")
+        effective_minimum_generations = 1 if minimum_generations is None else minimum_generations
+        if effective_minimum_generations < 1:
+            raise ValueError("minimum_generations must be a positive integer")
+        if effective_minimum_generations > generations:
+            raise ValueError("minimum_generations must not exceed generations")
         if scenario not in SCENARIO_REGISTRY:
             supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
             raise ValueError(f"Unknown scenario '{scenario}'. Available: {supported}")
@@ -680,6 +686,7 @@ class RunManager:
                     self.settings.model_dump(mode="json"),
                     scenario,
                     generations,
+                    effective_minimum_generations,
                     actual_run_id,
                     require_playbook_approval,
                     child_control,

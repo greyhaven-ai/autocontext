@@ -14,6 +14,7 @@ import {
   ChatAgentCmdSchema,
   ExecutorResourcesSchema,
   MonitorAlertMsgSchema,
+  MINIMUM_ITERATIONS_CAPABILITY,
   PROTOCOL_VERSION,
   PYTHON_SHARED_CLIENT_MESSAGE_TYPES,
   PYTHON_SHARED_SERVER_MESSAGE_TYPES,
@@ -55,6 +56,13 @@ type EventStreamEnvelopeContract = {
 };
 
 type WebSocketProtocolContract = {
+  minimum_iterations_extension: {
+    advertised_runtimes: ["python", "typescript"];
+    capability: "minimum_iterations_v1";
+    default: 1;
+    default_wire_representation: string;
+    validation: string;
+  };
   agent_task_outcome_extension: {
     advertised_runtimes: ["typescript"];
     applies_to: string;
@@ -298,6 +306,34 @@ describe("WebSocket protocol shared contract", () => {
       },
       source_contents: [],
     });
+  });
+
+  it("advertises and validates minimum iteration ranges", () => {
+    expect(CONTRACT.minimum_iterations_extension).toMatchObject({
+      advertised_runtimes: ["python", "typescript"],
+      capability: MINIMUM_ITERATIONS_CAPABILITY,
+      default: 1,
+    });
+    expect(SERVER_CAPABILITIES).toContain(MINIMUM_ITERATIONS_CAPABILITY);
+    expect(CONTRACT.minimum_iterations_extension.default_wire_representation).toContain("omitted");
+    expect(parseClientMessage({
+      type: "start_run",
+      scenario: "saved_task",
+      minimum_generations: null,
+      generations: 4,
+    })).toMatchObject({ minimum_generations: null, generations: 4 });
+    expect(parseClientMessage({
+      type: "start_run",
+      scenario: "saved_task",
+      minimum_generations: 2,
+      generations: 4,
+    })).toMatchObject({ minimum_generations: 2, generations: 4 });
+    expect(() => parseClientMessage({
+      type: "start_run",
+      scenario: "saved_task",
+      minimum_generations: 5,
+      generations: 4,
+    })).toThrow(/minimum_generations must not exceed generations/);
   });
 
   it("ships a parseable, integrity-valid structured task protocol fixture", () => {

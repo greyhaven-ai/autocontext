@@ -539,7 +539,8 @@ def test_manager_commands_echo_correlation_metadata(
                 {
                     "type": "start_run",
                     "scenario": "grid_ctf",
-                    "generations": 1,
+                    "minimum_generations": 2,
+                    "generations": 3,
                     "client_run_id": "client-start",
                     "command_id": "start-1",
                 }
@@ -548,10 +549,19 @@ def test_manager_commands_echo_correlation_metadata(
                 "type": "run_accepted",
                 "run_id": "server-run",
                 "scenario": "grid_ctf",
-                "generations": 1,
+                "minimum_generations": 2,
+                "generations": 3,
                 "client_run_id": "client-start",
                 "command_id": "start-1",
             }
+
+    run_manager.start_run.assert_called_once_with(
+        "grid_ctf",
+        3,
+        minimum_generations=2,
+        require_playbook_approval=False,
+        client_run_id="client-start",
+    )
 
 
 @pytest.mark.parametrize("failure_type", [RuntimeError, OSError])

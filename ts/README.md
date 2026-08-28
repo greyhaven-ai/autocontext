@@ -251,7 +251,7 @@ operator-control, and chat commands. Run-scoped responses then include stable
 
 #### Structured task creation
 
-TypeScript protocol-v2 servers in `autoctx@0.17.2` advertise
+TypeScript protocol-v2 servers in `autoctx@0.17.3` advertise
 `structured_task_creation_v1` only with the complete `create_task` handler and
 schema available. The command compiles a versioned improvement objective,
 deliverable, evaluation contract, and at most eight bounded inline sources
@@ -273,6 +273,17 @@ The package includes a copyable, integrity-valid command at
 [`protocol-fixtures/structured-task-create-v1.json`](protocol-fixtures/structured-task-create-v1.json).
 The [machine-readable WebSocket contract](../docs/websocket-protocol-contract.json)
 defines the exact TypeScript-only extension. Python does not advertise it.
+
+#### Minimum iteration floors
+
+TypeScript protocol-v2 servers advertise `minimum_iterations_v1`. A structured
+task contract may set `minimumIterations`; `start_run` may supply an authoritative
+`minimum_generations` override, which must be between one and `generations`.
+Quality-threshold, plateau, unchanged-output, and cached-verdict convergence do
+not stop below the effective floor, while cancellation, provider/evaluator
+failure, and time/token safety exits remain immediate. Accepted, started,
+status, transcript, and SQLite-backed Cockpit history retain the effective
+minimum across reconnect and restart.
 
 #### Structured agent-task outcomes
 

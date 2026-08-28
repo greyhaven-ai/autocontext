@@ -80,6 +80,7 @@ function createRun(runId: string, status: string): RunRow {
   return {
     run_id: runId,
     scenario: "support_triage",
+    minimum_generations: 1,
     target_generations: 1,
     executor_mode: "local",
     status,

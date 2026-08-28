@@ -105,6 +105,7 @@ export function buildAgentTaskSolveSpec(
     calibrationExamples: readRecordArray(rawSpec, "calibrationExamples", "calibration_examples"),
     contextPreparation: readString(rawSpec, "contextPreparation", "context_preparation"),
     requiredContextKeys: readStringArray(rawSpec, "requiredContextKeys", "required_context_keys"),
+    minRounds: readNumber(rawSpec, 1, "minRounds", "min_rounds"),
     maxRounds: readNumber(rawSpec, fallbackRounds, "maxRounds", "max_rounds"),
     qualityThreshold: readNumber(rawSpec, 0.9, "qualityThreshold", "quality_threshold"),
     revisionPrompt: readString(rawSpec, "revisionPrompt", "revision_prompt"),
@@ -147,6 +148,7 @@ export interface AgentTaskSolveExecutionDeps {
   }) => AgentTaskSolveTask;
   createLoop?: (opts: {
     task: AgentTaskSolveTask;
+    minRounds: number;
     maxRounds: number;
     qualityThreshold: number;
     timeBudget?: SolveGenerationBudget;
@@ -162,6 +164,7 @@ export interface AgentTaskSolveExecutionResult {
 
 function defaultCreateLoop(opts: {
   task: AgentTaskSolveTask;
+  minRounds: number;
   maxRounds: number;
   qualityThreshold: number;
   timeBudget?: SolveGenerationBudget;
@@ -169,6 +172,7 @@ function defaultCreateLoop(opts: {
 }): AgentTaskSolveLoop {
   return new ImprovementLoop({
     task: opts.task,
+    minRounds: opts.minRounds,
     maxRounds: opts.maxRounds,
     qualityThreshold: opts.qualityThreshold,
     timeBudget: opts.timeBudget,
@@ -193,19 +197,18 @@ export async function executeAgentTaskSolve(opts: {
   evaluationProvider?: LLMProvider;
   created: { name: string; spec: Record<string, unknown> };
   generations: number;
+  minimumGenerations?: number;
   generationTimeBudgetSeconds?: number | null;
   hookBus?: HookBus | null;
   onProgress?: (progress: AgentTaskSolveProgress) => void | Promise<void>;
   deps?: AgentTaskSolveExecutionDeps;
 }): Promise<AgentTaskSolveExecutionResult> {
-  const spec = buildAgentTaskSolveSpec(
-    {
-      ...opts.created.spec,
-      maxRounds: opts.generations,
-      max_rounds: opts.generations,
-    },
-    opts.generations,
-  );
+  const persistedSpec = buildAgentTaskSolveSpec(opts.created.spec, opts.generations);
+  const spec = AgentTaskSpecSchema.parse({
+    ...persistedSpec,
+    minRounds: opts.minimumGenerations ?? persistedSpec.minRounds ?? 1,
+    maxRounds: opts.generations,
+  });
   const task = (opts.deps?.createTask ?? createAgentTask)({
     spec,
     name: opts.created.name,
@@ -219,6 +222,7 @@ export async function executeAgentTaskSolve(opts: {
   });
   const loop = (opts.deps?.createLoop ?? defaultCreateLoop)({
     task,
+    minRounds: spec.minRounds ?? 1,
     maxRounds: spec.maxRounds,
     qualityThreshold: spec.qualityThreshold,
     timeBudget,

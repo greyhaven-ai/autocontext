@@ -2,6 +2,20 @@
   "version": 1,
   "contract": "interactive WebSocket protocol surface shared by Python and TypeScript with runtime-only extensions marked explicitly",
   "protocol_version": 2,
+  "minimum_iterations_extension": {
+    "capability": "minimum_iterations_v1",
+    "advertised_runtimes": ["python", "typescript"],
+    "start_command_field": "minimum_generations",
+    "accepted_field": "minimum_generations",
+    "started_event_field": "minimum_generations",
+    "default": 1,
+    "default_wire_representation": "the field may be omitted when the effective minimum is one so existing strict protocol-v2 clients remain compatible",
+    "validation": "1 <= minimum_generations <= generations",
+    "structured_task_contract_field": "minimumIterations",
+    "persisted_agent_task_spec_field": "min_rounds",
+    "runtime_override": "an explicit start_run minimum_generations overrides the persisted task floor",
+    "normal_convergence_rule": "threshold, plateau, and unchanged-output termination cannot stop below the effective minimum; cancellation, provider failure, time limits, and token limits remain safety exits"
+  },
   "structured_task_creation_extension": {
     "capability": "structured_task_creation_v1",
     "advertised_runtimes": ["typescript"],

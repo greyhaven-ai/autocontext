@@ -228,6 +228,33 @@ class TestClientMessageParsing:
         assert msg.client_run_id == "client-run-1"
         assert msg.command_id == "command-start-1"
 
+    def test_start_run_accepts_a_bounded_minimum_generation_floor(self) -> None:
+        msg = parse_client_message(
+            {
+                "type": "start_run",
+                "scenario": "grid_ctf",
+                "minimum_generations": 2,
+                "generations": 4,
+            }
+        )
+        assert isinstance(msg, StartRunCmd)
+        assert msg.minimum_generations == 2
+
+        with pytest.raises(ValidationError, match="minimum_generations must not exceed generations"):
+            parse_client_message(
+                {
+                    "type": "start_run",
+                    "scenario": "grid_ctf",
+                    "minimum_generations": 5,
+                    "generations": 4,
+                }
+            )
+
+    def test_default_run_acceptance_omits_the_additive_minimum_field(self) -> None:
+        message = RunAcceptedMsg(run_id="r1", scenario="grid_ctf", generations=2)
+        assert "minimum_generations" not in message.model_dump()
+        assert message.minimum_generations == 1
+
     @pytest.mark.parametrize(
         "raw",
         [
@@ -288,7 +315,15 @@ class TestEventPayloads:
     @pytest.mark.parametrize(
         "model,kwargs",
         [
-            (RunStartedPayload, {"run_id": "r1", "scenario": "grid_ctf", "target_generations": 3}),
+            (
+                RunStartedPayload,
+                {
+                    "run_id": "r1",
+                    "scenario": "grid_ctf",
+                    "minimum_generations": 2,
+                    "target_generations": 3,
+                },
+            ),
             (GenerationStartedPayload, {"run_id": "r1", "generation": 1}),
             (AgentsStartedPayload, {"run_id": "r1", "generation": 1, "roles": ["competitor", "analyst"]}),
             (RoleCompletedPayload, {"run_id": "r1", "generation": 1, "role": "analyst", "latency_ms": 1200, "tokens": 500}),

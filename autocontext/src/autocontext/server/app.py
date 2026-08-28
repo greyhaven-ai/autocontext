@@ -514,7 +514,6 @@ def create_app(
                         continue
 
                     match cmd:
-
                         case ListScenariosCmd():
                             if run_manager:
                                 env_info = run_manager.get_environment_info()

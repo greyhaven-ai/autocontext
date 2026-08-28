@@ -29,6 +29,7 @@
     ],
     "criteria": "Score evidence grounding, clarity, and actionability.",
     "qualityThreshold": 0.9,
+    "minimumIterations": 2,
     "iterations": 2
   },
   "source_contents": [

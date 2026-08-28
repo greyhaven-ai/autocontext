@@ -550,6 +550,35 @@ def test_rlm_run_uses_spawned_main_thread_isolation_and_relays_events(tmp_path: 
     assert any(event == "generation_started" for event, _payload in recorded)
 
 
+@_requires_run_process_ownership
+def test_spawned_run_receives_and_reports_minimum_generation_floor(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path)
+    events = EventStreamEmitter(settings.event_stream_path)
+    recorded: list[tuple[str, dict[str, Any]]] = []
+    events.subscribe(lambda event, payload: recorded.append((event, payload)))
+    manager = RunManager(LoopController(), events, settings)
+
+    run_id = manager.start_run(
+        "grid_ctf",
+        generations=2,
+        minimum_generations=2,
+        run_id="spawned-minimum-floor-run",
+    )
+    assert manager._thread is not None
+    manager._thread.join(timeout=30.0)
+
+    assert not manager._thread.is_alive()
+    store = SQLiteStore(settings.db_path)
+    run = store.get_run(run_id)
+    assert run is not None and run["status"] == "completed"
+    assert run["minimum_generations"] == 2
+    assert store.count_completed_generations(run_id) == 2
+    assert any(
+        event == "run_started" and payload.get("minimum_generations") == 2
+        for event, payload in recorded
+    )
+
+
 def test_start_run_rejects_nondefault_sigchld_without_spawning(tmp_path: Path) -> None:
     if os.name != "posix":
         pytest.skip("SIGCHLD admission is POSIX-specific")
@@ -569,6 +598,25 @@ def test_start_run_rejects_nondefault_sigchld_without_spawning(tmp_path: Path) -
 
     assert not manager.is_active
     assert manager._process is None
+
+
+def test_start_run_rejects_a_minimum_above_the_maximum(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path)
+    manager = RunManager(
+        LoopController(),
+        EventStreamEmitter(settings.event_stream_path),
+        settings,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="minimum_generations must not exceed generations",
+    ):
+        manager.start_run(
+            "grid_ctf",
+            generations=2,
+            minimum_generations=3,
+        )
 
 
 def test_start_run_rejects_missing_child_ownership_primitives_without_spawning(

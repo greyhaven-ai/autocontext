@@ -81,14 +81,29 @@ class SQLiteStore(
         with self.connection() as conn:
             apply_python_migration_files(conn, migrations_dir)
 
-    def create_run(self, run_id: str, scenario: str, generations: int, executor_mode: str, agent_provider: str = "") -> None:
+    def create_run(
+        self,
+        run_id: str,
+        scenario: str,
+        generations: int,
+        executor_mode: str,
+        agent_provider: str = "",
+        minimum_generations: int = 1,
+    ) -> None:
         with self.connection() as conn:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO runs(run_id, scenario, target_generations, executor_mode, status, agent_provider)
-                VALUES (?, ?, ?, ?, 'running', ?)
+                INSERT OR IGNORE INTO runs(
+                    run_id,
+                    scenario,
+                    minimum_generations,
+                    target_generations,
+                    executor_mode,
+                    status,
+                    agent_provider
+                ) VALUES (?, ?, ?, ?, ?, 'running', ?)
                 """,
-                (run_id, scenario, generations, executor_mode, agent_provider),
+                (run_id, scenario, minimum_generations, generations, executor_mode, agent_provider),
             )
 
     def generation_exists(self, run_id: str, generation_index: int) -> bool:
@@ -890,7 +905,7 @@ class SQLiteStore(
         """List recent runs, newest first."""
         with self.connection() as conn:
             rows = conn.execute(
-                "SELECT run_id, scenario, target_generations, executor_mode, status, created_at "
+                "SELECT run_id, scenario, minimum_generations, target_generations, executor_mode, status, created_at "
                 "FROM runs ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()

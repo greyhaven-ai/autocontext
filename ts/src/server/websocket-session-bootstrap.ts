@@ -19,12 +19,22 @@ export function buildEnvironmentMessage(environment: EnvironmentInfo): ServerMes
 }
 
 export function buildStateMessage(state: RunManagerState): ServerMessage {
+  const exposesMinimumFloor =
+    state.minimumGenerations !== null &&
+    state.minimumGenerations !== undefined &&
+    state.minimumGenerations > 1;
   return {
     type: "state",
     active: state.active,
     paused: state.paused,
     scenario: state.scenario,
     generation: state.generation ?? undefined,
+    ...(exposesMinimumFloor
+      ? {
+          minimum_generations: state.minimumGenerations ?? undefined,
+          generations: state.targetGenerations ?? undefined,
+        }
+      : {}),
     phase: state.phase ?? undefined,
   };
 }

@@ -285,18 +285,31 @@ export class GenerationRunner {
     this.#runtimeSession = opts.runtimeSession;
   }
 
-  async run(runId: RunId, generations: number): Promise<RunResult> {
+  async run(
+    runId: RunId,
+    generations: number,
+    minimumGenerations = 1,
+  ): Promise<RunResult> {
     this.emitHook(HookEvents.RUN_START, {
       run_id: runId,
       scenario: this.#scenario.name,
+      minimum_generations: minimumGenerations,
       target_generations: generations,
       loaded_extensions: this.#loadedExtensions,
     });
     // Create run record
-    this.#store.createRun(runId, this.#scenario.name, generations, "local", this.#agentProvider);
+    this.#store.createRun(
+      runId,
+      this.#scenario.name,
+      generations,
+      "local",
+      this.#agentProvider,
+      minimumGenerations,
+    );
     let orchestration = createGenerationLoopOrchestration({
       runId,
       scenarioName: this.#scenario.name,
+      minimumGenerations,
       targetGenerations: generations,
       startedAtMs: Date.now(),
     });

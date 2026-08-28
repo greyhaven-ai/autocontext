@@ -93,7 +93,7 @@ async function createTestServer(dir: string) {
   const dbPath = join(dir, "test.db");
   const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(join(__dirname, "..", "migrations"));
-  store.createRun("test-run-1", "grid_ctf", 3, "local");
+  store.createRun("test-run-1", "grid_ctf", 3, "local", "", 2);
   store.upsertGeneration("test-run-1", 1, {
     meanScore: 0.65,
     bestScore: 0.7,
@@ -952,6 +952,8 @@ describe("HTTP API — cockpit", () => {
       expect.objectContaining({
         run_id: "test-run-1",
         scenario_name: "grid_ctf",
+        minimum_generations: 2,
+        target_generations: 3,
         generations_completed: 1,
         best_score: 0.7,
         best_elo: 1050,
@@ -982,6 +984,7 @@ describe("HTTP API — cockpit", () => {
     expect(body).toMatchObject({
       run_id: "test-run-1",
       scenario_name: "grid_ctf",
+      minimum_generations: 2,
       target_generations: 3,
       status: "running",
       generations: [
@@ -1015,6 +1018,8 @@ describe("HTTP API — cockpit", () => {
       run: {
         run_id: "test-run-1",
         scenario: "grid_ctf",
+        minimum_generations: 2,
+        target_generations: 3,
         status: "running",
       },
       latest_generation: { generation: 1, best_score: 0.7 },

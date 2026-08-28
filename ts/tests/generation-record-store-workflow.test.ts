@@ -52,7 +52,7 @@ describe("generation record store workflow", () => {
   });
 
   it("creates runs and generations and returns sorted run/generation records", () => {
-    createRunRecord(db, "run-1", "grid_ctf", 3, "local", "deterministic");
+    createRunRecord(db, "run-1", "grid_ctf", 3, "local", "deterministic", 2);
     upsertGenerationRecord(db, "run-1", 1, {
       meanScore: 0.6,
       bestScore: 0.7,
@@ -70,6 +70,8 @@ describe("generation record store workflow", () => {
       scenario: "grid_ctf",
       status: "completed",
       agent_provider: "deterministic",
+      minimum_generations: 2,
+      target_generations: 3,
     });
     expect(getGenerationRecords<GenerationRow>(db, "run-1")).toHaveLength(1);
     expect(listRunRecords<RunRow>(db, 10)).toHaveLength(1);

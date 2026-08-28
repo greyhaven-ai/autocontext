@@ -1023,8 +1023,11 @@ class GenerationRunner:
         generations: int,
         run_id: str | None = None,
         *,
+        minimum_generations: int = 1,
         require_playbook_approval: bool = False,
     ) -> RunSummary:
+        if minimum_generations < 1 or minimum_generations > generations:
+            raise ValueError("minimum_generations must be between 1 and generations")
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         run_start_time = time.monotonic()
@@ -1037,6 +1040,7 @@ class GenerationRunner:
                 generations,
                 self.settings.executor_mode,
                 agent_provider=self.settings.agent_provider,
+                minimum_generations=minimum_generations,
             )
         else:
             # A stopped run is terminal (first-terminal-outcome-wins): refuse to
@@ -1060,11 +1064,21 @@ class GenerationRunner:
             gate_decision_history,
         ) = self._hydrate_run_state(active_run_id)
         completed = 0
-        self.events.emit(
-            "run_started",
-            {"run_id": active_run_id, "scenario": scenario_name, "target_generations": target_generations},
+        run_started_payload: dict[str, Any] = {
+            "run_id": active_run_id,
+            "scenario": scenario_name,
+            "target_generations": target_generations,
+        }
+        if minimum_generations > 1:
+            run_started_payload["minimum_generations"] = minimum_generations
+        self.events.emit("run_started", run_started_payload)
+        emit_run_start(
+            self,
+            run_id=active_run_id,
+            scenario=scenario_name,
+            minimum_generations=minimum_generations,
+            target_generations=target_generations,
         )
-        emit_run_start(self, run_id=active_run_id, scenario=scenario_name, target_generations=target_generations)
 
         # Seed scenario-specific tools before first generation
         if not self.artifacts.tools_dir(scenario_name).exists():
