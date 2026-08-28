@@ -65,7 +65,7 @@ dev = [
   "hypothesis>=6.151.12",
   "markdown-it-py>=4.0.0",
   "mypy>=1.16.0",
-  "openai>=1.0.0,<2.0",
+  "openai>=1.0.0,<4.0",
   "pip-audit==2.10.1",
   "prime-sandboxes>=0.2.27",
   "pytest>=8.4.0",
