@@ -17,13 +17,16 @@ runs in a fresh, killable child process. The parent enforces the wall
 timeout, terminates the child process group, and accepts only bounded JSON over
 the result pipe. Pickle is never used across this trust boundary. Before code
 runs, the child receives an empty environment, a private working directory,
-closed inherited file descriptors, and best-effort CPU, address-space, data,
-file-size, and open-file limits. Linux also applies a verified same-UID task
+closed inherited file descriptors, and best-effort CPU, memory, file-size, and
+open-file limits. Linux also applies a verified same-UID task
 ceiling plus inherited seccomp rules that deny `setsid`/`setpgid` (including
 x32 and compatibility-ABI bypasses) and user-namespace creation/entry through
 `clone`, `clone3`, `unshare`, or `setns`; macOS sets `RLIMIT_NPROC=1`, forbidding
 descendant processes while still permitting helper threads. Results default to
-a 1 MiB cap and child memory defaults to 256 MiB.
+a 1 MiB cap. The memory setting defaults to 256 MiB; on Linux it is a virtual
+address-space growth allowance above mappings already inherited at fork,
+bounded by any stricter inherited soft or hard `RLIMIT_AS`, while macOS applies
+it as best-effort absolute address-space and data limits.
 
 The same boundary is used when `HarnessTester` evaluates synthesized harnesses
 and when staged validation loads or invokes a code candidate's

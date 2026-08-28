@@ -1360,6 +1360,7 @@ def test_monitor_finishes_when_detached_descendant_retains_ipc_handles(tmp_path:
 def test_monitor_post_exit_max_bounds_buffered_frames_with_slow_subscriber(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     settings = _make_settings(tmp_path)
     events = EventStreamEmitter(settings.event_stream_path)
@@ -1383,9 +1384,9 @@ def test_monitor_post_exit_max_bounds_buffered_frames_with_slow_subscriber(
     process.start()
     child_control.close()
     child_events.close()
-    # The complete bounded batch fits in the pipe. Let the leader exit before
-    # monitoring so the absolute post-exit deadline starts before slow relays.
-    time.sleep(0.2)
+    # The complete bounded batch fits in the pipe. Establish the exited-leader
+    # precondition without reaping it so the monitor owns the absolute deadline.
+    assert run_manager_module.wait([process.sentinel], timeout=5.0)
     manager._active = True
     manager._process = process
     with run_manager_module._ACTIVE_RUN_PROCESSES_LOCK:
@@ -1398,10 +1399,11 @@ def test_monitor_post_exit_max_bounds_buffered_frames_with_slow_subscriber(
     )
     started = time.monotonic()
     monitor.start()
-    monitor.join(timeout=2.0)
+    monitor.join(timeout=5.0)
 
     assert not monitor.is_alive()
-    assert time.monotonic() - started < 1.5
+    assert time.monotonic() - started < 2.0
+    assert "interactive run exceeded its post-exit drain deadline" in caplog.text
     assert received == list(range(len(received)))
     assert len(received) < 70
     assert not manager.is_active

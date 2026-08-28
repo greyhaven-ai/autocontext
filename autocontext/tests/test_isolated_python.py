@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import mmap
 import os
 import select
 import signal
@@ -51,6 +52,14 @@ def _kill_recorded_process(pid_path: Path) -> None:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+
+
+def _run_bounded_helper_thread() -> bool:
+    completed: list[bool] = []
+    helper = threading.Thread(target=lambda: completed.append(True))
+    helper.start()
+    helper.join(timeout=1.0)
+    return not helper.is_alive() and completed == [True]
 
 
 @_requires_supported_local_isolation
@@ -262,14 +271,356 @@ def test_child_result_is_json_not_pickle(tmp_path: Path) -> None:
 def test_child_can_start_a_bounded_helper_thread() -> None:
     """Supported injected capabilities may use a small helper thread pool."""
 
-    def run_helper() -> bool:
-        completed: list[bool] = []
-        helper = threading.Thread(target=lambda: completed.append(True))
-        helper.start()
-        helper.join(timeout=1.0)
-        return not helper.is_alive() and completed == [True]
+    assert (
+        run_isolated_json(
+            _run_bounded_helper_thread,
+            timeout_seconds=2.0,
+            max_memory_mb=32,
+        )
+        is True
+    )
 
-    assert run_isolated_json(run_helper, timeout_seconds=2.0) is True
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux RLIMIT_AS regression")
+@_requires_supported_local_isolation
+def test_linux_memory_allowance_is_relative_to_inherited_address_space() -> None:
+    mib = 1024 * 1024
+    inherited_reservation = mmap.mmap(-1, 96 * mib, access=mmap.ACCESS_READ)
+
+    def exercise_memory_allowance() -> dict[str, bool]:
+        thread_completed = _run_bounded_helper_thread()
+        try:
+            over_budget = mmap.mmap(-1, 40 * mib, access=mmap.ACCESS_WRITE)
+        except (MemoryError, OSError):
+            over_budget_denied = True
+        else:
+            over_budget.close()
+            over_budget_denied = False
+        return {
+            "thread_completed": thread_completed,
+            "over_budget_denied": over_budget_denied,
+        }
+
+    try:
+        result = run_isolated_json(
+            exercise_memory_allowance,
+            timeout_seconds=2.0,
+            max_memory_mb=32,
+        )
+    finally:
+        inherited_reservation.close()
+
+    assert result == {
+        "thread_completed": True,
+        "over_budget_denied": True,
+    }
+
+
+@_requires_supported_local_isolation
+def test_child_clears_inherited_interpreter_hooks_before_starting_threads() -> None:
+    previous_sys_trace = sys.gettrace()
+    previous_sys_profile = sys.getprofile()
+    previous_thread_trace = threading.gettrace()
+    previous_thread_profile = threading.getprofile()
+    inherited_lock = threading.Lock()
+    inherited_lock.acquire()
+    parent_pid = os.getpid()
+
+    def parent_trace(_frame: Any, _event: str, _arg: Any) -> Any:
+        if os.getpid() != parent_pid:
+            inherited_lock.acquire()
+        return parent_trace
+
+    def parent_profile(_frame: Any, _event: str, _arg: Any) -> None:
+        if os.getpid() != parent_pid:
+            inherited_lock.acquire()
+
+    def inspect_child() -> dict[str, bool]:
+        hooks_cleared = (
+            sys.gettrace() is None
+            and sys.getprofile() is None
+            and threading.gettrace() is None
+            and threading.getprofile() is None
+        )
+        return {
+            "hooks_cleared": hooks_cleared,
+            "thread_completed": _run_bounded_helper_thread(),
+        }
+
+    sys.settrace(parent_trace)
+    sys.setprofile(parent_profile)
+    threading.settrace(parent_trace)
+    threading.setprofile(parent_profile)
+    try:
+        assert run_isolated_json(inspect_child, timeout_seconds=2.0) == {
+            "hooks_cleared": True,
+            "thread_completed": True,
+        }
+        assert sys.gettrace() is parent_trace
+        assert sys.getprofile() is parent_profile
+        assert threading.gettrace() is parent_trace
+        assert threading.getprofile() is parent_profile
+    finally:
+        threading.setprofile(previous_thread_profile)
+        threading.settrace(previous_thread_trace)
+        sys.setprofile(previous_sys_profile)
+        sys.settrace(previous_sys_trace)
+        inherited_lock.release()
+
+
+@pytest.mark.parametrize(
+    ("soft_limit_mib", "hard_limit_mib", "expected_limit_mib"),
+    [
+        (None, None, 432),
+        (416, None, 416),
+        (None, 424, 424),
+    ],
+)
+def test_linux_memory_limit_uses_growth_allowance_without_relaxing_parent_caps(
+    monkeypatch: pytest.MonkeyPatch,
+    soft_limit_mib: int | None,
+    hard_limit_mib: int | None,
+    expected_limit_mib: int,
+) -> None:
+    mib = 1024 * 1024
+    inherited_bytes = 400 * mib
+    applied: dict[int, tuple[int, int]] = {}
+
+    def setrlimit(resource_id: int, limits: tuple[int, int]) -> None:
+        applied[resource_id] = limits
+
+    infinite = -1
+
+    def getrlimit(resource_id: int) -> tuple[int, int]:
+        if resource_id != 5:
+            return (infinite, infinite)
+        soft = infinite if soft_limit_mib is None else soft_limit_mib * mib
+        hard = infinite if hard_limit_mib is None else hard_limit_mib * mib
+        return (soft, hard)
+
+    fake_resource = SimpleNamespace(
+        RLIMIT_CORE=1,
+        RLIMIT_CPU=2,
+        RLIMIT_FSIZE=3,
+        RLIMIT_NOFILE=4,
+        RLIMIT_AS=5,
+        RLIMIT_DATA=6,
+        RLIM_INFINITY=infinite,
+        getrlimit=getrlimit,
+        setrlimit=setrlimit,
+    )
+    monkeypatch.setitem(sys.modules, "resource", fake_resource)
+    monkeypatch.setattr(isolation_module.sys, "platform", "linux")
+    monkeypatch.setattr(
+        isolation_module,
+        "_linux_virtual_memory_bytes",
+        lambda: inherited_bytes,
+    )
+    monkeypatch.setattr(isolation_module, "_apply_linux_process_limit", lambda _resource: None)
+    monkeypatch.setattr(isolation_module, "_apply_descendant_containment", lambda _resource: None)
+
+    isolation_module._apply_resource_limits(
+        timeout_seconds=2.0,
+        max_memory_mb=32,
+        max_output_bytes=1_024,
+    )
+
+    expected_limit = expected_limit_mib * mib
+    assert applied[fake_resource.RLIMIT_AS] == (expected_limit, expected_limit)
+    assert fake_resource.RLIMIT_DATA not in applied
+
+
+def test_linux_memory_limit_fails_when_parent_cap_leaves_no_allowance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mib = 1024 * 1024
+    inherited_bytes = 400 * mib
+    fake_resource = SimpleNamespace(
+        RLIMIT_CORE=1,
+        RLIMIT_CPU=2,
+        RLIMIT_FSIZE=3,
+        RLIMIT_NOFILE=4,
+        RLIMIT_AS=5,
+        RLIMIT_DATA=6,
+        RLIM_INFINITY=-1,
+        getrlimit=lambda resource_id: (
+            (inherited_bytes, inherited_bytes) if resource_id == 5 else (-1, -1)
+        ),
+        setrlimit=lambda _resource_id, _limits: None,
+    )
+    monkeypatch.setitem(sys.modules, "resource", fake_resource)
+    monkeypatch.setattr(isolation_module.sys, "platform", "linux")
+    monkeypatch.setattr(
+        isolation_module,
+        "_linux_virtual_memory_bytes",
+        lambda: inherited_bytes,
+    )
+
+    with pytest.raises(IsolationUnavailableError, match="leaves no child memory"):
+        isolation_module._apply_resource_limits(
+            timeout_seconds=2.0,
+            max_memory_mb=32,
+            max_output_bytes=1_024,
+        )
+
+
+def test_fork_failure_restores_exact_parent_interpreter_hooks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous_hooks = (
+        sys.gettrace(),
+        sys.getprofile(),
+        threading.gettrace(),
+        threading.getprofile(),
+    )
+
+    def trace_hook(_frame: Any, _event: str, _arg: Any) -> Any:
+        return trace_hook
+
+    def profile_hook(_frame: Any, _event: str, _arg: Any) -> None:
+        return None
+
+    sys.settrace(trace_hook)
+    sys.setprofile(profile_hook)
+    threading.settrace(trace_hook)
+    threading.setprofile(profile_hook)
+    monkeypatch.setattr(
+        isolation_module.os,
+        "fork",
+        lambda: (_ for _ in ()).throw(PermissionError("fork denied")),
+    )
+    try:
+        with pytest.raises(PermissionError, match="fork denied"):
+            isolation_module._fork_with_clean_interpreter_hooks()
+        assert sys.gettrace() is trace_hook
+        assert sys.getprofile() is profile_hook
+        assert threading.gettrace() is trace_hook
+        assert threading.getprofile() is profile_hook
+    finally:
+        isolation_module._restore_interpreter_hooks(previous_hooks)
+
+
+def test_hook_disable_failure_restores_exact_parent_hooks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous_hooks = (
+        sys.gettrace(),
+        sys.getprofile(),
+        threading.gettrace(),
+        threading.getprofile(),
+    )
+
+    def trace_hook(_frame: Any, _event: str, _arg: Any) -> Any:
+        return trace_hook
+
+    def profile_hook(_frame: Any, _event: str, _arg: Any) -> None:
+        return None
+
+    def fail_after_partial_clear() -> None:
+        sys.settrace(None)
+        threading.settrace(None)
+        raise RuntimeError("clear failed")
+
+    sys.settrace(trace_hook)
+    sys.setprofile(profile_hook)
+    threading.settrace(trace_hook)
+    threading.setprofile(profile_hook)
+    monkeypatch.setattr(
+        isolation_module,
+        "_clear_inherited_interpreter_hooks",
+        fail_after_partial_clear,
+    )
+    try:
+        with pytest.raises(IsolationUnavailableError, match="disable interpreter hooks"):
+            isolation_module._fork_with_clean_interpreter_hooks()
+        assert sys.gettrace() is trace_hook
+        assert sys.getprofile() is profile_hook
+        assert threading.gettrace() is trace_hook
+        assert threading.getprofile() is profile_hook
+    finally:
+        isolation_module._restore_interpreter_hooks(previous_hooks)
+
+
+def test_parent_hook_restore_failure_terminates_started_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous_hooks = (
+        sys.gettrace(),
+        sys.getprofile(),
+        threading.gettrace(),
+        threading.getprofile(),
+    )
+    restore_hooks = isolation_module._restore_interpreter_hooks
+    terminated: list[int] = []
+    monkeypatch.setattr(isolation_module.os, "fork", lambda: 424_242)
+    monkeypatch.setattr(
+        isolation_module,
+        "_restore_interpreter_hooks",
+        lambda _hooks: (_ for _ in ()).throw(RuntimeError("restore failed")),
+    )
+    monkeypatch.setattr(isolation_module, "_terminate_process_tree", terminated.append)
+    try:
+        with pytest.raises(IsolationUnavailableError, match="child terminated"):
+            isolation_module._fork_with_clean_interpreter_hooks()
+        assert terminated == [424_242]
+    finally:
+        restore_hooks(previous_hooks)
+
+
+def test_hook_side_effects_are_rechecked_immediately_before_fork(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous_profile = sys.getprofile()
+    release = threading.Event()
+    worker: threading.Thread | None = None
+    fork_called = False
+
+    def wait_for_release() -> None:
+        release.wait()
+
+    def start_thread_while_hooks_are_cleared(
+        frame: Any,
+        event: str,
+        _arg: Any,
+    ) -> None:
+        nonlocal worker
+        if (
+            worker is None
+            and event == "call"
+            and frame.f_code is isolation_module._clear_inherited_interpreter_hooks.__code__
+        ):
+            worker = threading.Thread(target=wait_for_release)
+            worker.start()
+
+    def record_fork() -> int:
+        nonlocal fork_called
+        fork_called = True
+        raise AssertionError("fork must not be reached")
+
+    monkeypatch.setattr(isolation_module, "local_isolation_available", lambda: True)
+    monkeypatch.setattr(
+        isolation_module,
+        "_native_thread_count",
+        lambda: 2 if worker is not None and worker.is_alive() else 1,
+    )
+    monkeypatch.setattr(isolation_module, "_sigchld_disposition_is_safe", lambda: True)
+    monkeypatch.setattr(
+        isolation_module,
+        "_child_ownership_primitives_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(isolation_module.os, "fork", record_fork)
+    sys.setprofile(start_thread_while_hooks_are_cleared)
+    try:
+        with pytest.raises(IsolationUnavailableError, match="native thread state changed"):
+            run_isolated_json(lambda: True, timeout_seconds=1.0)
+        assert worker is not None and worker.is_alive()
+        assert not fork_called
+    finally:
+        sys.setprofile(previous_profile)
+        release.set()
+        if worker is not None:
+            worker.join(timeout=1.0)
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Darwin uses process-only RLIMIT_NPROC")
