@@ -436,8 +436,11 @@ def test_windows_directory_guard_rejects_handle_identity_mismatch(
 
     root = tmp_path / "knowledge"
     root.mkdir()
+    create_file_args: tuple[object, ...] | None = None
 
-    def create_file(*_args: object) -> int:
+    def create_file(*args: object) -> int:
+        nonlocal create_file_args
+        create_file_args = args
         return 17
 
     kernel32 = SimpleNamespace(CreateFileW=create_file)
@@ -450,6 +453,9 @@ def test_windows_directory_guard_rejects_handle_identity_mismatch(
     with pytest.raises(ConfinedPathError, match="unexpected identity"):
         confined_files._windows_open_stable_directory(root, os.lstat(root))
 
+    assert create_file_args is not None
+    assert create_file_args[1] == 0x0001 | 0x0080  # FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES
+    assert create_file_args[2] == 0x0001 | 0x0002  # FILE_SHARE_READ | FILE_SHARE_WRITE
     assert closed == [17]
 
 

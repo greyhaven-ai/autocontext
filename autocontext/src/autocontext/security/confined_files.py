@@ -412,7 +412,7 @@ def _windows_open_stable_directory(path: Path, expected_stat: os.stat_result) ->
         create_file.restype = wintypes.HANDLE
         handle = create_file(
             _windows_extended_path(path),
-            0x0080,  # FILE_READ_ATTRIBUTES
+            0x0001 | 0x0080,  # FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES
             0x0001 | 0x0002,  # FILE_SHARE_READ | FILE_SHARE_WRITE; intentionally no FILE_SHARE_DELETE
             None,
             3,  # OPEN_EXISTING
@@ -498,6 +498,7 @@ def _read_confined_bytes_portable(
                 expected_identity = _stat_identity(os.lstat(target))
             except FileNotFoundError:
                 return None
+            guard.verify()
 
             flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
             flags |= getattr(os, "O_NOFOLLOW", 0)
