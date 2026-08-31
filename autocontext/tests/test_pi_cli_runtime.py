@@ -116,6 +116,18 @@ def test_generate_json_object_without_result_serializes_full_payload() -> None:
     assert output.metadata["raw_json"] == raw_payload
 
 
+@pytest.mark.parametrize("raw", ['["first", "second"]', '"quoted answer"', "42", "null"])
+def test_generate_non_object_json_falls_back_to_raw_text(raw: str) -> None:
+    runtime = PiCLIRuntime(PiCLIConfig())
+    mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout=raw, stderr="")
+
+    with patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result):
+        output = runtime.generate("test prompt")
+
+    assert output.text == raw
+    assert output.model == "pi"
+
+
 def test_generate_json_output_disabled() -> None:
     runtime = PiCLIRuntime(PiCLIConfig(json_output=False))
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="raw output\n", stderr="")

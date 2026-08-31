@@ -265,21 +265,23 @@ class PiCLIRuntime(AgentRuntime):
         if self._config.json_output:
             try:
                 data = json.loads(raw)
-                text = data.get("result", data.get("output", ""))
-                if not isinstance(text, str) or not text.strip():
-                    text = json.dumps(data)
-                return AgentOutput(
-                    text=text,
-                    cost_usd=data.get("cost_usd", 0.0),
-                    model=data.get("model", "pi"),
-                    session_id=data.get("session_id"),
-                    metadata={
-                        "exit_code": exit_code,
-                        "raw_json": data,
-                    },
-                )
             except (json.JSONDecodeError, TypeError):
-                logger.debug("runtimes.pi_cli: suppressed json.JSONDecodeError), TypeError", exc_info=True)
+                logger.debug("Pi CLI output is not valid JSON; using raw text", exc_info=True)
+            else:
+                if isinstance(data, dict):
+                    text = data.get("result", data.get("output", ""))
+                    if not isinstance(text, str) or not text.strip():
+                        text = json.dumps(data)
+                    return AgentOutput(
+                        text=text,
+                        cost_usd=data.get("cost_usd", 0.0),
+                        model=data.get("model", "pi"),
+                        session_id=data.get("session_id"),
+                        metadata={
+                            "exit_code": exit_code,
+                            "raw_json": data,
+                        },
+                    )
 
         # Raw text fallback
         return AgentOutput(
