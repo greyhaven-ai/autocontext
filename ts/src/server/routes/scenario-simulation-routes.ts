@@ -26,6 +26,7 @@ export async function tryScenarioSimulationRoutes(
 
   // GET /api/scenarios
   if (ctx.url === "/api/scenarios") {
+    if (rejectNonReadMethod(ctx)) return true;
     const response = executeRunSimulationReadRequest({
       route: "scenarios",
       runManager,
@@ -37,7 +38,8 @@ export async function tryScenarioSimulationRoutes(
   }
 
   // GET /api/simulations
-  if (ctx.method === "GET" && ctx.url === "/api/simulations") {
+  if (ctx.url === "/api/simulations") {
+    if (rejectNonReadMethod(ctx)) return true;
     const response = executeRunSimulationReadRequest({
       route: "simulations_list",
       runManager,
@@ -50,7 +52,8 @@ export async function tryScenarioSimulationRoutes(
 
   // GET /api/simulations/:name
   const simulationMatch = ctx.url.match(/^\/api\/simulations\/([^/]+)$/);
-  if (ctx.method === "GET" && simulationMatch) {
+  if (simulationMatch) {
+    if (rejectNonReadMethod(ctx)) return true;
     const [, rawName] = simulationMatch;
     const response = executeRunSimulationReadRequest({
       route: "simulation_detail",
@@ -66,7 +69,8 @@ export async function tryScenarioSimulationRoutes(
 
   // GET /api/simulations/:name/dashboard
   const simulationDashboardMatch = ctx.url.match(/^\/api\/simulations\/([^/]+)\/dashboard$/);
-  if (ctx.method === "GET" && simulationDashboardMatch) {
+  if (simulationDashboardMatch) {
+    if (rejectNonReadMethod(ctx)) return true;
     const [, rawName] = simulationDashboardMatch;
     const response = executeRunSimulationReadRequest({
       route: "simulation_dashboard",
@@ -81,4 +85,11 @@ export async function tryScenarioSimulationRoutes(
   }
 
   return false;
+}
+
+function rejectNonReadMethod(ctx: HttpRouteContext): boolean {
+  if (ctx.method === "GET" || ctx.method === "HEAD") return false;
+  ctx.res.setHeader("Allow", "GET, HEAD");
+  ctx.json(405, { error: "Method not allowed" });
+  return true;
 }

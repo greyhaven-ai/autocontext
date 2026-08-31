@@ -10,7 +10,6 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -37,6 +36,7 @@ from autocontext.cli_package_commands import register_package_commands
 from autocontext.cli_probes import register_probes_command
 from autocontext.cli_queue import register_queue_command
 from autocontext.cli_rescore import rescore_command
+from autocontext.cli_results import AgentTaskRunSummary, print_agent_task_run_summary, print_generation_run_summary
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_run_inspect import (
     _lineage_cell,
@@ -86,21 +86,12 @@ if TYPE_CHECKING:
     from autocontext.providers.base import LLMProvider
 
 
-@dataclass(slots=True)
-class AgentTaskRunSummary:
-    """Result summary for an agent-task execution via the CLI."""
-    run_id: str
-    scenario: str
-    best_score: float
-    best_output: str
-    total_rounds: int
-    met_threshold: bool
-    termination_reason: str
-    optimizer_metadata: dict[str, str] | None = None
-
-app = typer.Typer(cls=StructuredUsageGroup, help="Run, inspect, and export agent-evaluation workflows.",
-    epilog="Start with `autoctx solve \"your goal\"`. Run `autoctx commands --all` for the full catalog.",
-    invoke_without_command=True)
+app = typer.Typer(
+    cls=StructuredUsageGroup,
+    help="Run, inspect, and export agent-evaluation workflows.",
+    epilog='Start with `autoctx solve "your goal"`. Run `autoctx commands --all` for the full catalog.',
+    invoke_without_command=True,
+)
 console = Console()
 _PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides AUTOCONTEXT_PRESET env var."
 
@@ -434,6 +425,17 @@ def run(
     if preset and not json_output:
         console.print(f"[dim]Active preset: {preset}[/dim]")
 
+    server_authenticator = None
+    if serve:
+        from autocontext.server.auth import (
+            assert_secure_server_bind,
+            consume_control_plane_authenticator_from_environment,
+        )
+
+        # Capture and remove the host credential before preflight can resolve a
+        # persisted scenario or the generation runner can load project code.
+        server_authenticator = consume_control_plane_authenticator_from_environment()
+
     if not skip_preflight:
         # Agent-task scenarios are not in SCENARIO_REGISTRY -- they are resolved
         # by _is_agent_task -- so the registry check would reject a whole class
@@ -465,27 +467,14 @@ def run(
         if json_output:
             _write_json_stdout(dataclasses.asdict(task_summary))
         else:
-            table = Table(title="Agent Task Result")
-            table.add_column("Run ID")
-            table.add_column("Scenario")
-            table.add_column("Best Score")
-            table.add_column("Rounds")
-            table.add_column("Threshold Met")
-            table.add_column("Termination")
-            table.add_row(
-                task_summary.run_id,
-                task_summary.scenario,
-                f"{task_summary.best_score:.4f}",
-                str(task_summary.total_rounds),
-                str(task_summary.met_threshold),
-                task_summary.termination_reason,
-            )
-            console.print(table)
+            print_agent_task_run_summary(console, task_summary)
         return
 
     if serve:
         from autocontext.loop.controller import LoopController
         from autocontext.server.app import create_app
+
+        assert_secure_server_bind("127.0.0.1", authenticator=server_authenticator)
         runner = _runner(preset)
         controller = LoopController()
         runner.controller = controller
@@ -497,9 +486,13 @@ def run(
             finally:
                 controller.abort_pending_chats("interactive run ended")
 
+        interactive_app = create_app(
+            controller=controller,
+            events=runner.events,
+            server_authenticator=server_authenticator,
+        )
         loop_thread = threading.Thread(target=_loop_target, daemon=True)
         loop_thread.start()
-        interactive_app = create_app(controller=controller, events=runner.events)
         console.print(f"[green]Interactive server started on port {port}[/green]")
         console.print(f"[dim]API: http://localhost:{port}/api/runs | WS: ws://localhost:{port}/ws/interactive[/dim]")
         try:
@@ -512,20 +505,7 @@ def run(
         if json_output:
             _write_json_stdout(dataclasses.asdict(summary))
         else:
-            table = Table(title="autocontext Run Summary")
-            table.add_column("Run ID")
-            table.add_column("Scenario")
-            table.add_column("Generations")
-            table.add_column("Best Score")
-            table.add_column("Elo")
-            table.add_row(
-                summary.run_id,
-                summary.scenario,
-                str(summary.generations_executed),
-                f"{summary.best_score:.4f}",
-                f"{summary.current_elo:.2f}",
-            )
-            console.print(table)
+            print_generation_run_summary(console, summary)
 
 
 @app.command()
@@ -866,6 +846,14 @@ def tui(
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+    from autocontext.server.auth import (
+        assert_secure_server_bind,
+        consume_control_plane_authenticator_from_environment,
+    )
+
+    server_authenticator = consume_control_plane_authenticator_from_environment()
+    assert_secure_server_bind("127.0.0.1", authenticator=server_authenticator)
+
     from autocontext.loop.controller import LoopController
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.server.app import create_app
@@ -876,7 +864,12 @@ def tui(
     events = EventStreamEmitter(settings.event_stream_path)
     run_manager = RunManager(controller, events, settings)
 
-    interactive_app = create_app(controller=controller, events=events, run_manager=run_manager)
+    interactive_app = create_app(
+        controller=controller,
+        events=events,
+        run_manager=run_manager,
+        server_authenticator=server_authenticator,
+    )
 
     # AC-467: standalone tui/ removed — server is API-only.
     # Interactive TUI is available via the TS package: autoctx tui
@@ -1217,6 +1210,7 @@ def wait(
 
 
 # Backported from TS package (AC-382)
+
 
 @app.command()
 def judge(

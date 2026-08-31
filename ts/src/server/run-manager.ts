@@ -334,7 +334,15 @@ export class RunManager {
     });
   }
 
-  getInteractiveCapabilities(): string[] {
+  getInteractiveCapabilities(options: { allowHostExecution?: boolean } = {}): string[] {
+    if (this.#active) {
+      return this.#activeHintSupportsImageAttachments
+        ? [IMAGE_ATTACHMENTS_CAPABILITY]
+        : [];
+    }
+    if (!options.allowHostExecution) {
+      return [];
+    }
     try {
       return this.#providerSession.supportsInteractiveImageAttachments()
         ? [IMAGE_ATTACHMENTS_CAPABILITY]

@@ -16,7 +16,7 @@ from multiprocessing.connection import Connection
 from typing import Any
 
 from autocontext.config import AppSettings
-from autocontext.loop.generation_runner import GenerationRunner
+from autocontext.security.child_process_env import clear_control_plane_secrets_from_current_process
 
 logger = logging.getLogger(__name__)
 
@@ -215,9 +215,7 @@ class _IncrementalConnectionReader:
                 UnicodeDecodeError,
                 ValueError,
             ) as exc:
-                raise _RunProcessProtocolError(
-                    "interactive run IPC frame contains invalid JSON"
-                ) from exc
+                raise _RunProcessProtocolError("interactive run IPC frame contains invalid JSON") from exc
 
         try:
             fd = self._connection.fileno()
@@ -248,9 +246,7 @@ class _IncrementalConnectionReader:
                 bytes_read += len(chunk)
                 self._buffer.extend(chunk)
                 if len(messages) < max_messages:
-                    messages.extend(
-                        self._extract_messages(max_messages - len(messages))
-                    )
+                    messages.extend(self._extract_messages(max_messages - len(messages)))
         finally:
             try:
                 os.set_blocking(fd, True)
@@ -315,15 +311,11 @@ class _ProcessLoopController:
                 },
             )
             response = _receive_json_message(self._connection)
-            if response.get("type") != "control_result" or not isinstance(
-                response.get("ok"), bool
-            ):
+            if response.get("type") != "control_result" or not isinstance(response.get("ok"), bool):
                 raise RuntimeError("interactive controller returned an invalid response")
             next_token = response.get("next_token")
             if not isinstance(next_token, str):
-                raise RuntimeError(
-                    "interactive controller returned an invalid protocol token"
-                )
+                raise RuntimeError("interactive controller returned an invalid protocol token")
             self._next_token = next_token
         if not response["ok"]:
             error_type = response.get("error_type", "RuntimeError")
@@ -382,10 +374,7 @@ class _ProcessEventEmitter:
         self._closed = False
 
     def _send_message(self, message: dict[str, Any]) -> None:
-        if (
-            message.get("type") == "event"
-            and len(_encode_json_message(message)) > _MAX_EVENT_IPC_BYTES
-        ):
+        if message.get("type") == "event" and len(_encode_json_message(message)) > _MAX_EVENT_IPC_BYTES:
             raise ValueError("interactive run event exceeds the size limit")
         _send_json_message(self._connection, message)
 
@@ -470,6 +459,11 @@ def _run_generation_process(
     event_connection: Connection,
 ) -> None:
     """Spawn target: run generation on a single-threaded process main thread."""
+    # A spawned run loads project-configured hooks and provider modules. Consume
+    # host control-plane credentials before any of that project code is imported.
+    clear_control_plane_secrets_from_current_process()
+    from autocontext.loop.generation_runner import GenerationRunner
+
     if os.name == "posix":
         try:
             os.setsid()

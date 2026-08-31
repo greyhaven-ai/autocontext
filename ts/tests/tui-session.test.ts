@@ -422,8 +422,45 @@ describe("WebSocket TUI transport", () => {
     const connected = transport.connect();
     socket.open();
     await connected;
-    expect(selectedProtocol).toMatch(/^autocontext\.bearer\.[A-Za-z0-9_-]+$/);
+    expect(selectedProtocol).toMatch(/^actx1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    expect(selectedProtocol).not.toContain("0123456789abcdef0123456789abcdef");
+    if (typeof selectedProtocol !== "string") throw new Error("missing auth protocol");
+    const claims = JSON.parse(
+      Buffer.from(selectedProtocol.split(".")[1]!, "base64url").toString("utf8"),
+    );
+    expect(claims.caps).toEqual(["content:read", "control:operate", "host:execute"]);
     transport.disconnect();
+  });
+
+  it("mints a fresh one-use proof for every WebSocket reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets: FakeSocket[] = [];
+      const protocols: Array<string | string[] | undefined> = [];
+      const transport = new WebSocketTuiTransport("ws://127.0.0.1/ws/interactive", {
+        authToken: "0123456789abcdef0123456789abcdef",
+        reconnectBaseMs: 10,
+        reconnectMaxMs: 10,
+        createSocket: (_url, protocol) => {
+          protocols.push(protocol);
+          const socket = new FakeSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      });
+      const connected = transport.connect();
+      sockets[0]!.open();
+      await connected;
+      sockets[0]!.serverClose();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(sockets).toHaveLength(2);
+      expect(protocols[0]).toMatch(/^actx1\./);
+      expect(protocols[1]).toMatch(/^actx1\./);
+      expect(protocols[1]).not.toBe(protocols[0]);
+      transport.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reconnects with backoff and keeps parsed messages on one typed transport", async () => {

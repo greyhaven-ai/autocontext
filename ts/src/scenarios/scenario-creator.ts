@@ -4,6 +4,7 @@
  */
 
 import type { LLMProvider } from "../types/index.js";
+import { assertSafeScenarioId } from "../knowledge/scenario-id.js";
 import { designCoordination } from "./coordination-designer.js";
 import type { CoordinationSpec } from "./coordination-spec.js";
 import {
@@ -574,6 +575,7 @@ export async function createScenarioFromDescription(
       );
       return {
         ...created,
+        name: assertSafeScenarioId(created.name, "generated scenario name"),
         llmClassifierFallbackUsed: detection.llmClassifierFallbackUsed,
         spec: healSpec(
           created.spec as Record<string, unknown>,
@@ -588,13 +590,15 @@ export async function createScenarioFromDescription(
     }
   }
 
+  const created = await createGenericScenarioFromDescription(
+    description,
+    provider,
+    defaultName,
+    defaultFamily,
+  );
   return {
-    ...(await createGenericScenarioFromDescription(
-      description,
-      provider,
-      defaultName,
-      defaultFamily,
-    )),
+    ...created,
+    name: assertSafeScenarioId(created.name, "generated scenario name"),
     llmClassifierFallbackUsed: detection.llmClassifierFallbackUsed,
   };
 }

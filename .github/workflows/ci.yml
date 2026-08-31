@@ -328,6 +328,9 @@ jobs:
       - name: Dashboard API smoke
         env:
           AUTOCONTEXT_AGENT_PROVIDER: deterministic
+          # This job is isolated and binds only to loopback. Production/default
+          # server startup remains fail-closed without scoped credentials.
+          AUTOCONTEXT_ALLOW_TOKENLESS_LOOPBACK: "1"
         run: |
           cleanup() { kill $SERVER_PID 2>/dev/null || true; }
           trap cleanup EXIT

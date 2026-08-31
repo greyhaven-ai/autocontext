@@ -490,6 +490,28 @@ describe("RuntimeWorkspaceEnv", () => {
     }
   });
 
+  it("never grants explicit control-plane credentials to local commands", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-workspace-"));
+    try {
+      const env = createLocalWorkspaceEnv({ root, cwd: "/repo" });
+      await env.mkdir(".", { recursive: true });
+
+      const result = await env.exec(
+        `${JSON.stringify(process.execPath)} -e "process.stdout.write((process.env.EXPLICIT_VALUE ?? '') + ':' + (process.env.AUTOCONTEXT_SERVER_TOKEN ?? ''))"`,
+        {
+          env: {
+            EXPLICIT_VALUE: "allowed",
+            AUTOCONTEXT_SERVER_TOKEN: "must-not-cross-boundary",
+          },
+        },
+      );
+
+      expect(result).toEqual({ stdout: "allowed:", stderr: "", exitCode: 0 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("terminates fallback commands whose output exceeds the process cap", async () => {
     const root = mkdtempSync(join(tmpdir(), "autoctx-workspace-"));
     try {

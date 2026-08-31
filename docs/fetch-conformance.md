@@ -127,6 +127,9 @@ The invocation cases verify:
 A conforming host should provide only explicit capabilities to the generated
 entrypoint or wrapper:
 
+- pass a persistent `authenticator` (or construct the handler once from
+  `authToken`/`authCredentials`) and exact `allowedOrigins`; use
+  `allowInsecureUnauthenticated` only inside the isolated conformance harness;
 - create fresh stores for conformance cases and isolate destructive cases;
 - pass plain `env` data from trusted host code instead of reading ambient
   deployment state inside the generated handler;
@@ -157,6 +160,7 @@ symptom-to-fix checklist, see
 | Runtime prompts fail in invocation cases.          | Wrapper did not pass the explicit runtime capability.   | Forward the provided runtime or selected runtime factory.           |
 | Named factory loads before invocation.             | Wrapper eagerly called the factory module map.          | Wrap factories with lazy runtime creation.                          |
 | Named factory overrides direct capabilities.       | Wrapper ignored runtime precedence.                     | Prefer `runtime`, then `runtimeFactory`, then `runtimeFactoryName`. |
+| Every protected route returns `401`.                | Host did not wire a persistent authenticator or credentials. | Configure scoped authentication; use the insecure opt-in only in isolated tests. |
 
 These helpers intentionally stop at the generic Fetch/ESM seam. Durable storage
 adapters, deployment descriptors, scheduling policy, secrets handling, and

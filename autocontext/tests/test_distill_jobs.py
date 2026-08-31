@@ -1,4 +1,5 @@
 """Tests for AC-208: Wire OpenClaw distill endpoints to real distillation sidecar jobs."""
+
 from __future__ import annotations
 
 import json
@@ -347,7 +348,11 @@ class TestDistillSidecarProtocol:
 
 
 class TestCommandDistillSidecarSecurity:
-    def test_launch_preserves_untrusted_values_as_single_argv_entries(self, tmp_path: Path) -> None:
+    def test_launch_preserves_untrusted_values_as_single_argv_entries(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         from autocontext.openclaw.distill import CommandDistillSidecar
 
         sidecar = CommandDistillSidecar(
@@ -355,6 +360,7 @@ class TestCommandDistillSidecarSecurity:
             cwd=tmp_path,
         )
         hostile_scenario = "grid; touch /tmp/not-created $(id) --extra-flag"
+        monkeypatch.setenv("AUTOCONTEXT_SERVER_TOKEN", "must-not-reach-sidecar")
 
         with patch("autocontext.openclaw.distill.subprocess.Popen") as popen:
             sidecar.launch("job-123", hostile_scenario, {"epochs": 2})
@@ -368,6 +374,7 @@ class TestCommandDistillSidecarSecurity:
             hostile_scenario,
         ]
         assert popen.call_args.kwargs.get("shell") is None
+        assert "AUTOCONTEXT_SERVER_TOKEN" not in popen.call_args.kwargs["env"]
 
     @pytest.mark.parametrize(
         "raw_command",

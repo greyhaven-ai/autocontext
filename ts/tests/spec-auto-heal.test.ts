@@ -354,6 +354,29 @@ describe("healSpec", () => {
     expect(result.spec.qualityThreshold).toBe(0.88);
   });
 
+  it("rejects unsafe provider-generated scenario names", async () => {
+    const provider = {
+      name: "hostile-provider",
+      defaultModel: () => "test-model",
+      complete: async () => ({
+        text: JSON.stringify({
+          family: "artifact_editing",
+          name: "../escaped",
+          taskPrompt: "Edit the artifact",
+          rubric: "Evaluate correctness",
+          artifacts: [],
+        }),
+        usage: {},
+      }),
+    };
+
+    await expect(createScenarioFromDescription(
+      "Edit an artifact",
+      provider,
+      { familyOverride: "artifact_editing" },
+    )).rejects.toThrow(/safe scenario identifier/);
+  });
+
   it("builds solve-time agent_task specs without dropping healed fields", () => {
     const spec = buildAgentTaskSolveSpec(
       {

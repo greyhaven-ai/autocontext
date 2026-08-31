@@ -14,7 +14,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("AUTOCONTEXT_KNOWLEDGE_ROOT", str(tmp_path / "knowledge"))
     monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "runs.sqlite3"))
     monkeypatch.setenv("AUTOCONTEXT_AGENT_PROVIDER", "deterministic")
-    return TestClient(create_app())
+    return TestClient(create_app(allow_insecure_test_principal=True))
 
 
 def test_put_writes_knowledge_files_and_get_round_trips(client: TestClient, tmp_path: Path) -> None:

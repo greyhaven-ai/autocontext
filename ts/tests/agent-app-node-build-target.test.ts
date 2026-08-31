@@ -13,6 +13,10 @@ import {
   RuntimeSessionEventLog,
   type RuntimeSessionEventStore,
 } from "../src/session/runtime-events.js";
+import { serverAuthorizationHeader } from "../src/server/server-auth.js";
+
+const SERVER_TOKEN = "node-agent-server-test-token-0000000000000000";
+const TOKENLESS_LOOPBACK_ENV = { AUTOCONTEXT_ALLOW_TOKENLESS_LOOPBACK: "1" };
 
 async function listen(server: Awaited<ReturnType<typeof createNodeAgentAppServer>>): Promise<string> {
   await new Promise<void>((resolve, reject) => {
@@ -146,17 +150,21 @@ describe("Node agent app build target", () => {
       [
         "export const triggers = { webhook: true };",
         "export default async function (ctx) {",
-        "  return { id: ctx.id, message: ctx.payload.message, token: ctx.env.SUPPORT_TOKEN, leaked: ctx.env.SECRET_TOKEN };",
+        "  return { id: ctx.id, message: ctx.payload.message, token: ctx.env.SUPPORT_TOKEN, leaked: ctx.env.SECRET_TOKEN, authSecret: ctx.env.AUTOCONTEXT_SERVER_TOKEN ?? null };",
         "}",
       ].join("\n"),
     );
-    writeFileSync(join(root, ".env.local"), "SUPPORT_TOKEN=file-token\n");
+    writeFileSync(
+      join(root, ".env.local"),
+      `SUPPORT_TOKEN=file-token\nAUTOCONTEXT_SERVER_TOKEN=${SERVER_TOKEN}\n`,
+    );
     let createRuntimeCalls = 0;
 
     const server = await createNodeAgentAppServer({
       projectRoot: root,
       envFile: ".env.local",
       processEnv: {
+        ...TOKENLESS_LOOPBACK_ENV,
         SUPPORT_TOKEN: "shell-token",
         SECRET_TOKEN: "must-not-be-captured",
       },
@@ -188,6 +196,7 @@ describe("Node agent app build target", () => {
           id: "ticket-123",
           message: "please triage",
           token: "shell-token",
+          authSecret: null,
         },
       });
       expect(createRuntimeCalls).toBe(0);
@@ -221,6 +230,7 @@ describe("Node agent app build target", () => {
 
     const server = await createNodeAgentAppServer({
       projectRoot: root,
+      processEnv: TOKENLESS_LOOPBACK_ENV,
       eventStore: store,
       createRuntime: () => ({
         name: "fake-node-target-runtime",
@@ -255,5 +265,134 @@ describe("Node agent app build target", () => {
     } finally {
       await close(server);
     }
+  });
+
+  it("authenticates generated app routes before handlers and enforces route capabilities", async () => {
+    process.env.AUTOCONTEXT_SERVER_TOKEN = SERVER_TOKEN;
+    writeFileSync(
+      join(root, ".autoctx", "agents", "support.mjs"),
+      "export default async function (ctx) { return { id: ctx.id, ambientAuthSecret: process.env.AUTOCONTEXT_SERVER_TOKEN ?? null }; }\n",
+    );
+    const server = await createNodeAgentAppServer({
+      projectRoot: root,
+      authToken: SERVER_TOKEN,
+      credentialsFile: "",
+      allowedOrigins: ["https://agent-ui.example"],
+    });
+    const baseUrl = await listen(server);
+    try {
+      const unauthenticated = await fetch(`${baseUrl}/agents/support/invoke`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{not-json",
+      });
+      expect(unauthenticated.status).toBe(401);
+
+      const readOnlyManifest = await fetch(`${baseUrl}/manifest`, {
+        headers: {
+          authorization: serverAuthorizationHeader(SERVER_TOKEN, {
+            method: "GET",
+            target: "/manifest",
+            capabilities: ["control:read"],
+          }),
+        },
+      });
+      expect(readOnlyManifest.status).toBe(403);
+
+      const readHeader = serverAuthorizationHeader(SERVER_TOKEN, {
+        method: "GET",
+        target: "/manifest",
+        capabilities: ["control:read", "host:execute"],
+      });
+      expect((await fetch(`${baseUrl}/manifest`, {
+        headers: { authorization: readHeader },
+      })).status).toBe(200);
+      expect((await fetch(`${baseUrl}/manifest`, {
+        headers: { authorization: readHeader },
+      })).status).toBe(401);
+
+      const underScoped = await fetch(`${baseUrl}/agents/support/invoke`, {
+        method: "POST",
+        headers: {
+          authorization: serverAuthorizationHeader(SERVER_TOKEN, {
+            method: "POST",
+            target: "/agents/support/invoke",
+            capabilities: ["control:read"],
+          }),
+          "content-type": "application/json",
+        },
+        body: "{}",
+      });
+      expect(underScoped.status).toBe(403);
+
+      const missingOperate = await fetch(`${baseUrl}/agents/support/invoke`, {
+        method: "POST",
+        headers: {
+          authorization: serverAuthorizationHeader(SERVER_TOKEN, {
+            method: "POST",
+            target: "/agents/support/invoke",
+            capabilities: ["content:read", "host:execute"],
+          }),
+          "content-type": "application/json",
+        },
+        body: "{}",
+      });
+      expect(missingOperate.status).toBe(403);
+
+      const origin = "https://agent-ui.example";
+      const invoked = await fetch(`${baseUrl}/agents/support/invoke`, {
+        method: "POST",
+        headers: {
+          authorization: serverAuthorizationHeader(SERVER_TOKEN, {
+            method: "POST",
+            target: "/agents/support/invoke",
+            capabilities: ["content:read", "control:operate", "host:execute"],
+            origin,
+          }),
+          "content-type": "application/json",
+          origin,
+        },
+        body: JSON.stringify({ id: "secured" }),
+      });
+      expect(invoked.status).toBe(200);
+      expect(invoked.headers.get("access-control-allow-origin")).toBe(origin);
+      expect(await invoked.json()).toMatchObject({
+        result: { id: "secured", ambientAuthSecret: null },
+      });
+      expect(process.env.AUTOCONTEXT_SERVER_TOKEN).toBeUndefined();
+
+      expect((await fetch(`${baseUrl}/manifest`, {
+        headers: { origin: "https://attacker.example" },
+      })).status).toBe(403);
+    } finally {
+      await close(server);
+    }
+  });
+
+  it("rejects an unauthenticated non-loopback generated app bind", async () => {
+    await expect(createNodeAgentAppServer({
+      projectRoot: root,
+      host: "0.0.0.0",
+      authToken: "",
+      credentialsFile: "",
+    })).rejects.toThrow("Refusing to bind");
+  });
+
+  it("clears ambient server credentials when security parsing fails", async () => {
+    process.env.AUTOCONTEXT_SERVER_TOKEN = "short";
+    await expect(createNodeAgentAppServer({
+      projectRoot: root,
+      credentialsFile: "",
+    })).rejects.toThrow(/at least 32 bytes/);
+    expect(process.env.AUTOCONTEXT_SERVER_TOKEN).toBeUndefined();
+  });
+
+  it("requires an explicit opt-in for a tokenless loopback generated app", async () => {
+    await expect(createNodeAgentAppServer({
+      projectRoot: root,
+      authToken: "",
+      credentialsFile: "",
+      processEnv: {},
+    })).rejects.toThrow("AUTOCONTEXT_ALLOW_TOKENLESS_LOOPBACK=1");
   });
 });

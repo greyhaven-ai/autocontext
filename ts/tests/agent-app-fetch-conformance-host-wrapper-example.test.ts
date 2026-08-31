@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  createAgentAppFetchHandler,
   createInMemoryAgentAppFetchSessionEventStore,
   createInMemoryAgentAppFetchWorkspaceStore,
   type AgentAppFetchHandlerOptions,
@@ -27,7 +28,12 @@ const PROVIDER_OR_HOSTED_BOUNDARY_TERMS =
 
 describe("Fetch conformance host-wrapper example", () => {
   it("runs workspace, session, invocation, and runtime-factory conformance suites", async () => {
-    const example = buildFetchConformanceHostWrapperExample();
+    const example = buildFetchConformanceHostWrapperExample({
+      createHandler: (options) => createAgentAppFetchHandler({
+        ...options,
+        allowInsecureUnauthenticated: true,
+      }),
+    });
 
     expect(example.workspaceStoreCases.map((testCase) => testCase.name)).toContain(
       "workspace store read-your-writes and lexicographic listing",

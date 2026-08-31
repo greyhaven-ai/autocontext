@@ -190,4 +190,24 @@ describe("run-manager provider session", () => {
     expect(session.buildProvider("analyst")).toBe(analystProvider);
     expect(session.buildProvider("coach")).toBe(defaultProvider);
   });
+
+  it("describes routing metadata without constructing provider implementations", () => {
+    const buildRoleProviderBundle = vi.fn(() => {
+      throw new Error("provider construction must not run for metadata");
+    });
+    const session = new RunManagerProviderSession(
+      { providerType: "deterministic", model: "metadata-model" },
+      {
+        loadSettings: () => makeSettings("deterministic"),
+        buildRoleProviderBundle,
+      },
+    );
+
+    expect(session.describeRoutingContext()).toMatchObject({
+      provider: "deterministic",
+      model: "metadata-model",
+      roles: expect.any(Object),
+    });
+    expect(buildRoleProviderBundle).not.toHaveBeenCalled();
+  });
 });

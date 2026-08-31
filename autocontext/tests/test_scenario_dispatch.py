@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -16,8 +17,10 @@ from autocontext.config.settings import AppSettings
 from autocontext.loop.generation_runner import RunSummary
 from autocontext.scenarios.agent_task import AgentTaskInterface
 from autocontext.scenarios.negotiation import NegotiationInterface
+from autocontext.server.auth import SERVER_AUTH_TOKEN_ENV
 
 runner = CliRunner()
+_SERVER_TOKEN = "0123456789abcdef0123456789abcdef"
 
 
 def _settings(tmp_path: Path) -> AppSettings:
@@ -99,7 +102,10 @@ class TestCliDispatch:
         )
         mock_run_agent_task.assert_not_called()
 
-    def test_serve_loop_aborts_queued_and_future_chat_requests(self) -> None:
+    def test_serve_loop_aborts_queued_and_future_chat_requests(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         real_thread = threading.Thread
         failures: list[str] = []
         request_thread: threading.Thread | None = None
@@ -117,10 +123,7 @@ class TestCliDispatch:
             request_thread = real_thread(target=submit_chat, daemon=True)
             request_thread.start()
             deadline = time.monotonic() + 1.0
-            while (
-                mock_runner.controller.pending_chat_count() != 1
-                and time.monotonic() < deadline
-            ):
+            while mock_runner.controller.pending_chat_count() != 1 and time.monotonic() < deadline:
                 time.sleep(0.01)
             assert mock_runner.controller.pending_chat_count() == 1
 
@@ -133,6 +136,7 @@ class TestCliDispatch:
                 self._target()
 
         mock_runner.run.side_effect = run_loop
+        monkeypatch.setenv(SERVER_AUTH_TOKEN_ENV, _SERVER_TOKEN)
         with (
             patch.dict("autocontext.cli.SCENARIO_REGISTRY", {"grid_ctf": object}, clear=True),
             patch("autocontext.cli._runner", return_value=mock_runner),
@@ -152,7 +156,10 @@ class TestCliDispatch:
         with pytest.raises(RuntimeError, match="interactive run ended"):
             mock_runner.controller.submit_chat("analyst", "late")
 
-    def test_serve_server_exit_aborts_chat_while_runner_is_active(self) -> None:
+    def test_serve_server_exit_aborts_chat_while_runner_is_active(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         release_runner = threading.Event()
         runner_finished = threading.Event()
         failures: list[str] = []
@@ -175,14 +182,12 @@ class TestCliDispatch:
 
         def return_after_chat_is_pending(*_args: object, **_kwargs: object) -> None:
             deadline = time.monotonic() + 1.0
-            while (
-                mock_runner.controller.pending_chat_count() != 1
-                and time.monotonic() < deadline
-            ):
+            while mock_runner.controller.pending_chat_count() != 1 and time.monotonic() < deadline:
                 time.sleep(0.01)
             assert mock_runner.controller.pending_chat_count() == 1
 
         mock_runner.run.side_effect = run_loop
+        monkeypatch.setenv(SERVER_AUTH_TOKEN_ENV, _SERVER_TOKEN)
         try:
             with (
                 patch.dict("autocontext.cli.SCENARIO_REGISTRY", {"grid_ctf": object}, clear=True),
@@ -204,6 +209,46 @@ class TestCliDispatch:
         finally:
             release_runner.set()
             runner_finished.wait(timeout=1.0)
+
+    def test_serve_consumes_auth_before_preflight_and_runner(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        observed: list[str] = []
+        mock_runner = MagicMock()
+
+        def checked_preflight(*_args: object, **_kwargs: object) -> list[object]:
+            assert SERVER_AUTH_TOKEN_ENV not in os.environ
+            observed.append("preflight")
+            return []
+
+        def checked_runner(_preset: str | None = None) -> MagicMock:
+            assert SERVER_AUTH_TOKEN_ENV not in os.environ
+            observed.append("runner")
+            return mock_runner
+
+        class DormantThread:
+            def __init__(self, *, target: object, daemon: bool) -> None:
+                assert callable(target)
+                assert daemon is True
+
+            def start(self) -> None:
+                return None
+
+        monkeypatch.setenv(SERVER_AUTH_TOKEN_ENV, _SERVER_TOKEN)
+        with (
+            patch("autocontext.cli._is_agent_task", return_value=False),
+            patch("autocontext.cli.run_preflight", side_effect=checked_preflight),
+            patch("autocontext.cli._runner", side_effect=checked_runner),
+            patch("autocontext.cli.threading.Thread", DormantThread),
+            patch("autocontext.server.app.create_app", return_value=object()) as create_app,
+            patch("autocontext.cli.uvicorn.run"),
+        ):
+            result = runner.invoke(app, ["run", "--scenario", "grid_ctf", "--serve"])
+
+        assert result.exit_code == 0, result.output
+        assert observed == ["preflight", "runner"]
+        assert create_app.call_args.kwargs["server_authenticator"].configured
 
 
 class TestScenarioInfoTypes:
@@ -279,6 +324,5 @@ class TestScenarioInfoTypes:
                 )
             except ValidationError as exc:
                 raise AssertionError(
-                    f"ScenarioInfo rejected scenario_type='{family.scenario_type_marker}' "
-                    f"for registered family '{family.name}'"
+                    f"ScenarioInfo rejected scenario_type='{family.scenario_type_marker}' for registered family '{family.name}'"
                 ) from exc
