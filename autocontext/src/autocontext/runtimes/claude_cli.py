@@ -21,6 +21,7 @@ from typing import Any
 from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 from autocontext.runtimes.runtime_budget import RuntimeBudget, RuntimeBudgetExpired
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ def _run_with_group_kill(
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "text": True,
+        "env": child_process_env_without_control_plane_secrets(),
     }
     if sys.platform != "win32":
         popen_kwargs["start_new_session"] = True

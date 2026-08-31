@@ -37,6 +37,13 @@ describe("agent app Fetch entrypoint template", () => {
       '"audit.worker": () => import("./.autoctx/agents/audit.worker.ts")',
     );
     expect(source).toContain("export function createAgentAppFetchEntrypoint");
+    expect(source).toContain("authToken: hostCapabilities.authToken");
+    expect(source).toContain("authCredentials: hostCapabilities.authCredentials");
+    expect(source).toContain("authenticator: hostCapabilities.authenticator");
+    expect(source).toContain("allowedOrigins: hostCapabilities.allowedOrigins");
+    expect(source).toContain(
+      "allowInsecureUnauthenticated: hostCapabilities.allowInsecureUnauthenticated",
+    );
     expect(source).toContain("hostCapabilities.env");
     expect(source).toContain("hostCapabilities.runtime");
     expect(source).toContain("runtimeFactoryPlan: hostCapabilities.runtimeFactoryPlan");

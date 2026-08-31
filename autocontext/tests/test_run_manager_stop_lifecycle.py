@@ -573,10 +573,7 @@ def test_spawned_run_receives_and_reports_minimum_generation_floor(tmp_path: Pat
     assert run is not None and run["status"] == "completed"
     assert run["minimum_generations"] == 2
     assert store.count_completed_generations(run_id) == 2
-    assert any(
-        event == "run_started" and payload.get("minimum_generations") == 2
-        for event, payload in recorded
-    )
+    assert any(event == "run_started" and payload.get("minimum_generations") == 2 for event, payload in recorded)
 
 
 def test_start_run_rejects_nondefault_sigchld_without_spawning(tmp_path: Path) -> None:
@@ -718,6 +715,71 @@ def test_run_process_ownership_primitives_are_rechecked_adjacent_to_start(
         manager.start_run("grid_ctf", generations=1, run_id="ownership-recheck")
 
     assert not process.start_called
+    assert not manager.is_active
+
+
+def test_control_plane_secrets_are_consumed_before_spawn_bootstrap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _make_settings(tmp_path)
+    manager = RunManager(
+        LoopController(),
+        EventStreamEmitter(settings.event_stream_path),
+        settings,
+    )
+    monkeypatch.setenv("AUTOCONTEXT_SERVER_TOKEN", "must-not-reach-spawn")
+    monkeypatch.setenv(
+        "AutoContext_Server_Credentials_File",
+        "/must/not/reach/spawn.json",
+    )
+
+    class FakeConnection:
+        def close(self) -> None:
+            pass
+
+    class FakeProcess:
+        pid = None
+
+        def close(self) -> None:
+            pass
+
+    process = FakeProcess()
+
+    class FakeContext:
+        @staticmethod
+        def Pipe(*, duplex: bool) -> tuple[FakeConnection, FakeConnection]:
+            del duplex
+            return FakeConnection(), FakeConnection()
+
+        @staticmethod
+        def Process(**_kwargs: object) -> FakeProcess:
+            return process
+
+    def assert_sanitized_before_start(_process: object) -> None:
+        assert all(
+            key.upper()
+            not in {
+                "AUTOCONTEXT_SERVER_AUTH_KEYS",
+                "AUTOCONTEXT_SERVER_CREDENTIALS_FILE",
+                "AUTOCONTEXT_SERVER_TOKEN",
+                "AUTOCONTEXT_SERVER_TOKEN_FILE",
+            }
+            for key in os.environ
+        )
+        raise RuntimeError("sentinel after sanitized spawn boundary")
+
+    monkeypatch.setattr(
+        run_manager_module,
+        "_run_process_ownership_primitives_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(multiprocessing, "get_context", lambda _method: FakeContext())
+    monkeypatch.setattr(run_manager_module, "_start_owned_run_process", assert_sanitized_before_start)
+
+    with pytest.raises(RuntimeError, match="sentinel after sanitized spawn boundary"):
+        manager.start_run("grid_ctf", generations=1, run_id="sanitized-spawn")
+
     assert not manager.is_active
 
 
@@ -1498,9 +1560,7 @@ def test_monitor_waits_for_dequeued_final_event_and_surfaces_emit_failure(
         assert event_dequeued.wait(timeout=2.0)
         assert run_manager_module.wait([process.sentinel], timeout=2.0)
         time.sleep(
-            run_process_monitor_module._EVENT_RELAY_STOP_TIMEOUT_SECONDS
-            + run_manager_module._POST_EXIT_IDLE_DRAIN_SECONDS
-            + 0.1
+            run_process_monitor_module._EVENT_RELAY_STOP_TIMEOUT_SECONDS + run_manager_module._POST_EXIT_IDLE_DRAIN_SECONDS + 0.1
         )
         assert monitor.is_alive()
 
@@ -2283,9 +2343,7 @@ def test_failed_control_response_rolls_back_one_shot_value(
     monkeypatch.setattr(
         run_manager_module,
         "_send_json_message_with_deadline",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            BrokenPipeError("child exited")
-        ),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(BrokenPipeError("child exited")),
     )
     with pytest.raises(run_manager_module._RunProcessProtocolError):
         manager._dispatch_control_request(

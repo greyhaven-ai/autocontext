@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildQueueCockpitState } from "../src/server/cockpit-api.js";
+import { ServerAuthenticator } from "../src/server/server-auth.js";
 import type { RuntimeSessionReadStore } from "../src/session/runtime-session-read-model.js";
 import type { TaskQueueRow } from "../src/storage/index.js";
 import { TuiReadModelClient } from "../src/tui/read-model-client.js";
@@ -134,18 +135,34 @@ describe("TUI HTTP read-model adapter", () => {
     );
   });
 
-  it("authenticates HTTP reads without putting credentials in the URL", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+  it("authenticates every HTTP read with a fresh proof outside the URL", async () => {
+    const token = "0123456789abcdef0123456789abcdef";
+    const fetchImpl = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response("[]", { status: 200 })));
     const client = new TuiReadModelClient("https://host.example", {
       fetchImpl,
-      authToken: "0123456789abcdef0123456789abcdef",
+      authToken: token,
     });
 
     await expect(client.listRuns()).resolves.toMatchObject({ ok: true });
+    await expect(client.listRuns()).resolves.toMatchObject({ ok: true });
     const [url, init] = fetchImpl.mock.calls[0]!;
+    const [, secondInit] = fetchImpl.mock.calls[1]!;
     expect(url.toString()).not.toContain("token");
-    expect(new Headers(init.headers).get("Authorization"))
-      .toBe("Bearer 0123456789abcdef0123456789abcdef");
+    const authorization = new Headers(init.headers).get("Authorization");
+    const secondAuthorization = new Headers(secondInit.headers).get("Authorization");
+    expect(authorization).toMatch(/^Bearer actx1\./);
+    expect(authorization).not.toContain(token);
+    expect(secondAuthorization).not.toBe(authorization);
+    expect(init.redirect).toBe("error");
+
+    const authenticator = new ServerAuthenticator({ authToken: token });
+    expect(authenticator.authenticateRequest({
+      method: "GET",
+      target: "/api/cockpit/runs",
+      capabilities: ["control:read"],
+      authorizationHeader: authorization ?? undefined,
+    }).ok).toBe(true);
   });
 
   it("watches changing snapshots until terminal state", async () => {

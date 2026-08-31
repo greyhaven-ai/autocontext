@@ -3,10 +3,13 @@
 One malformed ``spec.json`` must not prevent the registry from loading other
 scenarios, and must not dump a traceback into stderr for unrelated commands.
 """
+
 from __future__ import annotations
 
 import json
 import logging
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +21,34 @@ from autocontext.scenarios.custom.registry import (
     load_all_custom_scenarios,
     load_custom_scenarios_detailed,
 )
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
+
+
+def test_importing_scenarios_never_loads_persisted_project_code() -> None:
+    script = """
+import sys
+import types
+
+custom = types.ModuleType("autocontext.scenarios.custom")
+custom.__path__ = []
+registry = types.ModuleType("autocontext.scenarios.custom.registry")
+
+def fail_if_loaded(_root):
+    raise RuntimeError("persisted scenario loader ran during import")
+
+registry.load_all_custom_scenarios = fail_if_loaded
+sys.modules["autocontext.scenarios.custom"] = custom
+sys.modules["autocontext.scenarios.custom.registry"] = registry
+import autocontext.scenarios
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        env=child_process_env_without_control_plane_secrets(),
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def _write_valid_parametric_spec(knowledge_root: Path, name: str = "good_scenario") -> Path:
@@ -30,9 +61,7 @@ def _write_valid_parametric_spec(knowledge_root: Path, name: str = "good_scenari
                 "name": name,
                 "display_name": "Good Scenario",
                 "description": "Valid parametric scenario used by AC-563 isolation tests.",
-                "strategy_interface_description": (
-                    "Return JSON with a single float `bias` in [0,1]."
-                ),
+                "strategy_interface_description": ("Return JSON with a single float `bias` in [0,1]."),
                 "evaluation_criteria": "Reward a bias close to 0.5.",
                 "strategy_params": [
                     {
@@ -75,9 +104,7 @@ def _write_unknown_marker_scenario(knowledge_root: Path, name: str = "banana_sce
     scenario_dir = knowledge_root / "_custom_scenarios" / name
     scenario_dir.mkdir(parents=True, exist_ok=True)
     (scenario_dir / "scenario_type.txt").write_text("banana", encoding="utf-8")
-    (scenario_dir / "spec.json").write_text(
-        json.dumps({"name": name, "scenario_type": "banana"}), encoding="utf-8"
-    )
+    (scenario_dir / "spec.json").write_text(json.dumps({"name": name, "scenario_type": "banana"}), encoding="utf-8")
     return scenario_dir
 
 
@@ -111,12 +138,9 @@ def _write_agent_task_with_import_file_not_found(
     scenario_dir = knowledge_root / "_custom_scenarios" / name
     scenario_dir.mkdir(parents=True, exist_ok=True)
     (scenario_dir / "scenario_type.txt").write_text("agent_task", encoding="utf-8")
-    (scenario_dir / "spec.json").write_text(
-        json.dumps({"name": name, "scenario_type": "agent_task"}), encoding="utf-8"
-    )
+    (scenario_dir / "spec.json").write_text(json.dumps({"name": name, "scenario_type": "agent_task"}), encoding="utf-8")
     (scenario_dir / "agent_task.py").write_text(
-        "from pathlib import Path\n"
-        "Path(__file__).with_name('missing-data.txt').read_text(encoding='utf-8')\n",
+        "from pathlib import Path\nPath(__file__).with_name('missing-data.txt').read_text(encoding='utf-8')\n",
         encoding="utf-8",
     )
     return scenario_dir
@@ -248,9 +272,7 @@ class TestRegistryIsolation:
             load_all_custom_scenarios(knowledge_root)
 
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warnings) == 1, (
-            f"expected exactly one warning, got {[r.message for r in warnings]}"
-        )
+        assert len(warnings) == 1, f"expected exactly one warning, got {[r.message for r in warnings]}"
         record = warnings[0]
 
         assert record.exc_text is None, "warning must not carry a traceback"
@@ -287,9 +309,7 @@ class TestRegistryIsolation:
             load_all_custom_scenarios(knowledge_root)
 
         debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG]
-        assert any(r.exc_text for r in debug_records), (
-            "at DEBUG level the full traceback must be available via exc_info"
-        )
+        assert any(r.exc_text for r in debug_records), "at DEBUG level the full traceback must be available via exc_info"
 
     def test_reason_identifies_unknown_marker(
         self,
@@ -326,9 +346,7 @@ class TestRegistryIsolation:
         entry = result.skipped[0]
         assert isinstance(entry, ScenarioLoadError)
         assert entry.name == "regression_probe"
-        assert entry.spec_path == (
-            knowledge_root / "_custom_scenarios" / "regression_probe" / "spec.json"
-        )
+        assert entry.spec_path == (knowledge_root / "_custom_scenarios" / "regression_probe" / "spec.json")
         assert "evaluation_criteria" in entry.reason
         assert entry.marker == "parametric"
 
@@ -343,9 +361,7 @@ class TestRegistryIsolation:
 
         with pytest.raises((TypeError, AttributeError)):
             result.skipped.append(  # type: ignore[attr-defined]
-                ScenarioLoadError(
-                    name="x", spec_path=Path("x"), reason="x", marker="x"
-                )
+                ScenarioLoadError(name="x", spec_path=Path("x"), reason="x", marker="x")
             )
 
     def test_empty_knowledge_root_returns_empty_result(
@@ -460,9 +476,7 @@ class TestRegistryIsolation:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         knowledge_root = tmp_path / "knowledge"
-        _write_agent_task_with_import_file_not_found(
-            knowledge_root, name="broken_import_task"
-        )
+        _write_agent_task_with_import_file_not_found(knowledge_root, name="broken_import_task")
 
         with caplog.at_level(logging.DEBUG, logger="autocontext.scenarios.custom.registry"):
             result = load_custom_scenarios_detailed(knowledge_root)
@@ -475,9 +489,7 @@ class TestRegistryIsolation:
         assert "no compiled source" not in entry.reason
 
         debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG]
-        assert any(r.exc_text for r in debug_records), (
-            "import-time FileNotFoundError should retain DEBUG traceback"
-        )
+        assert any(r.exc_text for r in debug_records), "import-time FileNotFoundError should retain DEBUG traceback"
 
     def test_ts_created_simulation_auto_materializes(
         self,
@@ -488,9 +500,7 @@ class TestRegistryIsolation:
 
         loaded = load_all_custom_scenarios(knowledge_root)
 
-        assert "ts_simulation" in loaded, (
-            f"expected ts_simulation in loaded, got {list(loaded.keys())}"
-        )
+        assert "ts_simulation" in loaded, f"expected ts_simulation in loaded, got {list(loaded.keys())}"
         assert (scenario_dir / "scenario.py").is_file(), "scenario.py should have been generated"
 
     def test_ts_created_investigation_auto_materializes(

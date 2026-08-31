@@ -30,6 +30,7 @@ describe("agent app Fetch workspace store contract", () => {
       unsupportedOperations: ["exec"],
     });
     const handler = createAgentAppFetchHandler({
+      allowInsecureUnauthenticated: true,
       workspaceStore,
       catalog: createStaticAgentAppCatalog([
         {

@@ -178,13 +178,13 @@ Saved custom scenarios under `knowledge/_custom_scenarios/` can be rerun and ben
 
 ## HTTP, MCP, and agents
 
-The HTTP/WebSocket control plane is local-only unless explicitly secured. To
-bind beyond loopback, set a unique `AUTOCONTEXT_SERVER_TOKEN` of at least 32
-characters and send it as an `Authorization: Bearer` value. Browser WebSocket
-clients use the `autocontext.bearer.<base64url-token>` subprotocol; query-string
-credentials are rejected. This token is a single-tenant containment control,
-not scoped multi-user authorization. Use TLS and an authenticated reverse proxy
-for any network-visible deployment.
+The HTTP/WebSocket control plane uses short-lived, scoped `actx1` HMAC proofs.
+Set `AUTOCONTEXT_SERVER_TOKEN` to a unique signing secret of at least 32 bytes,
+but never send that secret on the wire. Clients create a unique proof for every
+HTTP request or WebSocket reconnect and send it as `Authorization: Bearer
+actx1...` or as the exact `actx1...` WebSocket subprotocol. Raw bearer tokens
+and URL credentials are rejected. See [control-plane authentication](docs/control-plane-auth.md)
+for scoped credential registries, migration guidance, and deployment limits.
 
 ```bash
 uv sync --group dev --extra mcp

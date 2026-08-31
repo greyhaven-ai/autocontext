@@ -4,6 +4,7 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 import type { AgentOutput } from "./base.js";
 import { definedConfigOptions } from "./config-options.js";
 
@@ -147,6 +148,7 @@ function runPiCLIWithGroupKill(
       child = spawn(command, args, {
         cwd: opts.cwd,
         detached: process.platform !== "win32",
+        env: childProcessEnvWithoutControlPlaneSecrets(),
         stdio: ["pipe", "pipe", "pipe"],
       });
     } catch (err: unknown) {

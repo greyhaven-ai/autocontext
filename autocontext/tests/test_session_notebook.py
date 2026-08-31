@@ -254,7 +254,7 @@ class TestNotebookAPI:
         os.environ["AUTOCONTEXT_CLAUDE_SKILLS_PATH"] = str(tmp_path / ".claude" / "skills")
         os.environ["AUTOCONTEXT_EVENT_STREAM_PATH"] = str(tmp_path / "events.ndjson")
         try:
-            app = create_app()
+            app = create_app(allow_insecure_test_principal=True)
             yield TestClient(app)  # type: ignore[misc]
         finally:
             for key in [

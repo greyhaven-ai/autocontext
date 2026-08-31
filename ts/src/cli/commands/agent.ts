@@ -4,6 +4,8 @@
 import { parseArgs } from "node:util";
 import { resolve } from "node:path";
 
+import { isControlPlaneSecretEnvKey } from "../../security/child-process-env.js";
+
 async function createAutoctxAgentCliRuntime(plan: {
   provider?: string;
   model?: string;
@@ -36,8 +38,15 @@ async function createAutoctxAgentCliRuntime(plan: {
 
 function withTemporaryProcessEnv<T>(env: Readonly<Record<string, string>>, callback: () => T): T {
   const previous = new Map<string, string | undefined>();
+  for (const key of Object.keys(process.env)) {
+    if (isControlPlaneSecretEnvKey(key)) {
+      previous.set(key, process.env[key]);
+      delete process.env[key];
+    }
+  }
   for (const [key, value] of Object.entries(env)) {
-    previous.set(key, process.env[key]);
+    if (!previous.has(key)) previous.set(key, process.env[key]);
+    if (isControlPlaneSecretEnvKey(key)) continue;
     process.env[key] = value;
   }
   try {
@@ -132,6 +141,7 @@ export async function cmdAgent(): Promise<void> {
   try {
     const server = await createAutoctxAgentDevServer({
       cwd: resolve(process.cwd(), plan.cwd ?? "."),
+      host: plan.host,
       envPath: plan.envPath,
       processEnv: process.env,
       createRuntime: createAutoctxAgentCliRuntime,

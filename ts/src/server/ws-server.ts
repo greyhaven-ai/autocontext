@@ -86,13 +86,21 @@ import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
 import type { LLMProvider } from "../types/index.js";
 import { MAX_IMAGE_AGGREGATE_ENCODED_BYTES } from "../types/image-attachments.js";
+import { clearControlPlaneSecretsFromCurrentProcess } from "../security/child-process-env.js";
 import {
+  assertServerAllowedOriginsRequireAuthentication,
   assertSecureServerBind,
   isExplicitlyAllowedServerOrigin,
-  isServerRequestAuthorized,
+  requiredInteractiveMessageCapabilities,
+  requiredServerHttpCapabilities,
   resolveServerAllowedOrigins,
   resolveServerAuthToken,
+  resolveServerCredentialsFile,
   selectServerAuthSubprotocol,
+  ServerAuthenticator,
+  type ServerCapability,
+  type ServerCredentialConfig,
+  type ServerPrincipal,
 } from "./server-auth.js";
 
 export const MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES =
@@ -113,6 +121,10 @@ export interface InteractiveServerOpts {
   port?: number;
   host?: string;
   authToken?: string;
+  /** Additional principals and capability-scoped HMAC credentials. */
+  authCredentials?: readonly ServerCredentialConfig[];
+  /** Explicit test/development escape hatch for an unauthenticated loopback bind. */
+  allowTokenlessLoopback?: boolean;
   /** Exact browser origins allowed through a TLS-terminating reverse proxy. */
   allowedOrigins?: readonly string[];
 }
@@ -146,7 +158,7 @@ export class InteractiveServer {
   readonly #campaignManager: CampaignManager;
   readonly #missionEvents: MissionEventEmitter;
   readonly #host: string;
-  readonly #authToken: string | null;
+  readonly #authenticator: ServerAuthenticator;
   readonly #allowedOrigins: ReadonlySet<string>;
   readonly #requestedPort: number;
   readonly #runTranscripts: RunTranscriptStore;
@@ -154,6 +166,7 @@ export class InteractiveServer {
   readonly #eventStreamClients = new Set<WebSocket>();
   readonly #transcriptClients = new Set<WebSocket>();
   readonly #clientRunScopes = new Map<WebSocket, string>();
+  readonly #clientPrincipals = new Map<WebSocket, ServerPrincipal>();
   readonly #interactiveMessageWaiters: Array<() => void> = [];
   readonly #onRunEvent: EventCallback = (event, payload, record) => {
     this.#broadcastRunEvent(event, payload, record?.ts);
@@ -185,15 +198,15 @@ export class InteractiveServer {
 
   constructor(opts: InteractiveServerOpts) {
     this.#runManager = opts.runManager;
+    this.#host = opts.host ?? "127.0.0.1";
+    const security = consumeInteractiveServerSecurity(opts, this.#host);
+    this.#authenticator = security.authenticator;
+    this.#allowedOrigins = security.allowedOrigins;
     this.#missionEvents = new MissionEventEmitter();
     this.#missionManager = new MissionManager(this.#runManager.getDbPath(), {
       events: this.#missionEvents,
     });
     this.#campaignManager = new CampaignManager(this.#missionManager);
-    this.#host = opts.host ?? "127.0.0.1";
-    this.#authToken = resolveServerAuthToken(opts.authToken);
-    this.#allowedOrigins = resolveServerAllowedOrigins(opts.allowedOrigins);
-    assertSecureServerBind(this.#host, this.#authToken);
     this.#requestedPort = opts.port ?? 8000;
     this.#runTranscripts = new RunTranscriptStore(
       join(this.#runManager.getRunsRoot(), "_interactive", "run-transcript.ndjson"),
@@ -232,21 +245,18 @@ export class InteractiveServer {
       noServer: true,
       maxPayload: MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES,
       handleProtocols: (protocols) =>
-        selectServerAuthSubprotocol(protocols, this.#authToken) ?? false,
+        selectServerAuthSubprotocol(protocols) ?? false,
     });
     httpServer.on("upgrade", (req, socket, head) => {
-      const requestUrl = new URL(req.url ?? "/", "http://localhost");
-      if (!isServerRequestAuthorized({
-        authToken: this.#authToken,
-        authorizationHeader: req.headers.authorization,
-        websocketProtocolHeader: req.headers["sec-websocket-protocol"],
-      })) {
-        socket.write(
-          'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Bearer realm="autocontext"\r\nConnection: close\r\n\r\n',
-        );
-        socket.destroy();
-        return;
-      }
+      try {
+        const rawTarget = req.url ?? "/";
+        const requestUrl = new URL(rawTarget, "http://localhost");
+        if (
+          requestUrl.origin !== "http://localhost"
+          || `${requestUrl.pathname}${requestUrl.search}` !== rawTarget
+        ) {
+          throw new Error("WebSocket upgrade target is not canonical");
+        }
       if (!isTrustedWebSocketOrigin(
         req.headers.origin,
         this.#host,
@@ -254,6 +264,35 @@ export class InteractiveServer {
         this.#allowedOrigins,
       )) {
         socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      const requiredCapabilities = requestUrl.pathname === "/ws/events"
+        ? (["content:read", "control:read"] as const)
+        : requestUrl.pathname === "/ws/interactive"
+          ? (["content:read", "control:operate"] as const)
+          : null;
+      if (requiredCapabilities === null) {
+        socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      const authentication = this.#authenticator.authenticateRequest({
+        method: "GET",
+        target: rawTarget,
+        origin: req.headers.origin ?? "",
+        capabilities: requiredCapabilities,
+        authorizationHeader: req.headers.authorization,
+        websocketProtocolHeader: req.headers["sec-websocket-protocol"],
+      });
+      if (!authentication.ok) {
+        const reason = authentication.status === 401 ? "Unauthorized" : "Forbidden";
+        const authenticate = authentication.status === 401
+          ? 'WWW-Authenticate: Bearer realm="autocontext"\r\n'
+          : "";
+        socket.write(
+          `HTTP/1.1 ${authentication.status} ${reason}\r\n${authenticate}Connection: close\r\n\r\n`,
+        );
         socket.destroy();
         return;
       }
@@ -270,18 +309,22 @@ export class InteractiveServer {
           requestUrl.searchParams.get(TRANSCRIPT_PROTOCOL_QUERY_PARAM) ===
           TRANSCRIPT_PROTOCOL_QUERY_VALUE;
         wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-          this.#attachClient(ws, runTranscript);
+          this.#attachClient(ws, runTranscript, authentication.principal);
         });
         return;
       }
       if (requestUrl.pathname === "/ws/events") {
         wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-          this.#attachEventStreamClient(ws);
+          this.#attachEventStreamClient(ws, authentication.principal);
         });
         return;
       }
-      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
-      socket.destroy();
+      } catch {
+        if (!socket.destroyed) {
+          socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+          socket.destroy();
+        }
+      }
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -315,9 +358,8 @@ export class InteractiveServer {
     const settings = loadSettings();
 
     if (
-      !["GET", "HEAD", "OPTIONS"].includes(method) &&
-      req.headers.origin !== undefined &&
-      !isTrustedLocalOrigin(
+      req.headers.origin !== undefined
+      && !isTrustedLocalOrigin(
         req.headers.origin,
         this.#host,
         this.#boundPort || this.#requestedPort,
@@ -329,19 +371,33 @@ export class InteractiveServer {
       return;
     }
 
-    if (
-      method !== "OPTIONS" &&
-      !isServerRequestAuthorized({
-        authToken: this.#authToken,
+    if (method !== "OPTIONS") {
+      let requiredCapabilities: readonly ServerCapability[];
+      try {
+        requiredCapabilities = requiredServerHttpCapabilities(method, req.url ?? "/");
+      } catch {
+        throw new HttpRequestError(400, "Bad request");
+      }
+      const authentication = this.#authenticator.authenticateRequest({
+        method,
+        target: req.url ?? "/",
+        origin: req.headers.origin ?? "",
+        capabilities: requiredCapabilities,
         authorizationHeader: req.headers.authorization,
-      })
-    ) {
-      res.writeHead(401, {
-        "Content-Type": "application/json",
-        "WWW-Authenticate": 'Bearer realm="autocontext"',
       });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
-      return;
+      if (!authentication.ok) {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (authentication.status === 401) {
+          headers["WWW-Authenticate"] = 'Bearer realm="autocontext"';
+        }
+        res.writeHead(authentication.status, headers);
+        res.end(JSON.stringify({
+          error: authentication.status === 401 ? "Unauthorized" : "Forbidden",
+        }));
+        return;
+      }
     }
 
     // Shared per-request closures (AC-852): built once, reused across every
@@ -648,13 +704,24 @@ export class InteractiveServer {
     this.#eventStreamClients.clear();
     this.#transcriptClients.clear();
     this.#clientRunScopes.clear();
+    this.#clientPrincipals.clear();
     this.#pendingStart = null;
   }
 
-  #attachClient(ws: WebSocket, runTranscript: boolean): void {
+  #attachClient(
+    ws: WebSocket,
+    runTranscript: boolean,
+    principal: ServerPrincipal,
+  ): void {
     const env = this.#runManager.getEnvironmentInfo();
+    const allowHostExecution = this.#authenticator.principalHasCapabilities(
+      principal,
+      ["host:execute"],
+    );
     this.#interactiveClients.add(ws);
+    this.#clientPrincipals.set(ws, principal);
     if (runTranscript) this.#transcriptClients.add(ws);
+    const credentialExpiry = this.#schedulePrincipalExpiry(ws, principal);
 
     const unsubscribeMissionProgress = subscribeToMissionProgressEvents({
       missionEvents: this.#missionEvents,
@@ -668,7 +735,7 @@ export class InteractiveServer {
     const state = this.#runManager.getState();
     for (const message of buildSessionBootstrapMessages(env, state, {
       runTranscript,
-      capabilities: this.#runManager.getInteractiveCapabilities(),
+      capabilities: this.#runManager.getInteractiveCapabilities({ allowHostExecution }),
     })) {
       if (message.type !== "state") {
         this.#send(ws, message);
@@ -817,16 +884,20 @@ export class InteractiveServer {
     ws.on("error", () => undefined);
 
     ws.on("close", () => {
+      if (credentialExpiry !== null) clearTimeout(credentialExpiry);
       this.#runManager.cancelScenario(ws);
       this.#interactiveClients.delete(ws);
       this.#transcriptClients.delete(ws);
       this.#clientRunScopes.delete(ws);
+      this.#clientPrincipals.delete(ws);
       unsubscribeMissionProgress();
     });
   }
 
-  #attachEventStreamClient(ws: WebSocket): void {
+  #attachEventStreamClient(ws: WebSocket, principal: ServerPrincipal): void {
     this.#eventStreamClients.add(ws);
+    this.#clientPrincipals.set(ws, principal);
+    const credentialExpiry = this.#schedulePrincipalExpiry(ws, principal);
     let sequence = 0;
     const nextSequence = () => {
       sequence += 1;
@@ -868,13 +939,26 @@ export class InteractiveServer {
     });
     ws.on("error", () => undefined);
     ws.on("close", () => {
+      if (credentialExpiry !== null) clearTimeout(credentialExpiry);
       this.#eventStreamClients.delete(ws);
+      this.#clientPrincipals.delete(ws);
       this.#runManager.unsubscribeEvents(eventCallback);
       unsubscribeMissionProgress();
     });
   }
 
   async #handleClientMessage(ws: WebSocket, msg: ClientMessage): Promise<void> {
+    const principal = this.#clientPrincipals.get(ws);
+    if (
+      principal === undefined
+      || !this.#authenticator.principalHasCapabilities(
+        principal,
+        requiredInteractiveMessageCapabilities(msg.type),
+      )
+    ) {
+      this.#sendLegacyOrCurrent(ws, { type: "error", message: "Forbidden" });
+      return;
+    }
     if (
       !this.#transcriptClients.has(ws) &&
       (msg.type === "resume_run" || readClientRunId(msg) || readCommandId(msg))
@@ -1007,7 +1091,13 @@ export class InteractiveServer {
           command: msg,
           runManager: this.#runManager,
         }));
-        if (msg.type !== "whoami") this.#broadcastTranscriptEnvironmentRefresh();
+        if (msg.type !== "whoami") {
+          const initiatorCanExecuteHost = this.#authenticator.principalHasCapabilities(
+            principal,
+            ["host:execute"],
+          );
+          this.#broadcastTranscriptEnvironmentRefresh(initiatorCanExecuteHost);
+        }
         return;
       }
     }
@@ -1316,13 +1406,17 @@ export class InteractiveServer {
     }
   }
 
-  #broadcastTranscriptEnvironmentRefresh(): void {
-    const hello = buildHelloMessage({
-      runTranscript: true,
-      capabilities: this.#runManager.getInteractiveCapabilities(),
-    });
+  #broadcastTranscriptEnvironmentRefresh(initiatorCanExecuteHost: boolean): void {
     const environments = buildEnvironmentMessage(this.#runManager.getEnvironmentInfo());
     for (const client of this.#transcriptClients) {
+      const principal = this.#clientPrincipals.get(client);
+      const allowHostExecution = initiatorCanExecuteHost
+        && principal !== undefined
+        && this.#authenticator.principalHasCapabilities(principal, ["host:execute"]);
+      const hello = buildHelloMessage({
+        runTranscript: true,
+        capabilities: this.#runManager.getInteractiveCapabilities({ allowHostExecution }),
+      });
       this.#send(client, hello);
       this.#send(client, environments);
     }
@@ -1437,6 +1531,49 @@ export class InteractiveServer {
     ws.send(wire);
   }
 
+  #schedulePrincipalExpiry(ws: WebSocket, principal: ServerPrincipal): NodeJS.Timeout | null {
+    if (principal.expiresAt === null) return null;
+    const delayMs = Math.max(0, principal.expiresAt * 1_000 - Date.now());
+    const timer = setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close(4401, "Credential proof expired");
+      }
+    }, delayMs);
+    timer.unref();
+    return timer;
+  }
+
+}
+
+function consumeInteractiveServerSecurity(
+  opts: InteractiveServerOpts,
+  host: string,
+): { authenticator: ServerAuthenticator; allowedOrigins: ReadonlySet<string> } {
+  try {
+    const authToken = resolveServerAuthToken(opts.authToken);
+    const authenticator = new ServerAuthenticator({
+      authToken,
+      credentials: [
+        ...resolveServerCredentialsFile(),
+        ...(opts.authCredentials ?? []),
+      ],
+    });
+    const allowedOrigins = resolveServerAllowedOrigins(opts.allowedOrigins);
+    assertServerAllowedOriginsRequireAuthentication(
+      authenticator.authenticationRequired,
+      allowedOrigins,
+    );
+    assertSecureServerBind(
+      host,
+      authenticator.authenticationRequired ? "configured" : null,
+      opts.allowTokenlessLoopback,
+    );
+    return { authenticator, allowedOrigins };
+  } finally {
+    // The verifier retains its own key material. Clear ambient credentials even
+    // when parsing or policy validation fails and the caller catches startup.
+    clearControlPlaneSecretsFromCurrentProcess();
+  }
 }
 
 function rawDataByteLength(data: WebSocket.RawData): number {

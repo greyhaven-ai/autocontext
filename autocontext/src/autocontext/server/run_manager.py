@@ -21,7 +21,8 @@ from autocontext.execution._process_group import (
 )
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
-from autocontext.scenarios import SCENARIO_REGISTRY
+from autocontext.scenarios import SCENARIO_REGISTRY, resolve_scenario_class
+from autocontext.security.child_process_env import clear_control_plane_secrets_from_current_process
 from autocontext.server._owned_process import start_owned_process as _start_owned_run_process
 from autocontext.server._run_control_dispatch import dispatch_control_request
 from autocontext.server._run_environment import build_run_environment_info
@@ -345,9 +346,7 @@ class RunManager:
         deadline = time.monotonic() + timeout_seconds
         with self._lock:
             self._shutdown_requested = True
-            self._close_run_commands(
-                "interactive server shut down before the chat request completed"
-            )
+            self._close_run_commands("interactive server shut down before the chat request completed")
             process = self._process
             monitor_thread = self._thread
             cleanup_thread = self._cleanup_thread
@@ -438,12 +437,8 @@ class RunManager:
             finally:
                 with self._lock:
                     session_matches = run_session == self._run_session
-                    if session_matches and (
-                        self._process is None or self._process is process
-                    ):
-                        self._close_run_commands(
-                            "interactive run ended before the chat request completed"
-                        )
+                    if session_matches and (self._process is None or self._process is process):
+                        self._close_run_commands("interactive run ended before the chat request completed")
                         self._active_client_run_id = None
                         self._active_run_id = None
                         self._processed_stop_command_ids.clear()
@@ -473,9 +468,7 @@ class RunManager:
     ) -> None:
         attempt = 0
         while True:
-            delay = _REAPER_RETRY_DELAYS[
-                min(attempt, len(_REAPER_RETRY_DELAYS) - 1)
-            ]
+            delay = _REAPER_RETRY_DELAYS[min(attempt, len(_REAPER_RETRY_DELAYS) - 1)]
             time.sleep(delay)
             with _RUN_PROCESS_CLEANUP_LOCK:
                 if _terminate_run_process(process):
@@ -511,9 +504,7 @@ class RunManager:
             session_matches = run_session == self._run_session
             owns_manager_state = session_matches and self._process is process
             if owns_manager_state:
-                self._close_run_commands(
-                    "interactive run ended before the chat request completed"
-                )
+                self._close_run_commands("interactive run ended before the chat request completed")
                 self._process = process
                 self._active = True
                 cleanup_thread = self._cleanup_thread
@@ -568,9 +559,7 @@ class RunManager:
                 daemon=True,
             )
             with self._lock:
-                owns_manager_state = (
-                    run_session == self._run_session and self._process is process
-                )
+                owns_manager_state = run_session == self._run_session and self._process is process
                 if owns_manager_state:
                     cleanup_thread.start()
                     self._cleanup_thread = cleanup_thread
@@ -630,6 +619,9 @@ class RunManager:
         require_playbook_approval: bool = False,
         client_run_id: str | None = None,
     ) -> str:
+        # RunManager is a server boundary even when used as a library. Consume
+        # ambient server authority before resolving persisted project code.
+        clear_control_plane_secrets_from_current_process()
         if not 1 <= generations <= MAX_START_RUN_GENERATIONS:
             raise ValueError(f"generations must be between 1 and {MAX_START_RUN_GENERATIONS}")
         effective_minimum_generations = 1 if minimum_generations is None else minimum_generations
@@ -637,7 +629,7 @@ class RunManager:
             raise ValueError("minimum_generations must be a positive integer")
         if effective_minimum_generations > generations:
             raise ValueError("minimum_generations must not exceed generations")
-        if scenario not in SCENARIO_REGISTRY:
+        if resolve_scenario_class(scenario, self.settings.knowledge_root) is None:
             supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
             raise ValueError(f"Unknown scenario '{scenario}'. Available: {supported}")
         if not _sigchld_disposition_is_safe():
@@ -697,13 +689,9 @@ class RunManager:
                 if self._shutdown_requested:
                     raise RuntimeError("RunManager was shut down during startup")
                 if not _sigchld_disposition_is_safe():
-                    raise RuntimeError(
-                        "SIGCHLD disposition changed before interactive run startup"
-                    )
+                    raise RuntimeError("SIGCHLD disposition changed before interactive run startup")
                 if not _run_process_ownership_primitives_available():
-                    raise RuntimeError(
-                        "child ownership primitives changed before interactive run startup"
-                    )
+                    raise RuntimeError("child ownership primitives changed before interactive run startup")
                 _start_owned_run_process(process)
                 process_started = True
                 self._process = process
@@ -733,9 +721,7 @@ class RunManager:
         except BaseException:
             with self._lock:
                 self._commands_open = False
-                self.controller.abort_pending_chats(
-                    "interactive run ended before the chat request completed"
-                )
+                self.controller.abort_pending_chats("interactive run ended before the chat request completed")
             for connection in (
                 parent_control,
                 child_control,

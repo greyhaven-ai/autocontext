@@ -9,31 +9,33 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
 
 from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
 
 logger = logging.getLogger(__name__)
 
-_VALID_HERMES_PROVIDERS = frozenset({
-    "auto",
-    "openrouter",
-    "nous",
-    "openai-codex",
-    "copilot-acp",
-    "copilot",
-    "anthropic",
-    "huggingface",
-    "zai",
-    "kimi-coding",
-    "minimax",
-    "minimax-cn",
-    "kilocode",
-})
+_VALID_HERMES_PROVIDERS = frozenset(
+    {
+        "auto",
+        "openrouter",
+        "nous",
+        "openai-codex",
+        "copilot-acp",
+        "copilot",
+        "anthropic",
+        "huggingface",
+        "zai",
+        "kimi-coding",
+        "minimax",
+        "minimax-cn",
+        "kilocode",
+    }
+)
 _PROVIDER_ALIASES = {
     "codex": "openai-codex",
 }
@@ -52,13 +54,13 @@ class HermesCLIConfig:
     model: str = ""
     timeout: float = 120.0
     workspace: str = ""
-    base_url: str = ""       # Passed via OPENAI_BASE_URL env (not a CLI flag)
-    api_key: str = ""        # Passed via OPENAI_API_KEY env (not a CLI flag)
-    toolsets: str = ""       # -t/--toolsets: comma-separated toolset names
-    skills: str = ""         # -s/--skills: skill name to preload
-    worktree: bool = False   # --worktree: isolated git worktree
-    quiet: bool = False      # --quiet: suppress UI chrome
-    provider: str = ""       # --provider: force specific provider
+    base_url: str = ""  # Passed via OPENAI_BASE_URL env (not a CLI flag)
+    api_key: str = ""  # Passed via OPENAI_API_KEY env (not a CLI flag)
+    toolsets: str = ""  # -t/--toolsets: comma-separated toolset names
+    skills: str = ""  # -s/--skills: skill name to preload
+    worktree: bool = False  # --worktree: isolated git worktree
+    quiet: bool = False  # --quiet: suppress UI chrome
+    provider: str = ""  # --provider: force specific provider
     extra_args: list[str] = field(default_factory=list)
 
 
@@ -114,8 +116,10 @@ class HermesCLIRuntime(AgentRuntime):
 
     def _uses_custom_endpoint(self) -> bool:
         provider = self._normalized_provider()
-        return bool(self._config.base_url) or provider in _LEGACY_CUSTOM_ENDPOINT_PROVIDERS or (
-            not provider and bool(self._config.api_key)
+        return (
+            bool(self._config.base_url)
+            or provider in _LEGACY_CUSTOM_ENDPOINT_PROVIDERS
+            or (not provider and bool(self._config.api_key))
         )
 
     def _build_args(self, prompt: str) -> list[str]:
@@ -145,7 +149,7 @@ class HermesCLIRuntime(AgentRuntime):
         return args
 
     def _build_env(self) -> dict[str, str]:
-        env = os.environ.copy()
+        env = child_process_env_without_control_plane_secrets()
         # Hermes treats custom OpenAI-compatible endpoints as a first-class
         # routing path. When base_url is present, it takes precedence over
         # any provider setting, and legacy "main" configs should continue

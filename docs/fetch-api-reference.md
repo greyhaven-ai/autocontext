@@ -47,8 +47,15 @@ Supported routes are:
 - `GET /agents`
 - `POST /agents/:agent/invoke`
 
-Accepted host-created capability keys are `env`, `runtime`, `runtimeFactory`,
-`runtimeFactoryName`, `runtimeFactoryPlan`, `runtimeFactoryModuleMap`,
+Every supported route fails closed without authentication. Create the handler
+once with `authToken`/`authCredentials`, or pass a persistent `authenticator` so
+one-use replay state survives across requests. `allowInsecureUnauthenticated`
+is only for isolated conformance tests. Browser hosts should also pass exact
+`allowedOrigins`.
+
+Accepted host-created capability keys are `authToken`, `authCredentials`,
+`authenticator`, `allowedOrigins`, `allowInsecureUnauthenticated`, `env`,
+`runtime`, `runtimeFactory`, `runtimeFactoryName`, `runtimeFactoryPlan`, `runtimeFactoryModuleMap`,
 `workspace`, `workspaceStore`, `commands`, `tools`, `eventStore`,
 `sessionEventStore`, `eventSink`, and `maxBodyBytes`.
 
@@ -166,6 +173,11 @@ A source string emitted by `renderAgentAppFetchEntrypointTemplate()` exports:
 factory entries, it can resolve `runtimeFactoryName` through the static runtime
 factory module map lazily. Direct `runtime` and `runtimeFactory` capabilities
 still take precedence over named factory selection.
+
+The generated default `fetch` has no credentials and intentionally returns
+`401` for protected routes until a host calls the factory with authentication.
+Manifest reads require `control:read`; invocation requires `content:read`,
+`control:operate`, and `host:execute`.
 
 ## Boundary Guarantees
 
