@@ -87,8 +87,83 @@ def test_publish_oidc_is_limited_to_artifact_only_jobs() -> None:
 
 def test_live_provider_secrets_are_not_available_to_pull_requests() -> None:
     workflow = (_WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
-    live_job = workflow.split("  primeintellect-live:\n", maxsplit=1)[1]
-    assert live_job.startswith("    if: github.event_name != 'pull_request'\n")
+    # BaseLoader preserves YAML's `on` key rather than treating it as a boolean.
+    document = yaml.load(workflow, Loader=yaml.BaseLoader)
+    assert set(document["on"]) == {"push", "pull_request"}
+    assert "secrets." not in workflow
+    assert document["permissions"] == {"contents": "read"}
+    for job in document["jobs"].values():
+        assert job.get("permissions", {"contents": "read"}) == {"contents": "read"}
+        assert "environment" not in job
+        assert job["runs-on"] in {"ubuntu-latest", "windows-latest"}
+
+
+def test_live_service_execution_requires_manual_main_environment_approval() -> None:
+    document = yaml.load((_WORKFLOWS / "live-integration.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    assert set(document["on"]) == {"workflow_dispatch"}
+    assert document["permissions"] == {"contents": "read"}
+    assert document["jobs"], "The manual workflow must retain live verification"
+    for job in document["jobs"].values():
+        assert job["if"] == "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'"
+        assert job["environment"] == "live-integration"
+        assert job.get("permissions", {"contents": "read"}) == {"contents": "read"}
+        assert job["runs-on"] == "ubuntu-latest"
+        for step in job["steps"]:
+            action = step.get("uses", "").split("@", maxsplit=1)[0]
+            assert action not in {"actions/upload-artifact", "actions/download-artifact"}
+            if action == "actions/checkout":
+                assert step["with"]["ref"] == "${{ github.sha }}"
+
+
+def test_live_service_credentials_are_scoped_to_no_sync_execution_steps() -> None:
+    document = yaml.load((_WORKFLOWS / "live-integration.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    assert "secrets." not in str(document.get("env", {}))
+    credential_steps = 0
+    for job in document["jobs"].values():
+        assert "secrets." not in str({key: value for key, value in job.items() if key != "steps"})
+        installed = False
+        for step in job["steps"]:
+            run = step.get("run", "")
+            if "uv sync --locked" in run:
+                assert "secrets." not in str(step)
+                installed = True
+            if "secrets." not in str(step):
+                continue
+            credential_steps += 1
+            assert installed, "Install dependencies before exposing service credentials"
+            assert "uses" not in step
+            assert "uv run --no-sync autoctx run" in run
+            assert "uv sync" not in run
+            assert "secrets." not in str({key: value for key, value in step.items() if key != "env"})
+            assert step["env"]["AUTOCONTEXT_PRIMEINTELLECT_API_KEY"] == (
+                "${{ secrets.AUTOCONTEXT_PRIMEINTELLECT_API_KEY }}"
+            )
+            assert step["env"]["AUTOCONTEXT_ANTHROPIC_API_KEY"] == "${{ secrets.AUTOCONTEXT_ANTHROPIC_API_KEY }}"
+    assert credential_steps == 2, "Retain the ordinary and optional accelerator live checks"
+
+
+def test_ci_and_live_setup_do_not_persist_credentials_or_executable_caches() -> None:
+    for name in ("ci.yml", "live-integration.yml"):
+        document = yaml.load((_WORKFLOWS / name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        for job_name, job in document["jobs"].items():
+            for step in job["steps"]:
+                action = step.get("uses", "").split("@", maxsplit=1)[0]
+                inputs = step.get("with", {})
+                context = f"{name}:{job_name}:{action}"
+                if action == "actions/checkout":
+                    assert inputs.get("persist-credentials") == "false", context
+                elif action == "actions/setup-node":
+                    assert inputs.get("package-manager-cache") == "false", context
+                    assert not inputs.get("cache"), context
+                elif action == "actions/setup-python":
+                    assert not inputs.get("cache"), context
+                elif action == "oven-sh/setup-bun":
+                    assert inputs.get("no-cache") == "true", context
+                elif action == "astral-sh/setup-uv":
+                    assert inputs.get("enable-cache") == "false", context
+                    assert re.fullmatch(r"\d+\.\d+\.\d+", inputs.get("version", "")), context
+                    # The old ref is an annotated tag object, not a commit.
+                    assert "94527f2e458b27549849d47d273a16bec83a01e9" not in step["uses"], context
 
 
 def test_compose_enforces_runtime_hardening_defaults() -> None:

@@ -14,7 +14,31 @@ permissions:
   contents: read
 
 jobs:
+  validate-source:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    outputs:
+      sha: ${{ steps.authorize.outputs.sha }}
+    steps:
+      # Load policy from protected main, before executing any release source.
+      # Tag rules and registry environment binding must also protect this workflow.
+      - name: Check out trusted release policy
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          path: release-policy
+          persist-credentials: false
+      - name: Authorize release source and exact-commit CI
+        id: authorize
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 release-policy/scripts/check_release_source.py --tag-prefix pi-v
+
   build-npm:
+    needs: validate-source
     runs-on: ubuntu-latest
     env:
       # Delay fresh npm versions during publish workflow dependency installs.
@@ -24,9 +48,13 @@ jobs:
         working-directory: pi
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
       - name: Install npm with release-age exclusions
         run: npm install --global npm@12.0.1
@@ -79,6 +107,7 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
       - name: Download verified package artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5

@@ -83,13 +83,25 @@ npm pack --dry-run
 - Confirm `python scripts/sync_release_surfaces.py --check` passes.
 - Confirm `python scripts/check_markdown_links.py` passes.
 - Confirm any install commands in the READMEs still match the package names and binaries.
+- Confirm the registry's trusted publisher requires the exact package workflow
+  and protected environment. A matching environment name in YAML alone does
+  not establish the registry's authentication constraints.
+- Confirm the release guard changes, if any, have already landed on protected
+  `main`; publishing loads this policy from `main` before executing release
+  source code.
 
 ## 6. Publish
 
-- Merge the release prep to the intended branch.
-- Create and push package-specific tags in the format `py-vX.Y.Z`, `ts-vX.Y.Z`, and `pi-vX.Y.Z`.
+- Merge the release prep to protected `main` and wait for a successful main-push
+  CI run on the exact release commit, including security and TypeScript checks.
+- A configured release maintainer creates package-specific tags in the format
+  `py-vX.Y.Z`, `ts-vX.Y.Z`, and `pi-vX.Y.Z` at that tested commit. Tags cannot be
+  updated or deleted; correct a release with a new version instead of moving
+  an existing tag.
 - Watch the tag-triggered GitHub Actions `publish-python`, `publish-ts`, and `publish-pi-autocontext` workflows for PyPI and npm.
-- Approve the package-specific publish environment when the trusted publish jobs pause for deployment review.
+- A different configured reviewer approves the package-specific publish
+  environment when the trusted publish jobs pause for deployment review.
+  Self-approval and administrator bypass are disabled.
 - If releasing `pi-autocontext` with a dependency on a new `autoctx` version, publish and verify `autoctx` first, then push the `pi-vX.Y.Z` tag.
 
 ## 7. Post-Release
