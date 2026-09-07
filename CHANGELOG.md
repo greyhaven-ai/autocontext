@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+
+- Python generation paths now skip architect provider calls between scheduled
+  generations, retaining zero-token `skipped` execution records. With the default
+  cadence of three, architect calls occur on generations 3, 6, 9, and so on;
+  set `AUTOCONTEXT_ARCHITECT_EVERY_N_GENS=1` to run the architect every generation.
+- Direct and pipeline role execution share dependency scheduling: architect can
+  overlap analyst and coach, and coach starts when analyst finishes. Role runtime
+  bindings are independent. RLM retains serial sessions and shares the skip policy.
+- Strategy search batches database reads and caches unchanged knowledge contents
+  and tokenized fields, with filesystem revision checks for external edits.
+- Python CI runs four test shards with combined coverage; smoke checks start
+  independently. Dependency caching remains disabled.
+
+These runtime optimizations land in Python first; TypeScript execution behavior
+is unchanged.
+
 ### Security
 
 - Control-plane WebSockets no longer accept bearer credentials in query strings;

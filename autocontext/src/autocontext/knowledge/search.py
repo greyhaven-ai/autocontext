@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from threading import RLock
 from typing import Any
+from weakref import WeakKeyDictionary
 
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
@@ -16,6 +21,7 @@ from autocontext.scenarios.capabilities import (
     get_task_prompt_safe,
     resolve_capabilities,
 )
+from autocontext.storage.artifacts import ArtifactStore
 
 # Common English stopwords to ignore during search
 _STOPWORDS = frozenset({
@@ -48,12 +54,11 @@ class SearchResult:
 
 def search_strategies(ctx: MtsToolContext, query: str, top_k: int = 5) -> list[SearchResult]:
     """Search solved scenarios by natural language query, ranked by keyword relevance."""
+    terms = _tokenize(query)
+    if not terms or top_k <= 0:
+        return []
     index = _build_search_index(ctx)
     if not index:
-        return []
-
-    terms = _tokenize(query)
-    if not terms:
         return []
 
     scored: list[tuple[float, dict[str, Any]]] = []
@@ -106,7 +111,7 @@ def _keyword_score(terms: list[str], entry: dict[str, Any]) -> tuple[float, list
         text = str(entry.get(field_name, "")).lower()
         if not text:
             continue
-        text_tokens = set(re.findall(r"[a-z0-9]+", text))
+        text_tokens = _field_tokens(text)
         for term in terms:
             if term in text_tokens:
                 total += weight
@@ -132,24 +137,73 @@ def _scenario_description(scenario: object) -> str:
     return get_description(scenario)
 
 
+@lru_cache(maxsize=1024)
+def _field_tokens(text: str) -> frozenset[str]:
+    return frozenset(re.findall(r"[a-z0-9]+", text))
+
+
+@dataclass(frozen=True)
+class _KnowledgeEntry:
+    revision: tuple[tuple[object, ...], ...]
+    playbook_excerpt: str
+    lessons: str
+    hints: str
+
+
+# Scope cached contents to the artifact store lifetime and cap each store's
+# entries. Check filesystem revisions on every query, including external edits.
+_KNOWLEDGE_CACHE: WeakKeyDictionary[ArtifactStore, OrderedDict[str, _KnowledgeEntry]] = WeakKeyDictionary()
+_CACHE_LOCK = RLock()
+
+
+def _file_revision(path: Path) -> tuple[object, ...]:
+    try:
+        info = path.stat()
+    except FileNotFoundError:
+        return (str(path), None)
+    return (str(path), info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _read_search_knowledge(artifacts: ArtifactStore, name: str) -> _KnowledgeEntry:
+    scenario_dir = artifacts._scenario_dir(name)
+    paths = (
+        scenario_dir / "playbook.md",
+        artifacts._skill_dir(name) / "SKILL.md",
+        scenario_dir / "hints.md",
+        scenario_dir / "hint_state.json",
+    )
+    revision = tuple(_file_revision(path) for path in paths)
+    with _CACHE_LOCK:
+        cache = _KNOWLEDGE_CACHE.setdefault(artifacts, OrderedDict())
+        cached = cache.get(name)
+        if cached is not None and cached.revision == revision:
+            cache.move_to_end(name)
+            return cached
+        entry = _KnowledgeEntry(
+            revision=revision,
+            playbook_excerpt=artifacts.read_playbook(name)[:500],
+            lessons=" ".join(artifacts.read_skill_lessons_raw(name)),
+            hints=artifacts.read_hints(name),
+        )
+        # Never retain a mixed revision if another process wrote during reads.
+        if revision == tuple(_file_revision(path) for path in paths):
+            cache[name] = entry
+            cache.move_to_end(name)
+            while len(cache) > 128:
+                cache.popitem(last=False)
+        else:
+            cache.pop(name, None)
+        return entry
+
+
 def _build_search_index(ctx: MtsToolContext) -> list[dict[str, Any]]:
     """Build searchable entries for all scenarios with completed runs."""
     entries: list[dict[str, Any]] = []
-    for name in sorted(SCENARIO_REGISTRY.keys()):
-        completed = ctx.sqlite.count_completed_runs(name)
-        if completed == 0:
-            continue
-
+    summary = ctx.sqlite.get_search_knowledge_summary()
+    for name in sorted(SCENARIO_REGISTRY.keys() & summary.keys()):
         scenario = SCENARIO_REGISTRY[name]()
-        snapshot = ctx.sqlite.get_best_knowledge_snapshot(name)
-
-        playbook = ctx.artifacts.read_playbook(name)
-        playbook_excerpt = playbook[:500] if len(playbook) > 500 else playbook
-
-        raw_lessons = ctx.artifacts.read_skill_lessons_raw(name)
-        lessons_text = " ".join(raw_lessons)
-
-        hints = ctx.artifacts.read_hints(name)
+        snapshot = summary[name]
+        knowledge = _read_search_knowledge(ctx.artifacts, name)
 
         caps = resolve_capabilities(scenario)
         strategy_interface = get_strategy_interface_safe(scenario) or ""
@@ -163,13 +217,13 @@ def _build_search_index(ctx: MtsToolContext) -> list[dict[str, Any]]:
             "description": _scenario_description(scenario),
             "strategy_interface": strategy_interface,
             "evaluation_criteria": evaluation_criteria,
-            "lessons": lessons_text,
-            "playbook_excerpt": playbook_excerpt,
-            "hints": hints,
+            "lessons": knowledge.lessons,
+            "playbook_excerpt": knowledge.playbook_excerpt,
+            "hints": knowledge.hints,
             "task_prompt": task_prompt,
             "judge_rubric": judge_rubric,
-            "best_score": snapshot["best_score"] if snapshot else 0.0,
-            "best_elo": snapshot["best_elo"] if snapshot else 1500.0,
-            "completed_runs": completed,
+            "best_score": snapshot["best_score"],
+            "best_elo": snapshot["best_elo"],
+            "completed_runs": snapshot["completed_runs"],
         })
     return entries

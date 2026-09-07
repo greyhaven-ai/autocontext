@@ -47,8 +47,13 @@ jobs:
       - name: Markdown link integrity
         run: uv run python ../scripts/check_markdown_links.py
 
-  test:
+  python-test-shards:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: autocontext
@@ -64,9 +69,59 @@ jobs:
       - name: Install
         run: uv sync --locked --group dev
       - name: Tests
-        run: uv run pytest --cov=src/autocontext --cov-report=html:htmlcov -m "not live"
+        env:
+          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
+        run: >-
+          uv run python scripts/pytest_shard.py ${{ matrix.shard }}/4
+          --cov=src/autocontext --cov-report=
+          --junitxml=junit-shard-${{ matrix.shard }}.xml -m "not live"
       - name: Upload coverage
         if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: python-test-data-${{ matrix.shard }}
+          include-hidden-files: true
+          path: |
+            autocontext/.coverage.shard-${{ matrix.shard }}
+            autocontext/junit-shard-${{ matrix.shard }}.xml
+          retention-days: 14
+
+  # Preserve the required status name and combine coverage from every shard.
+  test:
+    if: always()
+    needs: [python-test-shards]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: autocontext
+    steps:
+      - name: Verify all Python test shards passed
+        working-directory: .
+        run: |
+          if [ "${{ needs.python-test-shards.result }}" != "success" ]; then
+            echo "one or more Python test shards failed"
+            exit 1
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          enable-cache: false
+      - name: Install
+        run: uv sync --locked --group dev
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: python-test-data-*
+          path: autocontext
+          merge-multiple: true
+      - name: Combine coverage
+        run: |
+          uv run coverage combine
+          uv run coverage html -d htmlcov
+      - name: Upload coverage
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: coverage-report
@@ -303,7 +358,6 @@ jobs:
           echo "all ts-test shards passed"
 
   smoke:
-    needs: [lint, test, package-boundaries]
     runs-on: ubuntu-latest
     defaults:
       run:

@@ -121,7 +121,7 @@ def test_architect_independent_of_analyst() -> None:
     orch = AgentOrchestrator(client=client, settings=settings)
     prompts = _make_prompt_bundle()
 
-    orch.run_generation(prompts, generation_index=1)
+    orch.run_generation(prompts, generation_index=3)
 
     architect_calls = [(role, prompt) for role, prompt in client.calls if role == "architect"]
     assert len(architect_calls) == 1, f"Expected 1 architect call, got {len(architect_calls)}"
