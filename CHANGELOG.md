@@ -21,8 +21,22 @@ All notable changes to this project will be documented in this file.
 These runtime optimizations land in Python first; TypeScript execution behavior
 is unchanged.
 
+### Fixed
+
+- Interactive runs tolerate bursts of valid worker events before a controller
+  request without aborting. Event queues remain bounded, and terminal-result,
+  process-exit and controller-token checks still reject invalid requests.
+
 ### Security
 
+- Release workflows validate protected-main ancestry and successful CI for the
+  exact release commit before building or publishing. Live service checks move
+  to a manual, main-only workflow behind independent environment approval.
+  Workflow credentials and caches are restricted, and the uv installer and
+  tool version are pinned.
+- TypeScript and Pi dependency locks update fast-uri and qs to resolve the
+  current high/moderate production audit findings without changing the sandbox
+  runtime API or weakening the audit threshold.
 - Control-plane WebSockets no longer accept bearer credentials in query strings;
   browser clients use an authenticated, echoed subprotocol, native clients may
   use the Authorization header, and the TUI authenticates both HTTP and WebSocket

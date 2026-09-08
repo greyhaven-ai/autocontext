@@ -122,9 +122,36 @@ Publishing is split by package and uses GitHub OIDC trusted publishing rather th
 Release notes:
 
 - Keep the GitHub environment branch/tag policy restricted to `main` and the matching tag namespace.
+- Merge release preparation into protected `main` and wait for CI on that exact
+  commit before creating a release tag. The release guard is loaded from `main`,
+  verifies that the release commit belongs to its history, and requires a
+  successful main-push CI run with `lint`, `test`, `smoke`,
+  `dependency-security`, `ts-lint`, and `ts-test` from GitHub Actions.
+- Release tags are immutable and may be created only by the configured release
+  maintainers. A different configured reviewer must approve publication;
+  publishing environments prohibit self-approval and administrator bypass.
 - The trusted publisher registration in PyPI and npm must match the repo, workflow filename, and environment name exactly.
 - No `NPM_TOKEN`, `NODE_AUTH_TOKEN`, or PyPI API token should be required for the publish jobs.
 - After cutover, remove the old combined `.github/workflows/publish.yml` publisher registration from PyPI and npm.
+
+## Live Service Verification
+
+Live PrimeIntellect checks run through the manual `live-integration` workflow
+from `main`. They do not run on pull requests or automatically after merges.
+Review the dispatched commit and approve the `live-integration` environment
+using a different configured reviewer from the person who started the run.
+
+Before enabling live checks, configure `AUTOCONTEXT_PRIMEINTELLECT_API_KEY` and
+`AUTOCONTEXT_ANTHROPIC_API_KEY` as secrets of that environment. Do not expose
+these keys as repository-wide or inherited organization secrets. Missing keys
+fail the manual run. The optional accelerator check uses the existing
+`AUTOCONTEXT_PRIMEINTELLECT_LIVE_*` environment variables.
+
+Dependency setup receives no service-key environment variables. Only the live
+commands receive the keys, and `uv run --no-sync` avoids reinstalling packages
+while they are present. This limits accidental exposure; all reviewed code in
+the job is still trusted, because step boundaries do not isolate malicious
+background processes.
 
 ## Type System Conventions
 
