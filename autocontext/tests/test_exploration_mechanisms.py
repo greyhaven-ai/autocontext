@@ -249,6 +249,19 @@ class TestBasinCandidates:
         assert experimental.playbook != ""
         assert experimental.playbook != divergent.playbook
 
+    def test_default_metadata_is_an_empty_per_instance_dict(self) -> None:
+        from autocontext.loop.exploration import BasinCandidate
+
+        first = BasinCandidate(branch_type="divergent", playbook="", lessons="Lessons", temperature=0.7)
+        second = BasinCandidate(branch_type="divergent", playbook="", lessons="Lessons", temperature=0.7)
+
+        assert first.metadata == {}
+        assert first.metadata.get("note", "") == ""
+        assert first.metadata is not second.metadata
+
+        first.metadata["note"] = "branch note"
+        assert second.metadata == {}
+
     def test_disabled_returns_empty(self) -> None:
         from autocontext.loop.exploration import (
             MultiBasinConfig,
