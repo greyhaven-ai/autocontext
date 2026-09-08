@@ -23,6 +23,10 @@ is unchanged.
 
 ### Fixed
 
+- Pi CLI output containing JSON arrays, scalars or null uses the existing text
+  fallback instead of failing object-envelope parsing. Thanks to @Ftgn-dpA for
+  reporting the issue and proposing a fix in
+  [#1321](https://github.com/greyhaven-ai/autocontext/pull/1321).
 - Interactive runs tolerate bursts of valid worker events before a controller
   request without aborting. Event queues remain bounded, and terminal-result,
   process-exit and controller-token checks still reject invalid requests.
