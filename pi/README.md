@@ -8,7 +8,7 @@ autocontext extension for [Pi coding agent](https://github.com/earendil-works/pi
 pi install npm:pi-autocontext@0.10.1
 ```
 
-Current package note: `pi-autocontext@0.10.1` is on a separate Pi extension line and depends on `autoctx@^0.15.0`. A follow-up Pi release can move it to a newer `autoctx` line after the core npm package is live.
+Current package note: `pi-autocontext@0.10.1` is on a separate Pi extension line and depends on `autoctx@^0.17.3`. A follow-up Pi release can move it to a newer `autoctx` line after the core npm package is live.
 
 Or add to your project's `.pi/settings.json`:
 
@@ -71,6 +71,25 @@ The extension auto-discovers your autocontext configuration:
 - **Database**: Looks for `runs/autocontext.sqlite3` or `AUTOCONTEXT_DB_PATH` env var
 - **Events**: Reads `runs/events.ndjson` or `AUTOCONTEXT_EVENT_STREAM_PATH` for recent runtime events
 - **Scenarios**: Discovers registered scenarios from the `autoctx` package
+
+## Runtime compatibility checks
+
+After `npm ci --ignore-scripts`, prepare `better-sqlite3` and `isolated-vm` as for
+the TypeScript CI jobs, then run:
+
+```bash
+npm run test:runtime-contract
+```
+
+For npm 12, `package.json` permits native build scripts only for the exact
+reviewed versions of those two modules. CI builds them from source using the
+headers supplied with its pinned Node setup; dependency installation still
+uses `--ignore-scripts`.
+
+This packs the extension and checks all six tools in a temporary fixture with
+the installed dependency graph, its deterministic provider, and a temporary
+SQLite database. It does not resolve new dependencies, use the Vitest runtime
+alias, or mock `autoctx`; the normal `npm test` suite covers unit behavior.
 
 ## Links
 

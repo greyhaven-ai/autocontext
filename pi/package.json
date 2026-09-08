@@ -27,7 +27,11 @@
     "typebox": "*"
   },
   "dependencies": {
-    "autoctx": "^0.15.0"
+    "autoctx": "^0.17.3"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true,
+    "isolated-vm@6.1.2": true
   },
   "overrides": {
     "@hono/node-server": "1.19.15",
@@ -70,6 +74,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsc",
-    "prepublishOnly": "npm run lint && npm test"
+    "prepublishOnly": "npm run lint && npm test",
+    "test:runtime-contract": "node tests/installed-runtime-contract.mjs"
   }
 }

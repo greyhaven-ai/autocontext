@@ -1,0 +1,14 @@
+{
+  "advisory": "CVE-2026-69112",
+  "alias": "GHSA-4j2p-28q2-5m79",
+  "package": "accelerate",
+  "version": "1.14.0",
+  "expires": "2026-10-08",
+  "review": "docs/security/accelerate-risk-assessment.md",
+  "reviewed_packages": {
+    "accelerate": {"version": "1.14.0", "wheel_hash": "sha256:e94390c2863b873be18f623f9df48a0d8fe5eff13ea7f1a00092b0a7904888c6"},
+    "transformers": {"version": "5.12.1", "wheel_hash": "sha256:2a5e109d2021265df7098ffbb738295acaf5ad256f12cbc586db2ea4dcbb1a8a"},
+    "peft": {"version": "0.19.1", "wheel_hash": "sha256:2113f72a81621b5913ef28f9022204c742df111890c5f49d812716a4a301e356"},
+    "trl": {"version": "1.6.0", "wheel_hash": "sha256:78023ee1e8ba11e9b7eaa9077c8d37b3581ff7c7ddf32fbe1f19a22fe2c76360"}
+  }
+}
