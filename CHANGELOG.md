@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Interactive runs tolerate bursts of valid worker events before a controller
+  request without aborting. Event queues remain bounded, and terminal-result,
+  process-exit and controller-token checks still reject invalid requests.
+
 ### Security
 
 - Release workflows validate protected-main ancestry and successful CI for the
