@@ -131,6 +131,9 @@ jobs:
           merge-multiple: true
       - name: Combine coverage
         run: |
+          for shard in 1 2 3 4; do
+            test -s ".coverage.shard-$shard"
+          done
           uv run coverage combine
           uv run coverage html -d htmlcov
       - name: Upload coverage
