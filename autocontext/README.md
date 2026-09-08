@@ -278,3 +278,16 @@ uv run pytest
 
 Keep this README concise. Add deep reference prose to `docs/` or the repo-level
 docs index instead.
+
+### Architect cadence and search efficiency
+
+Python runs the architect on generations divisible by
+`AUTOCONTEXT_ARCHITECT_EVERY_N_GENS` (default `3`). Other generations retain a
+`skipped` architect execution with zero token usage and no tool or harness
+changes. Set the value to `1` for an architect call every generation. This
+applies to direct, pipeline, and RLM generation paths.
+
+Direct and pipeline execution overlap the independent architect with the analyst
+and coach; the coach still receives the current analyst's findings. RLM sessions
+remain serial. Strategy search reuses unchanged knowledge-file contents while
+checking file revisions and current database summaries on every query.

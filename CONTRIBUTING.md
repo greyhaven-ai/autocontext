@@ -42,6 +42,13 @@ uv run pytest
 uv run python ../scripts/check_markdown_links.py
 ```
 
+Python CI runs four module-preserving shards, balanced by collected test count.
+To reproduce one shard from `autocontext/`, run
+`uv run python scripts/pytest_shard.py 1/4 -m "not live"`.
+Each shard retains JUnit timings and coverage data; the required `test` job
+checks all shards and combines their coverage into the existing report.
+Dependency caches remain disabled in public workflows.
+
 TypeScript:
 
 ```bash

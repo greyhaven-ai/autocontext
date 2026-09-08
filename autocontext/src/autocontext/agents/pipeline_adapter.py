@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from autocontext.agents.execution_policy import architect_due, feedback_roles, skipped_architect
 from autocontext.harness.core.types import RoleExecution
 from autocontext.harness.orchestration.dag import RoleDAG
 from autocontext.harness.orchestration.types import RoleSpec
@@ -25,9 +26,7 @@ def build_mts_dag() -> RoleDAG:
         [
             RoleSpec(name="competitor"),
             RoleSpec(name="translator", depends_on=("competitor",)),
-            RoleSpec(name="analyst", depends_on=("translator",)),
-            RoleSpec(name="architect", depends_on=("translator",)),
-            RoleSpec(name="coach", depends_on=("analyst",)),
+            *feedback_roles(depends_on=("translator",)),
         ]
     )
 
@@ -114,6 +113,8 @@ def build_role_handler(
                     return orch.analyst.run(user_prompt, system=system)
                 return orch.analyst.run(user_prompt)
         elif name == "architect":
+            if not architect_due(generation, orch.settings.architect_every_n_gens):
+                return skipped_architect(generation, orch.settings.architect_every_n_gens)
             with orch._use_role_runtime(
                 "architect",
                 orch.architect,

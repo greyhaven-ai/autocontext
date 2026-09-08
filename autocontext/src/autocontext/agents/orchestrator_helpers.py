@@ -14,9 +14,11 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager, nullcontext
 from typing import TYPE_CHECKING, Any
 
+from autocontext.agents.execution_policy import architect_due, feedback_dag, skipped_architect
 from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.role_isolation import resolve_role_turn
 from autocontext.agents.types import AgentOutputs, RoleExecution
+from autocontext.harness.orchestration.engine import PipelineEngine
 
 if TYPE_CHECKING:
     from autocontext.agents.orchestrator import AgentOrchestrator
@@ -217,58 +219,35 @@ def _run_analyst_coach_architect(
                 coach_exec = coach_future.result()
         notify("coach", "completed")
     else:
-        # Analyst runs first; its output enriches the coach prompt
-        notify("analyst", "started")
-        with orchestrator._use_role_runtime(
-            "analyst",
-            orchestrator.analyst,
-            generation=generation_index,
-            scenario_name=scenario_name,
-            generation_deadline=generation_deadline,
-        ):
-            analyst_user, analyst_system = _direct_turn(
-                orchestrator, parts.analyst if parts else None, orchestrator.analyst, prompts.analyst
-            )
-            if analyst_system:
-                analyst_exec = orchestrator.analyst.run(analyst_user, system=analyst_system)
-            else:
-                analyst_exec = orchestrator.analyst.run(analyst_user)
-        notify("analyst", "completed")
-        notify("coach", "started")
-        notify("architect", "started")
-        with (
-            orchestrator._use_role_runtime(
-                "coach",
-                orchestrator.coach,
+        def run_role(role: str, prompt: str, completed: dict[str, RoleExecution]) -> RoleExecution:
+            if role == "architect" and not architect_due(generation_index, settings.architect_every_n_gens):
+                return skipped_architect(generation_index, settings.architect_every_n_gens)
+            runner = getattr(orchestrator, role)
+            with orchestrator._use_role_runtime(
+                role,
+                runner,
                 generation=generation_index,
                 scenario_name=scenario_name,
                 generation_deadline=generation_deadline,
-            ),
-            orchestrator._use_role_runtime(
-                "architect",
-                orchestrator.architect,
-                generation=generation_index,
-                scenario_name=scenario_name,
-                generation_deadline=generation_deadline,
-            ),
-        ):
-            enriched_coach_prompt, coach_system = _coach_turn(prompts.coach, analyst_exec.content)
-            architect_user, architect_system = _direct_turn(
-                orchestrator,
-                parts.architect if parts else None,
-                orchestrator.architect,
-                architect_prompt,
-                suffix=architect_cadence,
-            )
-            coach_kwargs = {"system": coach_system} if coach_system else {}
-            architect_kwargs = {"system": architect_system} if architect_system else {}
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                coach_future = pool.submit(orchestrator.coach.run, enriched_coach_prompt, **coach_kwargs)
-                architect_future = pool.submit(orchestrator.architect.run, architect_user, **architect_kwargs)
-                coach_exec = coach_future.result()
-                notify("coach", "completed")
-                architect_exec = architect_future.result()
-                notify("architect", "completed")
+            ):
+                if role == "coach":
+                    user, system = _coach_turn(prompt, completed["analyst"].content)
+                else:
+                    user, system = _direct_turn(
+                        orchestrator,
+                        getattr(parts, role) if parts else None,
+                        runner,
+                        prompt,
+                        suffix=architect_cadence if role == "architect" else "",
+                    )
+                execution: RoleExecution = runner.run(user, **({"system": system} if system else {}))
+                return execution
+
+        results = PipelineEngine(feedback_dag(), run_role, max_workers=2).execute(
+            {"analyst": prompts.analyst, "coach": prompts.coach, "architect": architect_prompt},
+            on_role_event=notify,
+        )
+        analyst_exec, coach_exec, architect_exec = (results[role] for role in ("analyst", "coach", "architect"))
 
     return analyst_exec, coach_exec, architect_exec
 
