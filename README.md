@@ -27,10 +27,10 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.17.0` |
-| Python library/dev  | `uv pip install autocontext==0.17.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.17.3`           |
-| Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
+| Python CLI          | `uv tool install autocontext==0.17.1` |
+| Python library/dev  | `uv pip install autocontext==0.17.1`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.17.4`           |
+| Pi extension        | `pi install npm:pi-autocontext@0.10.1` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
 The npm CLI and TUI require Node.js 22.19.0 or newer; contributors should use
@@ -140,14 +140,14 @@ Tokens in endpoint URLs are rejected. See the
 before exposing a server beyond one trusted operator.
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.17.0
+## What's New in 0.17.1
 
-- **Outcome-gated context bundles:** immutable candidates now move through matched screening, adaptive confirmation, held-out evaluation, false-promotion control, causal attribution, and atomic activation while rejected evidence remains available for scoped retesting.
-- **Capability-scoped execution:** generated research code can run in a locked-down Docker workspace, remote scenarios ship as verified content-addressed packages, and trusted-local execution remains an explicit operator choice rather than a fallback.
-- **Durable campaign operations:** restart-safe scheduling, leases, heartbeats, cancellation, bounded reuse, campaign auditing, and a paid-result outbox make long-running local and remote evaluation inspectable, accountable, and recoverable without duplicate provider execution.
-- **Correctness-first kernel evolution:** protected workers, fresh confirmation, finite-sample promotion gates, autonomous model-backed campaigns, and three-family transfer studies expose regressions, specialists, plateaus, and generalizing champions without averaging failures away.
-- **Capability-validated accelerators:** Prime requests bind immutable images, accelerator type/count, region, telemetry, idempotency, and resolved hardware identity; unsupported or drifting configurations fail before paid candidate execution.
-- **Stronger learning evidence across runtimes:** Python and TypeScript share context-bundle, attribution, and negative-result contracts, while Python training adds replayable adaptive confirmation and minimum-effect promotion artifacts.
+- **Maintenance releases:** Python autocontext 0.17.1, npm autoctx 0.17.4 and pi-autocontext 0.10.1 package the reviewed security, reliability and dependency maintenance changes.
+- **Faster Python generations:** architect calls follow the configured cadence, independent roles can overlap, and strategy search batches database reads and reuses unchanged knowledge content. TypeScript execution behavior is unchanged.
+- **More reliable Python runtimes:** non-object Pi CLI JSON uses the text fallback, interactive worker-event bursts no longer abort valid controller requests, and dataclass metadata defaults use independent dictionaries.
+- **Safer control-plane authentication:** WebSocket credentials travel in authenticated subprotocols or Authorization headers instead of query strings; the TUI uses AUTOCONTEXT_SERVER_TOKEN for HTTP and WebSocket connections.
+- **Reviewed release infrastructure:** package publishing validates protected-main ancestry and successful CI for the exact release commit, with independent publishing approval and pinned Actions. Live service checks use a separate protected manual workflow.
+- **Dependency maintenance:** TypeScript and Pi locks incorporate the reviewed compatibility and security updates. Pi retains its existing autoctx ^0.15.0 dependency line; moving its runtime dependency requires separate validation.
 <!-- autocontext-whats-new:end -->
 
 ### npm 0.17.3 minimum iteration floors

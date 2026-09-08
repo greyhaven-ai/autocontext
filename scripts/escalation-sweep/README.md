@@ -6,7 +6,7 @@ Release-validation helper: run every "Scenarios"-state Linear issue through
 ## Prerequisites
 
 - `jq` and Python 3.11+ on PATH.
-- `autoctx` CLI installed (either a published release `pip install autocontext==0.17.0`
+- `autoctx` CLI installed (either a published release `pip install autocontext==0.17.1`
   or run the checked-out source via `cd autocontext && uv run autoctx ...`).
 - An agent provider. By default the harness uses `AUTOCONTEXT_AGENT_PROVIDER=claude-cli`,
   which invokes the locally-authenticated `claude` binary (Anthropic subscription) — no
