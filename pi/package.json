@@ -70,6 +70,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsc",
-    "prepublishOnly": "npm run lint && npm test"
+    "prepublishOnly": "npm run lint && npm test",
+    "test:runtime-contract": "node tests/installed-runtime-contract.mjs"
   }
 }
