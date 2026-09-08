@@ -111,4 +111,4 @@ jobs:
           name: ts-package
           path: dist
       - name: Publish to npm with provenance
-        run: npm publish dist/*.tgz --ignore-scripts --access public --provenance
+        run: npm publish ./dist/*.tgz --ignore-scripts --access public --provenance
