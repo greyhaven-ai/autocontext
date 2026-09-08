@@ -23,13 +23,16 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install
         run: uv sync --locked --group dev
@@ -42,6 +45,9 @@ jobs:
         run: uv run ruff check src tests
       - name: Mypy
         run: uv run mypy src
+      - name: Release source guard tests
+        working-directory: .
+        run: python -m unittest discover -s scripts -p "test_release_source.py"
       - name: Protocol parity check
         run: uv run python ../scripts/generate_protocol.py --check
       - name: Markdown link integrity
@@ -53,13 +59,16 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install
         run: uv sync --locked --group dev
@@ -80,13 +89,16 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install
         run: uv sync --locked --group dev
@@ -106,13 +118,16 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install
         run: uv sync --locked --group dev
@@ -143,16 +158,20 @@ jobs:
   package-boundaries:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
+          package-manager-cache: false
           node-version: "24"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install Python deps
         working-directory: autocontext
@@ -181,19 +200,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
+          package-manager-cache: false
           node-version: "24"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: "1.4.0"
+          no-cache: true
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install pinned Python audit tool
         working-directory: autocontext
@@ -224,9 +248,12 @@ jobs:
       run:
         working-directory: ts
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
+          package-manager-cache: false
           node-version-file: ts/.nvmrc
       - name: Install TypeScript deps
         run: npm ci --ignore-scripts
@@ -246,12 +273,15 @@ jobs:
       run:
         working-directory: ts
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
+          package-manager-cache: false
           node-version-file: ts/.nvmrc
       - name: Reuse setup-node headers for native addons
         shell: bash
@@ -262,9 +292,11 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: "1.4.0"
+          no-cache: true
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install Python parity deps
         working-directory: autocontext
@@ -309,13 +341,16 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install
         run: uv sync --locked --group dev
@@ -360,13 +395,16 @@ jobs:
     env:
       OPENAI_VERSION: ${{ matrix.openai-version }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install base deps
         run: uv sync --locked --group dev
@@ -387,12 +425,15 @@ jobs:
     env:
       OPENAI_VERSION: ${{ matrix.openai-version }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
+          package-manager-cache: false
           node-version: "24"
       - name: Reuse setup-node headers for native addons
         shell: bash
@@ -401,8 +442,9 @@ jobs:
           test -d "$nodedir/include/node"
           echo "npm_config_nodedir=$nodedir" >> "$GITHUB_ENV"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install Python parity deps
         working-directory: autocontext
@@ -434,13 +476,16 @@ jobs:
     env:
       ANTHROPIC_VERSION: ${{ matrix.anthropic-version }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install base deps
         run: uv sync --locked --group dev
@@ -461,16 +506,20 @@ jobs:
     env:
       ANTHROPIC_VERSION: ${{ matrix.anthropic-version }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
+          package-manager-cache: false
           node-version: "24"
       - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
+          version: "0.12.7"
           enable-cache: false
       - name: Install Python parity deps
         working-directory: autocontext
@@ -481,54 +530,3 @@ jobs:
         run: npm install --ignore-scripts --no-save "@anthropic-ai/sdk@$ANTHROPIC_VERSION"
       - name: Run Anthropic integration tests
         run: npm test -- --run --reporter=verbose tests/integrations/ tests/control-plane/instrument/
-
-  primeintellect-live:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: autocontext
-    env:
-      AUTOCONTEXT_PRIMEINTELLECT_API_KEY: ${{ secrets.AUTOCONTEXT_PRIMEINTELLECT_API_KEY }}
-      AUTOCONTEXT_ANTHROPIC_API_KEY: ${{ secrets.AUTOCONTEXT_ANTHROPIC_API_KEY }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.11"
-      - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
-        with:
-          enable-cache: false
-      - name: Install
-        run: uv sync --locked --group dev
-      - name: Live PrimeIntellect verification
-        if: ${{ env.AUTOCONTEXT_PRIMEINTELLECT_API_KEY != '' && env.AUTOCONTEXT_ANTHROPIC_API_KEY != '' }}
-        env:
-          AUTOCONTEXT_EXECUTOR_MODE: primeintellect
-          AUTOCONTEXT_PRIMEINTELLECT_API_BASE: https://api.primeintellect.ai
-          AUTOCONTEXT_AGENT_PROVIDER: anthropic
-        run: uv run autoctx run --scenario grid_ctf --gens 1 --run-id ci_prime_live
-      - name: Live PrimeIntellect accelerator verification
-        if: >-
-          ${{ env.AUTOCONTEXT_PRIMEINTELLECT_API_KEY != '' &&
-              env.AUTOCONTEXT_ANTHROPIC_API_KEY != '' &&
-              vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_ACCELERATOR_KIND != '' &&
-              vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_ACCELERATOR_COUNT != '' &&
-              vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_REGION != '' &&
-              vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_IMAGE != '' }}
-        env:
-          AUTOCONTEXT_EXECUTOR_MODE: primeintellect
-          AUTOCONTEXT_PRIMEINTELLECT_API_BASE: https://api.primeintellect.ai
-          AUTOCONTEXT_AGENT_PROVIDER: anthropic
-          AUTOCONTEXT_PRIMEINTELLECT_ACCELERATOR_KIND: ${{ vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_ACCELERATOR_KIND }}
-          AUTOCONTEXT_PRIMEINTELLECT_ACCELERATOR_COUNT: ${{ vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_ACCELERATOR_COUNT }}
-          AUTOCONTEXT_PRIMEINTELLECT_REGION: ${{ vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_REGION }}
-          AUTOCONTEXT_PRIMEINTELLECT_SUPPORTED_ACCELERATOR_KINDS: ${{ vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_ACCELERATOR_KIND }}
-          AUTOCONTEXT_PRIMEINTELLECT_MAX_ACCELERATOR_COUNT: ${{ vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_ACCELERATOR_COUNT }}
-          AUTOCONTEXT_PRIMEINTELLECT_SUPPORTED_REGIONS: ${{ vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_REGION }}
-          AUTOCONTEXT_PRIMEINTELLECT_SUPPORTED_IMAGES: ${{ vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_IMAGE }}
-          AUTOCONTEXT_PRIMEINTELLECT_DOCKER_IMAGE: ${{ vars.AUTOCONTEXT_PRIMEINTELLECT_LIVE_IMAGE }}
-          AUTOCONTEXT_PRIMEINTELLECT_REQUIRED_TELEMETRY: hardware_identity
-          AUTOCONTEXT_PRIMEINTELLECT_AVAILABLE_TELEMETRY: hardware_identity
-        run: uv run autoctx run --scenario grid_ctf --gens 1 --run-id ci_prime_accelerator_live
