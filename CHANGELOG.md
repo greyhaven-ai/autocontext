@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [Python 0.17.1 / TypeScript 0.17.4 / Pi 0.10.1] - 2026-09-08
+
+These maintenance releases package the merged security and reliability fixes.
+Python runtime improvements ship in `autocontext==0.17.1`; TypeScript maintenance
+ships in `autoctx@0.17.4`. The Pi extension advances to `pi-autocontext@0.10.1`
+with refreshed packaged documentation and dependency metadata, retaining its
+existing `autoctx@^0.15.0` runtime dependency.
+
 ### Performance
 
 - Python generation paths now skip architect provider calls between scheduled
@@ -23,8 +31,10 @@ is unchanged.
 
 ### Fixed
 
-- Pi CLI output containing JSON arrays, scalars or null uses the existing text
-  fallback instead of failing object-envelope parsing. Thanks to @Ftgn-dpA for
+- Exploration and scenario-routing dataclasses now use independent dictionaries
+  for metadata defaults instead of Pydantic field descriptors.
+- Python's Pi CLI runtime uses the existing text fallback for JSON arrays, scalars
+  or null instead of failing object-envelope parsing. Thanks to @Ftgn-dpA for
   reporting the issue and proposing a fix in
   [#1321](https://github.com/greyhaven-ai/autocontext/pull/1321).
 - Interactive runs tolerate bursts of valid worker events before a controller
@@ -1206,7 +1216,7 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.17.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.17.1...HEAD
 [0.17.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...py-v0.17.0
 [0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.1...py-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
