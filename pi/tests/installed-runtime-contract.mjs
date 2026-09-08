@@ -32,10 +32,12 @@ if (!process.argv[2]) {
   try {
     const artifacts = join(fixture, "artifacts");
     mkdirSync(artifacts);
-    const packed = JSON.parse(execFileSync("npm", [
+    const packResult = JSON.parse(execFileSync("npm", [
       "pack", "--ignore-scripts", "--json", "--pack-destination", artifacts,
       "--cache", join(fixture, "npm-cache"),
     ], { cwd: sourceRoot, env: cleanEnv, encoding: "utf8" }));
+    // npm 11 returns an array; npm 12 keys each entry by its package name.
+    const packed = Array.isArray(packResult) ? packResult : Object.values(packResult);
     assert.equal(packed.length, 1);
     cpSync(join(sourceRoot, "node_modules"), join(fixture, "node_modules"), {
       recursive: true,
