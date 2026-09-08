@@ -14,7 +14,31 @@ permissions:
   contents: read
 
 jobs:
+  validate-source:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    outputs:
+      sha: ${{ steps.authorize.outputs.sha }}
+    steps:
+      # Load policy from protected main, before executing any release source.
+      # Tag rules and registry environment binding must also protect this workflow.
+      - name: Check out trusted release policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: release-policy
+          persist-credentials: false
+      - name: Authorize release source and exact-commit CI
+        id: authorize
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 release-policy/scripts/check_release_source.py --tag-prefix ts-v
+
   build-npm:
+    needs: validate-source
     runs-on: ubuntu-latest
     env:
       # Delay fresh npm versions during publish workflow dependency installs.
@@ -24,13 +48,18 @@ jobs:
         working-directory: ts
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: "1.4.0"
+          no-cache: true
       - name: Validate tag matches TypeScript package version
         if: startsWith(github.ref, 'refs/tags/ts-v')
         run: |
@@ -74,6 +103,7 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
       - name: Download verified package artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5

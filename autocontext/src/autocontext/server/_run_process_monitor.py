@@ -331,7 +331,7 @@ def _monitor_run_process(
                         break
 
             waitables: list[Any] = []
-            if control_open:
+            if control_open and len(pending_events) < _MAX_PENDING_EVENTS:
                 waitables.append(control_connection)
             if event_open and len(pending_events) < _MAX_PENDING_EVENTS:
                 waitables.append(event_connection)
@@ -339,7 +339,11 @@ def _monitor_run_process(
                 waitables.append(process.sentinel)
 
             buffered_ready: list[Any] = []
-            if control_open and control_reader.has_buffered_frame:
+            if (
+                control_open
+                and len(pending_events) < _MAX_PENDING_EVENTS
+                and control_reader.has_buffered_frame
+            ):
                 buffered_ready.append(control_connection)
             if (
                 event_open
@@ -403,7 +407,10 @@ def _monitor_run_process(
                     )
 
             requests: list[dict[str, Any]] = []
-            if control_ready:
+            # Ordinary event bursts can temporarily fill the bounded queue.
+            # Leave control unread until we scan the earlier events, including
+            # any terminal result; the relay supplies backpressure meanwhile.
+            if control_ready and not event_backlog_unscanned:
                 requests, control_open = control_reader.receive_available(
                     read_from_fd=(
                         not idle_expired
@@ -416,10 +423,6 @@ def _monitor_run_process(
                 observe_leader()
 
             if requests:
-                if event_backlog_unscanned:
-                    raise _RunProcessProtocolError(
-                        "interactive run event backlog hid controller ordering"
-                    )
                 if process_exited:
                     raise _RunProcessProtocolError(
                         "interactive run sent controller data after process exit"
