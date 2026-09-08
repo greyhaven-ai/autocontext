@@ -27,7 +27,7 @@
     "typebox": "*"
   },
   "dependencies": {
-    "autoctx": "^0.15.0"
+    "autoctx": "^0.17.3"
   },
   "overrides": {
     "@hono/node-server": "1.19.15",
