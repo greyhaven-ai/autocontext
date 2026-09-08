@@ -26,7 +26,7 @@ jobs:
       # Load policy from protected main, before executing any release source.
       # Tag rules and registry environment binding must also protect this workflow.
       - name: Check out trusted release policy
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           path: release-policy
@@ -47,7 +47,7 @@ jobs:
       run:
         working-directory: ts
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-source.outputs.sha }}
           persist-credentials: false
