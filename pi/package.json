@@ -45,7 +45,7 @@
     "undici": "8.9.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.84.3",
+    "@earendil-works/pi-ai": "^0.85.1",
     "@earendil-works/pi-coding-agent": "^0.84.3",
     "@earendil-works/pi-tui": "^0.84.3",
     "typebox": "^1.1.24",
