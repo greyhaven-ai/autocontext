@@ -189,7 +189,7 @@ class TestPipelineOrchestratorIntegration:
         settings = _make_settings(use_pipeline=True)
         orch = AgentOrchestrator(client=client, settings=settings)
         prompts = _make_prompt_bundle()
-        outputs = orch.run_generation(prompts, generation_index=1)
+        outputs = orch.run_generation(prompts, generation_index=3)
         # DeterministicDevClient architect response has tools JSON
         assert isinstance(outputs.architect_tools, list)
         assert len(outputs.architect_tools) >= 1

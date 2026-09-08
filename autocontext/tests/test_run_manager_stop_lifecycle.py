@@ -520,6 +520,7 @@ def test_rlm_run_uses_spawned_main_thread_isolation_and_relays_events(tmp_path: 
     settings = _make_settings(tmp_path).model_copy(
         update={
             "rlm_enabled": True,
+            "architect_every_n_gens": 1,
             "rlm_max_turns": 5,
         }
     )

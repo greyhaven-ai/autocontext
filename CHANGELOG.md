@@ -4,8 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+
+- Python generation paths now skip architect provider calls between scheduled
+  generations, retaining zero-token `skipped` execution records. With the default
+  cadence of three, architect calls occur on generations 3, 6, 9, and so on;
+  set `AUTOCONTEXT_ARCHITECT_EVERY_N_GENS=1` to run the architect every generation.
+- Direct and pipeline role execution share dependency scheduling: architect can
+  overlap analyst and coach, and coach starts when analyst finishes. Role runtime
+  bindings are independent. RLM retains serial sessions and shares the skip policy.
+- Strategy search batches database reads and caches unchanged knowledge contents
+  and tokenized fields, with filesystem revision checks for external edits.
+- Python CI runs four test shards with combined coverage; smoke checks start
+  independently. Dependency caching remains disabled.
+
+These runtime optimizations land in Python first; TypeScript execution behavior
+is unchanged.
+
 ### Fixed
 
+- Pi CLI output containing JSON arrays, scalars or null uses the existing text
+  fallback instead of failing object-envelope parsing. Thanks to @Ftgn-dpA for
+  reporting the issue and proposing a fix in
+  [#1321](https://github.com/greyhaven-ai/autocontext/pull/1321).
 - Interactive runs tolerate bursts of valid worker events before a controller
   request without aborting. Event queues remain bounded, and terminal-result,
   process-exit and controller-token checks still reject invalid requests.

@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from threading import RLock
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents import role_runtime_overrides
@@ -14,6 +15,7 @@ from autocontext.agents.competitor import CompetitorRunner
 from autocontext.agents.context_evaluation_isolation import isolate_context_bundle_client
 from autocontext.agents.context_routing_activation import resolve_active_context_settings
 from autocontext.agents.curator import KnowledgeCurator
+from autocontext.agents.execution_policy import architect_due, skipped_architect
 from autocontext.agents.llm_client import DeferredMLXClient, LanguageModelClient, build_client_from_settings
 from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.orchestrator_helpers import (
@@ -22,7 +24,6 @@ from autocontext.agents.orchestrator_helpers import (
     _run_competitor_phase,
     _run_translator_phase,
 )
-from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext, available_local_models
 from autocontext.agents.runtime_session_wiring import runtime_session_client_for_role
 from autocontext.agents.skeptic import SkepticAgent
@@ -42,7 +43,6 @@ if TYPE_CHECKING:
     from autocontext.agents.role_router import ProviderConfig
 
 logger = logging.getLogger(__name__)
-_ARCHITECT_CADENCE_SKIP = "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,16 +155,20 @@ class AgentOrchestrator:
         # so the key is a variable-length tuple of optional strings.
         self._routed_clients: dict[tuple[str | None, ...], LanguageModelClient] = {}
         self._disposable_client_ids: set[int] = set()
-        runtime = SubagentRuntime(client=self.client, constrained_output=settings.constrained_output)
-        self.competitor = CompetitorRunner(runtime, settings.model_competitor, settings.competitor_max_tokens)
-        self.translator = StrategyTranslator(runtime, settings.model_translator, settings.translator_max_tokens)
-        self.analyst = AnalystRunner(runtime, settings.model_analyst, settings.analyst_max_tokens)
-        self.coach = CoachRunner(runtime, settings.model_coach, settings.coach_max_tokens)
-        self.architect = ArchitectRunner(runtime, settings.model_architect, settings.architect_max_tokens)
+        self._role_resolution_lock = RLock()
+
+        def runtime() -> SubagentRuntime:
+            return SubagentRuntime(client=self.client, constrained_output=settings.constrained_output)
+
+        self.competitor = CompetitorRunner(runtime(), settings.model_competitor, settings.competitor_max_tokens)
+        self.translator = StrategyTranslator(runtime(), settings.model_translator, settings.translator_max_tokens)
+        self.analyst = AnalystRunner(runtime(), settings.model_analyst, settings.analyst_max_tokens)
+        self.coach = CoachRunner(runtime(), settings.model_coach, settings.coach_max_tokens)
+        self.architect = ArchitectRunner(runtime(), settings.model_architect, settings.architect_max_tokens)
         self.curator: KnowledgeCurator | None = None
         if settings.curator_enabled:
             self.curator = KnowledgeCurator(
-                runtime,
+                runtime(),
                 settings.model_curator,
                 max_tokens=settings.curator_max_tokens,
                 rating_max_tokens=settings.curator_rating_max_tokens,
@@ -172,7 +176,7 @@ class AgentOrchestrator:
             )
         self.skeptic: SkepticAgent | None = None
         if settings.skeptic_enabled:
-            self.skeptic = SkepticAgent(runtime, settings.model_skeptic, settings.skeptic_max_tokens)
+            self.skeptic = SkepticAgent(runtime(), settings.model_skeptic, settings.skeptic_max_tokens)
         self._role_clients: dict[str, LanguageModelClient] = {}
         self._active_generation_deadline: float | None = None
         self._context_bundle_evaluation_isolation_depth = 0
@@ -493,19 +497,20 @@ class AgentOrchestrator:
     ) -> Any:
         original_client = runner.runtime.client
         original_model = runner.model
-        previous_deadline = self._active_generation_deadline
-        self._active_generation_deadline = generation_deadline
-        resolved_client: LanguageModelClient | None = None
-        try:
-            resolved_client, model = self._resolve_role_execution(
-                role,
-                generation=generation,
-                retry_count=retry_count,
-                is_plateau=is_plateau,
-                scenario_name=scenario_name,
-            )
-        finally:
-            self._active_generation_deadline = previous_deadline
+        with self._role_resolution_lock:
+            previous_deadline = self._active_generation_deadline
+            self._active_generation_deadline = generation_deadline
+            resolved_client: LanguageModelClient | None = None
+            try:
+                resolved_client, model = self._resolve_role_execution(
+                    role,
+                    generation=generation,
+                    retry_count=retry_count,
+                    is_plateau=is_plateau,
+                    scenario_name=scenario_name,
+                )
+            finally:
+                self._active_generation_deadline = previous_deadline
         from autocontext.agents.panel_runtime import panel_client_for_role
 
         def wrap_panel_client(wrapped: LanguageModelClient, provider_name: str) -> LanguageModelClient:
@@ -590,8 +595,7 @@ class AgentOrchestrator:
             _notify,
         )
 
-        architect_cadence = _ARCHITECT_CADENCE_SKIP if generation_index % self.settings.architect_every_n_gens != 0 else ""
-        architect_prompt = prompts.architect + architect_cadence
+        architect_prompt = prompts.architect
 
         analyst_exec, coach_exec, architect_exec = _run_analyst_coach_architect(
             self,
@@ -605,7 +609,6 @@ class AgentOrchestrator:
             generation_deadline,
             _notify,
             parts=parts,
-            architect_cadence=architect_cadence,
         )
 
         return _assemble_agent_outputs(
@@ -636,8 +639,7 @@ class AgentOrchestrator:
 
         dag = build_mts_dag()
 
-        cadence_skip = _ARCHITECT_CADENCE_SKIP if generation_index % self.settings.architect_every_n_gens != 0 else ""
-        architect_prompt = prompts.architect + cadence_skip
+        architect_prompt = prompts.architect
 
         prompt_map = {
             "competitor": prompts.competitor,
@@ -666,9 +668,8 @@ class AgentOrchestrator:
             for role, rp in role_parts.items():
                 if not rp.isolation_safe:
                     continue
-                suffix = cadence_skip if role == "architect" else ""
-                system_map[role] = rp.system + suffix
-                flat_map[role] = rp.flat + suffix
+                system_map[role] = rp.system
+                flat_map[role] = rp.flat
                 prompt_map[role] = rp.untrusted_reference
 
         handler = build_role_handler(
@@ -730,30 +731,15 @@ class AgentOrchestrator:
         # under `python -O`; nothing below depends on this one executing.
         assert strategy is not None
 
-        competitor_typed = parse_competitor_output(
+        return _assemble_agent_outputs(
+            self,
             results["competitor"].content,
             strategy,
-            is_code_strategy=self.settings.code_strategies_enabled,
-        )
-        analyst_typed = parse_analyst_exec(results["analyst"])
-        coach_typed = parse_coach_exec(results["coach"])
-        architect_typed = parse_architect_exec(results["architect"])
-
-        return AgentOutputs(
-            strategy=strategy,
-            analysis_markdown=analyst_typed.raw_markdown,
-            coach_markdown=coach_typed.raw_markdown,
-            coach_playbook=coach_typed.playbook,
-            coach_lessons=coach_typed.lessons,
-            coach_competitor_hints=coach_typed.hints,
-            architect_markdown=architect_typed.raw_markdown,
-            architect_tools=architect_typed.tool_specs,
-            architect_harness_specs=architect_typed.harness_specs,
-            role_executions=[results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]],
-            competitor_output=competitor_typed,
-            analyst_output=analyst_typed,
-            coach_output=coach_typed,
-            architect_output=architect_typed,
+            results["competitor"],
+            results["translator"],
+            results["analyst"],
+            results["coach"],
+            results["architect"],
         )
 
     def resolve_model(
@@ -970,6 +956,9 @@ class AgentOrchestrator:
             worker_cls=backend.worker_cls,
             client=analyst_client,
         )
+
+        if not architect_due(generation_index, self.settings.architect_every_n_gens):
+            return analyst_exec, skipped_architect(generation_index, self.settings.architect_every_n_gens)
 
         # Reset turn counter between roles for deterministic client
         architect_client, architect_model = self._resolve_role_execution(
