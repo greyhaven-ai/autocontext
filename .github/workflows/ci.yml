@@ -287,7 +287,7 @@ jobs:
         working-directory: autocontext
         run: |
           uv export --quiet --locked --all-groups --all-extras --no-emit-project --format requirements-txt --output-file /tmp/autocontext-all-requirements.lock
-          uv run --frozen pip-audit -r /tmp/autocontext-all-requirements.lock --disable-pip --strict
+          uv run --frozen python ../scripts/audit_python_dependencies.py /tmp/autocontext-all-requirements.lock
       - name: Audit TypeScript npm lock
         working-directory: ts
         run: npm audit --omit=dev --audit-level=moderate

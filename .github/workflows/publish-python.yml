@@ -81,7 +81,7 @@ jobs:
       - name: Audit every dependency group and extra
         run: |
           uv export --quiet --locked --all-groups --all-extras --no-emit-project --format requirements-txt --output-file /tmp/autocontext-all-requirements.lock
-          uv run --frozen pip-audit -r /tmp/autocontext-all-requirements.lock --disable-pip --strict
+          uv run --frozen python ../scripts/audit_python_dependencies.py /tmp/autocontext-all-requirements.lock
       - name: Generate CycloneDX SBOM
         run: uv export --locked --all-groups --all-extras --format cyclonedx1.5 --output-file autocontext-python.cdx.json
       - name: Build Python package

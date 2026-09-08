@@ -69,6 +69,14 @@ def test_python_publish_build_uses_hashed_backend_constraints() -> None:
     assert "--require-hashes" in workflow
 
 
+def test_python_audits_keep_full_scope_and_use_the_reviewed_policy() -> None:
+    for name in ("ci.yml", "publish-python.yml"):
+        workflow = (_WORKFLOWS / name).read_text(encoding="utf-8")
+        assert "--all-groups --all-extras --no-emit-project" in workflow
+        assert "python ../scripts/audit_python_dependencies.py /tmp/autocontext-all-requirements.lock" in workflow
+        assert "--ignore-vuln" not in workflow
+
+
 def test_publish_oidc_is_limited_to_artifact_only_jobs() -> None:
     for workflow in sorted(_WORKFLOWS.glob("publish-*.yml")):
         document = yaml.safe_load(workflow.read_text(encoding="utf-8"))

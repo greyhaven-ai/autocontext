@@ -6,8 +6,8 @@ resolution-markers = [
     "python_full_version >= '3.15' and sys_platform != 'win32'",
     "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version == '3.14.*' and sys_platform != 'win32'",
-    "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
     "(python_full_version < '3.12' and sys_platform == 'emscripten') or (python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32')",
 ]
 
@@ -375,7 +375,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", marker = "extra == 'cuda'", specifier = ">=0.29.0" },
+    { name = "accelerate", marker = "extra == 'cuda'", specifier = "==1.14.0" },
     { name = "anthropic", specifier = ">=0.66.0" },
     { name = "autocontext", extras = ["mcp", "agent-sdk", "monty", "openai", "browser", "primeintellect"], marker = "extra == 'all'" },
     { name = "claude-agent-sdk", marker = "extra == 'agent-sdk'", specifier = ">=0.1.0" },
@@ -387,7 +387,7 @@ requires-dist = [
     { name = "mlx-lm", marker = "extra == 'mlxlm'", specifier = ">=0.20.0" },
     { name = "numpy", marker = "extra == 'mlx'", specifier = ">=1.24.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0.0" },
-    { name = "peft", marker = "extra == 'cuda'", specifier = ">=0.10.0" },
+    { name = "peft", marker = "extra == 'cuda'", specifier = "==0.19.1" },
     { name = "prime-sandboxes", marker = "extra == 'primeintellect'", specifier = ">=0.2.27" },
     { name = "pydantic", specifier = ">=2.11.0" },
     { name = "pydantic-monty", marker = "extra == 'monty'", specifier = ">=0.0.7" },
@@ -399,8 +399,8 @@ requires-dist = [
     { name = "safetensors", marker = "extra == 'mlx'", specifier = ">=0.4.0" },
     { name = "tiktoken", marker = "extra == 'mlx'", specifier = ">=0.11.0" },
     { name = "torch", marker = "extra == 'cuda'", specifier = ">=2.13.0" },
-    { name = "transformers", marker = "extra == 'cuda'", specifier = ">=4.40.0" },
-    { name = "trl", marker = "extra == 'cuda'", specifier = ">=0.9.0" },
+    { name = "transformers", marker = "extra == 'cuda'", specifier = "==5.12.1" },
+    { name = "trl", marker = "extra == 'cuda'", specifier = "==1.6.0" },
     { name = "typer", specifier = ">=0.16.0" },
     { name = "uvicorn", specifier = ">=0.35.0" },
     { name = "websockets", specifier = ">=16.0" },

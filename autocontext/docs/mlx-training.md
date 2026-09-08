@@ -225,6 +225,12 @@ cross-platform counterpart for larger / non-Mac runs, wrapping HuggingFace TRL's
 trainers. It runs wherever `trl` + `torch` are installed (Linux, NVIDIA, CPU), not just on a
 Mac, and is where a real efficiency-validation run belongs.
 
+The `cuda` extra pins its Hugging Face dependencies to the reviewed graph while
+the disputed Accelerate checkpoint advisory remains unresolved. Use only reviewed
+model/checkpoint sources and immutable reviewed revisions. The scoped audit
+acceptance expires October 8, 2026; it does not make untrusted model loading safe.
+See the [risk assessment and operational requirements](../../docs/security/accelerate-risk-assessment.md).
+
 > **Validated result:** on GSM8K this backend reproduced the on-policy-distillation result
 > end to end: GKD closed ~30-43% of the teacher gap while GRPO stayed flat at matched
 > compute. See [case-study-on-policy-distillation.md](case-study-on-policy-distillation.md).
