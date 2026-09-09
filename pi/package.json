@@ -49,7 +49,7 @@
     "@earendil-works/pi-coding-agent": "^0.84.3",
     "@earendil-works/pi-tui": "^0.84.3",
     "typebox": "^1.1.24",
-    "typescript": "^5.7.0",
+    "typescript": "^7.0.2",
     "vitest": "^3.2.0"
   },
   "pi": {
