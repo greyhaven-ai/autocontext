@@ -50,7 +50,7 @@ cuda = [
     "torch>=2.13.0",
     # Exact reviewed graph for the expiring Accelerate risk acceptance.
     "transformers==5.12.1",
-    "peft==0.19.1",
+    "peft==0.20.0",
     "accelerate==1.14.0",
     "trl==1.6.0",
     "datasets>=5.0.1",
