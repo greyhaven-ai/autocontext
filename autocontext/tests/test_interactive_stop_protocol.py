@@ -39,7 +39,12 @@ def test_safe_stop_advertised_and_reports_no_active_run_when_manager_present(
     events = EventStreamEmitter(settings.event_stream_path)
     run_manager = RunManager(controller, events, settings)
 
-    app = app_module.create_app(controller=controller, events=events, run_manager=run_manager)
+    app = app_module.create_app(
+        controller=controller,
+        events=events,
+        run_manager=run_manager,
+        allow_insecure_test_principal=True,
+    )
     with TestClient(app) as client:
         with client.websocket_connect("/ws/interactive") as websocket:
             assert websocket.receive_json() == {
@@ -78,7 +83,13 @@ def test_safe_stop_not_advertised_without_a_run_manager(
     controller = MagicMock(spec=LoopController)
     events = EventStreamEmitter(settings.event_stream_path)
 
-    with TestClient(app_module.create_app(controller=controller, events=events)) as client:
+    with TestClient(
+        app_module.create_app(
+            controller=controller,
+            events=events,
+            allow_insecure_test_principal=True,
+        )
+    ) as client:
         with client.websocket_connect("/ws/interactive") as websocket:
             # No manager -> no safe_run_stop_v1 in the hello frame.
             assert websocket.receive_json() == {
@@ -102,6 +113,4 @@ def test_safe_stop_not_advertised_without_a_run_manager(
         assert controller.mock_calls == []
 
     controller.request_stop.assert_not_called()
-    controller.abort_pending_chats.assert_called_once_with(
-        "interactive server ended before the chat request completed"
-    )
+    controller.abort_pending_chats.assert_called_once_with("interactive server ended before the chat request completed")

@@ -10,6 +10,7 @@ import {
   EXPLICIT_PROVIDER_CLASS,
   PROVIDER_HOSTING,
   ROUTED_GENERATION_ROLES,
+  routeRoleProvider,
 } from "../providers/role-routing.js";
 
 export interface ProviderSessionOverride {
@@ -137,31 +138,39 @@ export class RunManagerProviderSession {
     capabilityTier?: string;
     roles: Record<string, { provider: string; model: string; capabilityTier?: string }>;
   } {
-    const fallbackProvider = this.getActiveProviderType() ?? "none";
+    if (this.#providerOverride === null) {
+      return { provider: "none", roles: {} };
+    }
+
+    const selected = this.#providerOverride ?? this.#defaults;
+    const provider = (selected.providerType.trim() || settings.agentProvider.trim() || "none")
+      .toLowerCase();
+    const isSessionExplicit = this.#providerOverride !== undefined;
     try {
-      const bundle = this.resolveProviderBundle(settings);
-      try {
-        const provider = bundle.defaultConfig.providerType;
-        const roles = Object.fromEntries(ROUTED_GENERATION_ROLES.map((role) => {
-          const route = bundle.roleRoutes?.[role];
-          return [role, {
-            provider: route?.providerType ?? provider,
-            model: bundle.roleModels[role] ?? route?.model ?? bundle.defaultProvider.defaultModel(),
-            ...(route?.providerClass ? { capabilityTier: route.providerClass } : {}),
-          }];
-        }));
-        return {
-          provider,
-          model: bundle.defaultConfig.model ?? bundle.defaultProvider.defaultModel(),
-          hostingClass: PROVIDER_HOSTING[provider] === "local" ? "local" : "remote",
-          capabilityTier: EXPLICIT_PROVIDER_CLASS[provider] ?? "unknown",
-          roles,
-        };
-      } finally {
-        bundle.close?.();
-      }
+      // Metadata routes are available to read-only principals. Derive routing
+      // from inert settings only: constructing a provider can execute local
+      // discovery commands or project/runtime hooks.
+      const roles = Object.fromEntries(ROUTED_GENERATION_ROLES.map((role) => {
+        const route = routeRoleProvider(settings, role, {
+          providerOverride: provider === "none" ? undefined : provider,
+          preferProviderOverride: isSessionExplicit,
+        });
+        return [role, {
+          provider: route.providerType,
+          model: route.model,
+          capabilityTier: route.providerClass,
+        }];
+      }));
+      const model = selected.model?.trim();
+      return {
+        provider,
+        ...(model ? { model } : {}),
+        hostingClass: PROVIDER_HOSTING[provider] === "local" ? "local" : "remote",
+        capabilityTier: EXPLICIT_PROVIDER_CLASS[provider] ?? "unknown",
+        roles,
+      };
     } catch {
-      return { provider: fallbackProvider, roles: {} };
+      return { provider, roles: {} };
     }
   }
 

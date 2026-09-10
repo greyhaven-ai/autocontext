@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from autocontext.security.outbound_url import OutboundResponse
 
 # ===========================================================================
@@ -71,7 +73,7 @@ class TestCLIOpenClawAdapter:
         assert adapter.runtime_kind == "cli"
         assert adapter.command == "hermes-fly"
 
-    def test_execute_calls_subprocess(self) -> None:
+    def test_execute_calls_subprocess(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from autocontext.openclaw.adapters import CLIOpenClawAdapter, OpenClawRequest
 
         adapter = CLIOpenClawAdapter(command="test-agent")
@@ -81,10 +83,12 @@ class TestCLIOpenClawAdapter:
         mock_result.stdout = json.dumps({"output": "agent response", "tool_calls": []})
         mock_result.stderr = ""
 
-        with patch("subprocess.run", return_value=mock_result):
+        monkeypatch.setenv("AUTOCONTEXT_SERVER_TOKEN", "must-not-reach-adapter")
+        with patch("subprocess.run", return_value=mock_result) as run:
             resp = adapter.execute(OpenClawRequest(task_prompt="test"))
 
         assert resp.output == "agent response"
+        assert "AUTOCONTEXT_SERVER_TOKEN" not in run.call_args.kwargs["env"]
 
     def test_timeout_handled(self) -> None:
         import subprocess
@@ -202,8 +206,10 @@ class TestAdapterCapability:
         from autocontext.openclaw.adapters import AdapterCapability
 
         cap = AdapterCapability(
-            runtime_kind="http", compatibility_version="1.0",
-            supports_tools=True, supports_streaming=True,
+            runtime_kind="http",
+            compatibility_version="1.0",
+            supports_tools=True,
+            supports_streaming=True,
         )
         d = cap.to_dict()
         restored = AdapterCapability.from_dict(d)

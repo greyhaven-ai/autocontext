@@ -61,7 +61,15 @@ def _create_app(
     settings = _settings(tmp_path)
     monkeypatch.setattr(app_module, "load_settings", lambda: settings)
     monkeypatch.setattr(app_module, "_build_scenario_creator", lambda _settings: None)
-    return app_module.create_app(controller=controller, events=events, run_manager=run_manager), settings
+    return (
+        app_module.create_app(
+            controller=controller,
+            events=events,
+            run_manager=run_manager,
+            allow_insecure_test_principal=True,
+        ),
+        settings,
+    )
 
 
 def test_importing_module_level_app_does_not_start_monitor_thread() -> None:
@@ -71,10 +79,7 @@ def test_importing_module_level_app_does_not_start_monitor_thread() -> None:
         [
             sys.executable,
             "-c",
-            (
-                "import json, threading; import autocontext.server.app; "
-                "print(json.dumps([t.name for t in threading.enumerate()]))"
-            ),
+            ("import json, threading; import autocontext.server.app; print(json.dumps([t.name for t in threading.enumerate()]))"),
         ],
         check=False,
         capture_output=True,
@@ -307,9 +312,7 @@ def test_invalid_and_field_limited_messages_return_stable_errors_without_closing
             websocket.send_text("{not-json")
             assert websocket.receive_json() == {"type": "error", "message": "Invalid interactive message."}
 
-            websocket.send_json(
-                {"type": "start_run", "scenario": "grid_ctf", "generations": MAX_START_RUN_GENERATIONS + 1}
-            )
+            websocket.send_json({"type": "start_run", "scenario": "grid_ctf", "generations": MAX_START_RUN_GENERATIONS + 1})
             assert websocket.receive_json() == {
                 "type": "error",
                 "message": "Unknown or invalid interactive command.",
@@ -365,9 +368,7 @@ def test_chat_is_rejected_before_work_slot_when_run_manager_is_inactive(
         with client.websocket_connect("/ws/interactive") as websocket:
             assert websocket.receive_json()["type"] == "hello"
             assert websocket.receive_json()["type"] == "environments"
-            websocket.send_json(
-                {"type": "chat_agent", "role": "analyst", "message": "hello"}
-            )
+            websocket.send_json({"type": "chat_agent", "role": "analyst", "message": "hello"})
             response = websocket.receive_json()
 
     assert response == {
@@ -687,7 +688,7 @@ def test_event_stream_tail_is_incremental_and_drops_oversized_lines(tmp_path: Pa
 
     assert read_event_stream_lines(event_path, state) == ['{"first":1}']
     with event_path.open("ab") as handle:
-        handle.write(b'-line\n')
+        handle.write(b"-line\n")
         handle.write(b"x" * (MAX_EVENT_STREAM_LINE_BYTES + 1) + b"\n")
         handle.write(b'{"last":2}\n')
 

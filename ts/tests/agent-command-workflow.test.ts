@@ -12,6 +12,10 @@ import {
   planAutoctxAgentCommand,
   renderAutoctxAgentCommandError,
 } from "../src/cli/agent-command-workflow.js";
+import { serverAuthorizationHeader } from "../src/server/server-auth.js";
+
+const SERVER_TOKEN = "agent-dev-server-test-token-0000000000000000";
+const TOKENLESS_LOOPBACK_ENV = { AUTOCONTEXT_ALLOW_TOKENLESS_LOOPBACK: "1" };
 
 describe("agent command workflow", () => {
   let root: string;
@@ -158,12 +162,13 @@ describe("agent command workflow", () => {
   });
 
   it("invokes a named handler with id, payload, env, and CI-safe JSON output", async () => {
+    process.env.AUTOCONTEXT_SERVER_TOKEN = SERVER_TOKEN;
     writeFileSync(
       join(root, ".autoctx", "agents", "support.mjs"),
       [
         "export const triggers = { webhook: true };",
         "export default async function (ctx) {",
-        "  return { id: ctx.id, agent: ctx.agent.name, payload: ctx.payload, token: ctx.env.SUPPORT_TOKEN };",
+        "  return { id: ctx.id, agent: ctx.agent.name, payload: ctx.payload, token: ctx.env.SUPPORT_TOKEN, ambientAuthSecret: process.env.AUTOCONTEXT_SERVER_TOKEN ?? null };",
         "}",
       ].join("\n"),
     );
@@ -191,8 +196,10 @@ describe("agent command workflow", () => {
         agent: "support",
         payload: { message: "please triage" },
         token: "shell-token",
+        ambientAuthSecret: null,
       },
     });
+    expect(process.env.AUTOCONTEXT_SERVER_TOKEN).toBeUndefined();
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
   });
@@ -303,16 +310,22 @@ describe("agent command workflow", () => {
       [
         "export const triggers = { webhook: true };",
         "export default async function (ctx) {",
-        "  return { id: ctx.id, message: ctx.payload.message, token: ctx.env.SUPPORT_TOKEN };",
+        "  return { id: ctx.id, message: ctx.payload.message, token: ctx.env.SUPPORT_TOKEN, authSecret: ctx.env.AUTOCONTEXT_SERVER_TOKEN ?? null };",
         "}",
       ].join("\n"),
     );
-    writeFileSync(join(root, ".env.local"), "SUPPORT_TOKEN=file-token\n");
+    writeFileSync(
+      join(root, ".env.local"),
+      `SUPPORT_TOKEN=file-token\nAUTOCONTEXT_SERVER_TOKEN=${SERVER_TOKEN}\n`,
+    );
 
     const server = await createAutoctxAgentDevServer({
       cwd: root,
       envPath: ".env.local",
-      processEnv: { SUPPORT_TOKEN: "shell-token" },
+      processEnv: {
+        ...TOKENLESS_LOOPBACK_ENV,
+        SUPPORT_TOKEN: "shell-token",
+      },
     });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -353,6 +366,7 @@ describe("agent command workflow", () => {
           id: "ticket-123",
           message: "please triage",
           token: "shell-token",
+          authSecret: null,
         },
       });
     } finally {
@@ -360,5 +374,159 @@ describe("agent command workflow", () => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
     }
+  });
+
+  it("authenticates dev routes before handlers and enforces route capabilities", async () => {
+    process.env.AUTOCONTEXT_SERVER_TOKEN = SERVER_TOKEN;
+    writeFileSync(
+      join(root, ".autoctx", "agents", "support.mjs"),
+      "export default async function (ctx) { return { id: ctx.id, ambientAuthSecret: process.env.AUTOCONTEXT_SERVER_TOKEN ?? null }; }\n",
+    );
+    const server = await createAutoctxAgentDevServer({
+      cwd: root,
+      authToken: SERVER_TOKEN,
+      credentialsFile: "",
+      allowedOrigins: ["http://dev-ui.example"],
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("missing server address");
+      const baseUrl = `http://127.0.0.1:${address.port}`;
+
+      const unauthenticated = await fetch(`${baseUrl}/agents/support/invoke`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{not-json",
+      });
+      expect(unauthenticated.status).toBe(401);
+      expect(unauthenticated.headers.get("www-authenticate")).toContain("Bearer");
+
+      const readOnlyManifest = await fetch(`${baseUrl}/manifest?view=summary`, {
+        headers: {
+          authorization: serverAuthorizationHeader(SERVER_TOKEN, {
+            method: "GET",
+            target: "/manifest?view=summary",
+            capabilities: ["control:read"],
+          }),
+        },
+      });
+      expect(readOnlyManifest.status).toBe(403);
+
+      const readHeader = serverAuthorizationHeader(SERVER_TOKEN, {
+        method: "GET",
+        target: "/manifest?view=summary",
+        capabilities: ["control:read", "host:execute"],
+      });
+      const manifest = await fetch(`${baseUrl}/manifest?view=summary`, {
+        headers: { authorization: readHeader },
+      });
+      expect(manifest.status).toBe(200);
+      const replay = await fetch(`${baseUrl}/manifest?view=summary`, {
+        headers: { authorization: readHeader },
+      });
+      expect(replay.status).toBe(401);
+
+      const underScoped = await fetch(`${baseUrl}/agents/support/invoke`, {
+        method: "POST",
+        headers: {
+          authorization: serverAuthorizationHeader(SERVER_TOKEN, {
+            method: "POST",
+            target: "/agents/support/invoke",
+            capabilities: ["control:read"],
+          }),
+          "content-type": "application/json",
+        },
+        body: "{}",
+      });
+      expect(underScoped.status).toBe(403);
+
+      const missingOperate = await fetch(`${baseUrl}/agents/support/invoke`, {
+        method: "POST",
+        headers: {
+          authorization: serverAuthorizationHeader(SERVER_TOKEN, {
+            method: "POST",
+            target: "/agents/support/invoke",
+            capabilities: ["content:read", "host:execute"],
+          }),
+          "content-type": "application/json",
+        },
+        body: "{}",
+      });
+      expect(missingOperate.status).toBe(403);
+
+      const origin = "http://dev-ui.example";
+      const invoked = await fetch(`${baseUrl}/agents/support/invoke`, {
+        method: "POST",
+        headers: {
+          authorization: serverAuthorizationHeader(SERVER_TOKEN, {
+            method: "POST",
+            target: "/agents/support/invoke",
+            capabilities: ["content:read", "control:operate", "host:execute"],
+            origin,
+          }),
+          "content-type": "application/json",
+          origin,
+        },
+        body: JSON.stringify({ id: "secured" }),
+      });
+      expect(invoked.status).toBe(200);
+      expect(invoked.headers.get("access-control-allow-origin")).toBe(origin);
+      expect(await invoked.json()).toMatchObject({
+        result: { id: "secured", ambientAuthSecret: null },
+      });
+      expect(process.env.AUTOCONTEXT_SERVER_TOKEN).toBeUndefined();
+
+      const forbiddenOrigin = await fetch(`${baseUrl}/manifest`, {
+        headers: { origin: "http://attacker.example" },
+      });
+      expect(forbiddenOrigin.status).toBe(403);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it("rejects an unauthenticated non-loopback dev bind", async () => {
+    await expect(createAutoctxAgentDevServer({
+      cwd: root,
+      host: "0.0.0.0",
+      authToken: "",
+      credentialsFile: "",
+    })).rejects.toThrow("Refusing to bind");
+  });
+
+  it("clears ambient server credentials when dev security parsing fails", async () => {
+    process.env.AUTOCONTEXT_SERVER_TOKEN = "short";
+    await expect(createAutoctxAgentDevServer({
+      cwd: root,
+      credentialsFile: "",
+    })).rejects.toThrow(/at least 32 bytes/);
+    expect(process.env.AUTOCONTEXT_SERVER_TOKEN).toBeUndefined();
+  });
+
+  it("requires an explicit opt-in for a tokenless loopback dev server", async () => {
+    await expect(createAutoctxAgentDevServer({
+      cwd: root,
+      authToken: "",
+      credentialsFile: "",
+      processEnv: {},
+    })).rejects.toThrow("AUTOCONTEXT_ALLOW_TOKENLESS_LOOPBACK=1");
+  });
+
+  it("rejects unsupported listen overloads in tokenless mode", async () => {
+    const server = await createAutoctxAgentDevServer({
+      cwd: root,
+      authToken: "",
+      credentialsFile: "",
+      processEnv: TOKENLESS_LOOPBACK_ENV,
+    });
+    expect(() => server.listen("agent-control.sock")).toThrow(
+      /only with an explicit TCP port and loopback host/,
+    );
   });
 });

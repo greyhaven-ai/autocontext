@@ -23,6 +23,7 @@ from typing import Any
 
 from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,7 @@ class PiRPCRuntime(AgentRuntime):
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=self._config.workspace or None,
+                env=child_process_env_without_control_plane_secrets(),
             )
             if process.stdin is None or process.stdout is None or process.stderr is None:
                 return AgentOutput(text="", metadata={"error": "pi_rpc_pipe_unavailable"})
@@ -381,6 +383,7 @@ class PiPersistentRPCRuntime(PiRPCRuntime):
             stderr=subprocess.PIPE,
             text=True,
             cwd=self._config.workspace or None,
+            env=child_process_env_without_control_plane_secrets(),
         )
         if process.stdin is None or process.stdout is None or process.stderr is None:
             raise RuntimeError("pi RPC pipe unavailable")

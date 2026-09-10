@@ -12,6 +12,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import IO
 
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
+
 DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES = 1_048_576
 _PROCESS_TERMINATION_GRACE_SECONDS = 0.25
 _PROCESS_DRAIN_GRACE_SECONDS = 0.25
@@ -60,7 +62,7 @@ def run_bounded_process(
         process = subprocess.Popen(
             command,
             cwd=cwd,
-            env=dict(env),
+            env=child_process_env_without_control_plane_secrets(env),
             shell=shell,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -73,7 +75,7 @@ def run_bounded_process(
         process = subprocess.Popen(
             command,
             cwd=cwd,
-            env=dict(env),
+            env=child_process_env_without_control_plane_secrets(env),
             shell=shell,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

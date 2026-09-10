@@ -151,12 +151,19 @@ autoctx tui --connect https://host.example
 Non-loopback attach endpoints must use HTTPS/WSS. Credentials are never sent
 over a remote plaintext WebSocket, and URL userinfo or sensitive query values
 are rejected. A non-loopback server bind also requires
-`AUTOCONTEXT_SERVER_TOKEN` to contain at least 32 characters. The TUI reads the
-same token from its environment and authenticates HTTP with a bearer header and
-browser-compatible WebSockets with the
-`autocontext.bearer.<base64url-token>` subprotocol. The shared token is intended
-for a single trusted operator; use TLS, an authenticated reverse proxy, and
-external authorization for broader access.
+`AUTOCONTEXT_SERVER_TOKEN` to contain at least 32 bytes. The TUI reads this
+signing secret from its environment, but never transmits it: each HTTP request
+or WebSocket reconnect gets a unique, scoped `actx1` HMAC proof valid for at
+most 60 seconds. HTTP uses `Authorization: Bearer actx1...`; WebSocket uses the
+exact `actx1...` proof as its subprotocol. Raw bearer secrets and the old
+wrapped bearer WebSocket format no longer authenticate. See
+[control-plane authentication](../autocontext/docs/control-plane-auth.md) for
+credential registries, capabilities, and migration guidance.
+
+The TUI requests content, operation, and host-execution authority by default,
+but not administrative authority. Add `--admin` only when the session must log
+in, log out, or switch providers; it does not make content or host authority
+implicit.
 
 When a TLS-terminating reverse proxy serves a browser UI from a public origin,
 allow that exact browser origin explicitly before starting `autoctx serve`:
@@ -171,7 +178,7 @@ connecting over WSS sends the corresponding HTTPS `Origin`, so configure
 `https://operator.example`, not the WebSocket endpoint or a `wss://` URL. This
 allowlist supplements local-origin checks and controls HTTP mutation, CORS, and
 WebSocket origin validation. It does not change the bind address, infer trust
-from forwarded headers, replace `AUTOCONTEXT_SERVER_TOKEN`, or authorize a
+from forwarded headers, replace proof authentication, or authorize a
 request by itself.
 
 Local and remote mode use the same WebSocket transport, durable transcript
@@ -587,6 +594,15 @@ autoctx agent run support --payload '{"message":"triage this ticket"}' --json
 autoctx agent dev --port 3583
 autoctx agent build --target node --out .autoctx/build/node
 ```
+
+Dev and generated Node servers use the same proof authentication and strict
+tokenless-loopback opt-in as the main control plane. Their dynamic manifest
+routes import project handlers and therefore require `control:read` plus
+`host:execute`; invocation additionally requires `control:operate` and
+`content:read`. Fetch manifests come from a static catalog and require only
+`control:read`, while Fetch invocation requires the same operation, content,
+and host capabilities. Server signing keys and registry paths are removed from
+handler, runtime, and child-process environments before project code runs.
 
 Examples:
 [../examples/README.md](../examples/README.md#experimental-typescript-agent-handler).

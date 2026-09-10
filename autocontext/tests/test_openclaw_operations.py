@@ -3,6 +3,7 @@
 Tests for evaluate, validate, publish, fetch, distill-status MCP tools
 and corresponding REST endpoints.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,6 +29,7 @@ class _TestDistillSidecar:
     def poll(self, job_id: str) -> dict[str, object]:
         del job_id
         return {}
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -506,7 +508,11 @@ class TestListArtifacts:
 
         prov = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
         h = HarnessArtifact(
-            name="h1", version=1, scenario="grid_ctf", source_code="pass\n", provenance=prov,
+            name="h1",
+            version=1,
+            scenario="grid_ctf",
+            source_code="pass\n",
+            provenance=prov,
         )
         publish_artifact(tool_ctx, h.model_dump())
         listed = list_artifacts(tool_ctx)
@@ -643,30 +649,37 @@ class TestMCPServerWrappers:
 
     def test_evaluate_strategy_tool_exists(self) -> None:
         from autocontext.mcp import server
+
         assert hasattr(server, "mts_evaluate_strategy")
 
     def test_validate_strategy_tool_exists(self) -> None:
         from autocontext.mcp import server
+
         assert hasattr(server, "mts_validate_strategy_against_harness")
 
     def test_publish_artifact_tool_exists(self) -> None:
         from autocontext.mcp import server
+
         assert hasattr(server, "mts_publish_artifact")
 
     def test_fetch_artifact_tool_exists(self) -> None:
         from autocontext.mcp import server
+
         assert hasattr(server, "mts_fetch_artifact")
 
     def test_list_artifacts_tool_exists(self) -> None:
         from autocontext.mcp import server
+
         assert hasattr(server, "mts_list_artifacts")
 
     def test_distill_status_tool_exists(self) -> None:
         from autocontext.mcp import server
+
         assert hasattr(server, "mts_distill_status")
 
     def test_capabilities_tool_exists(self) -> None:
         from autocontext.mcp import server
+
         assert hasattr(server, "mts_capabilities")
 
 
@@ -681,7 +694,8 @@ class TestRESTEndpoints:
     @pytest.fixture()
     def client(self) -> TestClient:
         from autocontext.server.app import create_app
-        app = create_app()
+
+        app = create_app(allow_insecure_test_principal=True)
         return TestClient(app)
 
     def test_evaluate_strategy_endpoint(self, client: TestClient) -> None:
@@ -769,7 +783,7 @@ class TestRESTEndpoints:
         )
 
         monkeypatch.setattr(app_module, "load_settings", lambda: settings_one)
-        client_one = TestClient(app_module.create_app())
+        client_one = TestClient(app_module.create_app(allow_insecure_test_principal=True))
 
         prov = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
         artifact = HarnessArtifact(
@@ -783,7 +797,7 @@ class TestRESTEndpoints:
         assert publish_resp.status_code == 200
 
         monkeypatch.setattr(app_module, "load_settings", lambda: settings_two)
-        client_two = TestClient(app_module.create_app())
+        client_two = TestClient(app_module.create_app(allow_insecure_test_principal=True))
 
         assert client_one.get("/api/openclaw/artifacts").json() != []
         assert client_two.get("/api/openclaw/artifacts").json() == []

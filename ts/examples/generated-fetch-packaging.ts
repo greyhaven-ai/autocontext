@@ -4,6 +4,7 @@ import {
   renderAgentAppFetchEntrypointTemplate,
   renderAgentAppFetchHostCapabilityManifest,
   renderAgentAppFetchHostCapabilityManifestSchema,
+  type AgentAppFetchHostCapabilityName,
 } from "../src/control-plane/agent-app-fetch/index.js";
 
 export interface GeneratedFetchPackageFile {
@@ -13,7 +14,7 @@ export interface GeneratedFetchPackageFile {
 
 export interface GeneratedFetchPackageArtifacts {
   files: GeneratedFetchPackageFile[];
-  hostCapabilities: string[];
+  hostCapabilities: AgentAppFetchHostCapabilityName[];
 }
 
 export function buildGeneratedFetchPackageArtifacts(): GeneratedFetchPackageArtifacts {
@@ -57,6 +58,13 @@ export function buildGeneratedFetchPackageArtifacts(): GeneratedFetchPackageArti
         contents: renderAgentAppFetchHostCapabilityManifestSchema(),
       },
     ],
-    hostCapabilities: ["env", "runtimeFactoryName", "workspaceStore", "sessionEventStore"],
+    hostCapabilities: [
+      "authenticator",
+      "allowedOrigins",
+      "env",
+      "runtimeFactoryName",
+      "workspaceStore",
+      "sessionEventStore",
+    ],
   };
 }

@@ -33,6 +33,7 @@ export async function tryRunListRoutes(
 
   // GET /api/runs
   if (ctx.url === "/api/runs" || ctx.url.startsWith("/api/runs?")) {
+    if (rejectNonReadMethod(ctx)) return true;
     const response = executeRunSimulationReadRequest({
       route: "runs_list",
       runManager,
@@ -46,6 +47,7 @@ export async function tryRunListRoutes(
   // GET /api/runs/:id/replay/:gen
   const replayMatch = ctx.url.match(/^\/api\/runs\/([^/]+)\/replay\/(\d+)$/);
   if (replayMatch) {
+    if (rejectNonReadMethod(ctx)) return true;
     const [, rawRunId, genStr] = replayMatch;
     const runId = asRunId(rawRunId!);
     const response = executeRunSimulationReadRequest({
@@ -63,6 +65,7 @@ export async function tryRunListRoutes(
   // GET /api/runs/:id/status
   const statusMatch = ctx.url.match(/^\/api\/runs\/([^/]+)\/status$/);
   if (statusMatch) {
+    if (rejectNonReadMethod(ctx)) return true;
     const [, rawRunId] = statusMatch;
     const runId = asRunId(rawRunId!);
     const response = executeRunSimulationReadRequest({
@@ -79,6 +82,7 @@ export async function tryRunListRoutes(
   // GET /api/knowledge/playbook/:scenario
   const playbookMatch = ctx.url.match(/^\/api\/knowledge\/playbook\/([^/]+)$/);
   if (playbookMatch) {
+    if (rejectNonReadMethod(ctx)) return true;
     const [, rawScenario] = playbookMatch;
     const scenario = asScenarioName(rawScenario!);
     const response = executeRunSimulationReadRequest({
@@ -93,4 +97,11 @@ export async function tryRunListRoutes(
   }
 
   return false;
+}
+
+function rejectNonReadMethod(ctx: HttpRouteContext): boolean {
+  if (ctx.method === "GET" || ctx.method === "HEAD") return false;
+  ctx.res.setHeader("Allow", "GET, HEAD");
+  ctx.json(405, { error: "Method not allowed" });
+  return true;
 }

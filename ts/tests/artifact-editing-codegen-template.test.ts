@@ -32,4 +32,11 @@ describe("template-backed artifact-editing codegen", () => {
     expect(source).not.toMatch(/__[A-Z0-9_]+__/);
     expect(() => new Function(source)).not.toThrow();
   });
+
+  it("rejects a scenario name that could escape its comment", () => {
+    expect(() => generateArtifactEditingSource(
+      { description: "Edit config", rubric: "Check validity", artifacts: [] },
+      "x\nthrow new Error(process.env.AUTOCONTEXT_SERVER_TOKEN);\n//",
+    )).toThrow(/safe scenario identifier/);
+  });
 });

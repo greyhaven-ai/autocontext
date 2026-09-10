@@ -154,7 +154,7 @@ def hub_api_env(tmp_path: Path) -> dict[str, Any]:
         os.environ[key] = value
 
     try:
-        app = create_app()
+        app = create_app(allow_insecure_test_principal=True)
         client = TestClient(app)
         store: SQLiteStore = app.state.store
         artifacts = ArtifactStore(

@@ -2,6 +2,11 @@ import type { QueueCockpitState } from "../server/cockpit-api.js";
 import type { ProgressReportReference } from "../analytics/progress-report.js";
 import type { BackgroundSessionSummary } from "../session/background-session-read-model.js";
 import type { RuntimeSessionSummary } from "../session/runtime-session-read-model.js";
+import {
+  requiredServerHttpCapabilities,
+  ServerCredentialSigner,
+  type ServerRequestSigner,
+} from "../server/server-auth.js";
 import { tuiHttpBaseUrl } from "./transport.js";
 
 export type TuiReadFailureKind =
@@ -84,7 +89,10 @@ export interface TuiRunInspectionReadModel {
 export interface TuiReadModelClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly watchIntervalMs?: number;
+  /** Backward-compatible HMAC secret for the implicit environment key. */
   readonly authToken?: string | null;
+  /** Capability-aware signer for an explicitly configured key. */
+  readonly authSigner?: ServerRequestSigner | null;
 }
 
 export interface TuiWatchOptions {
@@ -96,13 +104,17 @@ export class TuiReadModelClient {
   readonly baseUrl: string;
   readonly #fetch: typeof fetch;
   readonly #watchIntervalMs: number;
-  readonly #authToken: string | null;
+  readonly #authSigner: ServerRequestSigner | null;
 
   constructor(endpoint: string, options: TuiReadModelClientOptions = {}) {
     this.baseUrl = tuiHttpBaseUrl(endpoint);
     this.#fetch = options.fetchImpl ?? fetch;
     this.#watchIntervalMs = options.watchIntervalMs ?? 2_000;
-    this.#authToken = options.authToken ?? null;
+    if (options.authToken && options.authSigner) {
+      throw new Error("configure either authToken or authSigner, not both");
+    }
+    this.#authSigner = options.authSigner
+      ?? (options.authToken ? new ServerCredentialSigner(options.authToken) : null);
   }
 
   listRuns(): Promise<TuiReadResult<readonly TuiRunSummary[]>> {
@@ -206,15 +218,26 @@ export class TuiReadModelClient {
 
   async #request<T>(path: string, init?: RequestInit): Promise<TuiReadResult<T>> {
     try {
+      const url = new URL(path, `${this.baseUrl}/`);
       let requestInit = init;
-      if (this.#authToken !== null) {
+      if (this.#authSigner !== null) {
         const headers = new Headers(init?.headers);
-        if (!headers.has("Authorization")) {
-          headers.set("Authorization", `Bearer ${this.#authToken}`);
+        if (headers.has("Authorization")) {
+          throw new Error("caller-supplied Authorization conflicts with the configured signer");
         }
-        requestInit = { ...init, headers };
+        const method = init?.method ?? "GET";
+        const proof = this.#authSigner.signRequest({
+          method,
+          target: `${url.pathname}${url.search}`,
+          capabilities: requiredServerHttpCapabilities(
+            method,
+            `${url.pathname}${url.search}`,
+          ),
+        });
+        headers.set("Authorization", `Bearer ${proof}`);
+        requestInit = { ...init, redirect: "error", headers };
       }
-      const response = await this.#fetch(new URL(path, `${this.baseUrl}/`), requestInit);
+      const response = await this.#fetch(url, requestInit);
       const body = await readResponseBody(response);
       if (response.ok) return { ok: true, value: body as T };
       const detail = readDetail(body) ?? `server returned HTTP ${response.status}`;

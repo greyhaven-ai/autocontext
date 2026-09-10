@@ -8,18 +8,31 @@ from autocontext.config import AppSettings
 from autocontext.config.production_execution import parse_csv_values
 from autocontext.scenarios import SCENARIO_REGISTRY
 
+_BUILTIN_SCENARIO_DESCRIPTIONS = {
+    "grid_ctf": (
+        "20x20 capture-the-flag map with fog of war and three unit archetypes "
+        "(Scout, Soldier, Commander). Preserve at least one defender near base."
+    ),
+    "othello": (
+        "Standard Othello opening phase on an 8x8 board. Valid actions optimize "
+        "mobility and corner pressure."
+    ),
+}
+
 
 def build_run_environment_info(settings: AppSettings) -> dict[str, Any]:
-    scenarios: list[dict[str, str]] = []
-    for name in sorted(SCENARIO_REGISTRY):
-        instance = SCENARIO_REGISTRY[name]()
-        if hasattr(instance, "describe_rules"):
-            description = instance.describe_rules()
-        elif hasattr(instance, "describe_task"):
-            description = instance.describe_task()
-        else:
-            description = name
-        scenarios.append({"name": name, "description": description})
+    # This catalog is reachable with read/control capabilities. Scenario
+    # constructors and describe hooks may contain host-installed project code,
+    # so metadata reads must never invoke them. Custom scenarios retain their
+    # registry name and are resolved only by host-authorized run operations.
+    scenario_names = sorted(name for name in SCENARIO_REGISTRY if type(name) is str)
+    scenarios = [
+        {
+            "name": name,
+            "description": _BUILTIN_SCENARIO_DESCRIPTIONS.get(name, name),
+        }
+        for name in scenario_names
+    ]
 
     configured = bool(settings.primeintellect_api_key)
     accelerator_kind = settings.primeintellect_accelerator_kind.strip()

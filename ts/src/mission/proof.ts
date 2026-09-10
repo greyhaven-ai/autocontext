@@ -10,6 +10,7 @@
 
 import { execFileSync } from "node:child_process";
 import { z } from "zod";
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 import type { MissionManager } from "./manager.js";
 import type { Verifier } from "./verifiers.js";
 import type { VerifierResult } from "./types.js";
@@ -115,6 +116,7 @@ export class BuildCommandProofVerifier implements Verifier {
     try {
       const stdout = execFileSync("/bin/sh", ["-c", this.buildCommand], {
         cwd: this.cwd,
+        env: childProcessEnvWithoutControlPlaneSecrets(),
         encoding: "utf-8",
         timeout: 300_000, // 5 minutes for proof checking
         stdio: ["pipe", "pipe", "pipe"],

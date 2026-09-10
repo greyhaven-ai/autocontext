@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { z } from "zod";
@@ -354,6 +355,35 @@ describe("RunManager", () => {
     expect(info.scenarios[0].name).toBe("grid_ctf");
     expect(info.executors.length).toBeGreaterThan(0);
     expect(info.currentExecutor).toBe("local");
+  });
+
+  it("does not probe provider implementations for unprivileged capability metadata", async () => {
+    const { RunManager } = await import("../src/server/run-manager.js");
+    const { RunManagerProviderSession } = await import(
+      "../src/server/run-manager-provider-session.js"
+    );
+    const probe = vi.spyOn(
+      RunManagerProviderSession.prototype,
+      "supportsInteractiveImageAttachments",
+    ).mockReturnValue(true);
+    try {
+      const mgr = new RunManager({
+        dbPath: join(dir, "capabilities.db"),
+        migrationsDir: join(__dirname, "..", "migrations"),
+        runsRoot: join(dir, "capability-runs"),
+        knowledgeRoot: join(dir, "capability-knowledge"),
+        providerType: "deterministic",
+      });
+
+      expect(mgr.getInteractiveCapabilities()).toEqual([]);
+      expect(probe).not.toHaveBeenCalled();
+      expect(mgr.getInteractiveCapabilities({ allowHostExecution: true })).toEqual([
+        "image_attachments_v1",
+      ]);
+      expect(probe).toHaveBeenCalledOnce();
+    } finally {
+      probe.mockRestore();
+    }
   });
 
   it("getEnvironmentInfo includes saved custom scenarios without touching the game registry", async () => {
@@ -760,9 +790,52 @@ describe("InteractiveServer", () => {
     }
   });
 
-  it("requires the configured bearer token for HTTP and WebSocket access", async () => {
+  it("fails malformed WebSocket upgrade targets closed without crashing", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
-    const { serverAuthSubprotocol } = await import("../src/server/server-auth.js");
+    const mgr = new RunManager({
+      dbPath: join(dir, "malformed-upgrade.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "malformed-upgrade-runs"),
+      knowledgeRoot: join(dir, "malformed-upgrade-knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    try {
+      const response = await new Promise<string>((resolve, reject) => {
+        const socket = createConnection({ host: "127.0.0.1", port: server.port });
+        let received = "";
+        socket.once("error", reject);
+        socket.on("data", (chunk) => {
+          received += chunk.toString("latin1");
+        });
+        socket.once("close", () => resolve(received));
+        socket.once("connect", () => {
+          socket.write([
+            "GET /ws/events#fragment HTTP/1.1",
+            `Host: 127.0.0.1:${server.port}`,
+            "Connection: Upgrade",
+            "Upgrade: websocket",
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+            "Sec-WebSocket-Version: 13",
+            "",
+            "",
+          ].join("\r\n"));
+        });
+      });
+      expect(response).toMatch(/^HTTP\/1\.1 400 Bad Request/);
+      const httpUrl = server.url.replace(/^ws:/, "http:").replace("/ws/interactive", "/");
+      await expect(fetch(httpUrl)).resolves.toMatchObject({ status: 200 });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("requires a fresh configured HMAC proof for HTTP and WebSocket access", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { serverAuthSubprotocol, serverAuthorizationHeader } = await import(
+      "../src/server/server-auth.js"
+    );
     const { WebSocket } = await import("ws");
     const token = "0123456789abcdef0123456789abcdef";
     const mgr = new RunManager({
@@ -772,7 +845,13 @@ describe("InteractiveServer", () => {
       knowledgeRoot: join(dir, "authenticated-knowledge"),
       providerType: "deterministic",
     });
-    const server = new InteractiveServer({ runManager: mgr, port: 0, authToken: token });
+    process.env.AUTOCONTEXT_SERVER_TOKEN = "short";
+    expect(() => new InteractiveServer({ runManager: mgr, port: 0 })).toThrow(/at least 32 bytes/);
+    expect(process.env.AUTOCONTEXT_SERVER_TOKEN).toBeUndefined();
+
+    process.env.AUTOCONTEXT_SERVER_TOKEN = token;
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    expect(process.env.AUTOCONTEXT_SERVER_TOKEN).toBeUndefined();
     await server.start();
     const unauthenticated = new WebSocket(server.url);
     try {
@@ -807,14 +886,132 @@ describe("InteractiveServer", () => {
         authenticated.close();
       }
 
+      const noHostExecution = await openSocket(
+        server.url,
+        serverAuthSubprotocol(token, {
+          method: "GET",
+          target: "/ws/interactive",
+          capabilities: ["content:read", "control:operate"],
+        }),
+      );
+      try {
+        await noHostExecution.waitFor((message) => message.type === "hello");
+        noHostExecution.send({ type: "start_run", scenario: "grid_ctf", generations: 1 });
+        await expect(noHostExecution.waitFor((message) => message.type === "error"))
+          .resolves.toMatchObject({ message: "Forbidden" });
+        noHostExecution.send({ type: "resume" });
+        await expect(noHostExecution.waitFor((message) => message.type === "error"))
+          .resolves.toMatchObject({ message: "Forbidden" });
+        noHostExecution.send({ type: "override_gate", decision: "retry" });
+        await expect(noHostExecution.waitFor((message) => message.type === "error"))
+          .resolves.toMatchObject({ message: "Forbidden" });
+      } finally {
+        noHostExecution.close();
+      }
+
       const httpUrl = server.url.replace(/^ws:/, "http:").replace("/ws/interactive", "/");
       await expect(fetch(httpUrl)).resolves.toMatchObject({ status: 401 });
       await expect(fetch(httpUrl, {
         headers: { Authorization: `Bearer ${token}` },
+      })).resolves.toMatchObject({ status: 401 });
+      await expect(fetch(httpUrl, {
+        headers: {
+          Authorization: serverAuthorizationHeader(token, {
+            method: "GET",
+            target: "/",
+            capabilities: ["control:read"],
+          }),
+        },
+      })).resolves.toMatchObject({ status: 200 });
+
+      const runsUrl = new URL("/api/runs", httpUrl);
+      await expect(fetch(runsUrl, {
+        headers: {
+          Authorization: serverAuthorizationHeader(token, {
+            method: "GET",
+            target: "/api/runs",
+            capabilities: ["control:read"],
+          }),
+        },
+      })).resolves.toMatchObject({ status: 403 });
+      await expect(fetch(runsUrl, {
+        headers: {
+          Authorization: serverAuthorizationHeader(token, {
+            method: "GET",
+            target: "/api/runs",
+            capabilities: ["content:read", "control:read"],
+          }),
+        },
       })).resolves.toMatchObject({ status: 200 });
     } finally {
       unauthenticated.terminate();
       await server.stop();
+    }
+  });
+
+  it("does not let an admin-only client trigger provider probes through a host client", async () => {
+    const previousConfigDir = process.env.AUTOCONTEXT_CONFIG_DIR;
+    const configDir = join(dir, "confused-deputy-config");
+    mkdirSync(configDir, { recursive: true });
+    process.env.AUTOCONTEXT_CONFIG_DIR = configDir;
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { RunManagerProviderSession } = await import(
+      "../src/server/run-manager-provider-session.js"
+    );
+    const { serverAuthSubprotocol } = await import("../src/server/server-auth.js");
+    const token = "0123456789abcdef0123456789abcdef";
+    const probe = vi.spyOn(
+      RunManagerProviderSession.prototype,
+      "supportsInteractiveImageAttachments",
+    ).mockReturnValue(true);
+    const mgr = new RunManager({
+      dbPath: join(dir, "confused-deputy.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "confused-deputy-runs"),
+      knowledgeRoot: join(dir, "confused-deputy-knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0, authToken: token });
+    await server.start();
+
+    const transcriptUrl = `${server.url}?transcript_protocol_version=1`;
+    const hostClient = await openSocket(
+      transcriptUrl,
+      serverAuthSubprotocol(token, {
+        method: "GET",
+        target: "/ws/interactive?transcript_protocol_version=1",
+        capabilities: ["content:read", "control:operate", "host:execute"],
+      }),
+    );
+    const adminClient = await openSocket(
+      server.url,
+      serverAuthSubprotocol(token, {
+        method: "GET",
+        target: "/ws/interactive",
+        capabilities: ["content:read", "control:operate", "control:admin"],
+      }),
+    );
+    try {
+      await hostClient.waitFor((message) => message.type === "hello");
+      await hostClient.waitFor((message) => message.type === "environments");
+      await adminClient.waitFor((message) => message.type === "hello");
+      probe.mockClear();
+
+      adminClient.send({ type: "switch_provider", provider: "deterministic" });
+      await adminClient.waitFor((message) => message.type === "auth_status");
+      await hostClient.waitFor((message) => message.type === "environments");
+
+      expect(probe).not.toHaveBeenCalled();
+    } finally {
+      hostClient.close();
+      adminClient.close();
+      await server.stop();
+      probe.mockRestore();
+      if (previousConfigDir === undefined) {
+        delete process.env.AUTOCONTEXT_CONFIG_DIR;
+      } else {
+        process.env.AUTOCONTEXT_CONFIG_DIR = previousConfigDir;
+      }
     }
   });
 
@@ -891,8 +1088,12 @@ describe("InteractiveServer", () => {
 
   it("admits an explicitly configured HTTPS browser origin through a reverse proxy", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { serverAuthSubprotocol, serverAuthorizationHeader } = await import(
+      "../src/server/server-auth.js"
+    );
     const { WebSocket } = await import("ws");
     const browserOrigin = "https://operator.example";
+    const token = "0123456789abcdef0123456789abcdef";
     const mgr = new RunManager({
       dbPath: join(dir, "proxy-origin.db"),
       migrationsDir: join(__dirname, "..", "migrations"),
@@ -900,13 +1101,29 @@ describe("InteractiveServer", () => {
       knowledgeRoot: join(dir, "proxy-origin-knowledge"),
       providerType: "deterministic",
     });
-    const server = new InteractiveServer({
+    expect(() => new InteractiveServer({
       runManager: mgr,
       port: 0,
       allowedOrigins: [browserOrigin],
+      allowTokenlessLoopback: true,
+    })).toThrow(/require control-plane credentials/);
+    const server = new InteractiveServer({
+      runManager: mgr,
+      port: 0,
+      authToken: token,
+      allowedOrigins: [browserOrigin],
     });
     await server.start();
-    const socket = new WebSocket(server.url, { origin: browserOrigin });
+    const socket = new WebSocket(
+      server.url,
+      serverAuthSubprotocol(token, {
+        method: "GET",
+        target: "/ws/interactive",
+        capabilities: ["content:read", "control:operate"],
+        origin: browserOrigin,
+      }),
+      { origin: browserOrigin },
+    );
     try {
       await new Promise<void>((resolve, reject) => {
         socket.once("open", resolve);
@@ -929,6 +1146,12 @@ describe("InteractiveServer", () => {
       const response = await fetch(httpUrl, {
         method: "POST",
         headers: {
+          Authorization: serverAuthorizationHeader(token, {
+            method: "POST",
+            target: "/api/openclaw/artifacts",
+            capabilities: ["content:read", "control:operate", "host:execute"],
+            origin: browserOrigin,
+          }),
           "Content-Type": "application/json",
           Origin: browserOrigin,
         },
@@ -955,7 +1178,7 @@ describe("InteractiveServer", () => {
           "Access-Control-Request-Method": "POST",
         },
       });
-      expect(deniedPreflight.status).toBe(204);
+      expect(deniedPreflight.status).toBe(403);
       expect(deniedPreflight.headers.get("access-control-allow-origin"))
         .not.toBe(nearbyOrigin);
 

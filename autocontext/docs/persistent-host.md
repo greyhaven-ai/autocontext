@@ -8,6 +8,7 @@ Run the HTTP API and queue worker as separate long-lived processes against the s
 export AUTOCONTEXT_DB_PATH=/srv/autoctx/runs/autocontext.sqlite3
 export AUTOCONTEXT_RUNS_ROOT=/srv/autoctx/runs
 export AUTOCONTEXT_KNOWLEDGE_ROOT=/srv/autoctx/knowledge
+# Compatibility configuration for one full-capability HMAC signing key.
 export AUTOCONTEXT_SERVER_TOKEN="$(openssl rand -hex 32)"
 
 uv run autoctx serve --host 0.0.0.0 --port 8000
@@ -29,14 +30,39 @@ If the selected provider/runtime is stateful and persistent, for example persist
 
 This persistent-host shape is single-tenant or trusted-org infrastructure. Treat the API process, worker process, SQLite DB, runs root, knowledge root, mounted repository, service account, and environment file as one trust boundary. It is suitable for a developer machine, a CI worker, or one trusted organization; it is not a hosted multi-tenant SaaS control plane.
 
-If `autoctx serve` binds beyond loopback, a unique `AUTOCONTEXT_SERVER_TOKEN` of at least 32 characters is mandatory. This is enforced by the CLI and by the HTTP/WebSocket application boundary for non-loopback peers, including direct ASGI launches. HTTP clients send it as an `Authorization: Bearer` value. Native WebSocket clients may use the same header; browser clients encode it in the `autocontext.bearer.<base64url-token>` subprotocol, which the server must echo. Credential-bearing WebSocket query parameters are rejected because URLs are routinely captured in proxy logs and shell history. The TypeScript TUI reads the token from the environment for both transports and rejects credentials embedded in `--connect` URLs. Still put the service behind TLS, authentication, and authorization before exposing it to other users. A loopback reverse proxy is seen as a local peer, so configure the application token even when the proxy itself enforces identity. Provider keys, SCM credentials, sandbox API keys, and webhook secrets may be supplied through the host environment for this single-tenant shape, but they must not be baked into images or written into prompts, runtime-session timelines, background-session summaries, lifecycle hook payloads, or outcome metadata.
+Configure a strong HMAC signing key before starting a persistent server.
+`AUTOCONTEXT_SERVER_TOKEN` remains the compatibility configuration for one
+full-capability key, but the value is never a bearer credential: clients use it
+locally to create a unique `actx1` proof for each HTTP request and WebSocket
+reconnect. A proof lasts at most 60 seconds and binds its method, raw path and
+query, Origin, audience, requested capabilities, and one-time JTI. HTTP sends
+`Authorization: Bearer actx1...`; WebSocket sends the exact `actx1...` proof as
+its subprotocol. Query credentials and raw signing secrets are rejected.
+
+For multiple operators or smaller capability ceilings on POSIX, prefer a
+same-owner `AUTOCONTEXT_SERVER_CREDENTIALS_FILE` with mode `0400` or `0600`.
+File registries are rejected on Windows until owner and DACL validation is
+available; use `AUTOCONTEXT_SERVER_TOKEN` there. Provision each client's secret
+separately; do not distribute the server registry. See
+[Control-plane authentication](control-plane-auth.md) for the registry schema,
+capability policy, proof format, migration notes, and the per-process replay
+cache limitation.
+
+Still put the service behind TLS, authentication, and authorization before
+exposing it to other users. A loopback reverse proxy is seen as a local peer,
+so configure application proofs even when the proxy itself enforces identity.
+Provider keys, SCM credentials, sandbox API keys, and webhook secrets may be
+supplied through the host environment for this single-tenant shape, but they
+must not be baked into images or written into prompts, runtime-session
+timelines, background-session summaries, lifecycle hook payloads, or outcome
+metadata.
 
 Browser origins remain explicit behind a TLS-terminating reverse proxy. The
 Python server reads `AUTOCONTEXT_CORS_ORIGINS`; the TypeScript server reads
 `AUTOCONTEXT_SERVER_ALLOWED_ORIGINS`, a comma-separated list of exact
 `http://` or `https://` origins. For a browser using WSS, configure its
 corresponding HTTPS origin rather than a `wss://` endpoint. These settings do
-not trust forwarded headers, replace the server token, or authorize a request
+not trust forwarded headers, replace proof authentication, or authorize a request
 on their own.
 
 Shared GitHub App credentials or bot tokens for branch/PR workflows are acceptable only inside one tenant or trusted organization with explicit admin consent. Cross-customer hosted PR creation requires a product adapter with per-tenant GitHub App installations or user OAuth tokens, scoped credential brokering, audit, and revocation. See [Background execution trust boundaries and credential model](../../docs/background-execution-trust-boundaries.md) before claiming hosted or multi-tenant safety.
@@ -77,8 +103,8 @@ On a service manager such as systemd, run `serve` and `worker` as separate units
 
 Use one environment file for both units:
 
-Generate the server token once and store it in that root-readable environment
-file. Do not copy a placeholder token into production:
+Generate the HMAC signing key once and store it in that root-readable
+environment file. Do not copy a placeholder key into production:
 
 ```bash
 openssl rand -hex 32
@@ -91,7 +117,7 @@ AUTOCONTEXT_RUNS_ROOT=/srv/autoctx/runs
 AUTOCONTEXT_KNOWLEDGE_ROOT=/srv/autoctx/knowledge
 AUTOCONTEXT_AGENT_PROVIDER=pi
 AUTOCONTEXT_PI_COMMAND=pi
-AUTOCONTEXT_SERVER_TOKEN=<paste the generated 64-character hex token here>
+AUTOCONTEXT_SERVER_TOKEN=<paste the generated 64-character hex signing key here>
 ```
 
 ```ini

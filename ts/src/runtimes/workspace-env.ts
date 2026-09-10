@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 import {
   RuntimeComponentLifecycleState,
   type RuntimeComponentScope,
@@ -1273,7 +1274,7 @@ function runSpawnedProcess(options: {
 
     const child = spawn(options.command, options.args, {
       cwd: options.cwd,
-      env: options.env,
+      env: childProcessEnvWithoutControlPlaneSecrets(options.env),
       shell: options.shell,
       stdio: ["ignore", "pipe", "pipe"],
       detached: process.platform !== "win32",

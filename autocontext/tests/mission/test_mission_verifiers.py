@@ -36,6 +36,15 @@ def test_command_verifier_passes_on_exit_zero(tmp_path: Path) -> None:
     assert result.metadata["command"] == "true"
 
 
+def test_command_verifier_does_not_inherit_control_plane_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AUTOCONTEXT_SERVER_TOKEN", "must-not-reach-verifier")
+    cv = CommandVerifier('test -z "$AUTOCONTEXT_SERVER_TOKEN"', str(tmp_path))
+    assert cv.verify("mission-x").passed is True
+
+
 def test_command_verifier_fails_on_non_zero_exit_with_stderr_suggestion(
     tmp_path: Path,
 ) -> None:

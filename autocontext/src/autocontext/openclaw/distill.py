@@ -6,13 +6,13 @@ Provides:
 - DistillSidecarProtocol: structural typing for sidecar implementations
 - DistillJobError: job lifecycle error
 """
+
 from __future__ import annotations
 
 import importlib
 import inspect
 import json
 import logging
-import os
 import re
 import subprocess
 import uuid
@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkabl
 from pydantic import BaseModel, Field
 
 from autocontext.offline import require_runtime_available
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
 from autocontext.security.confined_files import (
     ConfinedPathError,
     atomic_write_confined_text,
@@ -96,16 +97,15 @@ class CommandDistillSidecar:
         require_runtime_available("openclaw-cli")
         if "\x00" in job_id or "\x00" in scenario:
             raise DistillJobError("distill job values must not contain NUL bytes")
-        if (
-            ("{job_id}" in self._command_argv and job_id.lstrip().startswith("-"))
-            or ("{scenario}" in self._command_argv and scenario.lstrip().startswith("-"))
+        if ("{job_id}" in self._command_argv and job_id.lstrip().startswith("-")) or (
+            "{scenario}" in self._command_argv and scenario.lstrip().startswith("-")
         ):
             raise DistillJobError("distill job placeholder values must not be option-shaped")
         command = [
             job_id if argument == "{job_id}" else scenario if argument == "{scenario}" else argument
             for argument in self._command_argv
         ]
-        env = os.environ.copy()
+        env = child_process_env_without_control_plane_secrets()
         env["AUTOCONTEXT_DISTILL_JOB_ID"] = job_id
         env["AUTOCONTEXT_DISTILL_SCENARIO"] = scenario
         env["AUTOCONTEXT_DISTILL_TRAINING_CONFIG"] = json.dumps(config, sort_keys=True)
@@ -302,8 +302,7 @@ class DistillJobManager:
         allowed = _VALID_TRANSITIONS.get(job.status, set())
         if target_status not in allowed:
             raise DistillJobError(
-                f"Invalid transition: {job.status} → {target_status} "
-                f"(allowed: {allowed or 'none — terminal state'})"
+                f"Invalid transition: {job.status} → {target_status} (allowed: {allowed or 'none — terminal state'})"
             )
         if target_status == "completed" and not (result_artifact_id or job.result_artifact_id):
             raise DistillJobError("Completed distill jobs require a result_artifact_id")

@@ -14,6 +14,25 @@ import {
   createLocalWorkspaceEnv,
   type RuntimeWorkspaceEnv,
 } from "../../runtimes/workspace-env.js";
+import {
+  childProcessEnvWithoutControlPlaneSecrets,
+  clearControlPlaneSecretsFromCurrentProcess,
+} from "../../security/child-process-env.js";
+import {
+  assertServerAllowedOriginsRequireAuthentication,
+  assertSecureServerBind,
+  isExplicitlyAllowedServerOrigin,
+  resolveServerAllowedOrigins,
+  resolveServerAuthToken,
+  resolveServerCredentialsFile,
+  SERVER_ALLOW_TOKENLESS_LOOPBACK_ENV,
+  SERVER_ALLOWED_ORIGINS_ENV,
+  SERVER_AUTH_TOKEN_ENV,
+  SERVER_CREDENTIALS_FILE_ENV,
+  ServerAuthenticator,
+  type ServerCapability,
+  type ServerCredentialConfig,
+} from "../../server/server-auth.js";
 import type { RuntimeSessionEventStore } from "../../session/runtime-events.js";
 import type { RuntimeSessionEventSink } from "../../session/runtime-session-notifications.js";
 
@@ -67,6 +86,7 @@ export type NodeAgentAppRuntimeFactory = (
 
 export interface NodeAgentAppServerOptions {
   projectRoot: string | URL;
+  host?: string;
   env?: Record<string, string | undefined>;
   envFile?: string;
   processEnv?: Record<string, string | undefined>;
@@ -77,6 +97,10 @@ export interface NodeAgentAppServerOptions {
   eventStore?: RuntimeSessionEventStore;
   eventSink?: RuntimeSessionEventSink;
   sessionDbPath?: string;
+  authToken?: string;
+  authCredentials?: readonly ServerCredentialConfig[];
+  credentialsFile?: string;
+  allowedOrigins?: readonly string[];
 }
 
 export interface StartNodeAgentAppServerOptions extends Partial<NodeAgentAppServerOptions> {
@@ -168,23 +192,47 @@ await startNodeAgentAppServer({
 export async function createNodeAgentAppServer(
   options: NodeAgentAppServerOptions,
 ): Promise<Server> {
+  const security = consumeNodeAgentServerSecurity(options);
+  return await createNodeAgentAppServerWithSecurity(options, security);
+}
+
+async function createNodeAgentAppServerWithSecurity(
+  options: NodeAgentAppServerOptions,
+  security: NodeAgentServerSecurity,
+): Promise<Server> {
+  const runtimeOptions = { ...options };
+  delete runtimeOptions.authToken;
+  delete runtimeOptions.authCredentials;
+  delete runtimeOptions.credentialsFile;
+  const securedOptions = {
+    ...runtimeOptions,
+    processEnv: childProcessEnvWithoutControlPlaneSecrets(options.processEnv ?? process.env),
+  };
   const projectRoot = resolveProjectRoot(options.projectRoot);
-  const workspace = options.workspace ?? createLocalWorkspaceEnv({ root: projectRoot });
-  const eventStore = options.eventStore ?? await createEventStore(projectRoot, options.sessionDbPath);
-  const agentRuntime = options.agentRuntime ?? DEFAULT_AGENT_RUNTIME;
-  const env = await resolveExplicitEnv(projectRoot, options);
-  const ownedWorkspace = options.workspace ? undefined : workspace;
-  const ownedEventStore = options.eventStore ? undefined : eventStore;
+  const workspace = securedOptions.workspace ?? createLocalWorkspaceEnv({ root: projectRoot });
+  const eventStore = securedOptions.eventStore
+    ?? await createEventStore(projectRoot, securedOptions.sessionDbPath);
+  const agentRuntime = securedOptions.agentRuntime ?? DEFAULT_AGENT_RUNTIME;
+  const env = await resolveExplicitEnv(projectRoot, securedOptions);
+  const ownedWorkspace = securedOptions.workspace ? undefined : workspace;
+  const ownedEventStore = securedOptions.eventStore ? undefined : eventStore;
   const server = createServer((request, response) => {
     void handleNodeAgentAppRequest(request, response, {
-      ...options,
+      ...securedOptions,
       projectRoot,
       workspace,
       eventStore,
       agentRuntime,
       env,
+      security,
     });
   });
+  guardNodeAgentServerListen(
+    server,
+    security.host,
+    security.authenticator.authenticationRequired,
+    security.allowTokenlessLoopback,
+  );
   server.once("close", () => {
     void ownedWorkspace?.cleanup();
     ownedEventStore?.close();
@@ -199,22 +247,32 @@ export async function startNodeAgentAppServer(
   const host = options.host ?? process.env.AUTOCTX_AGENT_HOST ?? process.env.HOST ?? "127.0.0.1";
   const projectRoot = resolveProjectRoot(options.projectRoot ?? process.cwd());
   const runtimeModule = options.runtimeModule ?? process.env.AUTOCTX_RUNTIME_MODULE;
+  const envFile = options.envFile ?? process.env.AUTOCTX_ENV_FILE;
+  const sessionDbPath = options.sessionDbPath ?? process.env.AUTOCTX_SESSION_DB;
+  const processEnv = options.processEnv ?? process.env;
+  const security = consumeNodeAgentServerSecurity({ ...options, projectRoot, host, processEnv });
+  const securedProcessEnv = childProcessEnvWithoutControlPlaneSecrets(processEnv);
   const createRuntime = options.createRuntime ?? (runtimeModule
     ? await loadNodeAgentAppRuntimeFactory(runtimeModule, projectRoot)
     : undefined);
-  const server = await createNodeAgentAppServer({
+  const server = await createNodeAgentAppServerWithSecurity({
     projectRoot,
+    host,
     env: options.env,
-    envFile: options.envFile ?? process.env.AUTOCTX_ENV_FILE,
-    processEnv: options.processEnv ?? process.env,
+    envFile,
+    processEnv: securedProcessEnv,
     workspace: options.workspace,
     runtime: options.runtime,
     createRuntime,
     eventStore: options.eventStore,
     eventSink: options.eventSink,
-    sessionDbPath: options.sessionDbPath ?? process.env.AUTOCTX_SESSION_DB,
+    sessionDbPath,
     agentRuntime: options.agentRuntime,
-  });
+    authToken: options.authToken,
+    authCredentials: options.authCredentials,
+    credentialsFile: options.credentialsFile,
+    allowedOrigins: options.allowedOrigins,
+  }, security);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, host, () => resolve());
@@ -312,6 +370,10 @@ function renderNodeAgentReadme(): string {
     "Runtime-backed handlers can receive host-created runtime capabilities via `AUTOCTX_RUNTIME_MODULE` (bare package specifier, relative/absolute file path, or URL).",
     "The generated package uses a local `file:` dependency on the currently installed `autoctx` so it does not reinstall a stale npm release before this target is published.",
     "Explicit handler env can be loaded with `AUTOCTX_ENV_FILE` (resolved from the source project root); the generated server does not capture the full host environment.",
+    "Set `AUTOCONTEXT_SERVER_TOKEN` or `AUTOCONTEXT_SERVER_CREDENTIALS_FILE` to require short-lived, request-bound authentication proofs.",
+    "Without credentials, startup is rejected unless the server is loopback-only and `AUTOCONTEXT_ALLOW_TOKENLESS_LOOPBACK=1` is set explicitly.",
+    "Browser callers must also be listed exactly in `AUTOCONTEXT_SERVER_ALLOWED_ORIGINS`.",
+    "Control-plane authentication secrets are removed from handler and runtime environments.",
     "Runtime-session events can be persisted with `AUTOCTX_SESSION_DB`.",
     "",
     "Boundary reference: docs/internal/core-control-package-split.md#agent-app-build-targets",
@@ -327,17 +389,52 @@ async function handleNodeAgentAppRequest(
     workspace: RuntimeWorkspaceEnv;
     agentRuntime: NodeAgentRuntimeContracts;
     env: Record<string, string>;
+    security: NodeAgentServerSecurity;
   },
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    if (request.method === "GET" && (url.pathname === "/manifest" || url.pathname === "/agents")) {
+    const method = request.method ?? "GET";
+    const origin = request.headers.origin;
+    if (
+      origin !== undefined
+      && !isExplicitlyAllowedServerOrigin(origin, options.security.allowedOrigins)
+    ) {
+      await writeJson(response, 403, {
+        ok: false,
+        error: { code: "AUTOCTX_AGENT_FORBIDDEN_ORIGIN", message: "Forbidden origin" },
+      });
+      return;
+    }
+    if (origin !== undefined) setAgentCorsHeaders(response, origin);
+
+    const requiredCapabilities = requiredAgentRouteCapabilities(method, url.pathname);
+    if (method === "OPTIONS" && isAgentRoutePath(url.pathname)) {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    if (requiredCapabilities !== null) {
+      const authentication = options.security.authenticator.authenticateRequest({
+        method,
+        target: request.url ?? "/",
+        origin: origin ?? "",
+        capabilities: requiredCapabilities,
+        authorizationHeader: request.headers.authorization,
+      });
+      if (!authentication.ok) {
+        await writeAuthenticationError(response, authentication.status);
+        return;
+      }
+    }
+
+    if (method === "GET" && (url.pathname === "/manifest" || url.pathname === "/agents")) {
       await writeJson(response, 200, await buildManifest(options.projectRoot, options.agentRuntime));
       return;
     }
 
     const match = /^\/agents\/([^/]+)\/invoke$/.exec(url.pathname);
-    if (request.method === "POST" && match) {
+    if (method === "POST" && match) {
       const body = await readJsonBody(request);
       const agentName = decodeURIComponent(match[1]!);
       const id = readOptionalString(body.id) ?? "default";
@@ -356,12 +453,151 @@ async function handleNodeAgentAppRequest(
       ok: false,
       error: {
         code: "AUTOCTX_AGENT_NOT_FOUND",
-        message: `No Node agent app route for ${request.method ?? "GET"} ${url.pathname}`,
+        message: `No Node agent app route for ${method} ${url.pathname}`,
       },
     });
   } catch (error) {
     await writeJson(response, 500, renderNodeAgentAppError(error));
   }
+}
+
+interface NodeAgentServerSecurity {
+  host: string;
+  authenticator: ServerAuthenticator;
+  allowedOrigins: ReadonlySet<string>;
+  allowTokenlessLoopback: boolean;
+}
+
+function resolveNodeAgentServerSecurity(
+  options: NodeAgentAppServerOptions,
+): NodeAgentServerSecurity {
+  const host = options.host ?? "127.0.0.1";
+  const authToken = resolveServerAuthToken(
+    options.authToken ?? options.processEnv?.[SERVER_AUTH_TOKEN_ENV],
+  );
+  const credentialsFile = options.credentialsFile
+    ?? options.processEnv?.[SERVER_CREDENTIALS_FILE_ENV];
+  const authenticator = new ServerAuthenticator({
+    authToken,
+    credentials: [
+      ...resolveServerCredentialsFile(credentialsFile),
+      ...(options.authCredentials ?? []),
+    ],
+  });
+  const allowTokenlessLoopback = (
+    options.processEnv ?? process.env
+  )[SERVER_ALLOW_TOKENLESS_LOOPBACK_ENV] === "1";
+  assertSecureServerBind(
+    host,
+    authenticator.authenticationRequired ? "configured" : null,
+    allowTokenlessLoopback,
+  );
+  const allowedOrigins = resolveServerAllowedOrigins(
+    options.allowedOrigins ?? parseConfiguredOrigins(
+      options.processEnv?.[SERVER_ALLOWED_ORIGINS_ENV],
+    ),
+  );
+  assertServerAllowedOriginsRequireAuthentication(
+    authenticator.authenticationRequired,
+    allowedOrigins,
+  );
+  return { host, authenticator, allowedOrigins, allowTokenlessLoopback };
+}
+
+function consumeNodeAgentServerSecurity(
+  options: NodeAgentAppServerOptions,
+): NodeAgentServerSecurity {
+  try {
+    return resolveNodeAgentServerSecurity(options);
+  } finally {
+    clearControlPlaneSecretsFromCurrentProcess();
+  }
+}
+
+function parseConfiguredOrigins(value: string | undefined): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  if (value.trim() === "") return [];
+  return value.split(",").map((origin) => origin.trim());
+}
+
+function requiredAgentRouteCapabilities(
+  method: string,
+  pathname: string,
+): readonly ServerCapability[] | null {
+  if (method === "GET" && (pathname === "/manifest" || pathname === "/agents")) {
+    return ["control:read", "host:execute"];
+  }
+  if (method === "POST" && /^\/agents\/[^/]+\/invoke$/.test(pathname)) {
+    return ["content:read", "control:operate", "host:execute"];
+  }
+  return null;
+}
+
+function isAgentRoutePath(pathname: string): boolean {
+  return pathname === "/manifest"
+    || pathname === "/agents"
+    || /^\/agents\/[^/]+\/invoke$/.test(pathname);
+}
+
+function setAgentCorsHeaders(response: ServerResponse, origin: string): void {
+  response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  response.setHeader("Vary", "Origin");
+}
+
+async function writeAuthenticationError(
+  response: ServerResponse,
+  status: 401 | 403,
+): Promise<void> {
+  if (status === 401) response.setHeader("WWW-Authenticate", 'Bearer realm="autocontext"');
+  await writeJson(response, status, {
+    ok: false,
+    error: {
+      code: status === 401 ? "AUTOCTX_AGENT_UNAUTHORIZED" : "AUTOCTX_AGENT_FORBIDDEN",
+      message: status === 401 ? "Unauthorized" : "Forbidden",
+    },
+  });
+}
+
+function guardNodeAgentServerListen(
+  server: Server,
+  configuredHost: string,
+  authenticationRequired: boolean,
+  allowTokenlessLoopback: boolean,
+): void {
+  const originalListen = server.listen;
+  const guardedListen = function (this: Server, ...rawArgs: unknown[]): Server {
+    const args = [...rawArgs];
+    if (typeof args[0] === "number") {
+      const host = typeof args[1] === "string" ? args[1] : configuredHost;
+      assertSecureServerBind(
+        host,
+        authenticationRequired ? "configured" : null,
+        allowTokenlessLoopback,
+      );
+      if (typeof args[1] !== "string") args.splice(1, 0, host);
+    } else if (isTcpListenOptions(args[0])) {
+      const host = typeof args[0].host === "string" ? args[0].host : configuredHost;
+      assertSecureServerBind(
+        host,
+        authenticationRequired ? "configured" : null,
+        allowTokenlessLoopback,
+      );
+      args[0] = { ...args[0], host };
+    } else if (!authenticationRequired) {
+      throw new Error(
+        "Tokenless agent servers may listen only with an explicit TCP port and loopback host",
+      );
+    }
+    Reflect.apply(originalListen, this, args);
+    return this;
+  };
+  server.listen = guardedListen;
+}
+
+function isTcpListenOptions(value: unknown): value is { port: number; host?: string } {
+  return isRecord(value) && typeof value.port === "number";
 }
 
 async function invokeNodeAgentAppHandler(
@@ -455,10 +691,10 @@ async function resolveExplicitEnv(
   const fileEnv = envPath
     ? await loadNodeAgentAppEnvFile(path.resolve(projectRoot, envPath), options.processEnv ?? {})
     : {};
-  return {
+  return withoutControlPlaneSecrets({
     ...fileEnv,
     ...definedStringRecord(options.env ?? {}),
-  };
+  });
 }
 
 function definedStringRecord(values: Record<string, string | undefined>): Record<string, string> {
@@ -467,6 +703,12 @@ function definedStringRecord(values: Record<string, string | undefined>): Record
     if (value !== undefined) result[key] = value;
   }
   return result;
+}
+
+function withoutControlPlaneSecrets(
+  values: Record<string, string>,
+): Record<string, string> {
+  return definedStringRecord(childProcessEnvWithoutControlPlaneSecrets(values));
 }
 
 async function createEventStore(

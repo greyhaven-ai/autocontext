@@ -84,6 +84,10 @@ import { createAgentAppFetchEntrypoint } from "./agent-app-fetch-entrypoint.mjs"
 
 export default {
   fetch: createAgentAppFetchEntrypoint({
+    // Construct this once from host-owned secret-manager configuration so its
+    // replay cache persists across requests.
+    authenticator: hostAuthenticator,
+    allowedOrigins: ["https://operator.example"],
     env: { AUTOCONTEXT_MODE: "example" },
     runtimeFactoryName: "standard",
     workspaceStore,
@@ -92,12 +96,20 @@ export default {
 };
 ```
 
-Accepted host-created capabilities include `env`, `runtime`, `runtimeFactory`,
-`runtimeFactoryName`, `runtimeFactoryPlan`, `runtimeFactoryModuleMap`,
+Accepted host-created capabilities include `authToken`, `authCredentials`,
+`authenticator`, `allowedOrigins`, `allowInsecureUnauthenticated`, `env`,
+`runtime`, `runtimeFactory`, `runtimeFactoryName`, `runtimeFactoryPlan`, `runtimeFactoryModuleMap`,
 `workspace`, `workspaceStore`, `commands`, `tools`, `eventStore`,
 `sessionEventStore`, `eventSink`, and `maxBodyBytes`. Direct `runtime` and
 `runtimeFactory` capabilities take precedence over bundled runtime factory
 selection.
+
+Generated handlers fail closed with `401` unless the host supplies credentials
+or a persistent `ServerAuthenticator`. The exported default `fetch` therefore
+remains non-operational until the host wires authentication. Use
+`allowInsecureUnauthenticated` only in isolated conformance tests; never enable
+it in a deployed wrapper. Manifest reads require `control:read`, while agent
+invocation requires `content:read`, `control:operate`, and `host:execute`.
 
 ## Boundaries
 

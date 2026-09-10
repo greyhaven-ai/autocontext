@@ -72,6 +72,11 @@ resolves named factories itself.
     }
   ],
   "acceptedHostCapabilities": [
+    "authToken",
+    "authCredentials",
+    "authenticator",
+    "allowedOrigins",
+    "allowInsecureUnauthenticated",
     "env",
     "runtime",
     "runtimeFactory",
@@ -98,10 +103,15 @@ resolves named factories itself.
 }
 ```
 
-Hosts should preserve the accepted key vocabulary: `env`, `runtime`,
-`runtimeFactory`, `runtimeFactoryName`, `runtimeFactoryPlan`,
+Hosts should preserve the accepted key vocabulary: `authToken`,
+`authCredentials`, `authenticator`, `allowedOrigins`,
+`allowInsecureUnauthenticated`, `env`, `runtime`, `runtimeFactory`, `runtimeFactoryName`, `runtimeFactoryPlan`,
 `runtimeFactoryModuleMap`, `workspace`, `workspaceStore`, `commands`, `tools`,
 `eventStore`, `sessionEventStore`, `eventSink`, and `maxBodyBytes`.
+
+Authentication is fail-closed even though the manifest cannot require one
+specific credential source: hosts may choose either credential options or a
+persistent authenticator. The insecure opt-in exists only for isolated tests.
 
 ## Validate Before Exposing A Handler
 

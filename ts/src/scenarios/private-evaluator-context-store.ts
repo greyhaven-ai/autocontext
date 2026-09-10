@@ -15,9 +15,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, uptime } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, win32 as win32Path } from "node:path";
 import { performance } from "node:perf_hooks";
 import { isMainThread } from "node:worker_threads";
+
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 
 const PRIVATE_EVALUATOR_STORE_DIRECTORY = "_private_evaluator_context";
 const PRIVATE_EVALUATOR_LOCK_DIRECTORY = "_private_evaluator_context_locks";
@@ -642,6 +644,7 @@ function readReliableBootIdentity(): string | undefined {
       ["-n", "kern.bootsessionuuid"],
       {
         encoding: "utf8",
+        env: childProcessEnvWithoutControlPlaneSecrets(),
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 1_000,
       },
@@ -672,6 +675,7 @@ function readDarwinMachineIdentity(): string | undefined {
       ["-rd1", "-c", "IOPlatformExpertDevice"],
       {
         encoding: "utf8",
+        env: childProcessEnvWithoutControlPlaneSecrets(),
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 1_000,
       },
@@ -686,7 +690,7 @@ function readWindowsMachineIdentity(): string | undefined {
   if (process.platform !== "win32") return undefined;
   try {
     const registry = execFileSync(
-      "reg.exe",
+      windowsSystemExecutable("reg.exe"),
       [
         "query",
         "HKLM\\SOFTWARE\\Microsoft\\Cryptography",
@@ -695,6 +699,7 @@ function readWindowsMachineIdentity(): string | undefined {
       ],
       {
         encoding: "utf8",
+        env: childProcessEnvWithoutControlPlaneSecrets(),
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 1_000,
       },
@@ -703,6 +708,14 @@ function readWindowsMachineIdentity(): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function windowsSystemExecutable(name: string): string {
+  const configuredRoot = process.env.SystemRoot;
+  const systemRoot = configuredRoot && win32Path.isAbsolute(configuredRoot)
+    ? configuredRoot
+    : "C:\\Windows";
+  return win32Path.join(systemRoot, "System32", name);
 }
 
 function readOptionalSystemText(path: string): string | undefined {
@@ -735,9 +748,13 @@ function readProcessStartIdentity(pid: number, deadline?: number): string | unde
   try {
     const startedAt = execFileSync("/bin/ps", ["-p", String(pid), "-o", "lstart="], {
       encoding: "utf8",
+      env: {
+        ...childProcessEnvWithoutControlPlaneSecrets(),
+        LC_ALL: "C",
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+      },
       stdio: ["ignore", "pipe", "ignore"],
       timeout: Math.max(1, Math.min(1_000, remainingMs)),
-      env: { LC_ALL: "C", PATH: process.env.PATH ?? "/usr/bin:/bin" },
     }).trim();
     return startedAt ? `ps-lstart:${startedAt}` : undefined;
   } catch {
@@ -764,9 +781,13 @@ function processIsZombie(pid: number, deadline?: number): boolean {
   try {
     const status = execFileSync("/bin/ps", ["-p", String(pid), "-o", "stat="], {
       encoding: "utf8",
+      env: {
+        ...childProcessEnvWithoutControlPlaneSecrets(),
+        LC_ALL: "C",
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+      },
       stdio: ["ignore", "pipe", "ignore"],
       timeout: Math.max(1, Math.min(1_000, remainingMs)),
-      env: { LC_ALL: "C", PATH: process.env.PATH ?? "/usr/bin:/bin" },
     }).trim();
     return status.startsWith("Z");
   } catch {

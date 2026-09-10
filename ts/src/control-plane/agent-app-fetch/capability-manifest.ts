@@ -2,6 +2,11 @@ import { AGENT_APP_FETCH_ROUTES } from "./catalog-planner.js";
 import type { AgentAppFetchCatalogPlan, AgentAppFetchRoute } from "./catalog-planner.js";
 
 export type AgentAppFetchHostCapabilityName =
+  | "authToken"
+  | "authCredentials"
+  | "authenticator"
+  | "allowedOrigins"
+  | "allowInsecureUnauthenticated"
   | "env"
   | "runtime"
   | "runtimeFactory"
@@ -41,6 +46,11 @@ export interface AgentAppFetchHostCapabilityManifest {
 }
 
 export const AGENT_APP_FETCH_ACCEPTED_HOST_CAPABILITIES = [
+  "authToken",
+  "authCredentials",
+  "authenticator",
+  "allowedOrigins",
+  "allowInsecureUnauthenticated",
   "env",
   "runtime",
   "runtimeFactory",

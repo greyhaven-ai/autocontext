@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from pydantic import ValidationError
 from autocontext.config import load_settings
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
+from autocontext.security.child_process_env import clear_control_plane_secrets_from_current_process
 from autocontext.security.confined_files import (
     ConfinedFileTooLarge,
     ConfinedPathError,
@@ -23,12 +25,28 @@ from autocontext.security.confined_files import (
     unlink_confined_file,
 )
 from autocontext.server._interactive_run_commands import dispatch_run_command
+from autocontext.server._protocol_messages import (
+    build_environments_msg as _build_environments_msg,
+)
+from autocontext.server._protocol_messages import (
+    build_scenario_preview_msg as _build_scenario_preview_msg,
+)
 from autocontext.server.auth import (
-    request_is_authorized,
-    resolve_server_auth_token,
-    tokenless_client_is_local,
-    websocket_auth_subprotocol,
-    websocket_rejection_code,
+    CONTENT_READ,
+    CONTROL_OPERATE,
+    CONTROL_READ,
+    HOST_EXECUTE,
+    ControlPlaneAuthenticationError,
+    ControlPlaneAuthenticator,
+    ControlPlaneAuthorizationError,
+    WebSocketAuthentication,
+    asgi_raw_target,
+    assert_tokenless_browser_origins_are_local,
+    authenticate_http_request,
+    authenticate_websocket,
+    consume_control_plane_authenticator_from_environment,
+    require_capability,
+    required_http_capabilities,
 )
 from autocontext.server.cockpit_api import cockpit_router
 from autocontext.server.hub_api import hub_router
@@ -39,6 +57,7 @@ from autocontext.server.openclaw_api import router as openclaw_router
 from autocontext.server.protocol import (
     SERVER_CAPABILITIES,
     CancelScenarioCmd,
+    ChatAgentCmd,
     ConfirmScenarioCmd,
     CreateScenarioCmd,
     EnvironmentsMsg,
@@ -46,14 +65,14 @@ from autocontext.server.protocol import (
     EventMsg,
     HelloMsg,
     ListScenariosCmd,
+    OverrideGateCmd,
+    ResumeCmd,
     ReviseScenarioCmd,
     RunStoppedPayload,
     ScenarioErrorMsg,
     ScenarioGeneratingMsg,
-    ScenarioPreviewMsg,
     ScenarioReadyMsg,
-    ScoringComponent,
-    StrategyParam,
+    StartRunCmd,
     parse_client_message,
 )
 from autocontext.server.resource_limits import (
@@ -98,40 +117,21 @@ def _build_scenario_creator(app_settings: object) -> object | None:
         return None
 
 
-def _build_environments_msg(env_info: dict[str, Any]) -> EnvironmentsMsg:
-    """Convert the raw dict from RunManager.get_environment_info() into a typed model."""
-    return EnvironmentsMsg(**env_info)  # type: ignore[arg-type]
-
-
-def _build_scenario_preview_msg(spec: Any) -> ScenarioPreviewMsg:
-    """Build a ScenarioPreviewMsg from a ScenarioSpec object."""
-    params = [StrategyParam(name=p.name, description=p.description) for p in spec.strategy_params]
-    scoring = [
-        ScoringComponent(
-            name=s.name,
-            description=s.description,
-            weight=spec.final_score_weights.get(s.name, 0.0),
-        )
-        for s in spec.scoring_components
-    ]
-    constraints = [f"{c.expression} {c.operator} {c.threshold}" for c in spec.constraints]
-    return ScenarioPreviewMsg(
-        name=spec.name,
-        display_name=spec.display_name,
-        description=spec.description,
-        strategy_params=params,
-        scoring_components=scoring,
-        constraints=constraints,
-        win_threshold=spec.win_threshold,
-    )
-
-
 def create_app(
     controller: LoopController | None = None,
     events: EventStreamEmitter | None = None,
     run_manager: RunManager | None = None,
+    *,
+    server_authenticator: ControlPlaneAuthenticator | None = None,
+    allow_insecure_test_principal: bool = False,
 ) -> FastAPI:
-    """Factory that creates the FastAPI app, optionally wired to a LoopController."""
+    """Create the API app; the auth bypass exists only for explicit test fixtures."""
+    if server_authenticator is None:
+        server_auth = consume_control_plane_authenticator_from_environment()
+    else:
+        server_auth = server_authenticator
+        clear_control_plane_secrets_from_current_process()
+
     application = FastAPI(title="autocontext API", version="0.1.0")
     # These pure-ASGI guards sit inside authentication for HTTP requests, so
     # rejected callers are not allowed to make the process buffer a body.
@@ -154,34 +154,85 @@ def create_app(
         ).split(",")
         if origin.strip()
     ]
-    server_auth_token = resolve_server_auth_token()
+    assert_tokenless_browser_origins_are_local(server_auth, cors_origins)
 
     @application.middleware("http")
     async def authenticate_control_plane(request: Request, call_next: Any) -> Any:
         origin = request.headers.get("origin")
-        client_host = request.client.host if request.client is not None else None
-        if (
-            request.url.path != "/health"
-            and server_auth_token is None
-            and not tokenless_client_is_local(client_host)
-        ):
-            return JSONResponse(status_code=403, content={"detail": "Token required for non-loopback clients"})
-        if (
-            request.method not in {"GET", "HEAD", "OPTIONS"}
-            and origin is not None
-            and origin not in cors_origins
-        ):
+        # Origin validation must happen before a one-time proof is consumed, so
+        # an attacker cannot burn a proof delivered by a browser.
+        if origin is not None and origin not in cors_origins:
             return JSONResponse(status_code=403, content={"detail": "Forbidden origin"})
-        if request.url.path != "/health" and not request_is_authorized(
-            server_auth_token,
-            request.headers.get("authorization"),
-        ):
+        if request.url.path == "/health" or request.method == "OPTIONS":
+            return await call_next(request)
+        try:
+            principal = authenticate_http_request(
+                server_auth,
+                request,
+                allow_insecure_test_principal=allow_insecure_test_principal,
+            )
+        except ControlPlaneAuthenticationError:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Unauthorized"},
                 headers={"WWW-Authenticate": 'Bearer realm="autocontext"'},
             )
+        except ControlPlaneAuthorizationError:
+            return JSONResponse(status_code=403, content={"detail": "Credential proof required"})
+        try:
+            required_capabilities = required_http_capabilities(
+                request.method,
+                asgi_raw_target(request.scope),
+                routed_path=str(request.scope.get("path", "")),
+            )
+            for capability in required_capabilities:
+                require_capability(principal, capability)
+        except (ControlPlaneAuthorizationError, ValueError):
+            return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+        request.state.control_plane_principal = principal
         return await call_next(request)
+
+    async def authenticate_control_plane_websocket(
+        websocket: WebSocket,
+        required_capabilities: tuple[str, ...],
+    ) -> WebSocketAuthentication | None:
+        origin = websocket.headers.get("origin")
+        if origin is not None and origin not in cors_origins:
+            await websocket.close(code=4403)
+            return None
+        try:
+            authenticated = authenticate_websocket(
+                server_auth,
+                websocket,
+                allow_insecure_test_principal=allow_insecure_test_principal,
+            )
+            for capability in required_capabilities:
+                require_capability(authenticated.principal, capability)
+        except ControlPlaneAuthenticationError:
+            await websocket.close(code=4401)
+            return None
+        except ControlPlaneAuthorizationError:
+            await websocket.close(code=4403)
+            return None
+        return authenticated
+
+    def schedule_websocket_credential_expiry(
+        websocket: WebSocket,
+        authenticated: WebSocketAuthentication,
+    ) -> asyncio.TimerHandle | None:
+        """Close a socket when its one-use handshake proof expires."""
+        expires_at = authenticated.principal.expires_at
+        if expires_at is None:
+            return None
+
+        async def _close_expired_socket() -> None:
+            with suppress(RuntimeError, WebSocketDisconnect):
+                await websocket.close(code=4401, reason="Credential proof expired")
+
+        def _expire() -> None:
+            asyncio.create_task(_close_expired_socket())
+
+        return asyncio.get_running_loop().call_later(max(0.0, expires_at - time.time()), _expire)
 
     application.add_middleware(
         CORSMiddleware,
@@ -296,12 +347,15 @@ def create_app(
 
         def _read(name: str) -> str:
             try:
-                return read_confined_text(
-                    app_settings.knowledge_root,
-                    (scenario,),
-                    name,
-                    max_bytes=MAX_KNOWLEDGE_FILE_BYTES,
-                ) or ""
+                return (
+                    read_confined_text(
+                        app_settings.knowledge_root,
+                        (scenario,),
+                        name,
+                        max_bytes=MAX_KNOWLEDGE_FILE_BYTES,
+                    )
+                    or ""
+                )
             except FileNotFoundError:
                 return ""
             except ConfinedFileTooLarge:
@@ -367,17 +421,14 @@ def create_app(
 
     @application.websocket("/ws/events")
     async def ws_events(websocket: WebSocket) -> None:
-        rejection_code = websocket_rejection_code(
+        authenticated = await authenticate_control_plane_websocket(
             websocket,
-            auth_token=server_auth_token,
-            allowed_origins=cors_origins,
+            (CONTENT_READ, CONTROL_READ),
         )
-        if rejection_code is not None:
-            await websocket.close(code=rejection_code)
+        if authenticated is None:
             return
-        await websocket.accept(
-            subprotocol=websocket_auth_subprotocol(websocket, auth_token=server_auth_token)
-        )
+        await websocket.accept(subprotocol=authenticated.subprotocol)
+        expiry_handle = schedule_websocket_credential_expiry(websocket, authenticated)
         tail_state = EventStreamTailState()
 
         async def _wait_for_disconnect() -> None:
@@ -402,23 +453,21 @@ def create_app(
             with suppress(RuntimeError):
                 await websocket.close(code=1011, reason="Event stream unavailable")
         finally:
+            if expiry_handle is not None:
+                expiry_handle.cancel()
             disconnect_task.cancel()
             with suppress(asyncio.CancelledError, WebSocketDisconnect):
                 await disconnect_task
 
     @application.websocket("/ws/interactive")
     async def ws_interactive(websocket: WebSocket) -> None:
-        rejection_code = websocket_rejection_code(
+        authenticated = await authenticate_control_plane_websocket(
             websocket,
-            auth_token=server_auth_token,
-            allowed_origins=cors_origins,
+            (CONTENT_READ, CONTROL_OPERATE),
         )
-        if rejection_code is not None:
-            await websocket.close(code=rejection_code)
+        if authenticated is None:
             return
-        await websocket.accept(
-            subprotocol=websocket_auth_subprotocol(websocket, auth_token=server_auth_token)
-        )
+        await websocket.accept(subprotocol=authenticated.subprotocol)
 
         # Protocol version handshake -- always first message. Only advertise
         # safe_run_stop_v1 when a RunManager is wired: it is the component that
@@ -436,6 +485,8 @@ def create_app(
         if run_manager:
             env_info = run_manager.get_environment_info()
             await websocket.send_json(_build_environments_msg(env_info).model_dump())
+
+        expiry_handle = schedule_websocket_credential_expiry(websocket, authenticated)
 
         send_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=MAX_PENDING_EVENT_MESSAGES)
         event_loop = asyncio.get_running_loop()
@@ -503,6 +554,33 @@ def create_app(
                     except ValidationError:
                         await websocket.send_json(ErrorMsg(message="Unknown or invalid interactive command.").model_dump())
                         continue
+
+                    try:
+                        require_capability(authenticated.principal, CONTROL_OPERATE)
+                    except ControlPlaneAuthorizationError:
+                        await websocket.send_json(ErrorMsg(message="Forbidden: credential proof expired.").model_dump())
+                        await websocket.close(code=4401, reason="Credential proof expired")
+                        break
+
+                    if isinstance(
+                        cmd,
+                        (
+                            ChatAgentCmd,
+                            StartRunCmd,
+                            CreateScenarioCmd,
+                            ConfirmScenarioCmd,
+                            ReviseScenarioCmd,
+                            ResumeCmd,
+                            OverrideGateCmd,
+                        ),
+                    ):
+                        try:
+                            require_capability(authenticated.principal, HOST_EXECUTE)
+                        except ControlPlaneAuthorizationError:
+                            await websocket.send_json(
+                                ErrorMsg(message="Forbidden: host:execute capability required.").model_dump()
+                            )
+                            continue
 
                     if await dispatch_run_command(
                         cmd,
@@ -640,6 +718,8 @@ def create_app(
             finally:
                 push_task.cancel()
         finally:
+            if expiry_handle is not None:
+                expiry_handle.cancel()
             events.unsubscribe(_on_event)
 
     @application.on_event("shutdown")
@@ -661,9 +741,7 @@ def create_app(
     def _shutdown_run_manager() -> None:
         if run_manager is None:
             if controller is not None:
-                controller.abort_pending_chats(
-                    "interactive server ended before the chat request completed"
-                )
+                controller.abort_pending_chats("interactive server ended before the chat request completed")
             return
         try:
             run_manager.shutdown()
@@ -696,5 +774,13 @@ def create_app(
     return application
 
 
-# Module-level app for backward compatibility (autoctx serve)
-app = create_app()
+_default_application: FastAPI | None = None
+
+
+async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+    """Lazily build the backward-compatible ASGI app after startup begins."""
+
+    global _default_application
+    if _default_application is None:
+        _default_application = create_app()
+    await _default_application(scope, receive, send)

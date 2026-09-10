@@ -29,6 +29,7 @@ function fakeChildProcess(): ReturnType<typeof spawn> & { unref: ReturnType<type
 }
 
 afterEach(() => {
+  delete process.env.AUTOCONTEXT_SERVER_TOKEN;
   vi.clearAllMocks();
   for (const root of temporaryRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
@@ -112,6 +113,7 @@ describe("OpenClaw distill sidecar argv templates", () => {
   });
 
   it("passes expanded values to spawn as fixed argv with shell disabled", () => {
+    process.env.AUTOCONTEXT_SERVER_TOKEN = "must-not-reach-sidecar";
     const root = mkdtempSync(join(tmpdir(), "autoctx-openclaw-distill-"));
     temporaryRoots.push(root);
     const child = fakeChildProcess();
@@ -147,6 +149,7 @@ describe("OpenClaw distill sidecar argv templates", () => {
       hostileScenario,
     ]);
     expect(options).toMatchObject({ shell: false, detached: true, stdio: "ignore" });
+    expect(options?.env?.AUTOCONTEXT_SERVER_TOKEN).toBeUndefined();
     expect(child.unref).not.toHaveBeenCalled();
     expect(service.getDistillJob(result.job_id as string)?.status).toBe("pending");
 

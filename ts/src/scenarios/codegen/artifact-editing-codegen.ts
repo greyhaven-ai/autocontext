@@ -5,11 +5,13 @@
 
 import { renderCodegenTemplate } from "./template-renderer.js";
 import { ARTIFACT_EDITING_SCENARIO_TEMPLATE } from "./templates/artifact-editing-template.js";
+import { assertSafeScenarioId } from "../../knowledge/scenario-id.js";
 
 export function generateArtifactEditingSource(
   spec: Record<string, unknown>,
   name: string,
 ): string {
+  const safeName = assertSafeScenarioId(name, "scenario name");
   const description = String(spec.description ?? "");
   const rubric = String(spec.rubric ?? spec.judgeRubric ?? "");
   const artifacts = (spec.artifacts ?? spec.initial_artifacts ?? []) as Array<{
@@ -34,8 +36,8 @@ export function generateArtifactEditingSource(
   );
 
   return renderCodegenTemplate(ARTIFACT_EDITING_SCENARIO_TEMPLATE, {
-    __SCENARIO_NAME_COMMENT__: name,
-    __SCENARIO_NAME__: JSON.stringify(name),
+    __SCENARIO_NAME_COMMENT__: JSON.stringify(safeName),
+    __SCENARIO_NAME__: JSON.stringify(safeName),
     __DESCRIPTION__: JSON.stringify(description),
     __RUBRIC__: JSON.stringify(rubric),
     __ARTIFACTS__: artifactsJson,
