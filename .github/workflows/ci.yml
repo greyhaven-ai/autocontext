@@ -518,7 +518,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        openai-version: ["4.102.0", "4.103.0", "4.104.0"]
+        # Both supported majors: the v4 floor and ceiling this job already
+        # pinned, plus v7. Pins must be at least seven days old, because this
+        # job resolves them with `npm install`, which honours
+        # NPM_CONFIG_MIN_RELEASE_AGE (unlike `npm ci` used elsewhere).
+        openai-version: ["4.102.0", "4.103.0", "4.104.0", "7.10.0"]
     defaults:
       run:
         working-directory: ts
