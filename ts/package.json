@@ -203,7 +203,7 @@
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": ">=0.18 <2",
-    "openai": "^4"
+    "openai": "^7"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/sdk": {
@@ -234,7 +234,7 @@
     "esbuild": "^0.27.1",
     "fast-check": "^4.7.0",
     "json-schema-to-typescript": "^15.0.4",
-    "openai": "^4",
+    "openai": "^7",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
