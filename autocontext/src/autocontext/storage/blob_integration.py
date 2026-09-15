@@ -39,10 +39,12 @@ class BlobAwareWriter:
         )
 
     def mirror_append(self, key: str, data: bytes, kind: str) -> BlobRef | None:
-        """Mirror an append-only byte chunk to a blob store key."""
+        """Mirror an append-only byte chunk to a blob store key.
+
+        No minimum-size floor here: it sizes a whole artifact, and an append is a
+        fragment of one, so skipping small fragments would leave a partial mirror.
+        """
         if self._store is None:
-            return None
-        if len(data) < self._min_size:
             return None
         digest = self._store.append(key, data)
         return BlobRef(
