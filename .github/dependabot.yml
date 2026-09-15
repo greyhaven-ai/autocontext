@@ -1,4 +1,11 @@
 version: 2
+
+# Ignore entries below suppress Dependabot for dependencies this repository pins
+# deliberately. Suppressing them does not reduce advisory coverage: the
+# dependency-security job audits the full graph on every pull request and on
+# main (pip-audit over --all-groups --all-extras, plus npm and bun audit), so a
+# new advisory against any pinned package still fails CI.
+
 updates:
   - package-ecosystem: github-actions
     directory: /
@@ -11,6 +18,26 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # tree-sitter is capped at 0.21.x by upstream, not by choice.
+      # tree-sitter-typescript's newest release (0.23.2) still peers
+      # tree-sitter ^0.21.0, which for a 0.x version resolves to
+      # >=0.21.0 <0.22.0, while tree-sitter-javascript 0.25.0 and
+      # tree-sitter-python 0.25.0 peer tree-sitter ^0.25.0. The two cannot
+      # coexist, and the instrument scanner needs the TypeScript grammar for
+      # its typescript and tsx languages
+      # (ts/src/control-plane/instrument/scanner/tree-sitter-loader.ts).
+      # Revisit when tree-sitter-typescript publishes a 0.25-compatible
+      # release; all four packages must then move in one pull request.
+      - dependency-name: tree-sitter
+      - dependency-name: tree-sitter-javascript
+      - dependency-name: tree-sitter-python
+      - dependency-name: tree-sitter-typescript
+      # zod 4 cannot resolve while openai v4 is a devDependency: it declares
+      # peerOptional zod ^3.23.8, and @modelcontextprotocol/sdk is also on
+      # zod 3. Unblock by moving to openai v5 first, then bump zod.
+      - dependency-name: zod
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /pi
@@ -23,6 +50,19 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # The cuda extra pins accelerate, transformers, peft and trl to an exact
+      # reviewed graph. scripts/python_audit_exception.json records a version
+      # and a wheel hash for each, and scripts/audit_python_dependencies.py
+      # refuses the accelerate risk acceptance unless every one still matches.
+      # Moving any of them alone therefore turns dependency-security red.
+      # See docs/security/accelerate-risk-assessment.md; the graph is due for
+      # re-review before the acceptance expires on 2026-10-08, and all four
+      # should move together at that point.
+      - dependency-name: accelerate
+      - dependency-name: transformers
+      - dependency-name: peft
+      - dependency-name: trl
 
   - package-ecosystem: docker
     directory: /infra/docker
