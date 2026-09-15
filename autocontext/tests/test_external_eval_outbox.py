@@ -5,6 +5,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import replace
@@ -158,6 +159,42 @@ def test_concurrent_outbox_initializers_share_one_transactional_instance_id(
     with closing(sqlite3.connect(path)) as connection, connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == _outbox_store.SCHEMA_VERSION
         assert connection.execute("SELECT COUNT(*) FROM remote_eval_outbox_metadata").fetchone()[0] == 1
+
+
+def test_initialize_database_waits_out_a_writer_holding_the_wal_conversion_lock(
+    tmp_path: Path,
+) -> None:
+    """`PRAGMA journal_mode=WAL` gets SQLITE_BUSY without invoking the busy handler.
+
+    Neither `sqlite3.connect(timeout=...)` nor `PRAGMA busy_timeout` covers that
+    statement, so the initializer has to retry it itself.
+    """
+    path = tmp_path / "wal-contended.sqlite3"
+    with closing(sqlite3.connect(path, isolation_level=None)) as seed:
+        seed.execute("PRAGMA journal_mode=DELETE")
+        seed.execute("CREATE TABLE probe (id INTEGER PRIMARY KEY)")
+
+    holding = threading.Event()
+
+    def hold_write_lock_briefly() -> None:
+        with closing(sqlite3.connect(path, isolation_level=None)) as writer:
+            writer.execute("BEGIN IMMEDIATE")
+            writer.execute("INSERT INTO probe (id) VALUES (1)")
+            holding.set()
+            time.sleep(0.5)
+            writer.execute("ROLLBACK")
+
+    writer_thread = threading.Thread(target=hold_write_lock_briefly)
+    writer_thread.start()
+    try:
+        assert holding.wait(timeout=5)
+        instance_id = _outbox_store.initialize_database(path)
+    finally:
+        writer_thread.join()
+
+    assert instance_id
+    with closing(sqlite3.connect(path)) as connection:
+        assert str(connection.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
 
 
 def test_outbox_replays_requests_reconstructed_with_equivalent_numeric_types(tmp_path: Path) -> None:
