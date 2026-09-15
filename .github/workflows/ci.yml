@@ -358,6 +358,12 @@ jobs:
         run: npm run lint
       - name: Test Pi package
         run: npm test
+      # publish-pi-autocontext.yml builds the package before packing it, but
+      # nothing here did, so an emit-only compiler error could reach CI green and
+      # fail at release instead. TypeScript 7 did exactly that: `tsc --noEmit`
+      # never computes an output layout, so TS5011 could not fire in the lint step.
+      - name: Build Pi package
+        run: npm run build
       - name: Test packed Pi extension against the real core runtime
         run: npm run test:runtime-contract
 
