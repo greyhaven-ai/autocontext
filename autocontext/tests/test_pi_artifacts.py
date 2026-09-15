@@ -272,6 +272,88 @@ def test_compaction_ledger_mirrors_appended_jsonl_to_blob_store(tmp_path: Path) 
     assert b"bbbb2222" in ledger_bytes
 
 
+def test_compaction_ledger_mirrors_every_append_at_the_shipped_size_floor(tmp_path: Path) -> None:
+    from autocontext.blobstore.local import LocalBlobStore
+    from autocontext.knowledge.compaction import CompactionEntry
+
+    blob_store = LocalBlobStore(root=tmp_path / "blobs")
+    store = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude/skills",
+        blob_store=blob_store,
+        blob_store_min_size_bytes=1024,
+    )
+    entries = [
+        CompactionEntry(
+            entry_id="aaaa1111",
+            parent_id="",
+            timestamp="2026-04-29T17:30:00Z",
+            summary="short first",
+            first_kept_entry_id="component:playbook:kept",
+            tokens_before=120,
+        ),
+        CompactionEntry(
+            entry_id="bbbb2222",
+            parent_id="aaaa1111",
+            timestamp="2026-04-29T17:31:00Z",
+            summary="x" * 2048,
+            first_kept_entry_id="component:experiment_log:kept",
+            tokens_before=300,
+        ),
+        CompactionEntry(
+            entry_id="cccc3333",
+            parent_id="bbbb2222",
+            timestamp="2026-04-29T17:32:00Z",
+            summary="short third",
+            first_kept_entry_id="component:playbook:kept",
+            tokens_before=480,
+        ),
+    ]
+    for entry in entries:
+        store.append_compaction_entries("run-1", [entry])
+
+    ledger_bytes = (tmp_path / "runs" / "run-1" / "compactions.jsonl").read_bytes()
+    mirrored = blob_store.get("runs/run-1/compactions.jsonl")
+    assert mirrored is not None
+    assert mirrored == ledger_bytes
+    mirrored_ids = [json.loads(line)["id"] for line in mirrored.decode("utf-8").splitlines()]
+    assert mirrored_ids == ["aaaa1111", "bbbb2222", "cccc3333"]
+
+
+def test_compaction_ledger_mirrors_small_appends_when_nothing_clears_the_floor(tmp_path: Path) -> None:
+    from autocontext.blobstore.local import LocalBlobStore
+    from autocontext.knowledge.compaction import CompactionEntry
+
+    blob_store = LocalBlobStore(root=tmp_path / "blobs")
+    store = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude/skills",
+        blob_store=blob_store,
+        blob_store_min_size_bytes=1024,
+    )
+    store.append_compaction_entries(
+        "run-1",
+        [
+            CompactionEntry(
+                entry_id="dddd4444",
+                parent_id="",
+                timestamp="2026-04-29T17:33:00Z",
+                summary="only entry",
+                first_kept_entry_id="component:playbook:kept",
+                tokens_before=90,
+            )
+        ],
+    )
+
+    ledger_bytes = (tmp_path / "runs" / "run-1" / "compactions.jsonl").read_bytes()
+    assert len(ledger_bytes) < 1024
+    assert blob_store.get("runs/run-1/compactions.jsonl") == ledger_bytes
+
+
 def test_latest_compaction_entry_id_uses_sidecar_without_scanning_ledger(tmp_path: Path) -> None:
     from autocontext.knowledge.compaction import CompactionEntry
 
