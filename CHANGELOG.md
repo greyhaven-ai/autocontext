@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- The `ts` and `pi` dependency audits pass again at the `moderate` gate. `sharp`
+  advances to 0.35.4 (GHSA-rgj7-g3m4-5g8c, high, bundled libheif) and the pinned
+  `hono` override advances to 4.13.7 (GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc,
+  GHSA-crvj-82cr-hjcx, moderate). `pi` gains a `sharp` override of its own,
+  because it reaches `sharp` transitively through the published `autoctx`
+  package rather than declaring it. The 11 remaining low-severity findings, the
+  `elliptic` chain under `secure-exec@0.1.0`, are below the gate and are
+  addressed separately by the `secure-exec` 0.3.x upgrade.
+
+### Fixed
+
+- Initializing the external-evaluation outbox no longer fails with
+  `sqlite3.OperationalError: database is locked` when several initializers start
+  concurrently. `PRAGMA journal_mode=WAL` returns `SQLITE_BUSY` without invoking
+  SQLite's busy handler, so neither `sqlite3.connect(timeout=...)` nor
+  `PRAGMA busy_timeout` ever covered that statement; the conversion is now
+  retried explicitly until it succeeds or 30 seconds elapse.
+
 ## [Python 0.17.1 / TypeScript 0.17.4 / Pi 0.10.1] - 2026-09-08
 
 These maintenance releases package the merged security and reliability fixes.

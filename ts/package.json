@@ -216,7 +216,7 @@
   "overrides": {
     "@hono/node-server": "1.19.15",
     "fast-uri": "3.1.6",
-    "hono": "4.12.34",
+    "hono": "4.13.7",
     "ip-address": "10.3.1",
     "js-yaml": "4.3.1",
     "@apidevtools/json-schema-ref-parser@^16.0.1": {
@@ -247,7 +247,7 @@
     "diff": "^9.0.0",
     "ignore": "7.0.8",
     "secure-exec": "^0.1.0",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "tree-sitter": "0.21.1",
     "tree-sitter-javascript": "0.21.4",
     "tree-sitter-python": "0.21.0",
