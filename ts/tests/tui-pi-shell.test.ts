@@ -96,7 +96,7 @@ describe("pi-tui shell", () => {
       .map((name) => readFileSync(join(import.meta.dirname, "..", name), "utf-8"))
       .join("\n");
 
-    expect(manifest.dependencies["@earendil-works/pi-tui"]).toBe("0.84.2");
+    expect(manifest.dependencies["@earendil-works/pi-tui"]).toBe("0.85.1");
     expect(manifest.engines.node).toBe(">=22.19.0");
     for (const removed of ["ink", "ink-text-input", "react", "@types/react"]) {
       expect(manifest.dependencies[removed]).toBeUndefined();
