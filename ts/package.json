@@ -229,7 +229,7 @@
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
     "@apidevtools/json-schema-ref-parser": "^16.0.1",
-    "@types/better-sqlite3": "^7.6.0",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/ws": "^8.5.13",
     "esbuild": "^0.27.1",
     "fast-check": "^4.7.0",
