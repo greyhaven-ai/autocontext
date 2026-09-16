@@ -4,25 +4,68 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Security
+## [Python 0.18.0 / TypeScript 0.18.0] - 2026-09-16
 
-- The `ts` and `pi` dependency audits pass again at the `moderate` gate. `sharp`
-  advances to 0.35.4 (GHSA-rgj7-g3m4-5g8c, high, bundled libheif) and the pinned
-  `hono` override advances to 4.13.7 (GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc,
-  GHSA-crvj-82cr-hjcx, moderate). `pi` gains a `sharp` override of its own,
-  because it reaches `sharp` transitively through the published `autoctx`
-  package rather than declaring it. The 11 remaining low-severity findings, the
-  `elliptic` chain under `secure-exec@0.1.0`, are below the gate and are
-  addressed separately by the `secure-exec` 0.3.x upgrade.
+This release ships the TypeScript line for the first time since `autoctx@0.17.3`.
+`autoctx@0.17.4` was tagged on 2026-09-08 but never reached npm, so its changes,
+listed under that release below, first reach users here alongside everything
+merged since. `autocontext==0.18.0` contains bug fixes only; the Python package
+moves to 0.18.0 to stay aligned with the TypeScript version line. The Pi
+extension is not part of this release: `pi-autocontext@0.11.0` follows once
+`autoctx@0.18.0` is live, because it depends on it.
+
+### Added
+
+- TypeScript: `openai` v7 is supported alongside v4. The `openai` peer dependency
+  widens from `^4` to `^4 || ^7`, and the SDK matrix now runs the integration and
+  instrument suites against both majors. No source changes were required. v5 and
+  v6 are not claimed because they are not tested.
 
 ### Fixed
 
-- Initializing the external-evaluation outbox no longer fails with
+- TypeScript: `getHumanFeedbackRecords` and `getCalibrationExampleRecords`
+  returned the oldest matching rows instead of the newest whenever timestamps
+  tied. `human_feedback.created_at` has one-second resolution, so a burst of
+  writes shared a sort key and `ORDER BY created_at DESC LIMIT n` returned the
+  first n inserted. Results now break ties by id, newest first.
+- TypeScript: the `openai` and `anthropic` integration CommonJS bundles now
+  rethrow a module initialization error on every access. Previously a failed
+  lazy initialization threw once and then returned `undefined` on later
+  accesses. This comes from the esbuild 0.28 bundler helper.
+- Python: the compaction ledger blob mirror now mirrors every append. With the
+  shipped `blob_store_min_size_bytes=1024`, appends smaller than the floor were
+  skipped, leaving gaps in the middle of the mirrored `parentId` chain. Thanks
+  to @MaxFreedomPollard for the diagnosis and fix in
+  [#1345](https://github.com/greyhaven-ai/autocontext/pull/1345).
+- Python: initializing the external-evaluation outbox no longer fails with
   `sqlite3.OperationalError: database is locked` when several initializers start
   concurrently. `PRAGMA journal_mode=WAL` returns `SQLITE_BUSY` without invoking
-  SQLite's busy handler, so neither `sqlite3.connect(timeout=...)` nor
-  `PRAGMA busy_timeout` ever covered that statement; the conversion is now
-  retried explicitly until it succeeds or 30 seconds elapse.
+  SQLite's busy handler, so neither the connection timeout nor
+  `PRAGMA busy_timeout` covered that statement; it is now retried explicitly.
+
+### Security
+
+- TypeScript and Pi: `sharp` advances to 0.35.4 (GHSA-rgj7-g3m4-5g8c, high) and
+  the pinned `hono` override to 4.13.7 (GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc,
+  GHSA-crvj-82cr-hjcx, moderate). Low-severity findings from `secure-exec@0.1.0`
+  (the `elliptic` chain and a nested `esbuild` 0.27) remain below the audit gate;
+  `secure-exec` 0.3.x was evaluated and deferred because it drops the sandbox
+  resource budgets and ships no Windows or musl sidecar
+  ([#1314](https://github.com/greyhaven-ai/autocontext/pull/1314)).
+- TypeScript: `ts/bun.lock` is regenerated to match `ts/package.json`. It had
+  drifted, so `bun audit` in the dependency-security gate was checking a
+  dependency set that did not match what ships.
+
+### Changed
+
+- TypeScript runtime dependencies: `better-sqlite3` 11.10.0 to 13.0.3 (requires
+  Node 22 or newer, within the existing `>=22.19.0` engine range),
+  `@earendil-works/pi-tui` 0.84.2 to 0.85.1, and `ws` 8.21.0 to 8.21.3.
+- CI builds the Pi package, so compiler errors that only appear when emitting
+  output fail CI instead of the release. `pi/dist` is now ignored.
+- Dependabot no longer opens pull requests for pins that cannot move on their
+  own: the tree-sitter family, the reviewed CUDA dependency graph, and zod major
+  versions.
 
 ## [Python 0.17.1 / TypeScript 0.17.4 / Pi 0.10.1] - 2026-09-08
 
@@ -31,6 +74,9 @@ Python runtime improvements ship in `autocontext==0.17.1`; TypeScript maintenanc
 ships in `autoctx@0.17.4`. The Pi extension advances to `pi-autocontext@0.10.1`
 with refreshed packaged documentation and dependency metadata, retaining its
 existing `autoctx@^0.15.0` runtime dependency.
+
+> `autoctx@0.17.4` and `pi-autocontext@0.10.1` were tagged but never reached npm.
+> Their changes first ship in `autoctx@0.18.0` and `pi-autocontext@0.11.0`.
 
 ### Performance
 
@@ -1236,7 +1282,7 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.17.1...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.18.0...HEAD
 [0.17.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...py-v0.17.0
 [0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.1...py-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
