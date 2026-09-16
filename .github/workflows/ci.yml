@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -71,7 +71,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -118,7 +118,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -157,7 +157,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -186,7 +186,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -230,7 +230,7 @@ jobs:
           package-manager-cache: false
           node-version: "24"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -276,7 +276,7 @@ jobs:
           bun-version: "1.4.0"
           no-cache: true
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -358,6 +358,12 @@ jobs:
         run: npm run lint
       - name: Test Pi package
         run: npm test
+      # publish-pi-autocontext.yml builds the package before packing it, but
+      # nothing here did, so an emit-only compiler error could reach CI green and
+      # fail at release instead. TypeScript 7 did exactly that: `tsc --noEmit`
+      # never computes an output layout, so TS5011 could not fire in the lint step.
+      - name: Build Pi package
+        run: npm run build
       - name: Test packed Pi extension against the real core runtime
         run: npm run test:runtime-contract
 
@@ -395,7 +401,7 @@ jobs:
           bun-version: "1.4.0"
           no-cache: true
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -448,7 +454,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -502,7 +508,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -518,7 +524,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        openai-version: ["4.102.0", "4.103.0", "4.104.0"]
+        # Both supported majors: the v4 floor and ceiling this job already
+        # pinned, plus v7. Pins must be at least seven days old, because this
+        # job resolves them with `npm install`, which honours
+        # NPM_CONFIG_MIN_RELEASE_AGE (unlike `npm ci` used elsewhere).
+        openai-version: ["4.102.0", "4.103.0", "4.104.0", "7.10.0"]
     defaults:
       run:
         working-directory: ts
@@ -542,7 +552,7 @@ jobs:
           test -d "$nodedir/include/node"
           echo "npm_config_nodedir=$nodedir" >> "$GITHUB_ENV"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -583,7 +593,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
@@ -617,7 +627,7 @@ jobs:
           package-manager-cache: false
           node-version: "24"
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: "0.12.7"
           enable-cache: false
