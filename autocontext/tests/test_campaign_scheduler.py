@@ -205,10 +205,15 @@ def test_run_until_idle_waits_for_replayed_orphan_lease_then_retries(tmp_path: P
 
     restarted = CampaignScheduler(store, lease_seconds=0.05)
     restarted.register_worker(_worker("restarted"), CallableCampaignWorker(_success))
-    started = time.monotonic()
 
     assert restarted.run_until_idle(poll_interval=0.005, timeout_seconds=1.0) == 1
-    assert time.monotonic() - started >= 0.03
+    # The retry must not start before the replayed orphan lease expires. The
+    # lease was stamped by `first` on the scheduler's default clock (time.time)
+    # when claim() ran, so compare against that expiry on that same clock. An
+    # elapsed-time bound measured after constructing `restarted`, which replays
+    # the event store first, shrinks by however long the replay takes and fails
+    # on a slow runner without any scheduler bug.
+    assert time.time() >= orphan.lease.expires_at
     assert restarted.job_status(orphan.job.job_id) == "succeeded"
     assert restarted.report().running == 0
     assert restarted.report().retries == 1
