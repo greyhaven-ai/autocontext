@@ -2,8 +2,8 @@
   "python_version": "0.18.0",
   "npm_version": "0.18.0",
   "whats_new_version": "0.18.0",
-  "pi_version": "0.10.1",
-  "pi_autoctx_dependency": "^0.17.3",
+  "pi_version": "0.11.0",
+  "pi_autoctx_dependency": "^0.18.0",
   "whats_new": [
     "**TypeScript ships again:** autoctx 0.18.0 is the first npm release since 0.17.3. The 0.17.4 tag never reached npm, so its WebSocket credential hardening and dependency security updates first arrive here.",
     "**OpenAI v7 support:** autoctx accepts openai ^4 || ^7, and the SDK matrix exercises the integration and instrument suites against both majors.",
