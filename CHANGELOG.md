@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [Pi 0.11.0] - 2026-09-17
+
+The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This
+also ships `pi-autocontext` for the first time since 0.10.0: `pi-v0.10.1` was
+tagged on 2026-09-08 but its publish job failed before reaching npm, so the
+packaged documentation and dependency metadata from that tag arrive here.
+
+### Changed
+
+- The runtime dependency moves from `autoctx@^0.17.3` to `autoctx@^0.18.0`.
+  Because these are `0.x` versions, the previous caret range could not accept
+  0.18.0, so the extension needed this release to pick it up.
+- Development dependencies advance to the `@earendil-works` 0.85.1 line,
+  TypeScript 7, vitest 5 and typebox 1.3.30. `pi/tsconfig.json` gains an
+  explicit `rootDir`, which TypeScript 7 requires in order to emit.
+
+### Fixed
+
+- `npm publish` receives an explicit local path for the packed tarball. Without
+  the leading `./`, npm read `dist/<file>.tgz` as a GitHub shorthand and tried
+  to fetch it over SSH, which is why `pi-v0.10.0` and `pi-v0.10.1` both failed
+  to publish. The same fix carried `autoctx@0.18.0` to npm successfully.
+
 ## [Python 0.18.0 / TypeScript 0.18.0] - 2026-09-16
 
 This release ships the TypeScript line for the first time since `autoctx@0.17.3`.
