@@ -4,6 +4,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 import type { AgentOutput } from "./index.js";
 import { definedConfigOptions } from "./config-options.js";
 
@@ -181,6 +182,7 @@ export class CodexCLIRuntime {
         timeout: this.#config.timeout * 1000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        env: childProcessEnvWithoutControlPlaneSecrets(),
       });
       return this.parseOutput(stdout);
     } catch (err: unknown) {

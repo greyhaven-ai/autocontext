@@ -23,6 +23,7 @@ describe("generated Fetch packaging docs and example", () => {
     expect(docs).toContain("renderAgentAppFetchHostCapabilityManifest");
     expect(docs).toContain("renderAgentAppFetchHostCapabilityManifestSchema");
     expect(docs).toContain("host-created capabilities");
+    expect(docs).toContain("persistent `ServerAuthenticator`");
     expect(docs).toContain("runtimeFactoryPlan");
     expect(docs).toContain("runtimeFactoryModuleMap");
     expect(docs).toContain("No request-time filesystem discovery");
@@ -51,6 +52,8 @@ describe("generated Fetch packaging docs and example", () => {
       ),
     ).toMatchObject({ properties: { target: { const: "fetch" } } });
     expect(artifacts.hostCapabilities).toEqual([
+      "authenticator",
+      "allowedOrigins",
       "env",
       "runtimeFactoryName",
       "workspaceStore",

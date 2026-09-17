@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { which } from "../util.js";
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 import type { EventStreamEmitter } from "../loop/events.js";
 import {
   RepairGate,
@@ -147,6 +148,7 @@ export class ClaudeCLIRuntime implements AgentRuntime {
         timeout: this.#config.timeout,
         maxBuffer: 10 * 1024 * 1024,
         encoding: "utf8",
+        env: childProcessEnvWithoutControlPlaneSecrets(),
       });
       return this.#parseOutput(stdout);
     } catch (err: unknown) {

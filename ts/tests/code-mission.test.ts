@@ -124,6 +124,7 @@ describe("CommandVerifier", () => {
     dir = makeTempDir();
   });
   afterEach(() => {
+    delete process.env.AUTOCONTEXT_SERVER_TOKEN;
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -132,6 +133,13 @@ describe("CommandVerifier", () => {
     const verifier = new CommandVerifier("true", dir);
     const result = await verifier.verify("m-1");
     expect(result.passed).toBe(true);
+  });
+
+  it("does not expose control-plane credentials to verifier commands", async () => {
+    process.env.AUTOCONTEXT_SERVER_TOKEN = "must-not-reach-verifier";
+    const { CommandVerifier } = await import("../src/mission/verifiers.js");
+    const verifier = new CommandVerifier('test -z "$AUTOCONTEXT_SERVER_TOKEN"', dir);
+    await expect(verifier.verify("m-1")).resolves.toMatchObject({ passed: true });
   });
 
   it("fails when command exits non-zero", async () => {

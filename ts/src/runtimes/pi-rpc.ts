@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 import type { AgentOutput } from "./base.js";
 import { definedConfigOptions } from "./config-options.js";
 
@@ -119,6 +120,7 @@ export class PiRPCRuntime {
       const child = spawn(this.config.piCommand, args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: this.config.workspace || undefined,
+        env: childProcessEnvWithoutControlPlaneSecrets(),
       });
       let stdout = "";
       let stderr = "";
@@ -459,6 +461,7 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
     const child = spawn(this.config.piCommand, this.buildArgs(), {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: this.config.workspace || undefined,
+      env: childProcessEnvWithoutControlPlaneSecrets(),
     });
     child.stdout.setEncoding("utf-8");
     child.stderr.setEncoding("utf-8");

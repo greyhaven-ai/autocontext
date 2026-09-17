@@ -16,6 +16,7 @@ import {
   readSecureTextFile,
   writeSecureTextFile,
 } from "../security/secure-local-files.js";
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 import {
   ensureSafeArtifactId,
   ensureSafeLegacyArtifactReadId,
@@ -391,7 +392,7 @@ export class OpenClawService {
         shell: false,
         stdio: "ignore",
         env: {
-          ...process.env,
+          ...childProcessEnvWithoutControlPlaneSecrets(),
           AUTOCONTEXT_DISTILL_JOB_ID: job.job_id,
           AUTOCONTEXT_DISTILL_SCENARIO: job.scenario,
           AUTOCONTEXT_DISTILL_TRAINING_CONFIG: JSON.stringify(job.training_config),

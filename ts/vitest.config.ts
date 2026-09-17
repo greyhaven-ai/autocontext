@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     maxWorkers: 4,
+    // Live-server fixtures deliberately exercise the documented local-only
+    // escape hatch; production code defaults to requiring a credential.
+    env: { AUTOCONTEXT_ALLOW_TOKENLESS_LOOPBACK: "1" },
     // Many tests spawn the CLI cold (npx tsx src/cli/index.ts) rather than
     // against a pre-built dist/. That's ~1-2s per spawn on a fast dev
     // machine but can run ~5s+ per spawn on CI runner hardware, and several

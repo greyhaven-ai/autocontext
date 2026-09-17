@@ -7,6 +7,7 @@
 
 import { execFileSync } from "node:child_process";
 import { z } from "zod";
+import { childProcessEnvWithoutControlPlaneSecrets } from "../security/child-process-env.js";
 import type { MissionManager } from "./manager.js";
 import type { Mission, VerifierResult } from "./types.js";
 import { MissionBudgetSchema } from "./types.js";
@@ -39,6 +40,7 @@ export class CommandVerifier implements Verifier {
     try {
       const stdout = execFileSync("/bin/sh", ["-c", this.command], {
         cwd: this.cwd,
+        env: childProcessEnvWithoutControlPlaneSecrets(),
         encoding: "utf-8",
         timeout: 120_000,
         stdio: ["pipe", "pipe", "pipe"],

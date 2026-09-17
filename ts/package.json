@@ -42,6 +42,10 @@
       "import": "./dist/server/protocol.js",
       "types": "./dist/server/protocol.d.ts"
     },
+    "./server/auth": {
+      "import": "./dist/server/server-auth.js",
+      "types": "./dist/server/server-auth.d.ts"
+    },
     "./server/ws-server": {
       "import": "./dist/server/ws-server.js",
       "types": "./dist/server/ws-server.d.ts"
