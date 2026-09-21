@@ -30,6 +30,13 @@ These are copy-paste starting points for people evaluating the repo, integrating
   accelerator type/count, image, region, and telemetry must be declared and
   are never silently downgraded to CPU.
 
+## Scoped Policy Candidates
+
+The Python [candidate example](policy_candidates/run.py) projects selected training
+traces, replays a fixture synthesis response, evaluates fresh/counterexample inputs
+and stores an inactive candidate with immutable lineage. See the
+[candidate workflow guide](../autocontext/docs/policy-candidates.md) for usage and limits.
+
 ## Kernel Evolution MVP
 
 The Python kernel adapter composes AutoContext's multi-generation loop with a

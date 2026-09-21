@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Python: opt-in trace-derived GridCTF skill candidates with immutable manifests,
+  typed action/abstention contracts, isolated evaluation and retained negative
+  evidence in the existing candidate lifecycle (AC-1019). No automatic activation.
+
 ### Changed
 
 - Python judge epochs now bind an immutable serving specification, including
