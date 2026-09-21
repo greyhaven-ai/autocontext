@@ -22,6 +22,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from autocontext.execution.evaluator_epoch import EvaluatorEpoch
+from autocontext.execution.judge_spec import JudgeServingSpec
 from autocontext.util.file_lock import advisory_path_lock
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,9 @@ def _default_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def observe_epoch_quarantined(root: Path, scenario: str, epoch_id: str | None) -> bool | None:
+def observe_epoch_quarantined(
+    root: Path, scenario: str, epoch_id: str | None, *, serving_spec: str | None = None,
+) -> bool | None:
     """Observe ``epoch_id`` for ``scenario`` and report whether its scores are quarantined.
 
     Shared by the agent-task score write sites. Returns ``None`` when ``epoch_id`` is ``None``
@@ -62,7 +65,12 @@ def observe_epoch_quarantined(root: Path, scenario: str, epoch_id: str | None) -
         return None
     try:
         registry = EvaluatorEpochRegistry(root)
-        record = registry.observe_id(scenario, epoch_id)
+        if serving_spec is not None:
+            spec = JudgeServingSpec.model_validate_json(serving_spec)
+            spec.require_epoch(epoch_id)
+            record = registry.observe(scenario, EvaluatorEpoch.from_spec(spec))
+        else:
+            record = registry.observe_id(scenario, epoch_id)
         return record.activation_state != "active"
     except Exception:
         logger.debug("evaluator_epoch_registry: observe failed for scenario %s", scenario, exc_info=True)
@@ -78,10 +86,23 @@ class EvaluatorEpochRecord(BaseModel):
     activation_state: str
     created_at: str
     promotion: dict[str, Any] | None = None
+    serving_spec: str | None = None
 
     def model_post_init(self, __context: Any) -> None:
+        self.validate_serving_spec()
         if self.activation_state not in _VALID_STATES:
             raise ValueError(f"Invalid activation_state {self.activation_state!r}; expected {sorted(_VALID_STATES)}")
+
+    def validate_serving_spec(self) -> None:
+        if self.serving_spec is None:
+            return  # Explicit historical/hash-only record; never infer a spec.
+        spec = JudgeServingSpec.model_validate_json(self.serving_spec)
+        spec.require_epoch(self.epoch_id)
+        epoch = EvaluatorEpoch.from_spec(spec)
+        if (self.rubric_hash, self.judge_provider, self.judge_model) != (
+            epoch.rubric_hash, epoch.judge_provider, epoch.judge_model,
+        ):
+            raise ValueError("Epoch metadata does not match serving specification")
 
 
 def _safe(name: str) -> str:
@@ -122,7 +143,13 @@ class EvaluatorEpochRegistry:
             yield
 
     def register(self, record: EvaluatorEpochRecord) -> Path:
+        record.validate_serving_spec()
         path = self._path(record.scenario, record.epoch_id)
+        if path.exists():
+            previous = self.load(record.scenario, record.epoch_id)
+            if previous is not None and previous.serving_spec is not None:
+                if record.serving_spec != previous.serving_spec:
+                    raise ValueError("Persisted judge serving specification is immutable")
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(record.model_dump(), indent=2, ensure_ascii=False)
         fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
@@ -243,6 +270,17 @@ class EvaluatorEpochRegistry:
         with self._scenario_lock(scenario):
             existing = self.load(scenario, epoch.epoch_id)
             if existing is not None:
+                if epoch.serving_spec is not None:
+                    spec = JudgeServingSpec.model_validate_json(epoch.serving_spec)
+                    spec.require_epoch(epoch.epoch_id)
+                    if existing.serving_spec is None:
+                        existing.serving_spec = epoch.serving_spec
+                        existing.rubric_hash = epoch.rubric_hash
+                        existing.judge_provider = epoch.judge_provider
+                        existing.judge_model = epoch.judge_model
+                        self.register(existing)
+                    elif existing.serving_spec != epoch.serving_spec:
+                        raise ValueError("Conflicting judge serving specification")
                 return existing
             state = "active" if self._active_for_locked(scenario) is None else "candidate"
             record = EvaluatorEpochRecord(
@@ -251,6 +289,7 @@ class EvaluatorEpochRegistry:
                 rubric_hash=epoch.rubric_hash,
                 judge_provider=epoch.judge_provider,
                 judge_model=epoch.judge_model,
+                serving_spec=epoch.serving_spec,
                 activation_state=state,
                 created_at=now_fn(),
             )

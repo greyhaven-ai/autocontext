@@ -418,3 +418,37 @@ class TestAgentTaskRunSummary:
         data = json.loads(json.dumps(dataclasses.asdict(summary)))
         assert data["run_id"] == "task-001"
         assert data["best_score"] == 0.85
+
+
+def test_live_judge_manifest_and_execution_provenance_survive_cli_persistence(tmp_path: Path) -> None:
+    from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
+    from autocontext.execution.judge import LLMJudge
+    from autocontext.execution.judge_spec import JudgeServingSpec
+
+    class JudgedTask(_MockAgentTask):
+        def evaluate_output(self, output, state, **kwargs):
+            judge = LLMJudge(model="judge-model", rubric="Haiku quality", samples=2,
+                             llm_fn=lambda *_: '{"score": 0.8, "reasoning": "ok"}')
+            verdict = dataclasses.asdict(judge.evaluate(self.get_task_prompt(state), output, **kwargs))
+            return AgentTaskResult(**{k: verdict[k] for k in AgentTaskResult.__dataclass_fields__ if k in verdict})
+
+    settings = _settings(tmp_path)
+    with (
+        patch("autocontext.cli.SCENARIO_REGISTRY", {"mock_task": JudgedTask}),
+        patch("autocontext.cli.load_settings", return_value=settings),
+        patch("autocontext.cli._resolve_agent_task_runtime", return_value=(_FakeProvider(), "generator")),
+    ):
+        result = runner.invoke(app, ["run", "mock_task", "--run-id", "provenance-test", "--gens", "1"])
+    assert result.exit_code == 0, result.output
+    registry = EvaluatorEpochRegistry(settings.knowledge_root / "_evaluator_epochs")
+    record = registry.active_for("mock_task")
+    assert record is not None and record.serving_spec is not None
+    spec = JudgeServingSpec.model_validate_json(record.serving_spec)
+    assert spec.judge_model == "judge-model"
+    with SQLiteStore(settings.db_path).connection() as conn:
+        row = conn.execute("SELECT content FROM agent_outputs WHERE run_id = ? AND role = ?",
+                           ("provenance-test", "judge_provenance")).fetchone()
+    provenance = json.loads(row["content"])
+    assert provenance[0]["evaluator_epoch"] == spec.epoch_id
+    assert provenance[0]["execution_provenance"]["samples"] == 2
+    assert provenance[0]["fixture_provenance"]["sha256"]

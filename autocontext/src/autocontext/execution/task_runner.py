@@ -82,6 +82,9 @@ def _serialize_result(
                 "dimension_scores": r.dimension_scores,
                 "is_revision": r.is_revision,
                 "evaluator_epoch": r.evaluator_epoch,
+                "evaluator_spec": r.evaluator_spec,
+                "execution_provenance": r.execution_provenance,
+                "fixture_provenance": r.fixture_provenance,
             }
         )
     data: dict[str, Any] = {
@@ -136,6 +139,10 @@ def _serialize_evolution_result(
                 "reasoning": r.reasoning,
                 "dimension_scores": r.dimension_scores,
                 "is_revision": r.is_revision,
+                "evaluator_epoch": r.evaluator_epoch,
+                "evaluator_spec": r.evaluator_spec,
+                "execution_provenance": r.execution_provenance,
+                "fixture_provenance": r.fixture_provenance,
             }
             for r in final_result.rounds
         ]
@@ -147,6 +154,9 @@ def _serialize_evolution_result(
             "best_round": result.best_round,
             "total_rounds": result.total_rounds,
             "met_threshold": result.met_threshold,
+            "evaluator_epoch": result.evaluator_epoch,
+            "evaluator_spec": result.evaluator_spec,
+            "evaluation_provenance": result.evaluation_provenance,
             **({"pareto_frontier": result.pareto_frontier} if result.pareto_frontier else {}),
             **({"actionable_side_info": result.actionable_side_info} if result.actionable_side_info else {}),
             **({"optimizer_metadata": result.metadata} if result.metadata else {}),
@@ -270,6 +280,9 @@ class SimpleAgentTask(AgentTaskInterface):
             internal_retries=judge_result.internal_retries,
             evaluator_guardrail=(evaluator_guardrail.to_dict() if evaluator_guardrail is not None else None),
             evaluator_epoch=judge_result.evaluator_epoch,
+            evaluator_spec=judge_result.evaluator_spec,
+            execution_provenance=judge_result.execution_provenance,
+            fixture_provenance=judge_result.fixture_provenance,
         )
 
     def generate_output(self, state: dict) -> str:
@@ -357,7 +370,7 @@ class TaskRunner:
         self._shutdown = False
         self._tasks_processed = 0
 
-    def _observe_epoch_quarantine(self, scenario: str, epoch_id: str | None) -> bool | None:
+    def _observe_epoch_quarantine(self, scenario: str, epoch_id: str | None, serving_spec: str | None = None) -> bool | None:
         """Observe the task's evaluator epoch and report whether its score is quarantined.
 
         The queue result JSON is the always-on surface for TaskRunner (it does not write the
@@ -366,7 +379,9 @@ class TaskRunner:
         """
         if self.settings is None:
             return None
-        return observe_epoch_quarantined(self.settings.knowledge_root / "_evaluator_epochs", scenario, epoch_id)
+        return observe_epoch_quarantined(
+            self.settings.knowledge_root / "_evaluator_epochs", scenario, epoch_id, serving_spec=serving_spec,
+        )
 
     def run(self) -> int:
         """Main loop. Returns the number of tasks processed.
@@ -549,7 +564,7 @@ class TaskRunner:
                 result.met_threshold = effective_met_threshold
 
                 epoch_id = getattr(result, "evaluator_epoch", None)
-                quarantined = self._observe_epoch_quarantine(spec_name, epoch_id)
+                quarantined = self._observe_epoch_quarantine(spec_name, epoch_id, result.evaluator_spec)
                 self.store.complete_task(
                     task_id=task_id,
                     best_score=result.best_score,
@@ -713,7 +728,7 @@ class TaskRunner:
         # The multi-generation aggregate persists best_generation's score; carry its epoch so the
         # queue result JSON (and the returned result) keep the epoch + quarantine lineage.
         epoch_id = best_generation.evaluator_epoch
-        quarantined = self._observe_epoch_quarantine(spec_name, epoch_id)
+        quarantined = self._observe_epoch_quarantine(spec_name, epoch_id, best_generation.evaluator_spec)
 
         self.store.complete_task(
             task_id=task_id,
