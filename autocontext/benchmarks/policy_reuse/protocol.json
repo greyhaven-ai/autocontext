@@ -1,8 +1,8 @@
 {
-  "protocol_version": "ac1018-grid-ctf-pilot-v1",
+  "protocol_version": "ac1018-grid-ctf-pilot-v2",
   "scenario": "grid_ctf",
   "provider": "openai-codex",
-  "model": "gpt-5.4-mini",
+  "model": "gpt-5.5",
   "thinking": "low",
   "training_seeds": [
     0,
@@ -55,5 +55,6 @@
   "pricing": "Subscription-backed Pi OAuth. Dollar marginal cost and subscription allocation are unknown. Report measured model calls, input/output/cache tokens and wall time; provider usage cost is informational only, not invoiced spend. Stop before a new call after observed token threshold; Pi CLI cannot enforce an API max-output token cap, so the final call may cross that threshold.",
   "go_rule": "A supported-contract pilot qualifies for further investigation only if policy/hybrid mean score >= 0.75, paired bootstrap lower bound for score difference vs model >= -0.02, no illegal actions/errors on supported cases, and measured resource amortization improves by horizon 100. Shifted cases must explicitly invalidate or abstain. This does not authorize production promotion.",
   "limitations": "One synthesis run, one model and a one-step parameter-scoring simulator. State-dependent advantages are not established. Bootstrap intervals describe seed variation conditional on the frozen policy, not synthesis/model reliability. Horizons beyond observed tasks are projections, not measured executions. No claims about arbitrary game play or open-world tasks. TypeScript parity deferred.",
-  "transport": "Pi invoked with tools/extensions/context files disabled, ephemeral sessions, and local retry.enabled=false/retry.provider.maxRetries=0. Application-level invalid-action retries count toward the 28-invocation budget. Provider-side internal accounting beyond reported usage is not independently observable."
+  "transport": "Pi invoked with tools/extensions/context files disabled, ephemeral sessions, and local retry.enabled=false/retry.provider.maxRetries=0. Application-level invalid-action retries count toward the 28-invocation budget. Provider-side internal accounting beyond reported usage is not independently observable.",
+  "amendment": "Before any successful model inference or heldout evaluation: initial gpt-5.4-mini call rejected as unsupported for ChatGPT subscription. Switch to gpt-5.5. Carry failed call, prior four training evaluations, and elapsed setup into accounting. Combined invocation limit remains 28."
 }

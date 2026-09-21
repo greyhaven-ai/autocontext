@@ -11,6 +11,7 @@ import math
 import os
 import platform
 import random
+import shutil
 import statistics
 import subprocess
 import time
@@ -123,7 +124,23 @@ class PiProvider(LLMProvider):
             proc = subprocess.run(args, cwd=self.output, capture_output=True, text=True,
                                   timeout=self.protocol["model_call_timeout_seconds"],
                                   env={**os.environ, "PI_TELEMETRY": "0"})
-            prefix.with_suffix(".events.jsonl").write_text(proc.stdout)
+            # Keep observable text, usage and error traces without publishing model scratchpads.
+            def redact_thinking(value):
+                if isinstance(value, list):
+                    return [redact_thinking(item) for item in value]
+                if isinstance(value, dict):
+                    if value.get("type", "").startswith("thinking"):
+                        return {"type": value["type"], "omitted": True}
+                    return {key: redact_thinking(item) for key, item in value.items()
+                            if key not in ("thinking", "thinkingSignature")}
+                return value
+            trace_lines = []
+            for line in proc.stdout.splitlines():
+                try:
+                    trace_lines.append(json.dumps(redact_thinking(json.loads(line))))
+                except json.JSONDecodeError:
+                    trace_lines.append(json.dumps({"type": "unparsed_stdout", "text": line}))
+            prefix.with_suffix(".events.jsonl").write_text("\n".join(trace_lines) + "\n")
             prefix.with_suffix(".stderr.txt").write_text(proc.stderr)
             messages = []
             for line in proc.stdout.splitlines():
@@ -321,6 +338,7 @@ def summarize(rows, training, calls, synthesis_seconds, protocol):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--prior-attempt", type=Path)
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -342,6 +360,24 @@ def main():
     write_json(output / ".pi/settings.json", {"retry": {"enabled": False, "maxRetries": 0,
                                                         "provider": {"maxRetries": 0}}})
     provider = PiProvider(protocol, output)
+    prior_seconds = 0.0
+    prior_training_count = 0
+    if args.prior_attempt:
+        prior = args.prior_attempt.resolve()
+        previous_identity = json.loads((prior / "identity.json").read_text())
+        provider.calls = json.loads((prior / "call-ledger.json").read_text())
+        if any(c["status"] == "completed" for c in provider.calls) or (prior / "episodes.json").exists():
+            raise ValueError("Only a pre-inference setup failure may be carried into this run")
+        prior_seconds = ((prior / "call-ledger.json").stat().st_mtime -
+                         datetime.fromisoformat(previous_identity["started_at"]).timestamp())
+        prior_training_count = len(json.loads((prior / "protocol.json").read_text())["training_seeds"])
+        for file in (prior / "calls").iterdir():
+            shutil.copy2(file, output / "calls" / file.name)
+        write_json(output / "prior-attempt.json", {"identity": previous_identity,
+                   "protocol": json.loads((prior / "protocol.json").read_text()),
+                   "elapsed_seconds": prior_seconds, "training_episodes": prior_training_count,
+                   "timing_method": "identity started_at through final call-ledger mtime; includes setup and failed call",
+                   "training_trace_limit": "prior failed process did not persist individual initial-policy evaluations"})
     training = TrainingExecutor(PilotScenario(), protocol)
     started = time.monotonic()
     initial = "def choose_action(state):\n    return {'aggression': 0.2, 'defense': 0.2, 'path_bias': 0.2}\n"
@@ -350,7 +386,7 @@ def main():
                                 matches_per_iteration=len(protocol["training_seeds"]), model=protocol["model"])
     assert loop._evaluation_seeds == protocol["training_seeds"]
     result = loop.refine(initial)
-    synthesis_seconds = time.monotonic() - started
+    synthesis_seconds = time.monotonic() - started + prior_seconds
     write_json(output / "training.json", {"result": asdict(result), "episodes": training.rows, "seconds": synthesis_seconds})
     (output / "frozen-policy.py").write_text(result.best_policy)
     write_json(output / "frozen-policy-identity.json", {"policy_sha256": digest(result.best_policy.encode()),
@@ -370,6 +406,8 @@ def main():
     for seed in protocol["heldout_seeds"] + protocol["shifted_seeds"]:
         assert len({r["state_sha256"] for r in rows if r["seed"] == seed}) == 1
     summary = summarize(rows, training.rows, provider.calls, synthesis_seconds, protocol)
+    summary["setup"]["training_episodes"] += prior_training_count
+    summary["setup"]["prior_attempt_seconds"] = prior_seconds
     summary["pilot_go"] &= result.best_policy != initial and summary["all_call_usage_known"]
     write_json(output / "summary.json", summary)
     print(json.dumps({"output": str(output), "pilot_go": summary["pilot_go"]}), flush=True)
