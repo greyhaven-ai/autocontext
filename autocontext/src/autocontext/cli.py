@@ -10,7 +10,6 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -55,6 +54,7 @@ from autocontext.cli_share import register_share_command
 from autocontext.cli_skills import register_skills_command
 from autocontext.cli_solve import register_solve_command
 from autocontext.cli_train import register_train_command
+from autocontext.cli_wire import AgentTaskRunSummary as AgentTaskRunSummary
 from autocontext.cli_wire import run_status_wire_payload
 from autocontext.cli_worker import register_worker_command
 from autocontext.config import load_settings
@@ -85,18 +85,6 @@ if TYPE_CHECKING:
     from autocontext.extensions import HookBus
     from autocontext.providers.base import LLMProvider
 
-
-@dataclass(slots=True)
-class AgentTaskRunSummary:
-    """Result summary for an agent-task execution via the CLI."""
-    run_id: str
-    scenario: str
-    best_score: float
-    best_output: str
-    total_rounds: int
-    met_threshold: bool
-    termination_reason: str
-    optimizer_metadata: dict[str, str] | None = None
 
 app = typer.Typer(cls=StructuredUsageGroup, help="Run, inspect, and export agent-evaluation workflows.",
     epilog="Start with `autoctx solve \"your goal\"`. Run `autoctx commands --all` for the full catalog.",
