@@ -52,9 +52,13 @@ class EvaluationCache:
     _hits: int = 0
     _misses: int = 0
 
-    def get(self, fingerprint: str) -> CachedVerdict | None:
+    def get(self, fingerprint: str, *, expected_evaluator_epoch: str | None = None) -> CachedVerdict | None:
         cached = self._entries.get(fingerprint)
-        if cached is None:
+        # AC-1026 can supply a trusted pinned identity. An old manifest alone
+        # cannot establish which evaluator would serve a new request.
+        if (cached is None
+                or (cached.evaluator_spec is not None and expected_evaluator_epoch is None)
+                or (expected_evaluator_epoch is not None and cached.evaluator_epoch != expected_evaluator_epoch)):
             self._misses += 1
             return None
         self._hits += 1

@@ -37,3 +37,23 @@ class TestEvaluationCache:
         assert cache.unchanged_failure(fp_fail) is True
         assert cache.unchanged_failure(fp_pass) is False
         assert cache.unchanged_failure(content_fingerprint("unseen")) is False
+
+
+def test_versioned_judge_verdict_requires_matching_expected_identity():
+    cache = EvaluationCache()
+    verdict = CachedVerdict(score=0.9, reasoning="ok", dimension_scores={}, passed=True,
+                            evaluator_epoch="old", evaluator_spec="immutable-manifest")
+    cache.put("same-artifact", verdict)
+    assert cache.get("same-artifact") is None
+    assert cache.get("same-artifact", expected_evaluator_epoch="new") is None
+    assert cache.get("same-artifact", expected_evaluator_epoch="old") is verdict
+    assert cache.stats() == {"hits": 1, "misses": 2, "entries": 1}
+
+
+def test_expected_identity_rejects_legacy_or_unknown_cached_evidence():
+    cache = EvaluationCache()
+    cache.put("legacy", CachedVerdict(score=0.9, reasoning="old", dimension_scores={}, passed=True,
+                                      evaluator_epoch="legacy-epoch"))
+    cache.put("unknown", CachedVerdict(score=0.9, reasoning="old", dimension_scores={}, passed=True))
+    assert cache.get("legacy", expected_evaluator_epoch="current-spec") is None
+    assert cache.get("unknown", expected_evaluator_epoch="current-spec") is None

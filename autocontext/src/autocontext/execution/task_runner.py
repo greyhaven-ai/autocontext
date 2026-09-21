@@ -139,6 +139,10 @@ def _serialize_evolution_result(
                 "reasoning": r.reasoning,
                 "dimension_scores": r.dimension_scores,
                 "is_revision": r.is_revision,
+                "evaluator_epoch": r.evaluator_epoch,
+                "evaluator_spec": r.evaluator_spec,
+                "execution_provenance": r.execution_provenance,
+                "fixture_provenance": r.fixture_provenance,
             }
             for r in final_result.rounds
         ]
@@ -150,6 +154,9 @@ def _serialize_evolution_result(
             "best_round": result.best_round,
             "total_rounds": result.total_rounds,
             "met_threshold": result.met_threshold,
+            "evaluator_epoch": result.evaluator_epoch,
+            "evaluator_spec": result.evaluator_spec,
+            "evaluation_provenance": result.evaluation_provenance,
             **({"pareto_frontier": result.pareto_frontier} if result.pareto_frontier else {}),
             **({"actionable_side_info": result.actionable_side_info} if result.actionable_side_info else {}),
             **({"optimizer_metadata": result.metadata} if result.metadata else {}),

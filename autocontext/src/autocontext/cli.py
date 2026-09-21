@@ -375,6 +375,9 @@ def _run_agent_task(
         serving_spec=getattr(result, "evaluator_spec", None),
     )
     sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
+    provenance = getattr(result, "evaluation_provenance", [])
+    if provenance:
+        sqlite.append_agent_output(active_run_id, 1, "judge_provenance", json.dumps(provenance))
     sqlite.upsert_generation(
         active_run_id,
         1,

@@ -98,6 +98,14 @@ class ImprovementResult:
         return next((r.evaluator_spec for r in self.rounds if r.round_number == self.best_round), None)
 
     @property
+    def evaluation_provenance(self) -> list[dict[str, Any]]:
+        return [
+            {"round_number": r.round_number, "evaluator_epoch": r.evaluator_epoch,
+             "execution_provenance": r.execution_provenance, "fixture_provenance": r.fixture_provenance}
+            for r in self.rounds if r.execution_provenance or r.fixture_provenance
+        ]
+
+    @property
     def improved(self) -> bool:
         """Whether the final score is higher than the initial score."""
         if len(self.rounds) < 2:
@@ -300,11 +308,6 @@ class ImprovementLoop:
             replayed_veto = False
             missing_targets = [target for target in self.required_targets if target not in current_output]
             cached_verdict = None if missing_targets else verdict_cache.get(fingerprint)
-            # A persisted serving spec proves the old verdict, not the current
-            # provider/configuration. Until AC-1026 pins an expected spec before
-            # evaluation, versioned LLM verdicts cannot be reused by artifact alone.
-            if cached_verdict is not None and cached_verdict.evaluator_spec is not None:
-                cached_verdict = None
             from_cache = cached_verdict is not None
             if missing_targets:
                 result = AgentTaskResult(

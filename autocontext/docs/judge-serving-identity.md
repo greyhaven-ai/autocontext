@@ -27,6 +27,11 @@ saved result JSON as having the same sensitivity as the human examples.
 Task prompts, agent outputs, reference evidence, and required concepts are
 fixture data. `fixture_provenance` records their combined digest outside the
 evaluator identity; the existing task/output stores retain the underlying inputs.
+Direct CLI/solve runs persist per-round execution and fixture provenance as
+`judge_provenance` activity in the existing run database; queued single- and
+multi-generation results retain it in their result JSON. Those activity records
+contain hashes and execution settings, not a second copy of human examples.
+
 Sampling count, token limit, disagreement threshold, and each attempted request's
 model and temperature are explicit `execution_provenance`. They affect execution
 variance and cost, rather than defining a new evaluator. Retry and aggregation
