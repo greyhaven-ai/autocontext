@@ -1,0 +1,7 @@
+{
+  "policy_sha256": "d904fbf29114668c7f336e6ea509e14c899d90e67c92dc253d704bf710134f9e",
+  "contract": "grid-ctf-limit-1.4-v1",
+  "frozen_at": "2026-09-21T18:58:00.112980+00:00",
+  "training_only_selection": true,
+  "synthesized_candidate_selected": true
+}

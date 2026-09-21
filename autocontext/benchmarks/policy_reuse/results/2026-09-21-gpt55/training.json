@@ -1,0 +1,497 @@
+{
+  "result": {
+    "best_policy": "def choose_action(state):\n    return {\n        \"aggression\": 0.92672,\n        \"defense\": 0.47328,\n        \"path_bias\": 1.0\n    }",
+    "best_heuristic": 0.9474125,
+    "iterations": 3,
+    "converged": false,
+    "iteration_log": [
+      {
+        "iteration": 1,
+        "policy_source": "def choose_action(state):\n    return {'aggression': 0.2, 'defense': 0.2, 'path_bias': 0.2}\n",
+        "scores": [
+          0.5429,
+          0.4833,
+          0.5523,
+          0.492
+        ],
+        "heuristic_value": 0.7588125,
+        "had_illegal_actions": false,
+        "errors": []
+      },
+      {
+        "iteration": 2,
+        "policy_source": "def choose_action(state):\n    return {\n        \"aggression\": 0.927,\n        \"defense\": 0.473,\n        \"path_bias\": 1.0\n    }",
+        "scores": [
+          0.92,
+          0.8652,
+          0.92,
+          0.8739
+        ],
+        "heuristic_value": 0.9473875,
+        "had_illegal_actions": false,
+        "errors": []
+      },
+      {
+        "iteration": 3,
+        "policy_source": "def choose_action(state):\n    return {\n        \"aggression\": 0.92672,\n        \"defense\": 0.47328,\n        \"path_bias\": 1.0\n    }",
+        "scores": [
+          0.9201,
+          0.8652,
+          0.9201,
+          0.8739
+        ],
+        "heuristic_value": 0.9474125,
+        "had_illegal_actions": false,
+        "errors": []
+      }
+    ],
+    "total_matches_run": 12
+  },
+  "episodes": [
+    {
+      "seed": 0,
+      "policy_sha256": "c532e81851045a46f40e932341e1c11a71b3c613d5bc60303e6dae63f6de6e27",
+      "seconds": 0.004101166967302561,
+      "score": 0.5429,
+      "normalized_score": 0.5429,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.5429,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 0.2482,
+            "defender_survival": 1.0,
+            "energy_efficiency": 0.96
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.2,
+              "defense": 0.2,
+              "path_bias": 0.2
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 0.2482,
+          "defender_survival": 1.0,
+          "energy_efficiency": 0.96
+        },
+        "summary": "GridCTF score 0.5429"
+      }
+    },
+    {
+      "seed": 1,
+      "policy_sha256": "c532e81851045a46f40e932341e1c11a71b3c613d5bc60303e6dae63f6de6e27",
+      "seconds": 0.004230917082168162,
+      "score": 0.4833,
+      "normalized_score": 0.4833,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.4833,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 0.1488,
+            "defender_survival": 1.0,
+            "energy_efficiency": 0.96
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.2,
+              "defense": 0.2,
+              "path_bias": 0.2
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 0.1488,
+          "defender_survival": 1.0,
+          "energy_efficiency": 0.96
+        },
+        "summary": "GridCTF score 0.4833"
+      }
+    },
+    {
+      "seed": 2,
+      "policy_sha256": "c532e81851045a46f40e932341e1c11a71b3c613d5bc60303e6dae63f6de6e27",
+      "seconds": 0.007302750018425286,
+      "score": 0.5523,
+      "normalized_score": 0.5523,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.5523,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 0.2638,
+            "defender_survival": 1.0,
+            "energy_efficiency": 0.96
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.2,
+              "defense": 0.2,
+              "path_bias": 0.2
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 0.2638,
+          "defender_survival": 1.0,
+          "energy_efficiency": 0.96
+        },
+        "summary": "GridCTF score 0.5523"
+      }
+    },
+    {
+      "seed": 3,
+      "policy_sha256": "c532e81851045a46f40e932341e1c11a71b3c613d5bc60303e6dae63f6de6e27",
+      "seconds": 0.004276124993339181,
+      "score": 0.492,
+      "normalized_score": 0.492,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.492,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 0.1633,
+            "defender_survival": 1.0,
+            "energy_efficiency": 0.96
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.2,
+              "defense": 0.2,
+              "path_bias": 0.2
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 0.1633,
+          "defender_survival": 1.0,
+          "energy_efficiency": 0.96
+        },
+        "summary": "GridCTF score 0.4920"
+      }
+    },
+    {
+      "seed": 0,
+      "policy_sha256": "f35b17fa92951f99f426c98b4d3e20dc8fa08a9b69b5236f941e0e17e31d6ab5",
+      "seconds": 0.009053666959516704,
+      "score": 0.92,
+      "normalized_score": 0.92,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.92,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 1.0,
+            "defender_survival": 0.8184,
+            "energy_efficiency": 0.7692
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.927,
+              "defense": 0.473,
+              "path_bias": 1.0
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 1.0,
+          "defender_survival": 0.8184,
+          "energy_efficiency": 0.7692
+        },
+        "summary": "GridCTF score 0.9200"
+      }
+    },
+    {
+      "seed": 1,
+      "policy_sha256": "f35b17fa92951f99f426c98b4d3e20dc8fa08a9b69b5236f941e0e17e31d6ab5",
+      "seconds": 0.007609750027768314,
+      "score": 0.8652,
+      "normalized_score": 0.8652,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.8652,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 0.9087,
+            "defender_survival": 0.8184,
+            "energy_efficiency": 0.7692
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.927,
+              "defense": 0.473,
+              "path_bias": 1.0
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 0.9087,
+          "defender_survival": 0.8184,
+          "energy_efficiency": 0.7692
+        },
+        "summary": "GridCTF score 0.8652"
+      }
+    },
+    {
+      "seed": 2,
+      "policy_sha256": "f35b17fa92951f99f426c98b4d3e20dc8fa08a9b69b5236f941e0e17e31d6ab5",
+      "seconds": 0.007168542011640966,
+      "score": 0.92,
+      "normalized_score": 0.92,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.92,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 1.0,
+            "defender_survival": 0.8184,
+            "energy_efficiency": 0.7692
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.927,
+              "defense": 0.473,
+              "path_bias": 1.0
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 1.0,
+          "defender_survival": 0.8184,
+          "energy_efficiency": 0.7692
+        },
+        "summary": "GridCTF score 0.9200"
+      }
+    },
+    {
+      "seed": 3,
+      "policy_sha256": "f35b17fa92951f99f426c98b4d3e20dc8fa08a9b69b5236f941e0e17e31d6ab5",
+      "seconds": 0.006793749984353781,
+      "score": 0.8739,
+      "normalized_score": 0.8739,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.8739,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 0.9232,
+            "defender_survival": 0.8184,
+            "energy_efficiency": 0.7692
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.927,
+              "defense": 0.473,
+              "path_bias": 1.0
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 0.9232,
+          "defender_survival": 0.8184,
+          "energy_efficiency": 0.7692
+        },
+        "summary": "GridCTF score 0.8739"
+      }
+    },
+    {
+      "seed": 0,
+      "policy_sha256": "d904fbf29114668c7f336e6ea509e14c899d90e67c92dc253d704bf710134f9e",
+      "seconds": 0.00792499992530793,
+      "score": 0.9201,
+      "normalized_score": 0.9201,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.9201,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 1.0,
+            "defender_survival": 0.8186,
+            "energy_efficiency": 0.7693
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.92672,
+              "defense": 0.47328,
+              "path_bias": 1.0
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        "summary": "GridCTF score 0.9201"
+      }
+    },
+    {
+      "seed": 1,
+      "policy_sha256": "d904fbf29114668c7f336e6ea509e14c899d90e67c92dc253d704bf710134f9e",
+      "seconds": 0.006218917085789144,
+      "score": 0.8652,
+      "normalized_score": 0.8652,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.8652,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 0.9085,
+            "defender_survival": 0.8186,
+            "energy_efficiency": 0.7693
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.92672,
+              "defense": 0.47328,
+              "path_bias": 1.0
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 0.9085,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        "summary": "GridCTF score 0.8652"
+      }
+    },
+    {
+      "seed": 2,
+      "policy_sha256": "d904fbf29114668c7f336e6ea509e14c899d90e67c92dc253d704bf710134f9e",
+      "seconds": 0.005666250013746321,
+      "score": 0.9201,
+      "normalized_score": 0.9201,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.9201,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 1.0,
+            "defender_survival": 0.8186,
+            "energy_efficiency": 0.7693
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.92672,
+              "defense": 0.47328,
+              "path_bias": 1.0
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        "summary": "GridCTF score 0.9201"
+      }
+    },
+    {
+      "seed": 3,
+      "policy_sha256": "d904fbf29114668c7f336e6ea509e14c899d90e67c92dc253d704bf710134f9e",
+      "seconds": 0.004195666988380253,
+      "score": 0.8739,
+      "normalized_score": 0.8739,
+      "had_illegal_actions": false,
+      "illegal_action_count": 0,
+      "errors": [],
+      "moves_played": 1,
+      "replay": {
+        "score": 0.8739,
+        "replay": [
+          {
+            "event": "turn_complete",
+            "turn": 1,
+            "capture_progress": 0.923,
+            "defender_survival": 0.8186,
+            "energy_efficiency": 0.7693
+          },
+          {
+            "event": "executed_action",
+            "action": {
+              "aggression": 0.92672,
+              "defense": 0.47328,
+              "path_bias": 1.0
+            }
+          }
+        ],
+        "metrics": {
+          "capture_progress": 0.923,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        "summary": "GridCTF score 0.8739"
+      }
+    }
+  ],
+  "seconds": 47.07095815439243
+}
