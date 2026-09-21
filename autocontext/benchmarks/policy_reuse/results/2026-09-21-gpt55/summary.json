@@ -1,0 +1,323 @@
+{
+  "setup": {
+    "seconds": 47.07095815439243,
+    "model_calls": 3,
+    "tokens": 2908,
+    "training_episodes": 16,
+    "prior_attempt_seconds": 5.796071529388428
+  },
+  "stats": {
+    "heldout/model": {
+      "episodes": 12,
+      "mean_score": 0.8928083333333333,
+      "successes": 12,
+      "success_rate": 1.0,
+      "errors": 0,
+      "illegal_actions": 0,
+      "abstentions": 0,
+      "invalidations": 0,
+      "model_calls": 12,
+      "tokens": 15203,
+      "total_seconds": 263.28352812689263,
+      "p50_seconds": 21.565242666983977,
+      "p95_seconds": 31.6489001250593,
+      "dollars_per_success": null
+    },
+    "heldout/policy": {
+      "episodes": 12,
+      "mean_score": 0.8995166666666666,
+      "successes": 12,
+      "success_rate": 1.0,
+      "errors": 0,
+      "illegal_actions": 0,
+      "abstentions": 0,
+      "invalidations": 0,
+      "model_calls": 0,
+      "tokens": 0,
+      "total_seconds": 0.09274724882561713,
+      "p50_seconds": 0.007493167067877948,
+      "p95_seconds": 0.010151874972507358,
+      "dollars_per_success": null
+    },
+    "heldout/hybrid": {
+      "episodes": 12,
+      "mean_score": 0.8995166666666666,
+      "successes": 12,
+      "success_rate": 1.0,
+      "errors": 0,
+      "illegal_actions": 0,
+      "abstentions": 0,
+      "invalidations": 0,
+      "model_calls": 0,
+      "tokens": 0,
+      "total_seconds": 0.09336966800037771,
+      "p50_seconds": 0.00702258397359401,
+      "p95_seconds": 0.01595545804593712,
+      "dollars_per_success": null
+    },
+    "shifted/model": {
+      "episodes": 4,
+      "mean_score": 0.8036749999999999,
+      "successes": 4,
+      "success_rate": 1.0,
+      "errors": 0,
+      "illegal_actions": 0,
+      "abstentions": 0,
+      "invalidations": 0,
+      "model_calls": 4,
+      "tokens": 3155,
+      "total_seconds": 53.411627123947255,
+      "p50_seconds": 13.471173999947496,
+      "p95_seconds": 14.358860458014533,
+      "dollars_per_success": null
+    },
+    "shifted/policy": {
+      "episodes": 4,
+      "mean_score": 0.0,
+      "successes": 0,
+      "success_rate": 0.0,
+      "errors": 0,
+      "illegal_actions": 0,
+      "abstentions": 0,
+      "invalidations": 4,
+      "model_calls": 0,
+      "tokens": 0,
+      "total_seconds": 0.00029408291447907686,
+      "p50_seconds": 6.612506695091724e-05,
+      "p95_seconds": 8.899997919797897e-05,
+      "dollars_per_success": null
+    },
+    "shifted/hybrid": {
+      "episodes": 4,
+      "mean_score": 0.8036749999999999,
+      "successes": 4,
+      "success_rate": 1.0,
+      "errors": 0,
+      "illegal_actions": 0,
+      "abstentions": 4,
+      "invalidations": 0,
+      "model_calls": 4,
+      "tokens": 2744,
+      "total_seconds": 45.52504979108926,
+      "p50_seconds": 10.868363665998913,
+      "p95_seconds": 13.021320458035916,
+      "dollars_per_success": null
+    }
+  },
+  "comparisons": {
+    "policy": {
+      "paired_score_difference": 0.006708333333333326,
+      "conditional_seed_bootstrap_95_interval": [
+        0.0011916666666666649,
+        0.01216666666666665
+      ]
+    },
+    "hybrid": {
+      "paired_score_difference": 0.006708333333333326,
+      "conditional_seed_bootstrap_95_interval": [
+        0.0011916666666666649,
+        0.01216666666666665
+      ]
+    }
+  },
+  "projected_horizons": {
+    "model": [
+      {
+        "episodes": 1,
+        "seconds": 21.940294010574387,
+        "model_calls": 1.0,
+        "tokens": 1266.9166666666667,
+        "expected_successes": 1.0
+      },
+      {
+        "episodes": 2,
+        "seconds": 43.880588021148775,
+        "model_calls": 2.0,
+        "tokens": 2533.8333333333335,
+        "expected_successes": 2.0
+      },
+      {
+        "episodes": 5,
+        "seconds": 109.70147005287193,
+        "model_calls": 5.0,
+        "tokens": 6334.583333333333,
+        "expected_successes": 5.0
+      },
+      {
+        "episodes": 10,
+        "seconds": 219.40294010574385,
+        "model_calls": 10.0,
+        "tokens": 12669.166666666666,
+        "expected_successes": 10.0
+      },
+      {
+        "episodes": 25,
+        "seconds": 548.5073502643596,
+        "model_calls": 25.0,
+        "tokens": 31672.916666666668,
+        "expected_successes": 25.0
+      },
+      {
+        "episodes": 100,
+        "seconds": 2194.0294010574385,
+        "model_calls": 100.0,
+        "tokens": 126691.66666666667,
+        "expected_successes": 100.0
+      },
+      {
+        "episodes": 1000,
+        "seconds": 21940.294010574387,
+        "model_calls": 1000.0,
+        "tokens": 1266916.6666666667,
+        "expected_successes": 1000.0
+      }
+    ],
+    "policy": [
+      {
+        "episodes": 1,
+        "seconds": 47.07868709179456,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 1.0
+      },
+      {
+        "episodes": 2,
+        "seconds": 47.0864160291967,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 2.0
+      },
+      {
+        "episodes": 5,
+        "seconds": 47.1096028414031,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 5.0
+      },
+      {
+        "episodes": 10,
+        "seconds": 47.148247528413776,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 10.0
+      },
+      {
+        "episodes": 25,
+        "seconds": 47.2641815894458,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 25.0
+      },
+      {
+        "episodes": 100,
+        "seconds": 47.843851894605905,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 100.0
+      },
+      {
+        "episodes": 1000,
+        "seconds": 54.79989555652719,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 1000.0
+      }
+    ],
+    "hybrid": [
+      {
+        "episodes": 1,
+        "seconds": 47.07873896005913,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 1.0
+      },
+      {
+        "episodes": 2,
+        "seconds": 47.086519765725825,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 2.0
+      },
+      {
+        "episodes": 5,
+        "seconds": 47.10986218272592,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 5.0
+      },
+      {
+        "episodes": 10,
+        "seconds": 47.14876621105941,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 10.0
+      },
+      {
+        "episodes": 25,
+        "seconds": 47.26547829605988,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 25.0
+      },
+      {
+        "episodes": 100,
+        "seconds": 47.84903872106224,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 100.0
+      },
+      {
+        "episodes": 1000,
+        "seconds": 54.85176382109057,
+        "model_calls": 3.0,
+        "tokens": 2908.0,
+        "expected_successes": 1000.0
+      }
+    ]
+  },
+  "projected_break_even_episodes": {
+    "policy": {
+      "seconds": 3,
+      "model_calls": 4,
+      "tokens": 3
+    },
+    "hybrid": {
+      "seconds": 3,
+      "model_calls": 4,
+      "tokens": 3
+    }
+  },
+  "observed_first_resource_crossing_episodes": {
+    "policy": {
+      "seconds": 2,
+      "model_calls": 4,
+      "tokens": 2
+    },
+    "hybrid": {
+      "seconds": 2,
+      "model_calls": 4,
+      "tokens": 2
+    }
+  },
+  "actual_resources_per_success_with_setup": {
+    "model": {
+      "seconds_per_success": 19.793447203177493,
+      "model_calls_per_success": 1.0,
+      "tokens_per_success": 1147.375
+    },
+    "policy": {
+      "seconds_per_success": 3.9303332905110437,
+      "model_calls_per_success": 0.25,
+      "tokens_per_success": 242.33333333333334
+    },
+    "hybrid": {
+      "seconds_per_success": 5.793086100842629,
+      "model_calls_per_success": 0.4375,
+      "tokens_per_success": 353.25
+    }
+  },
+  "pilot_go": true,
+  "all_call_usage_known": true,
+  "dollars": null,
+  "scope": "One synthesis run, one model and a one-step parameter-scoring simulator. State-dependent advantages are not established. Bootstrap intervals describe seed variation conditional on the frozen policy, not synthesis/model reliability. Horizons beyond observed tasks are projections, not measured executions. No claims about arbitrary game play or open-world tasks. TypeScript parity deferred."
+}

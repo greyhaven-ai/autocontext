@@ -1,0 +1,10 @@
+{
+  "system_prompt": "Choose one action to maximize the objective score. Return only JSON.",
+  "user_prompt": "20x20 capture-the-flag map with fog of war and three unit archetypes (Scout, Soldier, Commander). Preserve at least one defender near base.\nReturn JSON with exactly aggression, defense, path_bias: finite numbers in [0,1]. aggression + defense must be <= 1.4. Contract: grid-ctf-limit-1.4-v1.\nObjective deterministic verifier: capture=clamp(0.55*aggression+0.45*path_bias+noise,0,1); survival=clamp(1-0.4*aggression+0.4*defense,0,1); energy=clamp(1-0.3*aggression+0.1*defense,0,1); score=0.6*capture+0.25*survival+0.15*energy. Noise is seeded uniform[-0.07,0.07]. Maximize score. Seed is provenance, not something to hardcode or exploit. One action terminates the episode.\nState: {\"seed\": 105, \"enemy_spawn_bias\": 0.689, \"resource_density\": 0.379, \"terminal\": false, \"turn\": 0, \"timeline\": [], \"contract\": \"grid-ctf-limit-1.4-v1\", \"combined_limit\": 1.4}",
+  "model": "gpt-5.5",
+  "provider": "openai-codex",
+  "thinking": "low",
+  "phase": "evaluation",
+  "temperature_requested_but_not_supported_by_cli": 0.0,
+  "max_tokens_requested_but_not_enforced_by_cli": 4096
+}

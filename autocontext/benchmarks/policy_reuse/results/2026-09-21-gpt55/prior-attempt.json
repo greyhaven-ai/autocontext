@@ -1,0 +1,84 @@
+{
+  "identity": {
+    "started_at": "2026-09-21T18:54:39.326778+00:00",
+    "protocol_sha256": "9f8ca26b5bb659171596985622d70d0c27fbfbac60c6e50ae7179cbbf0178053",
+    "git_base": "ab4d93d5844b8928150721bcfa93b22baaebb8d5",
+    "source_hashes": {
+      "autocontext/benchmarks/policy_reuse/run.py": "c891f658d8dc18ffad2a88ca0ac080ef2b29fc1f617f9ef862429e2bb3ffb251",
+      "autocontext/src/autocontext/scenarios/grid_ctf/scenario.py": "1b0538a214e80e75848742c12da03c1e238bc6f962c05467dc24c2d6531ebde3",
+      "autocontext/src/autocontext/execution/policy_executor.py": "5c382b4f44f25bfc3c478ca30c18eb3904d65bdced87527f6732b99baf6150e8",
+      "autocontext/src/autocontext/execution/policy_refinement.py": "2f36d31049bdf553088ea4d79e63e8bc03b852db0a822476ed72872785ba29c1",
+      "autocontext/uv.lock": "cfe552a62c6cbfcdef131bda53a607dbc8cafca721ef720a0ae172cf317a3dde"
+    },
+    "python": "3.13.1",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "pi": "0.84.2",
+    "provider": "openai-codex",
+    "model": "gpt-5.4-mini",
+    "thinking": "low",
+    "objective_evaluator": "GridCtfScenario.step/get_result at the recorded source digest"
+  },
+  "protocol": {
+    "protocol_version": "ac1018-grid-ctf-pilot-v1",
+    "scenario": "grid_ctf",
+    "provider": "openai-codex",
+    "model": "gpt-5.4-mini",
+    "thinking": "low",
+    "training_seeds": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "heldout_seeds": [
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112
+    ],
+    "shifted_seeds": [
+      201,
+      202,
+      203,
+      204
+    ],
+    "quality_floor": 0.75,
+    "acceptable_mean_regression": 0.02,
+    "max_refinement_iterations": 3,
+    "max_model_calls_total": 28,
+    "observed_token_stop_threshold": 100000,
+    "model_call_timeout_seconds": 90,
+    "episode_timeout_seconds": 90,
+    "max_actions_per_episode": 1,
+    "max_action_attempts": 2,
+    "repetition_horizons": [
+      1,
+      2,
+      5,
+      10,
+      25,
+      100,
+      1000
+    ],
+    "bootstrap_resamples": 2000,
+    "bootstrap_seed": 1018,
+    "shift": "Combined aggression + defense limit changes from 1.4 to 0.8; contract version changes. Pure policy invalidates; hybrid abstains before execution and uses the model with current rules.",
+    "comparison": "Paired identical initial seeds, one action and equal wall-time limits per episode. Arm order rotates by seed index. Both model and synthesizer receive identical public scoring formulas; neither sees heldout results before the policy freezes. Refinement uses only training seeds. No post-holdout tuning.",
+    "pricing": "Subscription-backed Pi OAuth. Dollar marginal cost and subscription allocation are unknown. Report measured model calls, input/output/cache tokens and wall time; provider usage cost is informational only, not invoiced spend. Stop before a new call after observed token threshold; Pi CLI cannot enforce an API max-output token cap, so the final call may cross that threshold.",
+    "go_rule": "A supported-contract pilot qualifies for further investigation only if policy/hybrid mean score >= 0.75, paired bootstrap lower bound for score difference vs model >= -0.02, no illegal actions/errors on supported cases, and measured resource amortization improves by horizon 100. Shifted cases must explicitly invalidate or abstain. This does not authorize production promotion.",
+    "limitations": "One synthesis run, one model and a one-step parameter-scoring simulator. State-dependent advantages are not established. Bootstrap intervals describe seed variation conditional on the frozen policy, not synthesis/model reliability. Horizons beyond observed tasks are projections, not measured executions. No claims about arbitrary game play or open-world tasks. TypeScript parity deferred.",
+    "transport": "Pi invoked with tools/extensions/context files disabled, ephemeral sessions, and local retry.enabled=false/retry.provider.maxRetries=0. Application-level invalid-action retries count toward the 28-invocation budget. Provider-side internal accounting beyond reported usage is not independently observable."
+  },
+  "elapsed_seconds": 5.796071529388428,
+  "training_episodes": 4,
+  "timing_method": "identity started_at through final call-ledger mtime; includes setup and failed call",
+  "training_trace_limit": "prior failed process did not persist individual initial-policy evaluations"
+}
