@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
 from autocontext.execution.judge import LLMJudge
 from autocontext.extensions import HookBus, HookEvents
 from autocontext.providers.base import CompletionResult, LLMProvider
@@ -58,8 +57,8 @@ def test_epoch_reflects_hook_switched_model() -> None:
     result = judge.evaluate("task", "output")
 
     assert provider.models_used == ["hook-model"]
-    expected = compute_evaluator_epoch("score correctness 0-1", "recording", "hook-model").epoch_id
-    ctor_epoch = compute_evaluator_epoch("score correctness 0-1", "recording", "ctor-model").epoch_id
+    expected = judge.serving_spec(model="hook-model").epoch_id
+    ctor_epoch = judge.serving_spec().epoch_id
     assert result.evaluator_epoch == expected
     assert result.evaluator_epoch != ctor_epoch
 
@@ -71,14 +70,14 @@ def test_epoch_reflects_ctor_model_without_hook() -> None:
     result = judge.evaluate("task", "output")
 
     assert provider.models_used == ["ctor-model"]
-    expected = compute_evaluator_epoch("score correctness 0-1", "recording", "ctor-model").epoch_id
+    expected = judge.serving_spec().epoch_id
     assert result.evaluator_epoch == expected
 
 
 def test_judge_result_carries_evaluator_epoch() -> None:
     judge = LLMJudge(model="claude-sonnet-4-5", rubric="score correctness 0-1", llm_fn=_fake_llm)
     result = judge.evaluate("task", "output")
-    expected = compute_evaluator_epoch("score correctness 0-1", judge.provider.name, "claude-sonnet-4-5").epoch_id
+    expected = judge.serving_spec().epoch_id
     assert result.evaluator_epoch == expected
 
 

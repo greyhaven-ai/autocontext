@@ -315,3 +315,22 @@ def test_already_active_reconciles_quarantine_clear(tmp_path: Path) -> None:
     )
     assert out.outcome == "activated"  # reconciled, not a dead noop
     assert store.get_generation_metrics("run-t1")[0]["quarantined"] is None
+
+
+def test_example_only_change_rejects_previous_spec_calibration(tmp_path: Path) -> None:
+    from autocontext.execution.evaluator_epoch import EvaluatorEpoch
+    from autocontext.execution.judge import LLMJudge
+
+    judge = LLMJudge(model="m", rubric="Correctness", llm_fn=lambda *_: '{"score": 0.8}')
+    old = EvaluatorEpoch.from_spec(judge.serving_spec(calibration_examples=[{"human_notes": "old standard"}]))
+    new = EvaluatorEpoch.from_spec(judge.serving_spec(calibration_examples=[{"human_notes": "new standard"}]))
+    reg = EvaluatorEpochRegistry(tmp_path)
+    reg.observe(_SCENARIO, old)
+    reg.observe(_SCENARIO, new)
+    out = promote_evaluator_epoch(
+        reg, _SCENARIO, new.epoch_id, target_name=_TARGET,
+        calibration_report=_report(0.01, old.epoch_id), tolerance=_TOL, charter=_charter("full"),
+    )
+    assert out.outcome == "blocked"
+    assert reg.active_for(_SCENARIO).epoch_id == old.epoch_id
+    assert reg.load(_SCENARIO, new.epoch_id).activation_state == "candidate"

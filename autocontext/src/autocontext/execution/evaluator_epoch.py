@@ -1,9 +1,9 @@
-"""Evaluator-epoch identity: a content hash of the rubric + judge that produced a score.
+"""Evaluator identity and score-lineage comparisons.
 
-Two scores are comparable only when their epochs are equal. Changing the rubric text, the judge
-provider, or the judge model mints a new (non-comparable) epoch; sampling config does not (that is
-within-epoch variance owned by the AC-881 noise-calibration layer). This generalizes the ambient
-`eval_fingerprint` mechanism to the main LLM-judge path. See docs/internal/ac-885-evaluator-epochs-design.md.
+New Python judges use immutable serving specifications via ``EvaluatorEpoch.from_spec``.
+The historical rubric/provider/model helper stays byte-stable for legacy records;
+its digests are distinct from the new versioned serving contract. Sampling settings
+remain execution provenance rather than evaluator identity.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 from typing import Literal
+
+from autocontext.execution.judge_spec import JudgeServingSpec
 
 EVALUATOR_EPOCH_REBASELINE = "evaluator_epoch_rebaseline"
 
@@ -22,6 +24,12 @@ class EvaluatorEpoch:
     rubric_hash: str
     judge_provider: str
     judge_model: str
+    serving_spec: str | None = None
+
+    @classmethod
+    def from_spec(cls, spec: JudgeServingSpec) -> EvaluatorEpoch:
+        return cls(spec.epoch_id, _sha256(spec.compiled_rubric), spec.judge_provider,
+                   spec.judge_model, spec.canonical_json())
 
 
 def _sha256(text: str) -> str:
@@ -29,7 +37,10 @@ def _sha256(text: str) -> str:
 
 
 def compute_evaluator_epoch(rubric_text: str, judge_provider: str, judge_model: str) -> EvaluatorEpoch:
-    """Return the epoch for an evaluator. ``epoch_id`` is stable across processes and languages."""
+    """Legacy rubric/provider/model digest. New judges use ``EvaluatorEpoch.from_spec``.
+
+    Kept byte-stable for reading historical records; never upgrades their lineage.
+    """
     rubric_hash = _sha256(rubric_text)
     canonical = json.dumps(
         {"judge_model": judge_model, "judge_provider": judge_provider, "rubric_hash": rubric_hash},

@@ -177,6 +177,9 @@ class _TemplateAgentTask(AgentTaskInterface):
                 else None
             ),
             evaluator_epoch=result.evaluator_epoch,
+            evaluator_spec=result.evaluator_spec,
+            execution_provenance=result.execution_provenance,
+            fixture_provenance=result.fixture_provenance,
         )
 
     def get_rubric(self) -> str:
@@ -440,6 +443,9 @@ class TemplateAgentTask(AgentTaskInterface):
                 else None
             ),
             evaluator_epoch=result.evaluator_epoch,
+            evaluator_spec=result.evaluator_spec,
+            execution_provenance=result.execution_provenance,
+            fixture_provenance=result.fixture_provenance,
         )
 
     def get_rubric(self) -> str:
