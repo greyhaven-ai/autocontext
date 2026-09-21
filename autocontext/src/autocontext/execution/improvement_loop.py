@@ -6,6 +6,7 @@ Stops when quality_threshold is met or max_rounds is exhausted.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable, Sequence
@@ -66,6 +67,9 @@ class RoundResult:
     worst_dimension_score: float | None = None
     round_duration_ms: int | None = None
     evaluator_epoch: str | None = None
+    evaluator_spec: str | None = None
+    execution_provenance: dict[str, Any] = field(default_factory=dict)
+    fixture_provenance: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -88,6 +92,10 @@ class ImprovementResult:
     actionable_side_info: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     evaluator_epoch: str | None = None
+
+    @property
+    def evaluator_spec(self) -> str | None:
+        return next((r.evaluator_spec for r in self.rounds if r.round_number == self.best_round), None)
 
     @property
     def improved(self) -> bool:
@@ -210,6 +218,13 @@ class ImprovementLoop:
         # Dimension pinning: lock dimension names after first successful evaluation
         pinned_dimensions: list[str] | None = None
 
+        def _evaluation_cache_context() -> str:
+            return json.dumps(
+                {"rubric": self.task.get_rubric(), "reference_context": reference_context,
+                 "required_concepts": required_concepts, "calibration_examples": calibration_examples,
+                 "pinned_dimensions": pinned_dimensions}, sort_keys=True, ensure_ascii=False,
+            )
+
         # Plateau detection state
         prev_valid_score: float | None = None
         plateau_count = 0
@@ -244,6 +259,9 @@ class ImprovementLoop:
                 dimension_scores=judge_result.dimension_scores,
                 internal_retries=judge_result.internal_retries,
                 evaluator_epoch=judge_result.evaluator_epoch,
+                evaluator_spec=judge_result.evaluator_spec,
+                execution_provenance=judge_result.execution_provenance,
+                fixture_provenance=judge_result.fixture_provenance,
             )
 
         def _emit_final(final_result: ImprovementResult) -> ImprovementResult:
@@ -277,10 +295,16 @@ class ImprovementLoop:
             round_start = time.monotonic()
             # AC-902: byte-identical artifacts are never re-judged or
             # re-verified; a missing required target fails closed for free.
-            fingerprint = content_fingerprint(current_output)
+            cache_context = _evaluation_cache_context()
+            fingerprint = content_fingerprint(current_output, salt=cache_context)
             replayed_veto = False
             missing_targets = [target for target in self.required_targets if target not in current_output]
             cached_verdict = None if missing_targets else verdict_cache.get(fingerprint)
+            # A persisted serving spec proves the old verdict, not the current
+            # provider/configuration. Until AC-1026 pins an expected spec before
+            # evaluation, versioned LLM verdicts cannot be reused by artifact alone.
+            if cached_verdict is not None and cached_verdict.evaluator_spec is not None:
+                cached_verdict = None
             from_cache = cached_verdict is not None
             if missing_targets:
                 result = AgentTaskResult(
@@ -296,6 +320,9 @@ class ImprovementLoop:
                     reasoning=cached_verdict.reasoning,
                     dimension_scores=dict(cached_verdict.dimension_scores),
                     evaluator_epoch=cached_verdict.evaluator_epoch,
+                    evaluator_spec=cached_verdict.evaluator_spec,
+                    execution_provenance=cached_verdict.execution_provenance,
+                    fixture_provenance=cached_verdict.fixture_provenance,
                 )
                 self._on_event(ImprovementLoopEvent(event="verifier_cache_hit", round=round_num, score=cached_verdict.score))
             else:
@@ -364,6 +391,9 @@ class ImprovementLoop:
                                 reasoning=last_good_result.reasoning,
                                 dimension_scores=last_good_result.dimension_scores,
                                 evaluator_epoch=last_good_result.evaluator_epoch,
+                                evaluator_spec=last_good_result.evaluator_spec,
+                                execution_provenance=last_good_result.execution_provenance,
+                                fixture_provenance=last_good_result.fixture_provenance,
                             ),
                         )
                         revised = self.task.revise_output(
@@ -393,6 +423,9 @@ class ImprovementLoop:
             # plateau_count) is also reset so a prior-epoch threshold-met round cannot confirm a
             # new-epoch round as "confirmed stable" and stop the loop early.
             round_result.evaluator_epoch = result.evaluator_epoch
+            round_result.evaluator_spec = result.evaluator_spec
+            round_result.execution_provenance = result.execution_provenance
+            round_result.fixture_provenance = result.fixture_provenance
             # AC-902: a synthesized targets-missing round is deterministic and
             # epoch-less; letting it rebaseline would reset best_score and crown
             # the known-bad artifact as best. Skip the AC-885 block entirely.
@@ -498,6 +531,9 @@ class ImprovementLoop:
                         dimension_scores=result.dimension_scores,
                         internal_retries=result.internal_retries,
                         evaluator_epoch=result.evaluator_epoch,
+                        evaluator_spec=result.evaluator_spec,
+                        execution_provenance=result.execution_provenance,
+                        fixture_provenance=result.fixture_provenance,
                     )
                     effective_score = 0.0
                     cacheable_score = 0.0
@@ -529,6 +565,9 @@ class ImprovementLoop:
                         passed=cacheable_score >= self.quality_threshold,
                         vetoed=verifier_vetoed,
                         evaluator_epoch=result.evaluator_epoch,
+                        evaluator_spec=result.evaluator_spec,
+                        execution_provenance=result.execution_provenance,
+                        fixture_provenance=result.fixture_provenance,
                     ),
                 )
 
@@ -728,11 +767,14 @@ class ImprovementLoop:
                         dimension_scores=result.dimension_scores,
                         internal_retries=result.internal_retries,
                         evaluator_epoch=result.evaluator_epoch,
+                        evaluator_spec=result.evaluator_spec,
+                        execution_provenance=result.execution_provenance,
+                        fixture_provenance=result.fixture_provenance,
                     )
                 revision_result = _apply_revision_feedback(current_output, revision_result)
                 revised = self.task.revise_output(current_output, revision_result, state)
                 revised = clean_revision_output(revised)
-                if revised == current_output:
+                if revised == current_output and _evaluation_cache_context() == cache_context:
                     logger.info("revise_output returned unchanged output, stopping")
                     termination_reason = "unchanged_output"
                     break

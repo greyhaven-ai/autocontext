@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Python judge epochs now bind an immutable serving specification, including
+  ordered human calibration examples, prompt versions, and scoring rules.
+  Historical rubric-only epochs remain distinct. Mixed-specification
+  leave-one-out calibration reports cannot authorize automatic promotion.
+  See [migration and runtime scope](autocontext/docs/judge-serving-identity.md).
+
 ## [Pi 0.11.0] - 2026-09-17
 
 The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This

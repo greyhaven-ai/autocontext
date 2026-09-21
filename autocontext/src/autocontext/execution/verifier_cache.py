@@ -38,6 +38,9 @@ class CachedVerdict:
     passed: bool
     vetoed: bool = False
     evaluator_epoch: str | None = None
+    evaluator_spec: str | None = None
+    execution_provenance: dict[str, Any] = field(default_factory=dict)
+    fixture_provenance: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
