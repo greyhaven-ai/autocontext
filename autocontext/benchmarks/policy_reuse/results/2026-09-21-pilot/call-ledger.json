@@ -1,0 +1,20 @@
+[
+  {
+    "call": 1,
+    "phase": "synthesis",
+    "request_sha256": "3942b18b019fc1ee50d282952a0a9454cee35873aaaef296cb1fddc5b068faa7",
+    "status": "failed",
+    "total_tokens": 0,
+    "usage_known": true,
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "served_models": [
+      "gpt-5.4-mini"
+    ],
+    "error": "Pi completion error; see saved trace 1",
+    "seconds": 5.2612314589787275
+  }
+]

@@ -1,0 +1,394 @@
+[
+  {
+    "call": 1,
+    "phase": "synthesis",
+    "request_sha256": "3942b18b019fc1ee50d282952a0a9454cee35873aaaef296cb1fddc5b068faa7",
+    "status": "failed",
+    "total_tokens": 0,
+    "usage_known": true,
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "served_models": [
+      "gpt-5.4-mini"
+    ],
+    "error": "Pi completion error; see saved trace 1",
+    "seconds": 5.2612314589787275
+  },
+  {
+    "call": 2,
+    "phase": "synthesis",
+    "request_sha256": "8b1669dac8853ee92d6ff8a5c1b4d6ce84d414501cd8f6f80e42a6a8c3dede97",
+    "status": "completed",
+    "total_tokens": 1461,
+    "usage_known": true,
+    "input": 579,
+    "output": 882,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1461,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 20.534452042076737
+  },
+  {
+    "call": 3,
+    "phase": "synthesis",
+    "request_sha256": "8ccfb6da90c5947977487d5cd86524549ee16699233b3a2241917b9f81190264",
+    "status": "completed",
+    "total_tokens": 1447,
+    "usage_known": true,
+    "input": 585,
+    "output": 862,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1447,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 20.663057459052652
+  },
+  {
+    "call": 4,
+    "phase": "evaluation",
+    "request_sha256": "2e3677ac94e1e15926afcb27a2b342a3a7d410e8b37109ec793859ff2882e185",
+    "status": "completed",
+    "total_tokens": 1299,
+    "usage_known": true,
+    "input": 345,
+    "output": 954,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1299,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 21.973192124976777
+  },
+  {
+    "call": 5,
+    "phase": "evaluation",
+    "request_sha256": "961843afed03769beec02c2a0e2d15135e103b20d7b869a454fc8dc324cb85d2",
+    "status": "completed",
+    "total_tokens": 1675,
+    "usage_known": true,
+    "input": 345,
+    "output": 1330,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1675,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 28.870081500033848
+  },
+  {
+    "call": 6,
+    "phase": "evaluation",
+    "request_sha256": "a4ef1f992fc0930d0f5b74a1282c5ddec47bd4855b0a4e6a2f77f7ea67a49819",
+    "status": "completed",
+    "total_tokens": 1217,
+    "usage_known": true,
+    "input": 345,
+    "output": 872,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1217,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 20.93832504202146
+  },
+  {
+    "call": 7,
+    "phase": "evaluation",
+    "request_sha256": "35a34a3389860a2558d00d9314b0c829842921fe3cd08129db1a3855003303e6",
+    "status": "completed",
+    "total_tokens": 1567,
+    "usage_known": true,
+    "input": 345,
+    "output": 1222,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1567,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 26.92492083401885
+  },
+  {
+    "call": 8,
+    "phase": "evaluation",
+    "request_sha256": "0bc8cf3e564fcc1dfec0051a9bfbdbd28e05cc3bbe85ca0ec5d3374f342a3707",
+    "status": "completed",
+    "total_tokens": 686,
+    "usage_known": true,
+    "input": 345,
+    "output": 341,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 686,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 11.274836707976647
+  },
+  {
+    "call": 9,
+    "phase": "evaluation",
+    "request_sha256": "0706a2cbd470ed1d0eb5c416cbd2cbf7dc459ac5b9f2ebf7849cb43b2b1d962c",
+    "status": "completed",
+    "total_tokens": 712,
+    "usage_known": true,
+    "input": 345,
+    "output": 367,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 712,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 11.316704333061352
+  },
+  {
+    "call": 10,
+    "phase": "evaluation",
+    "request_sha256": "9d0436e39714c58d95b02631d5c1619e6f68211525829dae2f2f469a47fcf86c",
+    "status": "completed",
+    "total_tokens": 1160,
+    "usage_known": true,
+    "input": 345,
+    "output": 815,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1160,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 20.314567249966785
+  },
+  {
+    "call": 11,
+    "phase": "evaluation",
+    "request_sha256": "e6f77a316be19f34c531465b328611be608c32d129e059c2dfe6ff5877711f1c",
+    "status": "completed",
+    "total_tokens": 1219,
+    "usage_known": true,
+    "input": 345,
+    "output": 874,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1219,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 20.77581220807042
+  },
+  {
+    "call": 12,
+    "phase": "evaluation",
+    "request_sha256": "f05134d49b7503c0f24801bad8c2a5d7fe2871041ad53c3c58726537550905e5",
+    "status": "completed",
+    "total_tokens": 1813,
+    "usage_known": true,
+    "input": 345,
+    "output": 1468,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1813,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 31.64761204191018
+  },
+  {
+    "call": 13,
+    "phase": "evaluation",
+    "request_sha256": "3216714634601b0f1a1ff6b0d83f570810752a5aa4528767a2a5b9b8b70a5d86",
+    "status": "completed",
+    "total_tokens": 1271,
+    "usage_known": true,
+    "input": 345,
+    "output": 926,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1271,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 21.56402541603893
+  },
+  {
+    "call": 14,
+    "phase": "evaluation",
+    "request_sha256": "8d9f7062c313baa5ca1cf153e75af844a6ff692f775313eb2b082258e4d74ab5",
+    "status": "completed",
+    "total_tokens": 1269,
+    "usage_known": true,
+    "input": 345,
+    "output": 924,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1269,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 24.020738916937262
+  },
+  {
+    "call": 15,
+    "phase": "evaluation",
+    "request_sha256": "fcbdb2ebec05e0f7e8e555fcf933577fe395db80a3fe556ec730dad78a79a8a7",
+    "status": "completed",
+    "total_tokens": 1315,
+    "usage_known": true,
+    "input": 345,
+    "output": 970,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 1315,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 23.650043417001143
+  },
+  {
+    "call": 16,
+    "phase": "evaluation",
+    "request_sha256": "65c15ac70e60e365be080a1cd912c4d7a78348872918dc919aac1b62edf2aef2",
+    "status": "completed",
+    "total_tokens": 885,
+    "usage_known": true,
+    "input": 345,
+    "output": 540,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 885,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 14.357872708002105
+  },
+  {
+    "call": 17,
+    "phase": "evaluation",
+    "request_sha256": "65c15ac70e60e365be080a1cd912c4d7a78348872918dc919aac1b62edf2aef2",
+    "status": "completed",
+    "total_tokens": 578,
+    "usage_known": true,
+    "input": 345,
+    "output": 233,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 578,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 9.403469083015807
+  },
+  {
+    "call": 18,
+    "phase": "evaluation",
+    "request_sha256": "abb5c7a4e8e36ce4e758613ba3bf4e3cfe2dcaf699aa7a69b9569c377f83be64",
+    "status": "completed",
+    "total_tokens": 771,
+    "usage_known": true,
+    "input": 345,
+    "output": 426,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 771,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 13.020459958002903
+  },
+  {
+    "call": 19,
+    "phase": "evaluation",
+    "request_sha256": "abb5c7a4e8e36ce4e758613ba3bf4e3cfe2dcaf699aa7a69b9569c377f83be64",
+    "status": "completed",
+    "total_tokens": 836,
+    "usage_known": true,
+    "input": 345,
+    "output": 491,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 836,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 13.947403583093546
+  },
+  {
+    "call": 20,
+    "phase": "evaluation",
+    "request_sha256": "5e9c4d34865d607d4f4d12718e3bc9d2481855712f00023e00515dafea4c4412",
+    "status": "completed",
+    "total_tokens": 665,
+    "usage_known": true,
+    "input": 345,
+    "output": 320,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 665,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 10.867144790943712
+  },
+  {
+    "call": 21,
+    "phase": "evaluation",
+    "request_sha256": "5e9c4d34865d607d4f4d12718e3bc9d2481855712f00023e00515dafea4c4412",
+    "status": "completed",
+    "total_tokens": 693,
+    "usage_known": true,
+    "input": 345,
+    "output": 348,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 693,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 11.632184333982877
+  },
+  {
+    "call": 22,
+    "phase": "evaluation",
+    "request_sha256": "88a9dd3ed1fb9a29735a5db484eb0a7b6bb9625bb9e6fe004dd571c983ed7bf4",
+    "status": "completed",
+    "total_tokens": 741,
+    "usage_known": true,
+    "input": 345,
+    "output": 396,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 741,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 13.470096667064354
+  },
+  {
+    "call": 23,
+    "phase": "evaluation",
+    "request_sha256": "88a9dd3ed1fb9a29735a5db484eb0a7b6bb9625bb9e6fe004dd571c983ed7bf4",
+    "status": "completed",
+    "total_tokens": 730,
+    "usage_known": true,
+    "input": 345,
+    "output": 385,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 730,
+    "served_models": [
+      "gpt-5.5"
+    ],
+    "seconds": 12.229769792058505
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "system_prompt": "You are a Python policy optimization expert. You write choose_action(state) -> dict functions that play game scenarios well. You must output a complete Python function definition.\n\nScenario rules:\n20x20 capture-the-flag map with fog of war and three unit archetypes (Scout, Soldier, Commander). Preserve at least one defender near base.\n\nStrategy interface:\nReturn JSON with exactly aggression, defense, path_bias: finite numbers in [0,1]. aggression + defense must be <= 1.4. Contract: grid-ctf-limit-1.4-v1.\n\nEvaluation criteria:\nObjective deterministic verifier: capture=clamp(0.55*aggression+0.45*path_bias+noise,0,1); survival=clamp(1-0.4*aggression+0.4*defense,0,1); energy=clamp(1-0.3*aggression+0.1*defense,0,1); score=0.6*capture+0.25*survival+0.15*energy. Noise is seeded uniform[-0.07,0.07]. Maximize score. Seed is provenance, not something to hardcode or exploit. One action terminates the episode.",
+  "user_prompt": "Iteration 2. The current policy achieved heuristic 0.9474.\nMatch scores: [0.9200, 0.8652, 0.9200, 0.8739]\n\n### Match 1\n- Score: 0.9200\n- Normalized score: 0.9200\n- Moves played: 1\n\n### Match 2\n- Score: 0.8652\n- Normalized score: 0.8652\n- Moves played: 1\n\n### Match 3\n- Score: 0.9200\n- Normalized score: 0.9200\n- Moves played: 1\n\n### Match 4\n- Score: 0.8739\n- Normalized score: 0.8739\n- Moves played: 1\n\n[... condensed recent history ...]\n\nCurrent policy:\n```python\ndef choose_action(state):\n    return {\n        \"aggression\": 0.927,\n        \"defense\": 0.473,\n        \"path_bias\": 1.0\n    }\n```\n\nWrite an improved choose_action(state) -> dict function. Output ONLY the Python code in a ```python``` code block. The function must return a dict compatible with the scenario's strategy interface. Do not use import statements — math, collections, and re are pre-injected.",
+  "model": "gpt-5.5",
+  "provider": "openai-codex",
+  "thinking": "low",
+  "phase": "synthesis",
+  "temperature_requested_but_not_supported_by_cli": 0.2,
+  "max_tokens_requested_but_not_enforced_by_cli": 4096
+}

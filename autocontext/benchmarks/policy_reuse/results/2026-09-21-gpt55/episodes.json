@@ -1,0 +1,2358 @@
+[
+  {
+    "arm": "model",
+    "seed": 101,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 101,
+      "enemy_spawn_bias": 0.541,
+      "resource_density": 0.256,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "ffb8ac5cb2cf18a084afd45030b22752b4fb50415e4d700efa4680362966185b",
+    "score": 0.901,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 1,
+      "defense": 0.4,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 1.0,
+        "defender_survival": 0.76,
+        "energy_efficiency": 0.74
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 1,
+          "defense": 0.4,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 21.974124624975957,
+    "calls": [
+      4
+    ],
+    "model_calls": 1,
+    "tokens": 1299,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 101,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 101,
+      "enemy_spawn_bias": 0.541,
+      "resource_density": 0.256,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "ffb8ac5cb2cf18a084afd45030b22752b4fb50415e4d700efa4680362966185b",
+    "score": 0.9027,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9027,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9711,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9711,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9027"
+    },
+    "seconds": 0.00809395790565759,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 101,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 101,
+      "enemy_spawn_bias": 0.541,
+      "resource_density": 0.256,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "ffb8ac5cb2cf18a084afd45030b22752b4fb50415e4d700efa4680362966185b",
+    "score": 0.9027,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9027,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9711,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9711,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9027"
+    },
+    "seconds": 0.00702258397359401,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 102,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 102,
+      "enemy_spawn_bias": 0.324,
+      "resource_density": 0.593,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "59c889115d097a58ac0574d1b8c747c77793f56f07845a216000927258d10092",
+    "score": 0.8663,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8663,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9104,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9104,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8663"
+    },
+    "seconds": 0.006597416941076517,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 102,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 102,
+      "enemy_spawn_bias": 0.324,
+      "resource_density": 0.593,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "59c889115d097a58ac0574d1b8c747c77793f56f07845a216000927258d10092",
+    "score": 0.8663,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8663,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9104,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9104,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8663"
+    },
+    "seconds": 0.007260959013365209,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 102,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 102,
+      "enemy_spawn_bias": 0.324,
+      "resource_density": 0.593,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "59c889115d097a58ac0574d1b8c747c77793f56f07845a216000927258d10092",
+    "score": 0.8714,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 1,
+      "defense": 0.4,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.9507,
+        "defender_survival": 0.76,
+        "energy_efficiency": 0.74
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 1,
+          "defense": 0.4,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 28.870876125060022,
+    "calls": [
+      5
+    ],
+    "model_calls": 1,
+    "tokens": 1675,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 103,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 103,
+      "enemy_spawn_bias": 0.74,
+      "resource_density": 0.465,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "514bd8064df0fb12d02797a4c6bf11d085934677890160ba9c4d5fd5f3fa7f45",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.006740709068253636,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 103,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 103,
+      "enemy_spawn_bias": 0.74,
+      "resource_density": 0.465,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "514bd8064df0fb12d02797a4c6bf11d085934677890160ba9c4d5fd5f3fa7f45",
+    "score": 0.901,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 1,
+      "defense": 0.4,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 1.0,
+        "defender_survival": 0.76,
+        "energy_efficiency": 0.74
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 1,
+          "defense": 0.4,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 20.939406208926812,
+    "calls": [
+      6
+    ],
+    "model_calls": 1,
+    "tokens": 1217,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 103,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 103,
+      "enemy_spawn_bias": 0.74,
+      "resource_density": 0.465,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "514bd8064df0fb12d02797a4c6bf11d085934677890160ba9c4d5fd5f3fa7f45",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.00871749990619719,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 104,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 104,
+      "enemy_spawn_bias": 0.73,
+      "resource_density": 0.797,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "df3b638aeb9faaa2c327041cdec4411bf954a419361620234a37f9a4c9f6ae15",
+    "score": 0.901,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 1,
+      "defense": 0.4,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 1.0,
+        "defender_survival": 0.76,
+        "energy_efficiency": 0.74
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 1,
+          "defense": 0.4,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 26.926069582928903,
+    "calls": [
+      7
+    ],
+    "model_calls": 1,
+    "tokens": 1567,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 104,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 104,
+      "enemy_spawn_bias": 0.73,
+      "resource_density": 0.797,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "df3b638aeb9faaa2c327041cdec4411bf954a419361620234a37f9a4c9f6ae15",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.008475915994495153,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 104,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 104,
+      "enemy_spawn_bias": 0.73,
+      "resource_density": 0.797,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "df3b638aeb9faaa2c327041cdec4411bf954a419361620234a37f9a4c9f6ae15",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.01595545804593712,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 105,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 105,
+      "enemy_spawn_bias": 0.689,
+      "resource_density": 0.379,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "a3c3232dd40e786858da71fa18a89247b5eefc36eaf1b88689dd66d505bf497f",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.007170290919020772,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 105,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 105,
+      "enemy_spawn_bias": 0.689,
+      "resource_density": 0.379,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "a3c3232dd40e786858da71fa18a89247b5eefc36eaf1b88689dd66d505bf497f",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.004567458061501384,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 105,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 105,
+      "enemy_spawn_bias": 0.689,
+      "resource_density": 0.379,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "a3c3232dd40e786858da71fa18a89247b5eefc36eaf1b88689dd66d505bf497f",
+    "score": 0.901,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 1,
+      "defense": 0.4,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 1.0,
+        "defender_survival": 0.76,
+        "energy_efficiency": 0.74
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 1,
+          "defense": 0.4,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 11.275699874968268,
+    "calls": [
+      8
+    ],
+    "model_calls": 1,
+    "tokens": 686,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 106,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 106,
+      "enemy_spawn_bias": 0.605,
+      "resource_density": 0.821,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "4a3024f0a247158707126a38488c5f8744a89ad137ada87efcc28d656f532a9a",
+    "score": 0.9136,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9136,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9892,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9892,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9136"
+    },
+    "seconds": 0.006066583911888301,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 106,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 106,
+      "enemy_spawn_bias": 0.605,
+      "resource_density": 0.821,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "4a3024f0a247158707126a38488c5f8744a89ad137ada87efcc28d656f532a9a",
+    "score": 0.901,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 1,
+      "defense": 0.4,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 1.0,
+        "defender_survival": 0.76,
+        "energy_efficiency": 0.74
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 1,
+          "defense": 0.4,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 11.317682334105484,
+    "calls": [
+      9
+    ],
+    "model_calls": 1,
+    "tokens": 712,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 106,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 106,
+      "enemy_spawn_bias": 0.605,
+      "resource_density": 0.821,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "4a3024f0a247158707126a38488c5f8744a89ad137ada87efcc28d656f532a9a",
+    "score": 0.9136,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9136,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9892,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9892,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9136"
+    },
+    "seconds": 0.006060958025045693,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 107,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 107,
+      "enemy_spawn_bias": 0.373,
+      "resource_density": 0.565,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "4567506867bccc79d9385e3626d5a5f12b0b443913ce5680ef6d53cd531cbd14",
+    "score": 0.8797,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 1,
+      "defense": 0.4,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.9645,
+        "defender_survival": 0.76,
+        "energy_efficiency": 0.74
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 1,
+          "defense": 0.4,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 20.31570345896762,
+    "calls": [
+      10
+    ],
+    "model_calls": 1,
+    "tokens": 1160,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 107,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 107,
+      "enemy_spawn_bias": 0.373,
+      "resource_density": 0.565,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "4567506867bccc79d9385e3626d5a5f12b0b443913ce5680ef6d53cd531cbd14",
+    "score": 0.8746,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8746,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9242,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9242,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8746"
+    },
+    "seconds": 0.008960000006482005,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 107,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 107,
+      "enemy_spawn_bias": 0.373,
+      "resource_density": 0.565,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "4567506867bccc79d9385e3626d5a5f12b0b443913ce5680ef6d53cd531cbd14",
+    "score": 0.8746,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8746,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9242,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9242,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8746"
+    },
+    "seconds": 0.00725625001359731,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 108,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 108,
+      "enemy_spawn_bias": 0.315,
+      "resource_density": 0.753,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "aa840c9549a512235392bf736bc18930eeeb27f6ff91e0cf0fe04a048299ffa2",
+    "score": 0.8648,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8648,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.908,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.908,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8648"
+    },
+    "seconds": 0.005434417049400508,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 108,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 108,
+      "enemy_spawn_bias": 0.315,
+      "resource_density": 0.753,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "aa840c9549a512235392bf736bc18930eeeb27f6ff91e0cf0fe04a048299ffa2",
+    "score": 0.8648,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8648,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.908,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.908,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8648"
+    },
+    "seconds": 0.0061339579988271,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 108,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 108,
+      "enemy_spawn_bias": 0.315,
+      "resource_density": 0.753,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "aa840c9549a512235392bf736bc18930eeeb27f6ff91e0cf0fe04a048299ffa2",
+    "score": 0.8649,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.927,
+      "defense": 0.473,
+      "path_bias": 1.0
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.9081,
+        "defender_survival": 0.8184,
+        "energy_efficiency": 0.7692
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.927,
+          "defense": 0.473,
+          "path_bias": 1.0
+        }
+      }
+    ],
+    "seconds": 20.776892707915977,
+    "calls": [
+      11
+    ],
+    "model_calls": 1,
+    "tokens": 1219,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 109,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 109,
+      "enemy_spawn_bias": 0.39,
+      "resource_density": 0.467,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "1da25fa11bf8c7105cf70389feb2e5505c1716c0932a07f6555b3426291c9bae",
+    "score": 0.8774,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8774,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9288,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9288,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8774"
+    },
+    "seconds": 0.008611832978203893,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 109,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 109,
+      "enemy_spawn_bias": 0.39,
+      "resource_density": 0.467,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "1da25fa11bf8c7105cf70389feb2e5505c1716c0932a07f6555b3426291c9bae",
+    "score": 0.8774,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.927,
+      "defense": 0.473,
+      "path_bias": 1.0
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.929,
+        "defender_survival": 0.8184,
+        "energy_efficiency": 0.7692
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.927,
+          "defense": 0.473,
+          "path_bias": 1.0
+        }
+      }
+    ],
+    "seconds": 31.6489001250593,
+    "calls": [
+      12
+    ],
+    "model_calls": 1,
+    "tokens": 1813,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 109,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 109,
+      "enemy_spawn_bias": 0.39,
+      "resource_density": 0.467,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "1da25fa11bf8c7105cf70389feb2e5505c1716c0932a07f6555b3426291c9bae",
+    "score": 0.8774,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8774,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9288,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9288,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8774"
+    },
+    "seconds": 0.009338625008240342,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 110,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 110,
+      "enemy_spawn_bias": 0.717,
+      "resource_density": 0.41,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "360cfaac0eb0133d86e7ebd24f0830b671988508b0c7d28b08d08f657d56cbf9",
+    "score": 0.92,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.927,
+      "defense": 0.473,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 1.0,
+        "defender_survival": 0.8184,
+        "energy_efficiency": 0.7692
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.927,
+          "defense": 0.473,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 21.565242666983977,
+    "calls": [
+      13
+    ],
+    "model_calls": 1,
+    "tokens": 1271,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 110,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 110,
+      "enemy_spawn_bias": 0.717,
+      "resource_density": 0.41,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "360cfaac0eb0133d86e7ebd24f0830b671988508b0c7d28b08d08f657d56cbf9",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.010151874972507358,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 110,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 110,
+      "enemy_spawn_bias": 0.717,
+      "resource_density": 0.41,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "360cfaac0eb0133d86e7ebd24f0830b671988508b0c7d28b08d08f657d56cbf9",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.007925458019599319,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 111,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 111,
+      "enemy_spawn_bias": 0.664,
+      "resource_density": 0.27,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "aacedb4f165ec892785471452d0f7b2e65d3abe80630859264a80a32993f7767",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.007493167067877948,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 111,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 111,
+      "enemy_spawn_bias": 0.664,
+      "resource_density": 0.27,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "aacedb4f165ec892785471452d0f7b2e65d3abe80630859264a80a32993f7767",
+    "score": 0.9201,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.9201,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 1.0,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 1.0,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.9201"
+    },
+    "seconds": 0.00573037494905293,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 111,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 111,
+      "enemy_spawn_bias": 0.664,
+      "resource_density": 0.27,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "aacedb4f165ec892785471452d0f7b2e65d3abe80630859264a80a32993f7767",
+    "score": 0.901,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 1,
+      "defense": 0.4,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 1.0,
+        "defender_survival": 0.76,
+        "energy_efficiency": 0.74
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 1,
+          "defense": 0.4,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 24.02191816701088,
+    "calls": [
+      14
+    ],
+    "model_calls": 1,
+    "tokens": 1269,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 112,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 112,
+      "enemy_spawn_bias": 0.491,
+      "resource_density": 0.633,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "27d4a666f4a83526ee55bda24e6dd2bac087ff3079add38cfd6eb55dc2852c62",
+    "score": 0.8943,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8943,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9571,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9571,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8943"
+    },
+    "seconds": 0.010098041966557503,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 112,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 112,
+      "enemy_spawn_bias": 0.491,
+      "resource_density": 0.633,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "27d4a666f4a83526ee55bda24e6dd2bac087ff3079add38cfd6eb55dc2852c62",
+    "score": 0.8943,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.927,
+      "defense": 0.473,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.9572,
+        "defender_survival": 0.8184,
+        "energy_efficiency": 0.7692
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.927,
+          "defense": 0.473,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 23.651012249989435,
+    "calls": [
+      15
+    ],
+    "model_calls": 1,
+    "tokens": 1315,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 112,
+    "split": "heldout",
+    "initial_state": {
+      "seed": 112,
+      "enemy_spawn_bias": 0.491,
+      "resource_density": 0.633,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-1.4-v1",
+      "combined_limit": 1.4
+    },
+    "state_sha256": "27d4a666f4a83526ee55bda24e6dd2bac087ff3079add38cfd6eb55dc2852c62",
+    "score": 0.8943,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "replay": {
+      "score": 0.8943,
+      "replay": [
+        {
+          "event": "turn_complete",
+          "turn": 1,
+          "capture_progress": 0.9571,
+          "defender_survival": 0.8186,
+          "energy_efficiency": 0.7693
+        },
+        {
+          "event": "executed_action",
+          "action": {
+            "aggression": 0.92672,
+            "defense": 0.47328,
+            "path_bias": 1.0
+          }
+        }
+      ],
+      "metrics": {
+        "capture_progress": 0.9571,
+        "defender_survival": 0.8186,
+        "energy_efficiency": 0.7693
+      },
+      "summary": "GridCTF score 0.8943"
+    },
+    "seconds": 0.006253125029616058,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 201,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 201,
+      "enemy_spawn_bias": 0.284,
+      "resource_density": 0.36,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "8fa39a87b3761a89f41c116e41e1c162154fb0f79ea2c21c797187fbd6bf3789",
+    "score": 0.7816,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.8,
+      "defense": 0,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.8294,
+        "defender_survival": 0.68,
+        "energy_efficiency": 0.76
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.8,
+          "defense": 0,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 14.358860458014533,
+    "calls": [
+      16
+    ],
+    "model_calls": 1,
+    "tokens": 885,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 201,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 201,
+      "enemy_spawn_bias": 0.284,
+      "resource_density": 0.36,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "8fa39a87b3761a89f41c116e41e1c162154fb0f79ea2c21c797187fbd6bf3789",
+    "score": 0.0,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": true,
+    "reason": "serving contract differs from frozen policy contract",
+    "seconds": 6.612495053559542e-05,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": false
+  },
+  {
+    "arm": "hybrid",
+    "seed": 201,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 201,
+      "enemy_spawn_bias": 0.284,
+      "resource_density": 0.36,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "8fa39a87b3761a89f41c116e41e1c162154fb0f79ea2c21c797187fbd6bf3789",
+    "score": 0.7816,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": true,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.8,
+      "defense": 0,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.8294,
+        "defender_survival": 0.68,
+        "energy_efficiency": 0.76
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.8,
+          "defense": 0,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 9.40460875001736,
+    "calls": [
+      17
+    ],
+    "model_calls": 1,
+    "tokens": 578,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 202,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 202,
+      "enemy_spawn_bias": 0.632,
+      "resource_density": 0.616,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "94702a70e4fc5fb642c8af5901bd749ad681a58117daff4bb9a5bd56c7441885",
+    "score": 0.0,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": true,
+    "reason": "serving contract differs from frozen policy contract",
+    "seconds": 7.283291779458523e-05,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": false
+  },
+  {
+    "arm": "hybrid",
+    "seed": 202,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 202,
+      "enemy_spawn_bias": 0.632,
+      "resource_density": 0.616,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "94702a70e4fc5fb642c8af5901bd749ad681a58117daff4bb9a5bd56c7441885",
+    "score": 0.8402,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": true,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.799999,
+      "defense": 1e-06,
+      "path_bias": 1.0
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.9269,
+        "defender_survival": 0.68,
+        "energy_efficiency": 0.76
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.799999,
+          "defense": 1e-06,
+          "path_bias": 1.0
+        }
+      }
+    ],
+    "seconds": 13.021320458035916,
+    "calls": [
+      18
+    ],
+    "model_calls": 1,
+    "tokens": 771,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 202,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 202,
+      "enemy_spawn_bias": 0.632,
+      "resource_density": 0.616,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "94702a70e4fc5fb642c8af5901bd749ad681a58117daff4bb9a5bd56c7441885",
+    "score": 0.8402,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.8,
+      "defense": 0,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.9269,
+        "defender_survival": 0.68,
+        "energy_efficiency": 0.76
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.8,
+          "defense": 0,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 13.948437290964648,
+    "calls": [
+      19
+    ],
+    "model_calls": 1,
+    "tokens": 836,
+    "success": true
+  },
+  {
+    "arm": "hybrid",
+    "seed": 203,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 203,
+      "enemy_spawn_bias": 0.295,
+      "resource_density": 0.774,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "7638b3ebe9f003da75b74a78a30f52af69119965a39cf80c284e1e82febddd32",
+    "score": 0.7836,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": true,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.8,
+      "defense": 0,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.8327,
+        "defender_survival": 0.68,
+        "energy_efficiency": 0.76
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.8,
+          "defense": 0,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 10.868363665998913,
+    "calls": [
+      20
+    ],
+    "model_calls": 1,
+    "tokens": 665,
+    "success": true
+  },
+  {
+    "arm": "model",
+    "seed": 203,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 203,
+      "enemy_spawn_bias": 0.295,
+      "resource_density": 0.774,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "7638b3ebe9f003da75b74a78a30f52af69119965a39cf80c284e1e82febddd32",
+    "score": 0.7836,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.8,
+      "defense": 0,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.8327,
+        "defender_survival": 0.68,
+        "energy_efficiency": 0.76
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.8,
+          "defense": 0,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 11.633155375020579,
+    "calls": [
+      21
+    ],
+    "model_calls": 1,
+    "tokens": 693,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 203,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 203,
+      "enemy_spawn_bias": 0.295,
+      "resource_density": 0.774,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "7638b3ebe9f003da75b74a78a30f52af69119965a39cf80c284e1e82febddd32",
+    "score": 0.0,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": true,
+    "reason": "serving contract differs from frozen policy contract",
+    "seconds": 6.612506695091724e-05,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": false
+  },
+  {
+    "arm": "model",
+    "seed": 204,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 204,
+      "enemy_spawn_bias": 0.448,
+      "resource_density": 0.168,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "bf873ec8d16e8cac0dae630a5b26554da172f5bc5d11245316b704bee63db08a",
+    "score": 0.8093,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.8,
+      "defense": 0,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.8756,
+        "defender_survival": 0.68,
+        "energy_efficiency": 0.76
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.8,
+          "defense": 0,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 13.471173999947496,
+    "calls": [
+      22
+    ],
+    "model_calls": 1,
+    "tokens": 741,
+    "success": true
+  },
+  {
+    "arm": "policy",
+    "seed": 204,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 204,
+      "enemy_spawn_bias": 0.448,
+      "resource_density": 0.168,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "bf873ec8d16e8cac0dae630a5b26554da172f5bc5d11245316b704bee63db08a",
+    "score": 0.0,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": false,
+    "invalidated": true,
+    "reason": "serving contract differs from frozen policy contract",
+    "seconds": 8.899997919797897e-05,
+    "calls": [],
+    "model_calls": 0,
+    "tokens": 0,
+    "success": false
+  },
+  {
+    "arm": "hybrid",
+    "seed": 204,
+    "split": "shifted",
+    "initial_state": {
+      "seed": 204,
+      "enemy_spawn_bias": 0.448,
+      "resource_density": 0.168,
+      "terminal": false,
+      "turn": 0,
+      "timeline": [],
+      "contract": "grid-ctf-limit-0.8-v2",
+      "combined_limit": 0.8
+    },
+    "state_sha256": "bf873ec8d16e8cac0dae630a5b26554da172f5bc5d11245316b704bee63db08a",
+    "score": 0.8093,
+    "errors": [],
+    "illegal_actions": 0,
+    "abstained": true,
+    "invalidated": false,
+    "action": {
+      "aggression": 0.8,
+      "defense": 0,
+      "path_bias": 1
+    },
+    "replay": [
+      {
+        "event": "turn_complete",
+        "turn": 1,
+        "capture_progress": 0.8756,
+        "defender_survival": 0.68,
+        "energy_efficiency": 0.76
+      },
+      {
+        "event": "executed_action",
+        "action": {
+          "aggression": 0.8,
+          "defense": 0,
+          "path_bias": 1
+        }
+      }
+    ],
+    "seconds": 12.23075691703707,
+    "calls": [
+      23
+    ],
+    "model_calls": 1,
+    "tokens": 730,
+    "success": true
+  }
+]

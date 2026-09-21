@@ -1,0 +1,19 @@
+{
+  "started_at": "2026-09-21T18:57:18.402801+00:00",
+  "protocol_sha256": "65c6fee82c531cdd4cec2cdf660caaf8a37f80fad12dba6196e5c8d5e65e8a05",
+  "git_base": "316623d96d38cf1543561d61fbeaadba1b2f7df2",
+  "source_hashes": {
+    "autocontext/benchmarks/policy_reuse/run.py": "adb97cd5d19d31070014b3a984fa52f9eabd2148e454b4e2c7004dba9f09528d",
+    "autocontext/src/autocontext/scenarios/grid_ctf/scenario.py": "1b0538a214e80e75848742c12da03c1e238bc6f962c05467dc24c2d6531ebde3",
+    "autocontext/src/autocontext/execution/policy_executor.py": "5c382b4f44f25bfc3c478ca30c18eb3904d65bdced87527f6732b99baf6150e8",
+    "autocontext/src/autocontext/execution/policy_refinement.py": "2f36d31049bdf553088ea4d79e63e8bc03b852db0a822476ed72872785ba29c1",
+    "autocontext/uv.lock": "cfe552a62c6cbfcdef131bda53a607dbc8cafca721ef720a0ae172cf317a3dde"
+  },
+  "python": "3.13.1",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "pi": "0.84.2",
+  "provider": "openai-codex",
+  "model": "gpt-5.5",
+  "thinking": "low",
+  "objective_evaluator": "GridCtfScenario.step/get_result at the recorded source digest"
+}
