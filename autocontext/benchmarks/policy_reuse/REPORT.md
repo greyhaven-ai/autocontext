@@ -134,6 +134,10 @@ were unavailable under the local sandbox. The exact objective verifier, policy
 executor, refinement loop, benchmark harness and lockfile hashes are recorded.
 Human-readable traces omit model scratchpads and contain no authentication data.
 
+The recorded lockfile hash describes the original run environment. The subsequent
+CI security update to AnyIO 4.14.2 does not rewrite the archived identities or
+measurements; a new run records its own dependency identity.
+
 From `autocontext/`:
 
 ```bash
