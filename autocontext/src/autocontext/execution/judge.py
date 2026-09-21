@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from autocontext.agents.types import LlmFn
+from autocontext.execution.judge_spec import JudgeServingSpec, fixture_provenance
 from autocontext.execution.rubric_coherence import check_rubric_coherence
 from autocontext.execution.rubric_spec import RubricSpec, compile_rubric_spec
 from autocontext.extensions import HookBus, HookEvents, get_current_hook_bus
@@ -60,6 +61,9 @@ class JudgeResult:
     dimensions_were_generated: bool = False
     disagreement: DisagreementMetrics | None = None
     evaluator_epoch: str | None = None
+    evaluator_spec: str | None = None
+    execution_provenance: dict[str, Any] = field(default_factory=dict)
+    fixture_provenance: dict[str, str] = field(default_factory=dict)
 
 
 _RESULT_START = "<!-- JUDGE_RESULT_START -->"
@@ -160,6 +164,15 @@ def _apply_same_span_contradiction_guardrail(
     return min(score, _CONTRADICTION_SCORE_CAP), capped_reasoning, capped_dimensions
 
 
+def _render_serving_examples(examples: Sequence[dict] | None) -> tuple[str, ...]:
+    return tuple(
+        f"**Example {i}** — Score: {ex.get('human_score', 'N/A')}\n"
+        f"Human notes: {ex.get('human_notes', '')}\n"
+        f"Output snippet: {ex.get('agent_output', '')[:200]}...\n"
+        for i, ex in enumerate(examples or (), 1)
+    )
+
+
 class LLMJudge:
     """LLM-based judge for evaluating agent task outputs.
 
@@ -200,13 +213,6 @@ class LLMJudge:
         self.max_tokens = max(256, max_tokens)
         self.hook_bus = hook_bus
 
-        # AC-885: content-addressed identity of this evaluator (rubric + judge). The epoch for the
-        # constructor model is computed once here; stamped on every JudgeResult so downstream
-        # baselines never silently compare across evaluator changes. When a BEFORE_JUDGE hook swaps
-        # the model at evaluate() time, the stamped epoch reflects the effective model instead (see
-        # evaluate). Degrades to None on any failure rather than breaking scoring.
-        self._evaluator_epoch: str | None = self._epoch_for_model(self.model)
-
         # Backward-compatible property
         self.llm_fn = llm_fn
 
@@ -224,18 +230,23 @@ class LLMJudge:
         """Warnings from rubric coherence pre-check (empty if not enabled)."""
         return self._rubric_warnings
 
-    def _epoch_for_model(self, model: str) -> str | None:
-        """Compute the evaluator epoch for *model* (with this judge's rubric + provider).
-
-        Degrades to None on any failure rather than breaking scoring.
-        """
-        from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
-
-        try:
-            return compute_evaluator_epoch(self.rubric, self.provider.name, model).epoch_id
-        except Exception:  # pragma: no cover - defensive; epoch is non-critical metadata
-            logger.debug("evaluator_epoch computation failed", exc_info=True)
-            return None
+    def serving_spec(
+        self, model: str | None = None, calibration_examples: Sequence[dict] | None = None,
+        pinned_dimensions: Sequence[str] | None = None,
+    ) -> JudgeServingSpec:
+        """Snapshot what is served, including runtime-specific prompt/score semantics."""
+        return JudgeServingSpec(
+            compiled_rubric=self.rubric, judge_provider=self.provider.name,
+            judge_model=model or self.model,
+            prompt_template_version="autocontext.python.llm-judge.v1",
+            serving_examples=_render_serving_examples(calibration_examples),
+            pinned_dimensions=tuple(pinned_dimensions or self._typed_dimension_ids),
+            score_transformations=(
+                "python.parse-markers-json-plaintext-clamp.v1", "mean-parseable-samples.v1",
+                "reference-factual-defaults-0.5.v1", "same-span-contradiction-cap-0.25.v1",
+                "pinned-dimensions-zero-fill.v1",
+            ),
+        )
 
     def evaluate(
         self,
@@ -281,10 +292,12 @@ class LLMJudge:
         total_internal_retries = 0
         last_parse_method: ParseMethod = "none"
         hook_bus = self.hook_bus or get_current_hook_bus()
-        # AC-885: the epoch must reflect the model actually sent to the provider, which a
-        # BEFORE_JUDGE hook may change. Capture the first sample's effective (post-hook) model; if
-        # samples resolve different models (pathological), the first one is chosen deterministically.
-        effective_model: str | None = None
+        effective_models: set[str] = set()
+        unbound_hook_effect = False
+        requests: list[dict[str, Any]] = []
+        # Freeze the serving examples before calling any external code.
+        spec = self.serving_spec(calibration_examples=calibration_examples,
+                                 pinned_dimensions=effective_pinned_dimensions)
 
         parse_oks: list[bool] = []
         last_stop_reason: str | None = None
@@ -313,8 +326,12 @@ class LLMJudge:
                     before_judge.raise_if_blocked()
                     request = before_judge.payload
                 resolved_model = str(request.get("model", self.model))
-                if effective_model is None:
-                    effective_model = resolved_model
+                if (str(request.get("system_prompt", system_prompt)) != system_prompt
+                        or str(request.get("user_prompt", user_prompt)) != user_prompt):
+                    unbound_hook_effect = True
+                requests.append({"model": resolved_model,
+                                 "temperature": _coerce_float(request.get("temperature"), self.temperature),
+                                 "sample_index": sample_index, "attempt": attempt})
                 result = self.provider.complete(
                     system_prompt=str(request.get("system_prompt", system_prompt)),
                     user_prompt=str(request.get("user_prompt", user_prompt)),
@@ -322,6 +339,9 @@ class LLMJudge:
                     temperature=_coerce_float(request.get("temperature"), self.temperature),
                     max_tokens=self.max_tokens,
                 )
+                served_model = result.model or resolved_model
+                effective_models.add(served_model)
+                requests[-1]["served_model"] = served_model
                 if result.stop_reason in ("max_tokens", "length") or last_stop_reason not in ("max_tokens", "length"):
                     last_stop_reason = result.stop_reason
                 response = result.text
@@ -337,7 +357,9 @@ class LLMJudge:
                         },
                     )
                     after_judge.raise_if_blocked()
-                    response = str(after_judge.payload.get("response_text", response))
+                    changed_response = str(after_judge.payload.get("response_text", response))
+                    unbound_hook_effect |= changed_response != response
+                    response = changed_response
                 raw_responses.append(response)
                 score, reasoning, dims, sample_parse_method = self._parse_judge_response(response)
                 if score > 0.0 or "Failed to parse" not in reasoning:
@@ -432,12 +454,11 @@ class LLMJudge:
                 self.rubric,
             )
 
-        # Reuse the constructor epoch in the common (no-hook) case where the effective model is
-        # unchanged; recompute only when a hook swapped the model.
-        if effective_model is None or effective_model == self.model:
-            stamped_epoch = self._evaluator_epoch
-        else:
-            stamped_epoch = self._epoch_for_model(effective_model)
+        # AC-1001 owns handler fingerprints. Until then, unbound prompt/response
+        # rewrites or mixtures of models must not claim this specification.
+        verified_spec = None
+        if not unbound_hook_effect and len(effective_models) == 1:
+            verified_spec = spec.model_copy(update={"judge_model": next(iter(effective_models))})
 
         return JudgeResult(
             score=avg_score,
@@ -448,7 +469,14 @@ class LLMJudge:
             internal_retries=total_internal_retries,
             dimensions_were_generated=dimensions_were_generated,
             disagreement=disagreement,
-            evaluator_epoch=stamped_epoch,
+            evaluator_epoch=verified_spec.epoch_id if verified_spec else None,
+            evaluator_spec=verified_spec.canonical_json() if verified_spec else None,
+            execution_provenance={"samples": self.samples, "max_tokens": self.max_tokens,
+                                  "disagreement_threshold": self._disagreement_threshold,
+                                  "requests": requests,
+                                  "identity_status": "verified" if verified_spec else "unbound_hook_or_model_mix"},
+            fixture_provenance=fixture_provenance(task_prompt, agent_output, reference_context,
+                                                 list(required_concepts or ())),
         )
 
     def _build_judge_prompt(
@@ -474,11 +502,7 @@ class LLMJudge:
                 "The following are real outputs scored by a human reviewer. "
                 "Use these to calibrate your scoring — match the human's standards.\n"
             )
-            for i, ex in enumerate(calibration_examples, 1):
-                score = ex.get("human_score", "N/A")
-                notes = ex.get("human_notes", "")
-                output_snippet = ex.get("agent_output", "")[:200]
-                cal_lines.append(f"**Example {i}** — Score: {score}\nHuman notes: {notes}\nOutput snippet: {output_snippet}...\n")
+            cal_lines.extend(_render_serving_examples(calibration_examples))
             parts.append("\n".join(cal_lines))
         if pinned_dimensions:
             dim_list = ", ".join(pinned_dimensions)

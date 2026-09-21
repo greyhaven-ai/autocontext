@@ -1,0 +1,164 @@
+{
+  "cases": [
+    {
+      "name": "base",
+      "spec": {
+        "schema_version": "autocontext.judge-serving.v1",
+        "compiled_rubric": "Score correctness 0–1.\nBe precise.",
+        "judge_provider": "provider",
+        "judge_model": "model",
+        "prompt_template_version": "test.template.v1",
+        "serving_examples": [
+          "Example α: score 0.5\nUse café ☕",
+          "Example β: score 1\nCorrect"
+        ],
+        "pinned_dimensions": [],
+        "score_transformations": [
+          "clamp.v1",
+          "mean.v1"
+        ],
+        "extension_fingerprint": null,
+        "evaluation_context_hash": null
+      },
+      "canonical_json": "{\"compiled_rubric\":\"Score correctness 0–1.\\nBe precise.\",\"evaluation_context_hash\":null,\"extension_fingerprint\":null,\"judge_model\":\"model\",\"judge_provider\":\"provider\",\"pinned_dimensions\":[],\"prompt_template_version\":\"test.template.v1\",\"schema_version\":\"autocontext.judge-serving.v1\",\"score_transformations\":[\"clamp.v1\",\"mean.v1\"],\"serving_examples\":[\"Example α: score 0.5\\nUse café ☕\",\"Example β: score 1\\nCorrect\"]}",
+      "epoch_id": "f1c055e0634c3e8631e3494a40102bf3f08e97dc38e1045beb00c9eb1d603299"
+    },
+    {
+      "name": "example_content",
+      "spec": {
+        "schema_version": "autocontext.judge-serving.v1",
+        "compiled_rubric": "Score correctness 0–1.\nBe precise.",
+        "judge_provider": "provider",
+        "judge_model": "model",
+        "prompt_template_version": "test.template.v1",
+        "serving_examples": [
+          "Example α: score 0.2\nUse café ☕",
+          "Example β: score 1\nCorrect"
+        ],
+        "pinned_dimensions": [],
+        "score_transformations": [
+          "clamp.v1",
+          "mean.v1"
+        ],
+        "extension_fingerprint": null,
+        "evaluation_context_hash": null
+      },
+      "canonical_json": "{\"compiled_rubric\":\"Score correctness 0–1.\\nBe precise.\",\"evaluation_context_hash\":null,\"extension_fingerprint\":null,\"judge_model\":\"model\",\"judge_provider\":\"provider\",\"pinned_dimensions\":[],\"prompt_template_version\":\"test.template.v1\",\"schema_version\":\"autocontext.judge-serving.v1\",\"score_transformations\":[\"clamp.v1\",\"mean.v1\"],\"serving_examples\":[\"Example α: score 0.2\\nUse café ☕\",\"Example β: score 1\\nCorrect\"]}",
+      "epoch_id": "83b6277bdfbecc10ef9d70615d6c67275b4062b91d59c688c4ba69fdbea5ec91"
+    },
+    {
+      "name": "example_order",
+      "spec": {
+        "schema_version": "autocontext.judge-serving.v1",
+        "compiled_rubric": "Score correctness 0–1.\nBe precise.",
+        "judge_provider": "provider",
+        "judge_model": "model",
+        "prompt_template_version": "test.template.v1",
+        "serving_examples": [
+          "Example β: score 1\nCorrect",
+          "Example α: score 0.5\nUse café ☕"
+        ],
+        "pinned_dimensions": [],
+        "score_transformations": [
+          "clamp.v1",
+          "mean.v1"
+        ],
+        "extension_fingerprint": null,
+        "evaluation_context_hash": null
+      },
+      "canonical_json": "{\"compiled_rubric\":\"Score correctness 0–1.\\nBe precise.\",\"evaluation_context_hash\":null,\"extension_fingerprint\":null,\"judge_model\":\"model\",\"judge_provider\":\"provider\",\"pinned_dimensions\":[],\"prompt_template_version\":\"test.template.v1\",\"schema_version\":\"autocontext.judge-serving.v1\",\"score_transformations\":[\"clamp.v1\",\"mean.v1\"],\"serving_examples\":[\"Example β: score 1\\nCorrect\",\"Example α: score 0.5\\nUse café ☕\"]}",
+      "epoch_id": "4821589b83dd401df072171059f44185532db7a5e6f90fd1736a00dc9a671296"
+    },
+    {
+      "name": "instructions",
+      "spec": {
+        "schema_version": "autocontext.judge-serving.v1",
+        "compiled_rubric": "Score correctness 0–1.\nBe precise.",
+        "judge_provider": "provider",
+        "judge_model": "model",
+        "prompt_template_version": "test.template.v2",
+        "serving_examples": [
+          "Example α: score 0.5\nUse café ☕",
+          "Example β: score 1\nCorrect"
+        ],
+        "pinned_dimensions": [],
+        "score_transformations": [
+          "clamp.v1",
+          "mean.v1"
+        ],
+        "extension_fingerprint": null,
+        "evaluation_context_hash": null
+      },
+      "canonical_json": "{\"compiled_rubric\":\"Score correctness 0–1.\\nBe precise.\",\"evaluation_context_hash\":null,\"extension_fingerprint\":null,\"judge_model\":\"model\",\"judge_provider\":\"provider\",\"pinned_dimensions\":[],\"prompt_template_version\":\"test.template.v2\",\"schema_version\":\"autocontext.judge-serving.v1\",\"score_transformations\":[\"clamp.v1\",\"mean.v1\"],\"serving_examples\":[\"Example α: score 0.5\\nUse café ☕\",\"Example β: score 1\\nCorrect\"]}",
+      "epoch_id": "473f7be4a7db765a6b76cacf45067689e0f72028ecaee15d8a53c09588cd20d0"
+    },
+    {
+      "name": "transformation",
+      "spec": {
+        "schema_version": "autocontext.judge-serving.v1",
+        "compiled_rubric": "Score correctness 0–1.\nBe precise.",
+        "judge_provider": "provider",
+        "judge_model": "model",
+        "prompt_template_version": "test.template.v1",
+        "serving_examples": [
+          "Example α: score 0.5\nUse café ☕",
+          "Example β: score 1\nCorrect"
+        ],
+        "pinned_dimensions": [],
+        "score_transformations": [
+          "clamp.v2",
+          "mean.v1"
+        ],
+        "extension_fingerprint": null,
+        "evaluation_context_hash": null
+      },
+      "canonical_json": "{\"compiled_rubric\":\"Score correctness 0–1.\\nBe precise.\",\"evaluation_context_hash\":null,\"extension_fingerprint\":null,\"judge_model\":\"model\",\"judge_provider\":\"provider\",\"pinned_dimensions\":[],\"prompt_template_version\":\"test.template.v1\",\"schema_version\":\"autocontext.judge-serving.v1\",\"score_transformations\":[\"clamp.v2\",\"mean.v1\"],\"serving_examples\":[\"Example α: score 0.5\\nUse café ☕\",\"Example β: score 1\\nCorrect\"]}",
+      "epoch_id": "323365fed03e45df75660296de2aa9f7ff3eb0596be2db5491d4f3fa274332bf"
+    },
+    {
+      "name": "dimensions",
+      "spec": {
+        "schema_version": "autocontext.judge-serving.v1",
+        "compiled_rubric": "Score correctness 0–1.\nBe precise.",
+        "judge_provider": "provider",
+        "judge_model": "model",
+        "prompt_template_version": "test.template.v1",
+        "serving_examples": [
+          "Example α: score 0.5\nUse café ☕",
+          "Example β: score 1\nCorrect"
+        ],
+        "pinned_dimensions": [
+          "correctness"
+        ],
+        "score_transformations": [
+          "clamp.v1",
+          "mean.v1"
+        ],
+        "extension_fingerprint": null,
+        "evaluation_context_hash": null
+      },
+      "canonical_json": "{\"compiled_rubric\":\"Score correctness 0–1.\\nBe precise.\",\"evaluation_context_hash\":null,\"extension_fingerprint\":null,\"judge_model\":\"model\",\"judge_provider\":\"provider\",\"pinned_dimensions\":[\"correctness\"],\"prompt_template_version\":\"test.template.v1\",\"schema_version\":\"autocontext.judge-serving.v1\",\"score_transformations\":[\"clamp.v1\",\"mean.v1\"],\"serving_examples\":[\"Example α: score 0.5\\nUse café ☕\",\"Example β: score 1\\nCorrect\"]}",
+      "epoch_id": "c115858a9c52bb73d95f398b1620678c811e4f1a9b3bb818778eae4ec235dcc9"
+    },
+    {
+      "name": "empty_examples",
+      "spec": {
+        "schema_version": "autocontext.judge-serving.v1",
+        "compiled_rubric": "Score correctness 0–1.\nBe precise.",
+        "judge_provider": "provider",
+        "judge_model": "model",
+        "prompt_template_version": "test.template.v1",
+        "serving_examples": [],
+        "pinned_dimensions": [],
+        "score_transformations": [
+          "clamp.v1",
+          "mean.v1"
+        ],
+        "extension_fingerprint": null,
+        "evaluation_context_hash": null
+      },
+      "canonical_json": "{\"compiled_rubric\":\"Score correctness 0–1.\\nBe precise.\",\"evaluation_context_hash\":null,\"extension_fingerprint\":null,\"judge_model\":\"model\",\"judge_provider\":\"provider\",\"pinned_dimensions\":[],\"prompt_template_version\":\"test.template.v1\",\"schema_version\":\"autocontext.judge-serving.v1\",\"score_transformations\":[\"clamp.v1\",\"mean.v1\"],\"serving_examples\":[]}",
+      "epoch_id": "e659dd6bb378c93f279923322c6c6aaf9aadb9615f15a001ec09d9f8c2b0f7b2"
+    }
+  ]
+}

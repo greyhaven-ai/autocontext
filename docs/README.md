@@ -24,6 +24,7 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [External agent integration guide](../autocontext/docs/agent-integration.md)
 - [Running the loop on your own hardware](../autocontext/docs/self-hosted-models.md)
 - [Hermes Curator + autocontext positioning](internal/hermes-positioning.md)
+- [Judge serving identity and migration](../autocontext/docs/judge-serving-identity.md)
 - [Python and TypeScript extension hooks](../autocontext/docs/extensions.md)
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
 - [Capability-scoped research workspaces](research-workspaces.md)

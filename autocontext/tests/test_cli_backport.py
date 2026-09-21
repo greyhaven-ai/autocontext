@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from autocontext.cli import app
+from autocontext.execution.judge import JudgeResult
 
 runner = CliRunner()
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -101,14 +102,14 @@ class TestImproveCommand:
         fake_settings = MagicMock(judge_model="mock-model", judge_provider="anthropic")
 
         judge_results = [
-            SimpleNamespace(
+            JudgeResult(
                 score=0.2,
                 reasoning="Needs work",
                 dimension_scores={"quality": 0.2},
                 internal_retries=0,
                 evaluator_epoch=None,
             ),
-            SimpleNamespace(
+            JudgeResult(
                 score=0.95,
                 reasoning="Looks good",
                 dimension_scores={"quality": 0.95},

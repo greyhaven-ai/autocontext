@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
 from autocontext.execution.rubric_calibration import run_judge_calibration
 from autocontext.providers.callable_wrapper import CallableProvider
 
 
-def test_calibration_report_carries_evaluator_epoch() -> None:
+def test_leave_one_out_report_cannot_claim_one_serving_epoch() -> None:
     provider = CallableProvider(lambda system, user: '{"score": 0.7, "reasoning": "ok"}', model_name="m")
     report = run_judge_calibration(
         domain="d",
@@ -20,5 +19,6 @@ def test_calibration_report_carries_evaluator_epoch() -> None:
         repeat_judgments=1,
     )
     assert report is not None
-    expected = compute_evaluator_epoch("score correctness 0-1", provider.name, "m").epoch_id
-    assert report.evaluator_epoch == expected
+    assert report.evaluator_epoch is None
+    assert report.metadata["identity_status"] == "mixed_or_unknown"
+    assert len({e for epochs in report.metadata["per_anchor_epochs"].values() for e in epochs}) == 2

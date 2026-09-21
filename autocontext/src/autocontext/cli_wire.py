@@ -3,7 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
+
+
+@dataclass(slots=True)
+class AgentTaskRunSummary:
+    """Result summary for an agent-task execution via the CLI."""
+
+    run_id: str
+    scenario: str
+    best_score: float
+    best_output: str
+    total_rounds: int
+    met_threshold: bool
+    termination_reason: str
+    optimizer_metadata: dict[str, str] | None = None
 
 
 def run_wire_payload(run: Mapping[str, Any], *, run_id: str | None = None) -> dict[str, Any]:
@@ -86,6 +101,7 @@ def _nullable_int(value: Any) -> int | None:
 
 
 __all__ = [
+    "AgentTaskRunSummary",
     "generation_wire_payload",
     "run_show_wire_payload",
     "run_status_wire_payload",
