@@ -7,6 +7,7 @@ executed in a restricted-builtins sandbox with timeout enforcement.
 from __future__ import annotations
 
 import collections as _collections
+import json
 import logging
 import math as _math
 import re as _re
@@ -457,3 +458,32 @@ class PolicyExecutor:
             effective_seeds = list(range(n_matches))
 
         return [self.execute_match(policy_source, seed=s) for s in effective_seeds]
+
+    def execute_action(self, policy_source: str, observation: Mapping[str, Any]) -> dict[str, Any]:
+        """Invoke one policy through the same isolated boundary as a match.
+
+        Callers must validate their action/abstention schema before applying a
+        result. Only explicit JSON observations cross in; scenario state,
+        verifier seeds and caller capabilities are not passed to the callable.
+        """
+        violations = check_ast_safety(policy_source)
+        if violations:
+            raise ValueError("; ".join(violations))
+        payload = json.loads(json.dumps(dict(observation), allow_nan=False))
+
+        def invoke() -> dict[str, Any]:
+            choose_action, errors = self._compile_policy(policy_source)
+            if choose_action is None:
+                raise ValueError("; ".join(errors))
+            result = choose_action(payload)
+            if not isinstance(result, dict):
+                raise ValueError("choose_action must return a JSON object")
+            return result
+
+        raw = run_isolated_json(
+            invoke, timeout_seconds=self._timeout_per_match,
+            max_memory_mb=self._max_memory_mb, max_output_bytes=self._max_output_bytes,
+        )
+        if not isinstance(raw, dict):
+            raise ValueError("policy child returned a non-object action")
+        return raw

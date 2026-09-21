@@ -86,6 +86,7 @@ contracts are available.
 - [Goal run report](goal-run-report.md)
 - [Playbook approval gate](playbook-approval-gate.md)
 - [Immutable context bundles and outcome-gated promotion](context-bundles.md)
+- [Scoped executable policy candidates](../autocontext/docs/policy-candidates.md)
 - [Campaign false-promotion calibration](false-promotion-calibration.md)
 - [Derived lesson curation](internal/derived-lesson-curation.md)
 - [Soft structural hints](soft-structural-hints.md)
