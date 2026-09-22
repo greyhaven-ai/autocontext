@@ -196,6 +196,28 @@ def test_model_abstention_is_explicit(pilot, monkeypatch):
     assert result.reason == "no_verified_route" and result.attempts[-1].reason == "model_abstained"
 
 
+def test_learned_playbook_is_bound_and_budgeted(pilot, model):
+    selected = target(max_input_tokens=4096)
+    base = SkillRoutingConfig(enabled=True, allow_network=True, general=selected)
+    learned = base.model_copy(update={"learned_playbook": "preserve names"})
+    result = run(pilot, config=learned)
+    assert result.status == "success" and result.config_digest != base.digest
+    assert model[-1][2]["learned_playbook"] == "preserve names"
+    assert json.loads(result.config_json)["learned_playbook"] == "preserve names"
+    model.clear()
+    oversized = base.model_copy(update={"learned_playbook": "界" * 1500})
+    result = run(pilot, config=oversized)
+    assert result.attempts[-1].reason == "model_input_bound_exceeded" and not model
+
+
+@pytest.mark.parametrize("playbook", ["x" * 8193, "\ud800"])
+def test_invalid_playbook_is_rejected(playbook):
+    with pytest.raises(ValueError):
+        SkillRoutingConfig(learned_playbook=playbook)
+    with pytest.raises(ValueError):
+        routed_model.model_system_prompt(playbook)
+
+
 def test_registry_backend_can_use_an_explicit_compatible_endpoint(pilot, model):
     specific = target()
     record = register(pilot, specific)

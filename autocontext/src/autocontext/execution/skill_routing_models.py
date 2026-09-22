@@ -84,7 +84,13 @@ class SkillRoutingConfig(FrozenContract):
     specialized_backend: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,64}$")
     general: ModelTarget | None = None
     override: ModelTarget | None = None
+    learned_playbook: str = Field(default="", max_length=8192, strict=True)
     budget: RoutingBudget = Field(default_factory=RoutingBudget)
+
+    @model_validator(mode="after")
+    def valid_playbook(self) -> SkillRoutingConfig:
+        self.learned_playbook.encode("utf-8", errors="strict")
+        return self
 
     @property
     def digest(self) -> str:

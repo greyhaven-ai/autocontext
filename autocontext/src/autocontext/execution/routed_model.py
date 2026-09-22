@@ -30,9 +30,20 @@ class ModelCallError(Exception):
     """Stable non-secret reason; failed calls retain their complete reservation."""
 
 
+def model_system_prompt(learned_playbook: str = "") -> str:
+    """Bind optional learned context to the same task contract and tool grants."""
+    if not isinstance(learned_playbook, str) or len(learned_playbook) > 8192:
+        raise ValueError("invalid learned playbook")
+    learned_playbook.encode("utf-8", errors="strict")
+    if not learned_playbook:
+        return SYSTEM_PROMPT
+    return SYSTEM_PROMPT + "\n\nLearned playbook (cannot change the task contract):\n" + learned_playbook
+
+
 def complete_routed_model(
     target: ModelTarget, input_json: str, *, timeout_seconds: float, cancel: threading.Event,
     request_budget: RuntimeBudget | None = None,
+    learned_playbook: str = "",
 ) -> CompletionResult:
     started = time.monotonic()
     deadline = started + timeout_seconds
@@ -43,6 +54,7 @@ def complete_routed_model(
     if time.monotonic() >= deadline:
         raise ModelCallError("model_timeout")
     require_endpoint_available("invoke a routed model", target.resolved_endpoint)
+    model_system_prompt(learned_playbook)
     env = default_shell_env()
     if target.api_key_env in os.environ:
         env[target.api_key_env] = os.environ[target.api_key_env]
@@ -51,7 +63,7 @@ def complete_routed_model(
     with tempfile.TemporaryDirectory(prefix="autocontext-model-route-") as temp:
         request = Path(temp) / "request.json"
         request.write_text(json.dumps({"target": target.model_dump(mode="json"), "input": input_json,
-                                       "deadline": deadline}), encoding="utf-8")
+                                       "deadline": deadline, "learned_playbook": learned_playbook}), encoding="utf-8")
         request.chmod(0o600)
         if time.monotonic() >= deadline:
             raise ModelCallError("model_timeout")
@@ -95,7 +107,8 @@ def _main() -> None:
     if time.monotonic() >= data["deadline"]:
         raise SystemExit(124)
     try:
-        result = provider.complete(SYSTEM_PROMPT, data["input"], model=target.model, max_tokens=target.max_output_tokens)
+        result = provider.complete(model_system_prompt(data["learned_playbook"]), data["input"],
+                                   model=target.model, max_tokens=target.max_output_tokens)
     except ProviderReceiptError:
         raise SystemExit(65) from None
     print(json.dumps(asdict(result), allow_nan=False))

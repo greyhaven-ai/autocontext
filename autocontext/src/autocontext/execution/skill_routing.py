@@ -24,7 +24,7 @@ from autocontext.execution.executable_skills import (
     invoke_executable_skill,
     verify_migration_output,
 )
-from autocontext.execution.routed_model import SYSTEM_PROMPT, ModelCallError, complete_routed_model
+from autocontext.execution.routed_model import ModelCallError, complete_routed_model, model_system_prompt
 from autocontext.execution.skill_routing_models import ModelTarget, Route, RouteAttempt, SkillRoutingConfig, SkillRoutingResult
 from autocontext.harness.cost import calculator
 from autocontext.kernel_evolution import _generation_usage
@@ -268,7 +268,7 @@ def route_schema_migration(
             continue
         # Byte-per-token plus a declared envelope allowance is deliberately
         # conservative. Operators must configure a valid bound for their backend.
-        if len(SYSTEM_PROMPT.encode()) + len(encoded) + 2048 > target.max_input_tokens:
+        if len(model_system_prompt(config.learned_playbook).encode()) + len(encoded) + 2048 > target.max_input_tokens:
             skip(route, "model_input_bound_exceeded", target)
             continue
         if stopped := exhausted():
@@ -296,7 +296,7 @@ def route_schema_migration(
         seen.add(endpoint_key)
         try:
             completion = complete_routed_model(target, input_json, timeout_seconds=min(target.timeout_seconds, wall.remaining()),
-                                               cancel=cancel, request_budget=wall)
+                                               cancel=cancel, request_budget=wall, learned_playbook=config.learned_playbook)
         except (ModelCallError, OSError, OfflineError) as exc:
             row.update(status="execution_failure", reason=str(exc) if isinstance(exc, ModelCallError) else "provider_unavailable",
                        elapsed_seconds=time.monotonic() - call_start)

@@ -57,6 +57,13 @@ Keep the route configuration with matched evaluation records for AC-1021.
 
 ## Configure model fallback
 
+`SkillRoutingConfig.learned_playbook` optionally supplies up to 8,192 characters
+of frozen textual context to model calls. It defaults to empty, is bound into
+the config digest and durable trace, and counts toward input-token admission.
+It does not change the task contract, objective verifier, tools or skill source.
+The [four-arm reuse study](../benchmarks/skill_reuse/README.md) uses this field
+for matched textual controls and the executable route's model fallback.
+
 Models must support one HTTP completion, bounded output tokens, usage receipts
 and a response identifying the actual served model. Supported transports are
 `openai-compatible` and `anthropic`. Agent CLI adapters and direct training

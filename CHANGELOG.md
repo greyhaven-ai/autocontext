@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Python: AC-1029 schema-migration study protocol, isolated data splits, frozen
+  four-arm comparison harness and lifecycle reporting. Reuses the existing
+  Docker/router boundaries and adds optional digest-bound textual playbooks.
+  Fixture results do not establish live efficacy; unknown resource costs remain
+  unknown and production promotion is separate.
+
 - Python: opt-in applicability-aware routing for the profile schema-migration
   pilot, with verified skill/registered-model/general-model fallback, explicit
   abstention and overrides, shared request budgets, durable decisions and

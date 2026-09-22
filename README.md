@@ -99,6 +99,9 @@ for verified schema-migration proposals in Docker, with explicit eligibility
 and promotion-gated serving.
 An opt-in [skill/model router](autocontext/docs/skill-routing.md) adds verified
 fallback and explicit abstention under one request budget.
+The [schema-migration reuse study](autocontext/benchmarks/skill_reuse/README.md)
+compares baseline, textual context, executable reuse and cheaper-model controls
+under frozen paired evaluation; fixture runs are infrastructure evidence only.
 Controlled component trials feed
 [ablation-backed attribution](docs/context-attribution.md), so prompt selection
 can demote low-value context without presenting edit-size correlation as causal.

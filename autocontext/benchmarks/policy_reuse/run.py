@@ -10,7 +10,6 @@ import json
 import math
 import os
 import platform
-import random
 import shutil
 import statistics
 import subprocess
@@ -22,6 +21,7 @@ from typing import Any
 
 from autocontext.execution.policy_executor import PolicyExecutor
 from autocontext.execution.policy_refinement import PolicyRefinementLoop
+from autocontext.harness.benchmark_stats import paired_interval, quantile
 from autocontext.harness.core.output_parser import extract_json
 from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.scenarios.grid_ctf.scenario import GridCtfScenario
@@ -246,13 +246,6 @@ def episode(arm, seed, scenario, policy, provider, protocol):
     return row
 
 
-def quantile(values, q):
-    if not values:
-        return None
-    values = sorted(values)
-    return values[min(len(values) - 1, max(0, math.ceil(q * len(values)) - 1))]
-
-
 def summarize(rows, training, calls, synthesis_seconds, protocol):
     training_calls = [c for c in calls if c["phase"] == "synthesis"]
     setup = {"seconds": synthesis_seconds, "model_calls": len(training_calls),
@@ -278,10 +271,9 @@ def summarize(rows, training, calls, synthesis_seconds, protocol):
     for arm in ("policy", "hybrid"):
         group = [r for r in rows if r["arm"] == arm and r["split"] == "heldout"]
         diffs = [r["score"] - model[r["seed"]]["score"] for r in group]
-        rng = random.Random(protocol["bootstrap_seed"])
-        boot = [statistics.mean(rng.choices(diffs, k=len(diffs))) for _ in range(protocol["bootstrap_resamples"])]
         comparisons[arm] = {"paired_score_difference": statistics.mean(diffs),
-                            "conditional_seed_bootstrap_95_interval": [quantile(boot, .025), quantile(boot, .975)]}
+                            "conditional_seed_bootstrap_95_interval": list(paired_interval(
+                                diffs, seed=protocol["bootstrap_seed"], resamples=protocol["bootstrap_resamples"]))}
     horizons = {}
     # Project identical supported tasks from measured means; include all synthesis and training costs.
     for arm in ("model", "policy", "hybrid"):

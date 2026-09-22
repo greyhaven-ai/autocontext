@@ -42,7 +42,7 @@ jobs:
           uv pip compile ../infra/docker/build-requirements.in --generate-hashes --exclude-newer 2026-06-20T00:00:00Z --output-file ../infra/docker/build-requirements.lock
           git diff --exit-code -- ../infra/docker/requirements.lock ../infra/docker/build-requirements.lock
       - name: Ruff
-        run: uv run ruff check src tests
+        run: uv run ruff check src tests benchmarks/skill_reuse benchmarks/policy_reuse/run.py
       - name: Mypy
         run: uv run mypy src
       - name: Release source guard tests
@@ -173,6 +173,7 @@ jobs:
           tests/test_workspace_interpreter_settings.py::test_production_setting_selects_a_live_isolated_workspace
           tests/test_executable_skills.py::test_real_docker_executable_skill_boundary
           tests/test_skill_routing.py::test_real_docker_routing_skill_then_model
+          tests/test_skill_reuse_study.py::test_real_docker_four_arm_study
       - name: Run executable skill end-to-end fixture
         run: uv run python ../examples/executable_skills/run.py --output "$RUNNER_TEMP/autocontext-skill-demo"
 
