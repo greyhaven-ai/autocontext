@@ -43,8 +43,9 @@ class TraceEvidence(FrozenContract):
     role: Literal["successful_training", "training_counterexample"]
 
 
-class PolicyCandidateManifest(FrozenContract):
-    schema_version: Literal["autocontext.policy-candidate.v1"] = "autocontext.policy-candidate.v1"
+class CandidateManifestBase(FrozenContract):
+    """Shared immutable payload; specialized manifests own runtime and evidence types."""
+
     scenario: str = Field(min_length=1)
     scenario_version: str = Field(min_length=1)
     input_schema: str
@@ -52,11 +53,9 @@ class PolicyCandidateManifest(FrozenContract):
     applicability: str
     skill_json: str
     provenance_json: str
-    runtime: Literal["python>=3.11;isolated-policy-v1"] = "python>=3.11;isolated-policy-v1"
     dependencies: tuple[str, ...] = ()
     capability_grants: tuple[str, ...] = ()
     limits: CandidateLimits = Field(default_factory=CandidateLimits)
-    source_traces: tuple[TraceEvidence, ...] = Field(min_length=2)
     synthesis_provider: str = Field(min_length=1)
     requested_model: str = Field(min_length=1)
     served_model: str | None
@@ -67,7 +66,7 @@ class PolicyCandidateManifest(FrozenContract):
     synthesis_usage_json: str = "{}"
 
     @model_validator(mode="after")
-    def validate_payloads(self) -> PolicyCandidateManifest:
+    def validate_payloads(self) -> CandidateManifestBase:
         skill = SkillReference.model_validate_json(self.skill_json)
         provenance = ArtifactProvenance.model_validate_json(self.provenance_json)
         if skill.entrypoint != "choose_action" or provenance.scenario != self.scenario:
@@ -93,6 +92,17 @@ class PolicyCandidateManifest(FrozenContract):
     def digest(self) -> str:
         return stable_digest(self.model_dump(mode="json"))
 
+    def require_digest(self, expected: str) -> None:
+        if self.digest != expected:
+            raise ValueError("candidate manifest digest mismatch")
+
+
+class PolicyCandidateManifest(CandidateManifestBase):
+    # Preserve the AC-1019 v1 wire fields and digest; no migration is required.
+    schema_version: Literal["autocontext.policy-candidate.v1"] = "autocontext.policy-candidate.v1"
+    runtime: Literal["python>=3.11;isolated-policy-v1"] = "python>=3.11;isolated-policy-v1"
+    source_traces: tuple[TraceEvidence, ...] = Field(min_length=2)
+
     def to_policy_artifact(self) -> PolicyArtifact:
         """Portable discovery payload only; this does not publish or activate it."""
         return PolicyArtifact(
@@ -104,10 +114,6 @@ class PolicyCandidateManifest(FrozenContract):
             provenance=ArtifactProvenance.model_validate_json(self.provenance_json),
             tags=["inactive-candidate", self.schema_version],
         )
-
-    def require_digest(self, expected: str) -> None:
-        if self.digest != expected:
-            raise ValueError("candidate manifest digest mismatch")
 
 
 def json_payload(value: Any) -> str:

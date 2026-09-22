@@ -94,6 +94,9 @@ serving boundary can additionally require a cancellable independent audit and
 a durable campaign-wide false-promotion budget; exact causal credit is accepted
 only from verified single-component manifest additions. See
 [context bundles and outcome-gated promotion](docs/context-bundles.md).
+Python also provides an opt-in [executable-skill bridge](autocontext/docs/executable-skills.md)
+for verified schema-migration proposals in Docker, with explicit eligibility
+and promotion-gated serving.
 Controlled component trials feed
 [ablation-backed attribution](docs/context-attribution.md), so prompt selection
 can demote low-value context without presenting edit-size correlation as causal.

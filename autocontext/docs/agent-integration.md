@@ -21,6 +21,13 @@ from generation artifacts rather than infer activation from a strategy
 `advance` decision. See [context bundles](../../docs/context-bundles.md) for the
 artifact and comparison contract.
 
+For deterministic non-game transformations, the opt-in
+[executable-skill bridge](executable-skills.md) shares candidate evaluation and
+serving assembly without an LLM completion interface. Explicit eligibility is
+required; ordinary `TOOL_SPEC` helpers remain reference-only. The initial Python
+schema-migration pilot returns verified proposals from Docker and requires a
+durable active promotion record for serving.
+
 ## Research workspace capabilities
 
 External agents that only need plain data exploration should use the default

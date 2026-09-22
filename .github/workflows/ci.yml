@@ -171,6 +171,9 @@ jobs:
           tests/test_research_workspace.py::test_real_docker_workspace_is_transactional_and_cannot_read_unmounted_host
           tests/test_scenario_remote_package.py::test_custom_package_runs_in_exact_clean_network_denied_runtime_image
           tests/test_workspace_interpreter_settings.py::test_production_setting_selects_a_live_isolated_workspace
+          tests/test_executable_skills.py::test_real_docker_executable_skill_boundary
+      - name: Run executable skill end-to-end fixture
+        run: uv run python ../examples/executable_skills/run.py --output "$RUNNER_TEMP/autocontext-skill-demo"
 
   kernel-lifecycle-windows:
     runs-on: windows-latest
