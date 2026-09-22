@@ -29,6 +29,9 @@ candidate/evidence artifacts, verified transformed proposals, an unsupported
 input that abstains, and a refused attempt to serve the inactive candidate.
 Its active pointer remains unchanged. This is deterministic engineering test
 data, not synthesis evidence, a held-out benchmark, or a promotion decision.
+The fixture also replays these inputs through the opt-in
+[skill/model router](skill-routing.md), retaining per-request decisions without
+enabling model calls.
 
 The task contract accepts exactly `schema_version`, `name`, and `enabled`.
 Version 1 maps to version 2 by retaining the name as `display_name` and mapping
@@ -59,8 +62,9 @@ the caller's responsibility and is outside this pilot.
 
 Both modes use the same immutable manifest, `SkillReference` assembly, pinned
 runtime, applicability checks and verifier. Candidate/incumbent evaluators pin
-their respective bundle digests and invoke this same function. AC-1020 owns
-routing and fallback; AC-1021 owns promotion decisions and atomic activation.
+their respective bundle digests and invoke this same function. AC-1020's
+[opt-in router](skill-routing.md) composes this seam with verified model fallback;
+AC-1021 owns complete route promotion decisions and atomic activation.
 This seam is opt-in and is not wired into automatic production routing.
 
 The manifest shares AC-1019's base contract without changing its GridCTF v1 wire

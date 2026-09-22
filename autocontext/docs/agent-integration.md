@@ -27,6 +27,9 @@ serving assembly without an LLM completion interface. Explicit eligibility is
 required; ordinary `TOOL_SPEC` helpers remain reference-only. The initial Python
 schema-migration pilot returns verified proposals from Docker and requires a
 durable active promotion record for serving.
+The [skill/model router](skill-routing.md) adds opt-in, verified fallback through
+registered and general model targets. It preserves explicit overrides and
+shares time, token, attempt and model-spend budgets across the request.
 
 ## Research workspace capabilities
 

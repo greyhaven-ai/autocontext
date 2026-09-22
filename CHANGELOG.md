@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Python: opt-in applicability-aware routing for the profile schema-migration
+  pilot, with verified skill/registered-model/general-model fallback, explicit
+  abstention and overrides, shared request budgets, durable decisions and
+  cancellable single-dispatch provider workers (AC-1020). Complete route
+  promotion, semantic classification and TypeScript parity remain deferred.
+
 - Python: explicit context-bundle executable-skill eligibility and a bounded
   schema-migration pilot, with Docker isolation, verified JSON proposals and
   promotion-gated serving (AC-1028). Rejects child-process OOMs, bounds input

@@ -34,8 +34,10 @@ These are copy-paste starting points for people evaluating the repo, integrating
 
 For a non-game transformation, run the Python
 [executable-skill fixture](executable_skills/run.py). It enrolls a schema migration
-as an inactive bundle candidate and verifies proposals in real Docker. See the
-[bridge guide](../autocontext/docs/executable-skills.md) for setup and serving gates.
+as an inactive bundle candidate and verifies proposals in real Docker, both
+directly and through the opt-in router. See the
+[bridge guide](../autocontext/docs/executable-skills.md) for setup and serving gates,
+and the [routing guide](../autocontext/docs/skill-routing.md) for fallback configuration.
 
 The Python [candidate example](policy_candidates/run.py) projects selected training
 traces, replays a fixture synthesis response, evaluates fresh/counterexample inputs

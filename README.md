@@ -97,6 +97,8 @@ only from verified single-component manifest additions. See
 Python also provides an opt-in [executable-skill bridge](autocontext/docs/executable-skills.md)
 for verified schema-migration proposals in Docker, with explicit eligibility
 and promotion-gated serving.
+An opt-in [skill/model router](autocontext/docs/skill-routing.md) adds verified
+fallback and explicit abstention under one request budget.
 Controlled component trials feed
 [ablation-backed attribution](docs/context-attribution.md), so prompt selection
 can demote low-value context without presenting edit-size correlation as causal.

@@ -12,6 +12,8 @@ documented in [context bundles](../docs/context-bundles.md).
 The opt-in [executable-skill bridge](docs/executable-skills.md) enrolls explicit
 schema-migration helpers as inactive candidates and verifies their proposals
 in Docker. Serving requires a durable promotion record.
+The opt-in [skill/model router](docs/skill-routing.md) adds registered-model and
+general-model fallback with one budget and the same objective verifier.
 The `autocontext.analytics.context_attribution` API joins controlled trials to
 those immutable digests, plans bounded re-ablation, and returns non-destructive
 prompt-selection decisions. See [ablation-backed attribution](../docs/context-attribution.md).

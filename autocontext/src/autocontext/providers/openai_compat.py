@@ -73,6 +73,7 @@ class OpenAICompatibleProvider(LLMProvider):
         default_model_name: str = "gpt-5.6-terra",
         extra_headers: dict[str, str] | None = None,
         single_dispatch: bool = False,
+        follow_redirects: bool = True,
     ) -> None:
         if not _HAS_OPENAI:
             raise ProviderError("openai package is required for OpenAICompatibleProvider. Install with: pip install openai")
@@ -81,6 +82,8 @@ class OpenAICompatibleProvider(LLMProvider):
         kwargs: dict[str, Any] = {"api_key": resolved_key}
         if single_dispatch:
             kwargs["max_retries"] = 0
+        if not follow_redirects:
+            kwargs["http_client"] = openai.DefaultHttpxClient(follow_redirects=False)
         if base_url:
             kwargs["base_url"] = base_url
         if extra_headers:
@@ -145,10 +148,13 @@ class OpenAICompatibleProvider(LLMProvider):
                 "input_tokens": response.usage.prompt_tokens or 0,
                 "output_tokens": response.usage.completion_tokens or 0,
             }
+        raw_usage = response.usage.model_dump(exclude_none=True) if hasattr(response.usage, "model_dump") else None
 
         return CompletionResult(
             text=text,
             model=model_id,
+            served_model=getattr(response, "model", None),
+            raw_usage=raw_usage if isinstance(raw_usage, dict) else None,
             usage=usage,
             stop_reason=getattr(choice, "finish_reason", None) if choice else None,
             constrained=constrained,

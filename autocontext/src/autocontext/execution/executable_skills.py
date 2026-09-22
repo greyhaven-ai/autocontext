@@ -52,6 +52,24 @@ class ProfileV2(FrozenContract):
     status: Literal["enabled", "disabled"]
 
 
+def verify_migration_output(profile: ProfileV1, raw_output: str) -> str:
+    """One objective verifier shared by skill execution and model fallback."""
+    if profile.schema_version != 1:
+        raise ValueError("unsupported_schema_version")
+    try:
+        if encode_skill_payload(raw_output) is None:
+            raise ValueError("output_limit")
+        output = ProfileV2.model_validate(_json(raw_output))
+        canonical = json_payload(output)
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise ValueError("invalid_output") from exc
+    expected = ProfileV2(schema_version=2, display_name=profile.name,
+                         status="enabled" if profile.enabled else "disabled")
+    if output != expected:
+        raise ValueError("migration_postcondition_failed")
+    return canonical
+
+
 def _json(value: str) -> Any:
     def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
         result: dict[str, Any] = {}
@@ -283,14 +301,9 @@ serving, LLM completion dependency, automatic activation or fallback execution.
         if cancel is not None and cancel.is_set():
             return result("execution_failure", "cancelled")
         try:
-            output = ProfileV2.model_validate(_json(execution.output))
-            expected = ProfileV2(schema_version=2, display_name=profile.name,
-                                 status="enabled" if profile.enabled else "disabled")
-            if output != expected:
-                return result("verification_failure", "migration_postcondition_failed")
-            output_json = json_payload(output)
-        except (ValueError, TypeError, RecursionError):
-            return result("verification_failure", "invalid_output")
+            output_json = verify_migration_output(profile, execution.output)
+        except ValueError as exc:
+            return result("verification_failure", str(exc))
         # Detect durable artifact drift and revocation during a long invocation.
         if inspect_executable_skill(store, bundle_digest).digest != manifest.digest:
             raise ValueError("artifact changed during execution")

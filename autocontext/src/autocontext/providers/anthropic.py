@@ -43,10 +43,13 @@ class AnthropicProvider(LLMProvider):
         api_key: str | None = None,
         default_model_name: str = "claude-sonnet-5",
         single_dispatch: bool = False,
+        follow_redirects: bool = True,
     ) -> None:
         kwargs: dict[str, Any] = {"api_key": api_key}
         if single_dispatch:
             kwargs["max_retries"] = 0
+        if not follow_redirects:
+            kwargs["http_client"] = anthropic.DefaultHttpxClient(follow_redirects=False)
         self._client = anthropic.Anthropic(**kwargs)
         self._default_model = default_model_name
         self._single_dispatch = single_dispatch
@@ -110,9 +113,14 @@ class AnthropicProvider(LLMProvider):
                     stop_reason,
                 )
 
+        sdk_usage = getattr(response, "usage", None)
+        raw_usage = (sdk_usage.model_dump(exclude_none=True)
+                     if sdk_usage is not None and hasattr(sdk_usage, "model_dump") else None)
         return CompletionResult(
             text=text,
             model=model_id,
+            served_model=getattr(response, "model", None),
+            raw_usage=raw_usage if isinstance(raw_usage, dict) else None,
             usage=_usage_from(response),
             stop_reason=stop_reason,
             constrained=constrained,

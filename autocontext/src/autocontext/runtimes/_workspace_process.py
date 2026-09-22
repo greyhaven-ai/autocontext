@@ -50,10 +50,13 @@ def run_bounded_process(
     shell: bool,
     timeout_ms: int | None,
     output_limit_bytes: int = DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES,
+    cancel: threading.Event | None = None,
 ) -> BoundedProcessResult:
     """Run one command with bounded output and process-tree cleanup."""
     if output_limit_bytes < 0:
         raise ValueError("output_limit_bytes must be non-negative")
+    if cancel is not None and cancel.is_set():
+        return BoundedProcessResult(stdout="", stderr="Command cancelled", exit_code=130)
     timeout_seconds = None if timeout_ms is None else max(0.0, timeout_ms / 1_000)
     if sys.platform == "win32":
         creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -109,6 +112,9 @@ def run_bounded_process(
     try:
         while True:
             now = time.monotonic()
+            if cancel is not None and cancel.is_set():
+                outcome = "cancelled"
+                break
             if output_exceeded.is_set():
                 outcome = "output"
                 break
@@ -128,7 +134,7 @@ def run_bounded_process(
             wait_seconds = _PROCESS_POLL_SECONDS
             if deadline is not None:
                 wait_seconds = min(wait_seconds, max(0.0, deadline - now))
-            output_exceeded.wait(wait_seconds)
+            (cancel if cancel is not None else output_exceeded).wait(wait_seconds)
     except BaseException:
         _force_cleanup(process, process_group, stdout_thread, stderr_thread)
         raise
@@ -141,8 +147,12 @@ def run_bounded_process(
     except BaseException:
         _force_cleanup(process, process_group, stdout_thread, stderr_thread)
         raise
+    if return_code == -1 or stdout_thread.is_alive() or stderr_thread.is_alive():
+        return BoundedProcessResult(stdout="", stderr="Process cleanup could not be verified", exit_code=126)
     stdout_text = _decode_bounded_output(stdout, output_limit_bytes)
     stderr_text = _decode_bounded_output(stderr, output_limit_bytes)
+    if outcome == "cancelled" or (cancel is not None and cancel.is_set()):
+        return BoundedProcessResult(stdout="", stderr="Command cancelled", exit_code=130)
     if outcome == "output":
         return BoundedProcessResult(
             stdout=stdout_text,

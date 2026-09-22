@@ -62,6 +62,12 @@ class CompletionResult:
     # means the provider could only perform an ordinary completion. The default
     # preserves compatibility with providers written before thinking capture.
     thinking_capture: str = "none"
+    # Actual response model, when the backend reports it. ``model`` retains
+    # its historical requested/resolved-id semantics for existing consumers.
+    served_model: str | None = None
+    # Original SDK usage fields, before legacy normalization/coercion. Optional
+    # so strict consumers can validate receipts without changing existing usage.
+    raw_usage: dict[str, Any] | None = None
 
 
 class LLMProvider(ABC):
