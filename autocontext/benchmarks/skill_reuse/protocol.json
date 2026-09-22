@@ -1,0 +1,35 @@
+{
+  "schema_version": "ac1029.protocol.v1",
+  "request_budget": {
+    "wall_seconds": 30.0,
+    "max_attempts": 2,
+    "max_tokens": 20000,
+    "max_model_cost_usd": 1.0
+  },
+  "max_evaluation_calls": 400,
+  "max_evaluation_tokens": 4000000,
+  "max_evaluation_model_cost_usd": 100.0,
+  "evaluation_wall_seconds": 3600.0,
+  "min_cases_per_cohort": 12,
+  "min_groups_per_cohort": 4,
+  "quality_floor": 0.95,
+  "acceptable_regression": 0.02,
+  "min_skill_coverage": 0.5,
+  "bootstrap_seed": 1029,
+  "bootstrap_resamples": 2000,
+  "repetition_horizons": [
+    1,
+    2,
+    5,
+    10,
+    25,
+    100,
+    1000
+  ],
+  "shifted_frequencies": [
+    0.0,
+    0.1,
+    0.5,
+    1.0
+  ]
+}

@@ -30,6 +30,9 @@ durable active promotion record for serving.
 The [skill/model router](skill-routing.md) adds opt-in, verified fallback through
 registered and general model targets. It preserves explicit overrides and
 shares time, token, attempt and model-spend budgets across the request.
+Optional frozen `learned_playbook` context is included in model prompts, input
+admission and route identity. The [reuse study](../benchmarks/skill_reuse/README.md)
+compares textual and executable representations through this same boundary.
 
 ## Research workspace capabilities
 

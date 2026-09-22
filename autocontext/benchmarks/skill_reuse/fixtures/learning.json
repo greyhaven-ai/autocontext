@@ -1,0 +1,25 @@
+{
+  "training_digest": "ca75d8d5273aed21f73b3c6814c063ea98ae08b46f4e006245ff6516afac0e39",
+  "origin": "fixture",
+  "method": "Hand-authored infrastructure fixtures from the public contract and training examples; no efficacy claim.",
+  "evidence_refs": [
+    "fixtures/corpus.json#training"
+  ],
+  "discovery": [
+    {
+      "id": "fixture-authoring",
+      "phase": "discovery",
+      "arms": [
+        "baseline",
+        "textual",
+        "executable",
+        "cheap_textual"
+      ],
+      "seconds": null,
+      "model_calls": 0,
+      "tokens": 0,
+      "total_cost_usd": null,
+      "evidence": "Human authoring time and resource cost unmeasured; no synthesis provider was called."
+    }
+  ]
+}

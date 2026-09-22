@@ -14,6 +14,9 @@ schema-migration helpers as inactive candidates and verifies their proposals
 in Docker. Serving requires a durable promotion record.
 The opt-in [skill/model router](docs/skill-routing.md) adds registered-model and
 general-model fallback with one budget and the same objective verifier.
+The [schema-migration reuse study](benchmarks/skill_reuse/README.md) adds frozen
+paired comparisons against textual and cheaper-model controls, with a local
+Docker/HTTP fixture and explicit limits on quality and cost claims.
 The `autocontext.analytics.context_attribution` API joins controlled trials to
 those immutable digests, plans bounded re-ablation, and returns non-destructive
 prompt-selection decisions. See [ablation-backed attribution](../docs/context-attribution.md).

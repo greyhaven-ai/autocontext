@@ -15,6 +15,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [TypeScript package guide](../ts/README.md)
 - [Demo data notes](../autocontext/demo_data/README.md)
 - [GridCTF policy reuse pilot and reproducible measurements](../autocontext/benchmarks/policy_reuse/REPORT.md)
+- [Schema-migration reuse study protocol and four-arm harness](../autocontext/benchmarks/skill_reuse/README.md)
 
 Public examples use the canonical nested CLI paths: `autoctx scenario create`
 for scenario authoring and `autoctx serve mcp` for MCP clients.

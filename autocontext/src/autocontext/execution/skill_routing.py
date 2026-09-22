@@ -24,7 +24,7 @@ from autocontext.execution.executable_skills import (
     invoke_executable_skill,
     verify_migration_output,
 )
-from autocontext.execution.routed_model import SYSTEM_PROMPT, ModelCallError, complete_routed_model
+from autocontext.execution.routed_model import ModelCallError, complete_routed_model, model_system_prompt
 from autocontext.execution.skill_routing_models import ModelTarget, Route, RouteAttempt, SkillRoutingConfig, SkillRoutingResult
 from autocontext.harness.cost import calculator
 from autocontext.kernel_evolution import _generation_usage
@@ -104,6 +104,7 @@ def _model_receipt(completion: CompletionResult, target: ModelTarget) -> tuple[i
 def route_schema_migration(
     store: ContextBundleStore, registry: ModelRegistry, input_json: str, *, config: SkillRoutingConfig,
     trace_root: Path, mode: Literal["evaluation", "serving"], cancel: threading.Event | None = None,
+    request_budget: RuntimeBudget | None = None,
 ) -> SkillRoutingResult:
     """Return a verified proposal or explicit abstention, without applying side effects.
 
@@ -114,7 +115,10 @@ def route_schema_migration(
     if mode not in {"evaluation", "serving"}:
         raise ValueError("explicit evaluation or serving mode required")
     started = time.monotonic()
-    wall = RuntimeBudget(config.budget.wall_seconds, started)
+    seconds = config.budget.wall_seconds
+    if request_budget is not None:
+        seconds = min(seconds, request_budget.remaining(now=started))
+    wall = RuntimeBudget(seconds, started)
     cancel = cancel if cancel is not None else threading.Event()
     identity = routing_evaluator_identity()
     request_id = uuid.uuid4().hex
@@ -268,7 +272,7 @@ def route_schema_migration(
             continue
         # Byte-per-token plus a declared envelope allowance is deliberately
         # conservative. Operators must configure a valid bound for their backend.
-        if len(SYSTEM_PROMPT.encode()) + len(encoded) + 2048 > target.max_input_tokens:
+        if len(model_system_prompt(config.learned_playbook).encode()) + len(encoded) + 2048 > target.max_input_tokens:
             skip(route, "model_input_bound_exceeded", target)
             continue
         if stopped := exhausted():
@@ -296,7 +300,7 @@ def route_schema_migration(
         seen.add(endpoint_key)
         try:
             completion = complete_routed_model(target, input_json, timeout_seconds=min(target.timeout_seconds, wall.remaining()),
-                                               cancel=cancel, request_budget=wall)
+                                               cancel=cancel, request_budget=wall, learned_playbook=config.learned_playbook)
         except (ModelCallError, OSError, OfflineError) as exc:
             row.update(status="execution_failure", reason=str(exc) if isinstance(exc, ModelCallError) else "provider_unavailable",
                        elapsed_seconds=time.monotonic() - call_start)
