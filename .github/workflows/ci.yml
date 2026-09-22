@@ -172,6 +172,7 @@ jobs:
           tests/test_scenario_remote_package.py::test_custom_package_runs_in_exact_clean_network_denied_runtime_image
           tests/test_workspace_interpreter_settings.py::test_production_setting_selects_a_live_isolated_workspace
           tests/test_executable_skills.py::test_real_docker_executable_skill_boundary
+          tests/test_skill_routing.py::test_real_docker_routing_skill_then_model
       - name: Run executable skill end-to-end fixture
         run: uv run python ../examples/executable_skills/run.py --output "$RUNNER_TEMP/autocontext-skill-demo"
 
@@ -520,7 +521,11 @@ jobs:
       - name: Pin openai to matrix version
         run: uv pip install --exclude-newer 2026-05-05T00:00:00Z "openai==$OPENAI_VERSION"
       - name: Run OpenAI integration tests
-        run: uv run pytest tests/production_traces/ tests/integrations/ -q -m "not live"
+        run: >-
+          uv run pytest tests/production_traces/ tests/integrations/
+          tests/test_skill_routing.py::test_real_provider_usage_is_validated_before_normalization
+          tests/test_skill_routing.py::test_missing_wire_receipt_stops_fallback_with_full_reservation
+          -q -m "not live"
 
   openai-sdk-matrix-ts:
     runs-on: ubuntu-latest

@@ -21,7 +21,10 @@ from autocontext.execution.executable_skills import (
     invoke_executable_skill,
     propose_schema_migration,
 )
+from autocontext.execution.skill_routing import route_schema_migration
+from autocontext.execution.skill_routing_models import SkillRoutingConfig
 from autocontext.knowledge.harness_entries import SkillReference
+from autocontext.training.model_registry import ModelRegistry
 
 SOURCE = '''def choose_action(state):
     return {"schema_version": 2, "display_name": state["name"],
@@ -55,6 +58,10 @@ def run(output: Path) -> dict[str, Any]:
     (output / "inputs.json").write_text(json.dumps(inputs, indent=2) + "\n")
     results = [invoke_executable_skill(store, bundle.digest, json.dumps(value), mode="evaluation") for value in inputs]
     serving = invoke_executable_skill(store, bundle.digest, json.dumps(inputs[0]), mode="serving")
+    registry = ModelRegistry(output / "models")
+    config = SkillRoutingConfig(enabled=True, bundle_digest=bundle.digest)
+    routed = [route_schema_migration(store, registry, json.dumps(value), config=config,
+                                     trace_root=output / "traces", mode="evaluation") for value in inputs]
     summary = {
         "evidence_kind": "deterministic fixture; no live model or savings claim",
         "bundle_digest": bundle.digest,
@@ -66,10 +73,12 @@ def run(output: Path) -> dict[str, Any]:
         "active_pointer_unchanged": store.active_pointer(SCENARIO) == active_before,
         "evaluations": [result.model_dump() for result in results],
         "inactive_serving_attempt": serving.model_dump(),
+        "routing": [result.model_dump() for result in routed],
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     expected = ["success", "success", "abstention"]
-    if [result.status for result in results] != expected or serving.status != "execution_failure":
+    if ([result.status for result in results] != expected or serving.status != "execution_failure"
+            or [result.status for result in routed] != expected or any(result.model_calls for result in routed)):
         raise RuntimeError(f"fixture did not pass; inspect {output / 'summary.json'}")
     return summary
 

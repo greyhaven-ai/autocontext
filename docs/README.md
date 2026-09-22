@@ -90,6 +90,7 @@ contracts are available.
 - [Immutable context bundles and outcome-gated promotion](context-bundles.md)
 - [Scoped executable policy candidates](../autocontext/docs/policy-candidates.md)
 - [Explicit executable skills and schema-migration fixture](../autocontext/docs/executable-skills.md)
+- [Applicability-aware skill/model routing and shared budgets](../autocontext/docs/skill-routing.md)
 - [Campaign false-promotion calibration](false-promotion-calibration.md)
 - [Derived lesson curation](internal/derived-lesson-curation.md)
 - [Soft structural hints](soft-structural-hints.md)

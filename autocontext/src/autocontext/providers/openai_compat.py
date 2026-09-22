@@ -29,6 +29,7 @@ from autocontext.providers.thinking import (
     with_deep_think_instruction,
 )
 from autocontext.providers.token_caps import clamp_output_tokens
+from autocontext.providers.usage_receipt import exact_directional_usage, parse_wire_usage
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,8 @@ class OpenAICompatibleProvider(LLMProvider):
         default_model_name: str = "gpt-5.6-terra",
         extra_headers: dict[str, str] | None = None,
         single_dispatch: bool = False,
+        follow_redirects: bool = True,
+        capture_raw_usage: bool = False,
     ) -> None:
         if not _HAS_OPENAI:
             raise ProviderError("openai package is required for OpenAICompatibleProvider. Install with: pip install openai")
@@ -81,6 +84,8 @@ class OpenAICompatibleProvider(LLMProvider):
         kwargs: dict[str, Any] = {"api_key": resolved_key}
         if single_dispatch:
             kwargs["max_retries"] = 0
+        if not follow_redirects:
+            kwargs["http_client"] = openai.DefaultHttpxClient(follow_redirects=False)
         if base_url:
             kwargs["base_url"] = base_url
         if extra_headers:
@@ -93,6 +98,7 @@ class OpenAICompatibleProvider(LLMProvider):
         self._base_url = str(self._client.base_url)
         self._default_model = default_model_name
         self._single_dispatch = single_dispatch
+        self._capture_raw_usage = capture_raw_usage
 
     def complete(
         self,
@@ -130,17 +136,25 @@ class OpenAICompatibleProvider(LLMProvider):
             }
             constrained = True
 
+        capture_raw_usage = getattr(self, "_capture_raw_usage", False)
         response, constrained = self._create_chat_completion(
             request,
             model_id=model_id,
             constrained=constrained,
+            raw_response=capture_raw_usage,
         )
+        raw_usage = None
+        if capture_raw_usage:
+            raw_usage = parse_wire_usage(response.http_response.content)
+            response = response.parse()
 
         choice = response.choices[0] if response.choices else None
         text = choice.message.content or "" if choice else ""
 
         usage = {}
-        if response.usage:
+        if raw_usage is not None:
+            usage = exact_directional_usage(raw_usage)
+        elif response.usage:
             usage = {
                 "input_tokens": response.usage.prompt_tokens or 0,
                 "output_tokens": response.usage.completion_tokens or 0,
@@ -149,6 +163,8 @@ class OpenAICompatibleProvider(LLMProvider):
         return CompletionResult(
             text=text,
             model=model_id,
+            served_model=getattr(response, "model", None),
+            raw_usage=raw_usage,
             usage=usage,
             stop_reason=getattr(choice, "finish_reason", None) if choice else None,
             constrained=constrained,
@@ -294,6 +310,7 @@ class OpenAICompatibleProvider(LLMProvider):
         model_id: str,
         constrained: bool,
         partial_usage: dict[str, int] | None = None,
+        raw_response: bool = False,
     ) -> tuple[Any, bool]:
         while True:
             try:
@@ -303,7 +320,10 @@ class OpenAICompatibleProvider(LLMProvider):
                 # offline mode therefore still fails closed.
                 endpoint = getattr(self, "_base_url", "https://api.openai.com/v1")
                 require_endpoint_available("call an OpenAI-compatible endpoint", endpoint)
-                return self._client.chat.completions.create(**request), constrained
+                completions = self._client.chat.completions
+                if raw_response:
+                    return completions.with_raw_response.create(**request), constrained
+                return completions.create(**request), constrained
             except Exception as exc:
                 single_dispatch = getattr(self, "_single_dispatch", False)
                 if not single_dispatch and constrained and _is_unsupported_response_format_error(exc):
