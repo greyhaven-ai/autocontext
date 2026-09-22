@@ -50,6 +50,9 @@ The [machine-readable protocol](protocol.json) predeclares:
   declared model cost, one hour. Admission reserves a whole four-arm pair.
   Preflight, verification and model startup share the existing request deadline;
   process cleanup retains the route's separately bounded grace periods.
+  The absolute study deadline is also passed into every route. Ledger writes
+  cannot restart that deadline; expiry/cancellation after a write records a
+  known non-dispatch and releases the attempt without invoking the route.
 - Reuse horizons 1, 2, 5, 10, 25, 100 and 1,000; unsupported-contract workload
   frequencies 0%, 10%, 50% and 100%. A resource crossing is reported separately
   from an economic break-even. These are frozen-artifact fallback projections,
@@ -138,6 +141,10 @@ through the same router as serving and never promotes or changes its active poin
 Cancellation, unverified cleanup/accounting and interruptions produce incomplete
 evidence, with reservations retained in the ledger. No replacement cases or
 selective retries are added after results are observed.
+Unreconciled attempts make the affected cost totals, lifecycle resources per
+success, projections and resource crossings unknown. Completed-case counts and
+latency remain descriptive; full reservations are retained separately. A partial
+run cannot report a pending call as zero cost or qualify as complete evidence.
 
 ## Reporting and remaining work
 

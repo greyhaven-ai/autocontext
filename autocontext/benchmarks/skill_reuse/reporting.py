@@ -94,8 +94,9 @@ def comparisons(rows, protocol):
     return result
 
 
-def economics(rows, protocol, learning):
+def economics(rows, protocol, learning, *, unreconciled=()):
     setup = setup_costs(learning)
+    affected = {record["arm"] for record in unreconciled}
     actual, projections, first_use, qualification = {}, {}, {}, {}
     for arm in ARMS:
         group = [r for r in rows if r["arm"] == arm]
@@ -104,7 +105,7 @@ def economics(rows, protocol, learning):
         first_use[arm] = {}
         qualification[arm] = {}
         for metric in RESOURCES:
-            total = known_sum([setup[arm][metric], *[r[metric] for r in group]])
+            total = None if arm in affected else known_sum([setup[arm][metric], *[r[metric] for r in group]])
             actual[arm][metric] = total / successes if total is not None and successes else None
             qualification[arm][metric] = total
             first_use[arm][metric] = known_sum([setup[arm][metric], group[0][metric]]) if group else None
@@ -130,6 +131,9 @@ def economics(rows, protocol, learning):
         paired = [r for r in rows if r["arm"] == "executable" and r["case_id"] in right]
         crossing[reference] = {}
         for metric in RESOURCES:
+            if affected & {"executable", reference}:
+                crossing[reference][metric] = None
+                continue
             left_total, right_total = setup["executable"][metric], setup[reference][metric]
             first = None
             for i, row in enumerate(paired, 1):
@@ -138,24 +142,34 @@ def economics(rows, protocol, learning):
                 if first is None and left_total is not None and right_total is not None and left_total < right_total:
                     first = i
             crossing[reference][metric] = first
-    return {"one_time_costs": setup, "qualification_costs_including_evaluation": qualification,
+    return {"one_time_costs": setup, "cost_accounting_incomplete_arms": sorted(affected),
+            "qualification_costs_including_evaluation": qualification,
             "first_observed_task_with_setup": first_use,
             "actual_lifecycle_resources_per_success": actual, "projected_horizons": projections,
             "observed_first_resource_crossing_vs": crossing,
             "projection_scope": "Projection pays discovery, development and this arm's evaluation before new tasks. "
                                 "Shared qualification overhead belongs in the explicit discovery ledger. "
                                 "Observed crossings refer to the evaluation sequence, not post-qualification deployment. "
+                                "Unreconciled dispatches make affected totals, projections and crossings unknown. "
                                 "Frozen artifact with shifted-input fallback, no retuning. Horizons are projections, not runs. "
                                 "CPU/memory, Docker cost and remote invoices are not measured by this adapter. "
                                 "Declared model prices are partial estimates, never total lifecycle dollars."}
 
 
-def build_report(rows, protocol, learning, *, evidence_kind, split, expected_cases, status):
+def build_report(rows, protocol, learning, *, evidence_kind, split, expected_cases, status, unreconciled=()):
     stats = {f"{cohort}/{arm}": summarize_group([r for r in rows if r["arm"] == arm and r["cohort"] == cohort])
              for cohort in ("supported", "shifted") for arm in ARMS}
     paired = comparisons(rows, protocol)
-    costs = economics(rows, protocol, learning)
-    complete = status == "complete" and len(rows) == expected_cases * len(ARMS)
+    for cohort in ("supported", "shifted"):
+        for arm in ARMS:
+            count = sum(r["arm"] == arm and r.get("cohort", cohort) == cohort for r in unreconciled)
+            stat = stats[f"{cohort}/{arm}"]
+            stat["unreconciled_attempts"] = count
+            if count:
+                for metric in (*RESOURCES, "declared_model_cost_usd", "cpu_seconds"):
+                    stat[metric] = None
+    costs = economics(rows, protocol, learning, unreconciled=unreconciled)
+    complete = status == "complete" and not unreconciled and len(rows) == expected_cases * len(ARMS)
     enough = all(stats[f"{cohort}/baseline"]["cases"] >= protocol.min_cases_per_cohort for cohort in ("supported", "shifted"))
     enough = enough and all(c["sampling_groups"] >= protocol.min_groups_per_cohort for c in paired.values())
     quality = complete and enough and all(
@@ -177,7 +191,8 @@ def build_report(rows, protocol, learning, *, evidence_kind, split, expected_cas
         decision = "inconclusive_total_lifecycle_cost_unmeasured"
     return {"schema_version": "ac1029.report.v1", "evidence_kind": evidence_kind, "split": split, "status": status,
             "decision": decision, "production_activation_authorized": False, "complete_pairs": complete,
-            "quality_and_coverage_checks_pass": bool(quality), "stats": stats, "comparisons": paired, **costs,
+            "quality_and_coverage_checks_pass": bool(quality), "unreconciled_reservations": list(unreconciled),
+            "stats": stats, "comparisons": paired, **costs,
             "limitations": "Synthetic task-family pilot; intervals are conditional on frozen artifacts and model draws. "
                            "Bootstrap sampling units are paired fixture groups. Binomial intervals and latency quantiles "
                            "are descriptive. Public fixtures are not an independent private generalization suite. "
@@ -191,8 +206,12 @@ def render_report(report):
              "|---|---:|---:|---:|---:|"]
     for name, row in report["stats"].items():
         latency = "unknown" if row["p50_seconds"] is None else f"{row['p50_seconds']:.4f} / {row['p95_seconds']:.4f}"
-        lines.append(f"| {name} | {row['successes']} / {row['cases']} | {row['model_calls']} | {row['tokens']} | {latency} |")
+        calls = row["model_calls"] if row["model_calls"] is not None else "unknown"
+        tokens = row["tokens"] if row["tokens"] is not None else "unknown"
+        lines.append(f"| {name} | {row['successes']} / {row['cases']} | {calls} | {tokens} | {latency} |")
     lines.extend(["", "Total lifecycle dollars, CPU and peak memory: **unknown** with the current adapter.", "",
+                  "Case counts and latency describe completed outcomes. Unreconciled dispatches are retained in the ledger; "
+                  "affected cost totals, projections and resource crossings remain unknown.", "",
                   "[Machine-readable report](summary.json) includes paired differences, precision/coverage, fallback, "
                   "one-time costs, first-use costs, observed resource crossings and projected reuse horizons.", "",
                   report["limitations"], "", "This report does not authorize production promotion.", ""])

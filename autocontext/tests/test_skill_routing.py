@@ -520,6 +520,41 @@ def test_deadline_is_not_reset_by_fallback(pilot, monkeypatch):
     assert result.reason == "request_timeout" and result.output_json is None
 
 
+def test_outer_deadline_covers_router_initialization(pilot, model, monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    original = skill_routing.routing_evaluator_identity
+
+    def slow_identity():
+        value = original()
+        now[0] = 3.0
+        return value
+
+    monkeypatch.setattr(skill_routing, "routing_evaluator_identity", slow_identity)
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True, general=target()),
+                 request_budget=RuntimeBudget(2, 0))
+    assert result.reason == "request_timeout" and not model
+
+
+@pytest.mark.parametrize("outer_seconds,configured_seconds,expected", [(2, 30, 2), (30, 2, 2)])
+def test_outer_and_route_deadlines_both_bound_model_dispatch(pilot, monkeypatch, outer_seconds, configured_seconds, expected):
+    now = [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    calls = []
+
+    def complete(selected, value, *, timeout_seconds, request_budget, **kwargs):
+        calls.append((timeout_seconds, request_budget.remaining()))
+        now[0] = expected + .1
+        return receipt()
+
+    monkeypatch.setattr(skill_routing, "complete_routed_model", complete)
+    result = run(pilot, request_budget=RuntimeBudget(outer_seconds, 0),
+                 config=SkillRoutingConfig(enabled=True, allow_network=True, general=target(),
+                                           budget=RoutingBudget(wall_seconds=configured_seconds)))
+    assert calls == [(expected, expected)]
+    assert result.reason == "request_timeout" and result.output_json is None
+
+
 def test_oversized_input_never_encoded_or_dispatched(pilot, skill, model):
     class Oversized(str):
         def encode(self, *args, **kwargs):

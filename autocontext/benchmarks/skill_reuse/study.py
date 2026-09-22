@@ -29,6 +29,7 @@ from autocontext.execution.skill_routing_models import SkillRoutingConfig
 from autocontext.harness import benchmark_stats
 from autocontext.knowledge.harness_entries import SkillReference
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
+from autocontext.runtimes.runtime_budget import RuntimeBudget
 from autocontext.training.model_registry import ModelRegistry
 from autocontext.util.json_io import write_json
 from benchmarks.skill_reuse.contracts import ARMS, Corpus, DiscoveryCost, LearningRecord, Models, StudyProtocol
@@ -182,7 +183,8 @@ def run(root: Path, *, split="heldout", cancel=None):
     output.mkdir(exist_ok=False)
     registry = ModelRegistry(output / "models")
     cancel = cancel if cancel is not None else threading.Event()
-    deadline = time.monotonic() + protocol.evaluation_wall_seconds
+    study_budget = RuntimeBudget.starting_now(protocol.evaluation_wall_seconds)
+    deadline = study_budget.start_at + study_budget.total_seconds
     cases = getattr(corpus, split)
     order = schedule(cases, protocol.bootstrap_seed)
     write_json(output / "schedule.json", [{"case_id": c.id, "arms": arms} for c, arms in order])
@@ -212,20 +214,25 @@ def run(root: Path, *, split="heldout", cancel=None):
                     status = "cancelled" if cancel.is_set() else "evaluation_budget_exhausted"
                     break
                 target = targets[arm]
-                budget = protocol.request_budget.model_copy(update={
-                    "wall_seconds": min(protocol.request_budget.wall_seconds, deadline - time.monotonic())})
                 config = SkillRoutingConfig(
-                    enabled=True, allow_network=True, general=target, budget=budget,
+                    enabled=True, allow_network=True, general=target, budget=protocol.request_budget,
                     bundle_digest=manifest["bundle_digest"] if arm == "executable" else None,
                     learned_playbook="" if arm == "baseline" else playbook)
-                ledger.append({"case_id": case.id, "arm": arm, "state": "reserved",
+                ledger.append({"case_id": case.id, "cohort": case.cohort, "arm": arm, "state": "reserved",
                                "reserved_model_calls": 1, "reserved_tokens": target.max_input_tokens + target.max_output_tokens,
                                "reserved_model_cost_usd": target.cost(target.max_input_tokens, target.max_output_tokens),
                                "config_digest": config.digest})
                 write_json(output / "ledger.json", ledger)
+                if cancel.is_set() or study_budget.expired():
+                    status = "cancelled" if cancel.is_set() else "evaluation_budget_exhausted"
+                    ledger[-1].update(state="not_dispatched", reason=status, model_calls=0, tokens=0,
+                                      declared_model_cost_usd=0)
+                    write_json(output / "ledger.json", ledger)
+                    break
                 started = time.monotonic()
                 result = route_schema_migration(store, registry, case.input_json, config=config,
-                                                 trace_root=output / "traces", mode="evaluation", cancel=cancel)
+                                                 trace_root=output / "traces", mode="evaluation", cancel=cancel,
+                                                 request_budget=study_budget)
                 row = score_case(case, result)
                 row.update(arm=arm, seconds=time.monotonic() - started,
                            cpu_seconds=None, peak_memory_bytes=None, total_cost_usd=None)
@@ -253,9 +260,9 @@ def run(root: Path, *, split="heldout", cancel=None):
         if store.active_pointer(SCENARIO) != manifest["active_pointer"]:
             status = "active_pointer_changed"
         report = build_report(rows, protocol, learning, evidence_kind=models.evidence_kind, split=split,
-                              expected_cases=len(cases), status=status)
-        report.update(freeze_digest=digest, failure=failure, discovery_ledger=learning.model_dump(mode="json")["discovery"],
-                      unreconciled_reservations=[r for r in ledger if r["state"] == "reserved"])
+                              expected_cases=len(cases), status=status,
+                              unreconciled=[r for r in ledger if r["state"] == "reserved"])
+        report.update(freeze_digest=digest, failure=failure, discovery_ledger=learning.model_dump(mode="json")["discovery"])
         write_json(output / "summary.json", report)
         (output / "REPORT.md").write_text(render_report(report), encoding="utf-8")
     return report

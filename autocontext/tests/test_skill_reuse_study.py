@@ -164,8 +164,71 @@ def test_crash_keeps_durable_reservation_and_partial_report(prepared, monkeypatc
     report = read_json(prepared / "heldout/summary.json")
     assert report["status"] == "interrupted" and len(report["unreconciled_reservations"]) == 1
     assert report["unreconciled_reservations"][0]["reserved_tokens"] == 9216
+    arm = report["unreconciled_reservations"][0]["arm"]
+    assert report["qualification_costs_including_evaluation"][arm]["model_calls"] is None
+    assert report["cost_accounting_incomplete_arms"] == [arm]
     with pytest.raises(FileExistsError):
         study.run(prepared)
+
+
+@pytest.mark.parametrize("stop", ["deadline", "cancel"])
+def test_ledger_write_cannot_dispatch_after_study_stops(prepared, execution, monkeypatch, stop):
+    now = [0.0]
+    cancel = threading.Event()
+    monkeypatch.setattr(study.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(study, "schedule", lambda cases, seed: [(c, list(ARMS)) for c in cases])
+    original = study.write_json
+
+    def slow_write(path, value):
+        original(path, value)
+        if path.name == "ledger.json" and value[-1]["state"] == "reserved":
+            if stop == "deadline":
+                now[0] = 3601.0
+            else:
+                cancel.set()
+
+    monkeypatch.setattr(study, "write_json", slow_write)
+    monkeypatch.setattr(study, "route_schema_migration", lambda *a, **kw: pytest.fail("dispatch after stop"))
+    report = study.run(prepared, cancel=cancel)
+    assert report["status"] == ("evaluation_budget_exhausted" if stop == "deadline" else "cancelled")
+    assert not execution and not report["unreconciled_reservations"]
+    ledger = read_json(prepared / "heldout/ledger.json")
+    assert len(ledger) == 1 and ledger[0]["state"] == "not_dispatched" and ledger[0]["model_calls"] == 0
+
+
+def test_trace_failure_after_call_makes_affected_costs_unknown(prepared, execution, monkeypatch):
+    original_route = study.route_schema_migration
+    original_write = skill_routing.write_json
+    textual_attempts = [0]
+    current_textual = [False]
+
+    def route(*args, **kwargs):
+        config = kwargs["config"]
+        current_textual[0] = (bool(config.learned_playbook) and config.bundle_digest is None
+                              and config.general.model == "fixture-reference")
+        textual_attempts[0] += current_textual[0]
+        return original_route(*args, **kwargs)
+
+    def fail_final_trace(path, data):
+        if current_textual[0] and textual_attempts[0] == 2 and data.get("status") in {"success", "abstention"}:
+            raise OSError("final trace write failure after provider completion")
+        return original_write(path, data)
+
+    monkeypatch.setattr(study, "route_schema_migration", route)
+    monkeypatch.setattr(skill_routing, "write_json", fail_final_trace)
+    with pytest.raises(OSError, match="final trace"):
+        study.run(prepared)
+    report = read_json(prepared / "heldout/summary.json")
+    assert textual_attempts[0] == 2
+    assert report["cost_accounting_incomplete_arms"] == ["textual"]
+    assert report["qualification_costs_including_evaluation"]["textual"]["model_calls"] is None
+    assert report["actual_lifecycle_resources_per_success"]["textual"]["tokens"] is None
+    assert all(r["tokens"] is None for r in report["projected_horizons"]["textual"])
+    assert all(v is None for v in report["observed_first_resource_crossing_vs"]["textual"].values())
+    reservation, = report["unreconciled_reservations"]
+    assert reservation["arm"] == "textual" and reservation["reserved_tokens"] == 9216
+    assert report["stats"][f"{reservation['cohort']}/textual"]["model_calls"] is None
+    assert "unknown" in (prepared / "heldout/REPORT.md").read_text()
 
 
 def test_cost_ledger_includes_failed_discovery_and_unknown_resources(prepared, execution):

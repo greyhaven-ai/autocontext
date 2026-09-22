@@ -162,6 +162,9 @@ The absolute request deadline is carried through skill preflight, Docker
 execution, model-worker setup and SDK initialization. Expired preflight cannot
 start another execution. Runtime timeouts use the remaining request time without
 rewriting the candidate's immutable limits or restarting the clock.
+Callers running multiple requests can also pass an outer `request_budget`
+(`RuntimeBudget`). Its absolute deadline caps the configured route budget from
+router initialization through skill/model dispatch and final verification.
 
 Each model call runs in a bounded, cancellable worker using repository-owned
 provider code, with SDK retries disabled. Pass a `threading.Event` as `cancel`

@@ -104,6 +104,7 @@ def _model_receipt(completion: CompletionResult, target: ModelTarget) -> tuple[i
 def route_schema_migration(
     store: ContextBundleStore, registry: ModelRegistry, input_json: str, *, config: SkillRoutingConfig,
     trace_root: Path, mode: Literal["evaluation", "serving"], cancel: threading.Event | None = None,
+    request_budget: RuntimeBudget | None = None,
 ) -> SkillRoutingResult:
     """Return a verified proposal or explicit abstention, without applying side effects.
 
@@ -114,7 +115,10 @@ def route_schema_migration(
     if mode not in {"evaluation", "serving"}:
         raise ValueError("explicit evaluation or serving mode required")
     started = time.monotonic()
-    wall = RuntimeBudget(config.budget.wall_seconds, started)
+    seconds = config.budget.wall_seconds
+    if request_budget is not None:
+        seconds = min(seconds, request_budget.remaining(now=started))
+    wall = RuntimeBudget(seconds, started)
     cancel = cancel if cancel is not None else threading.Event()
     identity = routing_evaluator_identity()
     request_id = uuid.uuid4().hex

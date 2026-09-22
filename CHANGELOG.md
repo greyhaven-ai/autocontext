@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
   Docker/router boundaries and adds optional digest-bound textual playbooks.
   Fixture results do not establish live efficacy; unknown resource costs remain
   unknown and production promotion is separate.
+  Absolute study deadlines also cover ledger persistence and router startup;
+  unresolved call reservations invalidate affected cost totals and projections.
 
 - Python: opt-in applicability-aware routing for the profile schema-migration
   pilot, with verified skill/registered-model/general-model fallback, explicit
