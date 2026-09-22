@@ -521,7 +521,11 @@ jobs:
       - name: Pin openai to matrix version
         run: uv pip install --exclude-newer 2026-05-05T00:00:00Z "openai==$OPENAI_VERSION"
       - name: Run OpenAI integration tests
-        run: uv run pytest tests/production_traces/ tests/integrations/ -q -m "not live"
+        run: >-
+          uv run pytest tests/production_traces/ tests/integrations/
+          tests/test_skill_routing.py::test_real_provider_usage_is_validated_before_normalization
+          tests/test_skill_routing.py::test_missing_wire_receipt_stops_fallback_with_full_reservation
+          -q -m "not live"
 
   openai-sdk-matrix-ts:
     runs-on: ubuntu-latest

@@ -26,6 +26,7 @@ from autocontext.providers.thinking import (
     with_deep_think_instruction,
 )
 from autocontext.providers.token_caps import clamp_output_tokens
+from autocontext.providers.usage_receipt import exact_directional_usage, parse_wire_usage
 
 _DEEP_THINK_TOOL: dict[str, Any] = {
     "name": DEEP_THINK_TOOL_NAME,
@@ -44,6 +45,7 @@ class AnthropicProvider(LLMProvider):
         default_model_name: str = "claude-sonnet-5",
         single_dispatch: bool = False,
         follow_redirects: bool = True,
+        capture_raw_usage: bool = False,
     ) -> None:
         kwargs: dict[str, Any] = {"api_key": api_key}
         if single_dispatch:
@@ -53,6 +55,7 @@ class AnthropicProvider(LLMProvider):
         self._client = anthropic.Anthropic(**kwargs)
         self._default_model = default_model_name
         self._single_dispatch = single_dispatch
+        self._capture_raw_usage = capture_raw_usage
 
     def complete(
         self,
@@ -88,7 +91,13 @@ class AnthropicProvider(LLMProvider):
             request["tool_choice"] = {"type": "tool", "name": output_schema.name}
             constrained = True
 
-        response, constrained = self._create_message(request, model_id=model_id, constrained=constrained)
+        capture_raw_usage = getattr(self, "_capture_raw_usage", False)
+        response, constrained = self._create_message(request, model_id=model_id, constrained=constrained,
+                                                     raw_response=capture_raw_usage)
+        raw_usage = None
+        if capture_raw_usage:
+            raw_usage = parse_wire_usage(response.http_response.content)
+            response = response.parse()
 
         stop_reason = getattr(response, "stop_reason", None)
         text = _first_text_block(response)
@@ -113,15 +122,12 @@ class AnthropicProvider(LLMProvider):
                     stop_reason,
                 )
 
-        sdk_usage = getattr(response, "usage", None)
-        raw_usage = (sdk_usage.model_dump(exclude_none=True)
-                     if sdk_usage is not None and hasattr(sdk_usage, "model_dump") else None)
         return CompletionResult(
             text=text,
             model=model_id,
             served_model=getattr(response, "model", None),
-            raw_usage=raw_usage if isinstance(raw_usage, dict) else None,
-            usage=_usage_from(response),
+            raw_usage=raw_usage,
+            usage=exact_directional_usage(raw_usage) if raw_usage is not None else _usage_from(response),
             stop_reason=stop_reason,
             constrained=constrained,
         )
@@ -132,11 +138,14 @@ class AnthropicProvider(LLMProvider):
         *,
         model_id: str,
         constrained: bool,
+        raw_response: bool = False,
     ) -> tuple[Any, bool]:
         """Create one message, degrading only explicit strict-schema rejection."""
         while True:
             try:
                 require_online("call the Anthropic API")
+                if raw_response:
+                    return self._client.messages.with_raw_response.create(**request), constrained
                 return self._client.messages.create(**request), constrained
             except anthropic.APIError as exc:
                 if (

@@ -65,8 +65,8 @@ class CompletionResult:
     # Actual response model, when the backend reports it. ``model`` retains
     # its historical requested/resolved-id semantics for existing consumers.
     served_model: str | None = None
-    # Original SDK usage fields, before legacy normalization/coercion. Optional
-    # so strict consumers can validate receipts without changing existing usage.
+    # Original HTTP usage fields, before SDK coercion. Present only when the
+    # provider explicitly captures wire receipts; legacy usage stays unchanged.
     raw_usage: dict[str, Any] | None = None
 
 

@@ -48,6 +48,7 @@ result = invoke_executable_skill(
     mode="evaluation",  # explicit inactive candidate/incumbent replay
     caller_limits=limits,
     cancel=cancellation_event,  # optional threading.Event
+    request_budget=shared_budget,  # optional RuntimeBudget across routed attempts
 )
 ```
 
@@ -66,6 +67,9 @@ their respective bundle digests and invoke this same function. AC-1020's
 [opt-in router](skill-routing.md) composes this seam with verified model fallback;
 AC-1021 owns complete route promotion decisions and atomic activation.
 This seam is opt-in and is not wired into automatic production routing.
+When a `RuntimeBudget` is supplied, its absolute deadline is checked after
+preflight and carried into Docker execution. It caps runtime timeouts without
+changing the immutable manifest, and expired requests never start a container.
 
 The manifest shares AC-1019's base contract without changing its GridCTF v1 wire
 fields or canonical digest. It binds the source/entrypoint, input/output schemas,

@@ -30,6 +30,8 @@ from autocontext.execution.docker_skill import DockerSkillExecutor, encode_skill
 from autocontext.kernel_evolution import _process_control
 from autocontext.knowledge.harness_entries import SkillReference
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
+from autocontext.runtimes import runtime_budget
+from autocontext.runtimes.runtime_budget import RuntimeBudget
 
 SCENARIO = "schema_migration"
 CONTRACT = "profile-v1-to-v2"
@@ -144,7 +146,7 @@ class ExecutableSkillEligibility(FrozenContract):
 def evaluator_identity() -> str:
     """Invalidate replay on changes to the verifier, bridge or isolation boundary."""
     paths = [Path(__file__), *(Path(str(module.__file__)) for module in (
-        docker_skill, docker_isolation, _process_control, policy_candidate, bundle_models,
+        docker_skill, docker_isolation, _process_control, policy_candidate, bundle_models, runtime_budget,
     ))]
     return stable_digest({
         "source": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths},
@@ -229,6 +231,7 @@ def invoke_executable_skill(
     store: ContextBundleStore, bundle_digest: str, input_json: str, *,
     mode: Literal["evaluation", "serving"], caller_limits: CandidateLimits = DEFAULT_LIMITS,
     executor: DockerSkillExecutor | None = None, cancel: threading.Event | None = None,
+    request_budget: RuntimeBudget | None = None,
 ) -> SkillInvocation:
     """Return a verified proposal, never apply changes to an external artifact.
 
@@ -245,14 +248,21 @@ serving, LLM completion dependency, automatic activation or fallback execution.
         "evaluator_identity": identity, "mode": mode,
     }
 
+    def stopped() -> str | None:
+        if cancel is not None and cancel.is_set():
+            return "cancelled"
+        if request_budget is not None and request_budget.expired():
+            return "timeout"
+        return None
+
     def result(status: Literal["success", "abstention", "execution_failure", "verification_failure"],
                reason: str, output_json: str | None = None) -> SkillInvocation:
         return SkillInvocation(status=status, reason=reason, output_json=output_json,
                                elapsed_seconds=time.monotonic() - started, **metadata)
 
     try:
-        if cancel is not None and cancel.is_set():
-            return result("execution_failure", "cancelled")
+        if reason := stopped():
+            return result("execution_failure", reason)
         try:
             input_bytes = encode_skill_payload(input_json)
         except UnicodeEncodeError:
@@ -263,6 +273,8 @@ serving, LLM completion dependency, automatic activation or fallback execution.
         manifest = inspect_executable_skill(store, bundle_digest)
         metadata.update(artifact_digest=manifest.digest, source_sha256=manifest.source_sha256,
                         limits_json=json_payload(manifest.limits))
+        if reason := stopped():
+            return result("execution_failure", reason)
         manifest.limits.require_within(caller_limits)
         if (
             manifest.scenario != SCENARIO or manifest.scenario_version != CONTRACT
@@ -281,8 +293,8 @@ serving, LLM completion dependency, automatic activation or fallback execution.
         })
         if mode == "serving":
             _require_active(store, bundle_digest, identity)
-        if cancel is not None and cancel.is_set():
-            return result("execution_failure", "cancelled")
+        if reason := stopped():
+            return result("execution_failure", reason)
         try:
             data = _json(input_json)
             profile = ProfileV1.model_validate(data)
@@ -291,15 +303,21 @@ serving, LLM completion dependency, automatic activation or fallback execution.
             return result("abstention", "invalid_input")
         if profile.schema_version != 1:
             return result("abstention", "unsupported_schema_version")
-        execution = executor.execute(manifest.skill.source, normalized_input, manifest.limits, cancel=cancel)
+        if reason := stopped():
+            return result("execution_failure", reason)
+        if request_budget is None:
+            execution = executor.execute(manifest.skill.source, normalized_input, manifest.limits, cancel=cancel)
+        else:
+            execution = executor.execute(manifest.skill.source, normalized_input, manifest.limits, cancel=cancel,
+                                          request_budget=request_budget)
         metadata.update(execution_seconds=execution.elapsed_seconds, image_identity=execution.image_identity)
         metadata["environment_digest"] = stable_digest({
             "declared_environment": metadata["environment_digest"], "resolved_image": execution.image_identity,
         })
         if execution.failure:
             return result("execution_failure", execution.failure)
-        if cancel is not None and cancel.is_set():
-            return result("execution_failure", "cancelled")
+        if reason := stopped():
+            return result("execution_failure", reason)
         try:
             output_json = verify_migration_output(profile, execution.output)
         except ValueError as exc:
@@ -309,8 +327,8 @@ serving, LLM completion dependency, automatic activation or fallback execution.
             raise ValueError("artifact changed during execution")
         if mode == "serving":
             _require_active(store, bundle_digest, identity)
-        if cancel is not None and cancel.is_set():
-            return result("execution_failure", "cancelled")
+        if reason := stopped():
+            return result("execution_failure", reason)
         return result("success", "verified_proposal", output_json)
     except (OSError, ValueError, TypeError, LookupError, AttributeError, RecursionError, RuntimeError) as exc:
         return result("execution_failure", str(exc)[:512])

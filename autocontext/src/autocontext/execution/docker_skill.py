@@ -25,6 +25,7 @@ from autocontext.execution.docker_isolation import (
 )
 from autocontext.kernel_evolution._process_control import BoundedOutput, drain_bounded
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
+from autocontext.runtimes.runtime_budget import RuntimeBudget
 
 MAX_PAYLOAD_BYTES = 65536
 
@@ -67,13 +68,18 @@ class DockerSkillExecutor:
     docker_binary: str = "docker"
 
     def execute(
-        self, source: str, input_json: str, limits: CandidateLimits, *, cancel: threading.Event | None = None
+        self, source: str, input_json: str, limits: CandidateLimits, *, cancel: threading.Event | None = None,
+        request_budget: RuntimeBudget | None = None,
     ) -> DockerSkillResult:
         started = time.monotonic()
         deadline = started + limits.timeout_seconds
+        if request_budget is not None:
+            deadline = min(deadline, request_budget.start_at + request_budget.total_seconds)
         cancel = cancel if cancel is not None else threading.Event()
         if cancel.is_set():
             return DockerSkillResult(failure="cancelled")
+        if time.monotonic() >= deadline:
+            return DockerSkillResult(failure="timeout")
         if self.image != PINNED_PYTHON_RUNTIME_IMAGE or limits.max_memory_mb < 64:
             return DockerSkillResult(failure="unsupported_environment")
         try:
@@ -97,9 +103,10 @@ class DockerSkillExecutor:
         def remaining() -> float:
             if cancel.is_set():
                 raise InterruptedError("cancelled")
-            if time.monotonic() >= deadline:
+            left = deadline - time.monotonic()
+            if left <= 0:
                 raise TimeoutError("timeout")
-            return max(0.001, deadline - time.monotonic())
+            return left
 
         try:
             # Never pull during execution. Operators prepare this exact image;

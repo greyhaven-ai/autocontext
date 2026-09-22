@@ -30,7 +30,7 @@ from autocontext.harness.cost import calculator
 from autocontext.kernel_evolution import _generation_usage
 from autocontext.kernel_evolution._generation_usage import validate_directional_token_aliases
 from autocontext.offline import OfflineError, require_endpoint_available
-from autocontext.providers import anthropic, openai_compat, scenario_routing, token_caps
+from autocontext.providers import anthropic, openai_compat, scenario_routing, token_caps, usage_receipt
 from autocontext.providers import base as provider_base
 from autocontext.providers.base import CompletionResult
 from autocontext.providers.scenario_routing import ScenarioRoutingContext, resolve_provider_for_context
@@ -44,7 +44,7 @@ from autocontext.util.json_io import write_json
 def routing_evaluator_identity() -> str:
     """Reuse canonical digests and the bridge verifier epoch; bind all route code."""
     modules = (routed_model, skill_routing_models, scenario_routing, _workspace_process, anthropic, openai_compat,
-               provider_base, token_caps, model_registry, offline, _generation_usage, calculator, runtime_budget)
+               provider_base, token_caps, usage_receipt, model_registry, offline, _generation_usage, calculator, runtime_budget)
     packages = {}
     for package in ("openai", "anthropic"):
         try:
@@ -202,7 +202,8 @@ def route_schema_migration(
         # A candidate's immutable limits must fit the remaining request budget;
         # never rewrite its manifest or reset the wall clock on fallback.
         limits = CandidateLimits(timeout_seconds=max(0.001, min(30, wall.remaining())), max_memory_mb=256)
-        result = invoke_executable_skill(store, config.bundle_digest, input_json, mode=mode, caller_limits=limits, cancel=cancel)
+        result = invoke_executable_skill(store, config.bundle_digest, input_json, mode=mode, caller_limits=limits,
+                                         cancel=cancel, request_budget=wall)
         row.update(status=result.status, reason=result.reason, artifact_digest=result.artifact_digest,
                    environment_digest=result.environment_digest, elapsed_seconds=time.monotonic() - call_start)
         if result.status == "success":
@@ -225,7 +226,6 @@ def route_schema_migration(
         if endpoint_key in seen:
             skip(route, "duplicate_model_route", target)
             continue
-        seen.add(endpoint_key)
         record_id: str | None = None
         record_digest: str | None = None
         try:
@@ -293,9 +293,10 @@ def route_schema_migration(
                        reserved_tokens=0, reserved_cost_usd=0, accounting="none")
             return persist("execution_failure", stopped)
         call_start = time.monotonic()
+        seen.add(endpoint_key)
         try:
             completion = complete_routed_model(target, input_json, timeout_seconds=min(target.timeout_seconds, wall.remaining()),
-                                               cancel=cancel)
+                                               cancel=cancel, request_budget=wall)
         except (ModelCallError, OSError, OfflineError) as exc:
             row.update(status="execution_failure", reason=str(exc) if isinstance(exc, ModelCallError) else "provider_unavailable",
                        elapsed_seconds=time.monotonic() - call_start)

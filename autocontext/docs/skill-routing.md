@@ -45,8 +45,9 @@ else:
 the skill tier. Omitted model tiers are recorded as skipped. With models
 configured, a missing, stale, inapplicable or invalid skill may fall back.
 Unverified cleanup or cancellation stops the request rather than starting
-another execution. Each tier is considered at most once; repeated model and
-endpoint combinations are skipped.
+another execution. Each tier is considered at most once. Model/endpoint
+combinations are marked as attempted only when dispatch starts; a skipped
+specialized tier can still use the configured general fallback at that endpoint.
 
 `mode` is required. `evaluation` explicitly pins an inactive candidate for
 replay. `serving` preserves the bridge's active-bundle and durable-promotion
@@ -139,8 +140,9 @@ and hidden request overhead. Prices are required operator declarations; there
 is no unknown-model fallback price. Spend reservations round upward to a
 microdollar so tiny positive charges cannot pass a zero-spend budget.
 
-Successful receipts reconcile the reservation using original, uncoerced SDK
-usage (including directional/total consistency) and the
+Successful receipts reconcile the reservation using original HTTP JSON usage,
+captured before SDK parsing can coerce booleans, strings or floats into integers
+(including directional/total consistency), and the
 larger of declared-price cost and any provider-reported cost. Missing, malformed,
 contradictory or excessive counters/costs stop escalation. Failed calls without
 a valid receipt retain their complete reservation. Budget exhaustion never
@@ -148,6 +150,11 @@ resets the request or silently chooses a cheaper unconfigured provider.
 Known OpenAI detail counters must fit their directional totals. Additional
 billing counters, including nonzero Anthropic cache creation/read counters,
 require a future accounting extension and currently fail closed.
+
+The absolute request deadline is carried through skill preflight, Docker
+execution, model-worker setup and SDK initialization. Expired preflight cannot
+start another execution. Runtime timeouts use the remaining request time without
+rewriting the candidate's immutable limits or restarting the clock.
 
 Each model call runs in a bounded, cancellable worker using repository-owned
 provider code, with SDK retries disabled. Pass a `threading.Event` as `cancel`

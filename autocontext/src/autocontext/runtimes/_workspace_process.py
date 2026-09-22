@@ -12,6 +12,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import IO
 
+from autocontext.runtimes.runtime_budget import RuntimeBudget
+
 DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES = 1_048_576
 _PROCESS_TERMINATION_GRACE_SECONDS = 0.25
 _PROCESS_DRAIN_GRACE_SECONDS = 0.25
@@ -51,6 +53,7 @@ def run_bounded_process(
     timeout_ms: int | None,
     output_limit_bytes: int = DEFAULT_RUNTIME_PROCESS_OUTPUT_LIMIT_BYTES,
     cancel: threading.Event | None = None,
+    request_budget: RuntimeBudget | None = None,
 ) -> BoundedProcessResult:
     """Run one command with bounded output and process-tree cleanup."""
     if output_limit_bytes < 0:
@@ -58,6 +61,12 @@ def run_bounded_process(
     if cancel is not None and cancel.is_set():
         return BoundedProcessResult(stdout="", stderr="Command cancelled", exit_code=130)
     timeout_seconds = None if timeout_ms is None else max(0.0, timeout_ms / 1_000)
+    deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
+    if request_budget is not None:
+        shared_deadline = request_budget.start_at + request_budget.total_seconds
+        deadline = shared_deadline if deadline is None else min(deadline, shared_deadline)
+    if deadline is not None and time.monotonic() >= deadline:
+        return BoundedProcessResult(stdout="", stderr="Command timed out", exit_code=124)
     if sys.platform == "win32":
         creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         process = subprocess.Popen(
@@ -105,7 +114,6 @@ def run_bounded_process(
         stderr_done,
         output_limit_bytes,
     )
-    deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
     exit_observed_at: float | None = None
     outcome: str | None = None
 

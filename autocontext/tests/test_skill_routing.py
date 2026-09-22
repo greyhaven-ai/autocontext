@@ -15,10 +15,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from autocontext.artifacts.policy_candidate import CandidateLimits
 from autocontext.context_bundles import MatchedTrial, TrialLane
 from autocontext.context_bundles.models import ContextBundle
 from autocontext.context_bundles.store import ContextBundleStore
-from autocontext.execution import skill_routing
+from autocontext.execution import docker_skill, executable_skills, routed_model, skill_routing
 from autocontext.execution.docker_skill import DockerSkillExecutor, DockerSkillResult
 from autocontext.execution.executable_skills import (
     CONTRACT,
@@ -33,6 +34,7 @@ from autocontext.execution.skill_routing_models import ModelTarget, RoutingBudge
 from autocontext.knowledge.harness_entries import SkillReference
 from autocontext.providers.base import CompletionResult
 from autocontext.runtimes._workspace_process import default_shell_env, run_bounded_process
+from autocontext.runtimes.runtime_budget import RuntimeBudget
 from autocontext.training.model_registry import DistilledModelRecord, ModelRegistry
 
 INPUT = '{"schema_version":1,"name":"Ada","enabled":true}'
@@ -344,6 +346,96 @@ def test_same_model_is_not_called_twice(pilot, monkeypatch):
     assert len(calls) == 1 and result.attempts[-1].reason == "duplicate_model_route"
 
 
+@pytest.mark.parametrize("unavailable", ["registration", "input_bound"])
+def test_skipped_specialized_allows_undispatched_general(pilot, model, unavailable):
+    general = target()
+    specific = general
+    if unavailable == "input_bound":
+        specific = target(max_input_tokens=512)
+        register(pilot, specific)
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True, specialized=specific, general=general))
+    assert result.selected_route == "general" and len(model) == 1
+    assert result.attempts[1].status == "skipped"
+
+
+@pytest.mark.parametrize("preflight_seconds", [1.5, 3.0])
+def test_skill_preflight_and_execution_share_request_deadline(pilot, monkeypatch, preflight_seconds):
+    now = [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    bundle = propose_schema_migration(
+        pilot[0], SkillReference(entrypoint="choose_action", source=SOURCE), run_id="deadline",
+        source_evidence=(SkillSourceEvidence.create("example", "example", {"input": INPUT}),
+                         SkillSourceEvidence.create("shift", "counterexample", {"schema_version": 99})),
+        limits=CandidateLimits(timeout_seconds=1.0, max_memory_mb=128),
+    )
+    original = executable_skills.inspect_executable_skill
+    calls = []
+
+    def inspect(*args, **kwargs):
+        manifest = original(*args, **kwargs)
+        now[0] += preflight_seconds
+        return manifest
+
+    def execute(self, source, value, limits, *, request_budget, cancel):
+        calls.append((request_budget.remaining(), limits.timeout_seconds))
+        now[0] += 0.6
+        return DockerSkillResult(OUTPUT)
+
+    monkeypatch.setattr(executable_skills, "inspect_executable_skill", inspect)
+    monkeypatch.setattr(DockerSkillExecutor, "execute", execute)
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, bundle_digest=bundle.digest,
+                                                 budget=RoutingBudget(wall_seconds=2.0)))
+    assert result.reason == "request_timeout" and result.output_json is None
+    assert calls == ([(0.5, 1.0)] if preflight_seconds < 2 else [])
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Docker skill boundary requires POSIX")
+def test_docker_uses_remaining_request_time_without_rewriting_manifest(monkeypatch):
+    now = [1.5]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(docker_skill.shutil, "which", lambda _: "/fixture/docker")
+    calls = []
+
+    def inspect(command, **kwargs):
+        calls.append((command, kwargs["timeout"]))
+        now[0] = 2.1
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(docker_skill.subprocess, "run", inspect)
+    limits = CandidateLimits(timeout_seconds=10.0, max_memory_mb=128)
+    result = DockerSkillExecutor().execute(SOURCE, INPUT, limits, request_budget=RuntimeBudget(2.0, 0.0))
+    assert result.failure == "timeout" and len(calls) == 1
+    assert calls[0][1] == 0.5 and "image" in calls[0][0]
+    assert limits.timeout_seconds == 10.0
+
+
+def test_model_setup_cannot_reset_request_deadline(tmp_path, monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    original_write = Path.write_text
+
+    def slow_write(path, *args, **kwargs):
+        result = original_write(path, *args, **kwargs)
+        if path.name == "request.json":
+            now[0] = 3.0
+        return result
+
+    monkeypatch.setattr(Path, "write_text", slow_write)
+    monkeypatch.setattr(routed_model, "run_bounded_process", lambda *a, **k: pytest.fail("late worker dispatch"))
+    with pytest.raises(ModelCallError, match="model_timeout"):
+        complete_routed_model(target(), INPUT, timeout_seconds=10, cancel=threading.Event(),
+                              request_budget=RuntimeBudget(2.0, 0.0))
+
+
+def test_expired_process_budget_does_not_spawn(tmp_path, monkeypatch):
+    from autocontext.runtimes import _workspace_process
+    monkeypatch.setattr(time, "monotonic", lambda: 3.0)
+    monkeypatch.setattr(_workspace_process.subprocess, "Popen", lambda *a, **k: pytest.fail("late process spawn"))
+    result = run_bounded_process([sys.executable, "-c", "pass"], cwd=tmp_path, env=default_shell_env(), shell=False,
+                                 timeout_ms=10000, request_budget=RuntimeBudget(2.0, 0.0))
+    assert result.exit_code == 124 and not result.stdout
+
+
 def test_registered_model_revocation_discards_output(pilot, monkeypatch):
     specific = target()
     register(pilot, specific)
@@ -528,12 +620,30 @@ def test_anthropic_transport_can_enforce_fixed_endpoint(tmp_path):
     {"prompt_tokens": None, "completion_tokens": 30, "total_tokens": 130},
     {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 999},
     {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130, "extra_billed_tokens": 50},
+    {"prompt_tokens": "100", "completion_tokens": "30", "total_tokens": "130"},
+    {"prompt_tokens": True, "completion_tokens": 30, "total_tokens": 31},
+    {"prompt_tokens": 100.0, "completion_tokens": 30.0, "total_tokens": 130.0},
+    {"prompt_tokens": "invalid", "completion_tokens": 30, "total_tokens": 130},
 ])
 def test_real_provider_usage_is_validated_before_normalization(pilot, endpoint, usage):
     url, requests, _, _, behavior = endpoint
     behavior["usage"] = usage
-    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True, general=target(base_url=url)))
+    selected = target(base_url=url)
+    register(pilot, selected)
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True,
+                                                 specialized=selected, general=target("general", base_url=url)))
     assert result.reason == "provider_accounting_unverified" and len(requests) == 1
+    assert result.accounted_tokens == 9216 and result.output_json is None
+
+
+def test_missing_wire_receipt_stops_fallback_with_full_reservation(pilot, endpoint):
+    url, requests, _, _, behavior = endpoint
+    behavior["usage"] = None
+    selected = target(base_url=url)
+    register(pilot, selected)
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True,
+                                                 specialized=selected, general=target("general", base_url=url)))
+    assert result.reason == "invalid_provider_receipt" and len(requests) == 1
     assert result.accounted_tokens == 9216 and result.output_json is None
 
 
