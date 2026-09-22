@@ -9,6 +9,9 @@ immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by
 itself does not activate a context edit. The artifact layout and Python API are
 documented in [context bundles](../docs/context-bundles.md).
+The opt-in [executable-skill bridge](docs/executable-skills.md) enrolls explicit
+schema-migration helpers as inactive candidates and verifies their proposals
+in Docker. Serving requires a durable promotion record.
 The `autocontext.analytics.context_attribution` API joins controlled trials to
 those immutable digests, plans bounded re-ablation, and returns non-destructive
 prompt-selection decisions. See [ablation-backed attribution](../docs/context-attribution.md).
