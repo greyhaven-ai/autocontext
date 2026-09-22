@@ -225,6 +225,15 @@ def test_sandbox_absence_never_falls_back(candidate):
     assert (result.status, result.reason) == ("execution_failure", "sandbox_unavailable")
 
 
+def test_resolved_image_architecture_is_bound_to_environment(candidate, monkeypatch):
+    monkeypatch.setattr(DockerSkillExecutor, "execute", lambda *a, **k: DockerSkillResult(OUTPUT, image_identity="image/arm64"))
+    arm = invoke(candidate)
+    monkeypatch.setattr(DockerSkillExecutor, "execute", lambda *a, **k: DockerSkillResult(OUTPUT, image_identity="image/amd64"))
+    amd = invoke(candidate)
+    assert arm.status == amd.status == "success"
+    assert arm.environment_digest != amd.environment_digest
+
+
 def test_serving_requires_durable_promotion_and_uses_identical_contract(candidate, recording_executor, tmp_path):
     store, bundle = candidate
     assert invoke(candidate, mode="serving").status == "execution_failure"
@@ -248,6 +257,29 @@ def test_bootstrap_does_not_substitute_for_a_promotion(candidate, recording_exec
     other.bootstrap(initial)
     result = invoke((other, initial), mode="serving")
     assert result.status == "execution_failure" and "promotion" in result.reason
+    assert not recording_executor
+
+
+@pytest.mark.parametrize("target", ["bundle", "pointer", "promotion"])
+@pytest.mark.parametrize("payload", [{}, []])
+def test_corrupt_durable_records_return_structured_failure(candidate, recording_executor, tmp_path, target, payload):
+    _, bundle = candidate
+    promotion = promote(candidate)
+    root = tmp_path / SCENARIO / "context_bundles"
+    path = {"bundle": root / "bundles" / f"{bundle.digest}.json", "pointer": root / "active.json",
+            "promotion": root / "promotions" / f"{promotion.promotion_id}.json"}[target]
+    path.write_text(json.dumps(payload))
+    assert invoke(candidate, mode="serving").status == "execution_failure"
+    assert not recording_executor
+
+
+def test_nonconfirmed_promotion_is_not_accepted(candidate, recording_executor, tmp_path):
+    promotion = promote(candidate)
+    path = tmp_path / SCENARIO / "context_bundles" / "promotions" / f"{promotion.promotion_id}.json"
+    payload = json.loads(path.read_text())
+    payload["comparison"]["decision"] = "rejected"
+    path.write_text(json.dumps(payload))
+    assert invoke(candidate, mode="serving").status == "execution_failure"
     assert not recording_executor
 
 

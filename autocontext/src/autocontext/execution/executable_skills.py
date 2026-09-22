@@ -22,7 +22,7 @@ from autocontext.artifacts import policy_candidate
 from autocontext.artifacts.models import ArtifactProvenance
 from autocontext.artifacts.policy_candidate import CandidateLimits, CandidateManifestBase, FrozenContract, json_payload
 from autocontext.context_bundles import models as bundle_models
-from autocontext.context_bundles.models import BundleComponent, ComponentKind, ContextBundle, stable_digest
+from autocontext.context_bundles.models import BundleComponent, ComparisonDecision, ComponentKind, ContextBundle, stable_digest
 from autocontext.context_bundles.store import ContextBundleStore
 from autocontext.context_bundles.store_transactions import promotion_from_pointer
 from autocontext.execution import docker_isolation, docker_skill
@@ -202,7 +202,9 @@ def _require_active(store: ContextBundleStore, bundle_digest: str, identity: str
     pointer = store.active_pointer(SCENARIO)
     if pointer is None or pointer.get("bundle_digest") != bundle_digest or pointer.get("evaluator_epoch") != identity:
         raise ValueError("skill bundle is not active under this evaluator")
-    promotion_from_pointer(store, SCENARIO, pointer)
+    promotion = promotion_from_pointer(store, SCENARIO, pointer)
+    if promotion.comparison.decision != ComparisonDecision.CONFIRMED:
+        raise ValueError("active promotion record does not contain a confirmed comparison")
 
 
 def invoke_executable_skill(
@@ -266,6 +268,9 @@ serving, LLM completion dependency, automatic activation or fallback execution.
             return result("abstention", "unsupported_schema_version")
         execution = executor.execute(manifest.skill.source, normalized_input, manifest.limits, cancel=cancel)
         metadata.update(execution_seconds=execution.elapsed_seconds, image_identity=execution.image_identity)
+        metadata["environment_digest"] = stable_digest({
+            "declared_environment": metadata["environment_digest"], "resolved_image": execution.image_identity,
+        })
         if execution.failure:
             return result("execution_failure", execution.failure)
         if cancel is not None and cancel.is_set():
@@ -285,5 +290,5 @@ serving, LLM completion dependency, automatic activation or fallback execution.
         if mode == "serving":
             _require_active(store, bundle_digest, identity)
         return result("success", "verified_proposal", output_json)
-    except (OSError, ValueError, TypeError, RecursionError, RuntimeError) as exc:
+    except (OSError, ValueError, TypeError, LookupError, AttributeError, RecursionError, RuntimeError) as exc:
         return result("execution_failure", str(exc)[:512])

@@ -72,8 +72,8 @@ GridCTF candidates retain their existing behavior and execution boundary.
 
 Results distinguish `success`, `abstention`, `execution_failure`, and
 `verification_failure`, with the bundle, manifest, source, raw input, environment
-and evaluator identities. A container run also records its resolved image
-ID/architecture. Keep the original input JSON to replay its raw-byte digest;
+and evaluator identities. A container run also binds its resolved image
+ID/architecture into the environment digest. Keep the original input JSON to replay its raw-byte digest;
 the example retains the input values and uses `json.dumps(value)` for invocation.
 Successful `output_json` is canonical JSON. Only verified success includes an
 output proposal.
