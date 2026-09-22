@@ -51,8 +51,9 @@ result = invoke_executable_skill(
 Use `mode="serving"` for live requests. It requires that this exact bundle is
 active under the current evaluator and has a matching durable promotion
 artifact. Bootstrapping an active bundle is insufficient. The gate and artifact
-identity are checked again before returning an accepted proposal, so revocation
-or tampering during execution discards the result. This is a request boundary,
+identity are checked again before returning an accepted proposal, followed by a
+final cancellation check. Revocation, tampering or cancellation during execution
+or final verification discards the result. This is a request boundary,
 not a lock on later application of a returned artifact. Applying a proposal is
 the caller's responsibility and is outside this pilot.
 
@@ -75,6 +76,10 @@ Results distinguish `success`, `abstention`, `execution_failure`, and
 and evaluator identities. A container run also binds its resolved image
 ID/architecture into the environment digest. Keep the original input JSON to replay its raw-byte digest;
 the example retains the input values and uses `json.dumps(value)` for invocation.
+Input size is checked before encoding or hashing; UTF-8 byte length is also
+bounded. `input_sha256` is null when preflight rejects oversized or unencodable
+input, or cancellation occurs before input validation. Bounded UTF-8 input
+retains its raw-byte digest even when later schema validation rejects it.
 Successful `output_json` is canonical JSON. Only verified success includes an
 output proposal.
 
@@ -92,8 +97,11 @@ capability grants are supported.
 The default budget is 10 seconds, 128 MiB memory and 64 KiB per output stream;
 source/input are each limited to 64 KiB and scratch tmpfs to 16 MiB. CPU quota is
 one core, process count is capped at 16, and CPU time is capped per process.
-The wall deadline includes image inspection and container startup. Cancellation,
-timeout and output overflow terminate the invocation; cleanup force-removes the
+The wall deadline includes image inspection, container startup and the final
+Docker OOM-state inspection. An OOM kill, including a killed child whose parent
+returns valid JSON and exits zero, returns `oom`. Missing or malformed resource
+state returns `resource_status_unverified`; inspection errors also fail closed.
+Cancellation, timeout and output overflow terminate the invocation; cleanup force-removes the
 container and verifies removal with a separate bounded cleanup allowance.
 Cleanup failure returns `cleanup_unverified` and never accepts an output. Host
 process death and wider legacy execution isolation remain AC-1009 work; this

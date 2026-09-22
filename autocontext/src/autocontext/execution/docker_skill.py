@@ -26,6 +26,17 @@ from autocontext.execution.docker_isolation import (
 from autocontext.kernel_evolution._process_control import BoundedOutput, drain_bounded
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
 
+MAX_PAYLOAD_BYTES = 65536
+
+
+def encode_skill_payload(value: str) -> bytes | None:
+    """Bound allocation before UTF-8 encoding; None means the payload is too big."""
+    if len(value) > MAX_PAYLOAD_BYTES:
+        return None
+    encoded = value.encode("utf-8", errors="strict")
+    return encoded if len(encoded) <= MAX_PAYLOAD_BYTES else None
+
+
 # Inputs/source are already bounded by the bridge. Treat every byte returned by
 # this process as untrusted, even if a skill replaces its Python interpreter state.
 RUNNER = """
@@ -65,10 +76,15 @@ class DockerSkillExecutor:
             return DockerSkillResult(failure="cancelled")
         if self.image != PINNED_PYTHON_RUNTIME_IMAGE or limits.max_memory_mb < 64:
             return DockerSkillResult(failure="unsupported_environment")
+        try:
+            source_bytes = encode_skill_payload(source)
+            input_bytes = encode_skill_payload(input_json)
+        except UnicodeEncodeError:
+            return DockerSkillResult(failure="invalid_input")
+        if source_bytes is None or input_bytes is None:
+            return DockerSkillResult(failure="input_limit")
         if os.name != "posix" or shutil.which(self.docker_binary) is None:
             return DockerSkillResult(failure="sandbox_unavailable")
-        if len(source.encode()) > 65536 or len(input_json.encode()) > 65536:
-            return DockerSkillResult(failure="input_limit")
         name = f"autocontext-skill-{uuid.uuid4().hex}"
         environment = sanitized_docker_environment()
         proc: subprocess.Popen[bytes] | None = None
@@ -97,8 +113,8 @@ class DockerSkillExecutor:
             image_identity = inspected.stdout.decode("utf-8").strip()
             with tempfile.TemporaryDirectory(prefix="autocontext-skill-") as temp:
                 root = Path(temp).resolve()
-                (root / "skill.py").write_text(source, encoding="utf-8")
-                (root / "input.json").write_text(input_json, encoding="utf-8")
+                (root / "skill.py").write_bytes(source_bytes)
+                (root / "input.json").write_bytes(input_bytes)
                 (root / "runner.py").write_text(RUNNER, encoding="utf-8")
                 command = build_docker_isolation_command(
                     docker_binary=self.docker_binary, image=self.image, container_name=name,
@@ -158,8 +174,22 @@ class DockerSkillExecutor:
                     failure = "cancelled"
                 elif time.monotonic() >= deadline:
                     failure = "timeout"
-                elif proc.returncode != 0:
-                    failure = "candidate_error"
+                else:
+                    # A child may be OOM-killed while its parent returns valid
+                    # JSON and exits zero. Inspect the durable Docker marker
+                    # before removing the container, and reject unknown state.
+                    resources = subprocess.run(  # noqa: S603
+                        [self.docker_binary, "inspect", "--format", "{{.State.OOMKilled}}", name],
+                        capture_output=True, check=False, timeout=min(5, remaining()), env=environment,
+                    )
+                    remaining()
+                    oom = resources.stdout.strip()
+                    if resources.returncode != 0 or oom not in (b"true", b"false"):
+                        failure = "resource_status_unverified"
+                    elif oom == b"true":
+                        failure = "oom"
+                    elif proc.returncode != 0:
+                        failure = "candidate_error"
                 # Cleanup below closes all pipes before decoding the bounded wire.
         except (TimeoutError, subprocess.TimeoutExpired):
             failure = "timeout"

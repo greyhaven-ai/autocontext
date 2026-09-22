@@ -8,8 +8,9 @@ All notable changes to this project will be documented in this file.
 
 - Python: explicit context-bundle executable-skill eligibility and a bounded
   schema-migration pilot, with Docker isolation, verified JSON proposals and
-  promotion-gated serving (AC-1028). Includes an end-to-end fixture; TypeScript
-  parity and automatic routing remain deferred.
+  promotion-gated serving (AC-1028). Rejects child-process OOMs, bounds input
+  encoding/hashing and honors cancellation through final verification. Includes
+  an end-to-end fixture; TypeScript parity and automatic routing remain deferred.
 
 - Python: opt-in trace-derived GridCTF skill candidates with immutable manifests,
   typed action/abstention contracts, isolated evaluation and retained negative

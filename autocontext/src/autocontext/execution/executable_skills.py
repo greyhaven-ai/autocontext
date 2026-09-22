@@ -26,7 +26,7 @@ from autocontext.context_bundles.models import BundleComponent, ComparisonDecisi
 from autocontext.context_bundles.store import ContextBundleStore
 from autocontext.context_bundles.store_transactions import promotion_from_pointer
 from autocontext.execution import docker_isolation, docker_skill
-from autocontext.execution.docker_skill import DockerSkillExecutor
+from autocontext.execution.docker_skill import DockerSkillExecutor, encode_skill_payload
 from autocontext.kernel_evolution import _process_control
 from autocontext.knowledge.harness_entries import SkillReference
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
@@ -104,7 +104,7 @@ class ExecutableSkillManifest(CandidateManifestBase):
             raise ValueError("source evidence requires an example and counterexample")
         if len({row.artifact_id for row in self.source_evidence}) != len(self.source_evidence):
             raise ValueError("duplicate source evidence identity")
-        if len(self.skill.source.encode()) > 65536:
+        if encode_skill_payload(self.skill.source) is None:
             raise ValueError("candidate source exceeds 64 KiB")
         return self
 
@@ -187,7 +187,7 @@ class SkillInvocation(FrozenContract):
     bundle_digest: str
     artifact_digest: str | None = None
     source_sha256: str | None = None
-    input_sha256: str
+    input_sha256: str | None = None
     environment_digest: str | None = None
     image_identity: str | None = None
     evaluator_identity: str
@@ -223,7 +223,7 @@ serving, LLM completion dependency, automatic activation or fallback execution.
     started = time.monotonic()
     identity = evaluator_identity()
     metadata: dict[str, Any] = {
-        "bundle_digest": bundle_digest, "input_sha256": hashlib.sha256(input_json.encode(errors="surrogatepass")).hexdigest(),
+        "bundle_digest": bundle_digest, "input_sha256": None,
         "evaluator_identity": identity, "mode": mode,
     }
 
@@ -233,6 +233,15 @@ serving, LLM completion dependency, automatic activation or fallback execution.
                                elapsed_seconds=time.monotonic() - started, **metadata)
 
     try:
+        if cancel is not None and cancel.is_set():
+            return result("execution_failure", "cancelled")
+        try:
+            input_bytes = encode_skill_payload(input_json)
+        except UnicodeEncodeError:
+            return result("abstention", "invalid_input")
+        if input_bytes is None:
+            return result("abstention", "input_limit")
+        metadata["input_sha256"] = hashlib.sha256(input_bytes).hexdigest()
         manifest = inspect_executable_skill(store, bundle_digest)
         metadata.update(artifact_digest=manifest.digest, source_sha256=manifest.source_sha256,
                         limits_json=json_payload(manifest.limits))
@@ -257,8 +266,6 @@ serving, LLM completion dependency, automatic activation or fallback execution.
         if cancel is not None and cancel.is_set():
             return result("execution_failure", "cancelled")
         try:
-            if len(input_json.encode()) > 65536:
-                return result("abstention", "input_limit")
             data = _json(input_json)
             profile = ProfileV1.model_validate(data)
             normalized_input = json_payload(profile)
@@ -289,6 +296,8 @@ serving, LLM completion dependency, automatic activation or fallback execution.
             raise ValueError("artifact changed during execution")
         if mode == "serving":
             _require_active(store, bundle_digest, identity)
+        if cancel is not None and cancel.is_set():
+            return result("execution_failure", "cancelled")
         return result("success", "verified_proposal", output_json)
     except (OSError, ValueError, TypeError, LookupError, AttributeError, RecursionError, RuntimeError) as exc:
         return result("execution_failure", str(exc)[:512])

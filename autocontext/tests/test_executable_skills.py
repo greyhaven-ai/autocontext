@@ -6,8 +6,10 @@ import hashlib
 import json
 import os
 import subprocess
+import tempfile
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -147,6 +149,103 @@ def test_unsupported_inputs_abstain_without_execution(candidate, recording_execu
     result = invoke(candidate, value)
     assert (result.status, result.reason) == ("abstention", reason)
     assert not recording_executor
+
+
+def test_oversized_input_is_rejected_before_encoding_or_hashing(candidate, recording_executor):
+    class OversizedInput(str):
+        def encode(self, *args, **kwargs):
+            pytest.fail("oversized input must not be encoded or hashed")
+
+    result = invoke(candidate, OversizedInput("x" * 65537))
+    assert (result.status, result.reason, result.input_sha256) == ("abstention", "input_limit", None)
+    assert not recording_executor
+
+
+@pytest.mark.parametrize("value,reason", [("é" * 32769, "input_limit"), ("\ud800", "invalid_input")],
+                         ids=["multibyte-oversize", "invalid-utf8"])
+def test_input_byte_limit_and_invalid_utf8_have_no_digest(candidate, recording_executor, value, reason):
+    result = invoke(candidate, value)
+    assert (result.status, result.reason, result.input_sha256) == ("abstention", reason, None)
+    assert not recording_executor
+
+
+def test_exact_byte_limit_encodes_once_and_preserves_raw_input_digest(candidate, recording_executor):
+    encodings = []
+
+    class TrackedInput(str):
+        def encode(self, *args, **kwargs):
+            encodings.append(len(self))
+            return super().encode(*args, **kwargs)
+
+    raw = INPUT + " " * (65536 - len(INPUT))
+    result = invoke(candidate, TrackedInput(raw))
+    assert result.status == "success"
+    assert result.input_sha256 == hashlib.sha256(raw.encode()).hexdigest()
+    assert encodings == [65536]
+    assert json.loads(recording_executor[0][1]) == json.loads(INPUT)
+
+
+@pytest.mark.parametrize("field", ["source", "input_json"])
+@pytest.mark.parametrize("value,reason", [("x" * 65537, "input_limit"), ("é" * 32769, "input_limit"),
+                                        ("\ud800", "invalid_input")],
+                         ids=["ascii-oversize", "multibyte-oversize", "invalid-utf8"])
+def test_direct_executor_bounds_payloads_before_docker(monkeypatch, field, value, reason):
+    class GuardedInput(str):
+        def encode(self, *args, **kwargs):
+            assert len(self) <= 65536, "oversized payload must not be encoded"
+            return super().encode(*args, **kwargs)
+
+    def unexpected_docker(*args, **kwargs):
+        pytest.fail("invalid payload must not reach Docker")
+
+    monkeypatch.setattr("autocontext.execution.docker_skill.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(subprocess, "run", unexpected_docker)
+    arguments = {"source": SOURCE, "input_json": INPUT, field: GuardedInput(value)}
+    result = DockerSkillExecutor().execute(**arguments, limits=DEFAULT_LIMITS)
+    assert result.failure == reason and not result.output
+
+
+@pytest.mark.parametrize("oom_output,inspect_code,exit_code,reason", [
+    (b"true\n", 0, 0, "oom"),
+    (b"true\n", 0, 137, "oom"),
+    (b"false\n", 0, 0, "verified_proposal"),
+    (b"false\n", 0, 1, "candidate_error"),
+    (b"", 0, 0, "resource_status_unverified"),
+    (b"unknown\n", 0, 0, "resource_status_unverified"),
+    (b"false\n", 1, 0, "resource_status_unverified"),
+    (OSError("daemon unavailable"), 0, 0, "sandbox_error"),
+    (subprocess.TimeoutExpired("docker inspect", 1), 0, 0, "timeout"),
+])
+def test_oom_state_is_required_before_accepting_output_and_cleanup(
+    candidate, monkeypatch, oom_output, inspect_code, exit_code, reason,
+):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command[1])
+        if command[1] == "image":
+            return subprocess.CompletedProcess(command, 0, b"fixture-image/amd64\n")
+        if command[1] == "inspect":
+            assert 0 < kwargs["timeout"] <= DEFAULT_LIMITS.timeout_seconds
+            if isinstance(oom_output, Exception):
+                raise oom_output
+            return subprocess.CompletedProcess(command, inspect_code, oom_output)
+        assert command[1] in {"create", "rm", "ps"}
+        return subprocess.CompletedProcess(command, 0, b"")
+
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        stdout.write(OUTPUT.encode())
+        stdout.seek(0)
+        process = SimpleNamespace(stdout=stdout, stderr=stderr,
+                                  returncode=exit_code, poll=lambda: exit_code, wait=lambda **_: exit_code)
+        monkeypatch.setattr("autocontext.execution.docker_skill.shutil.which", lambda _: "/usr/bin/docker")
+        monkeypatch.setattr(subprocess, "run", run)
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: process)
+        result = invoke(candidate)
+    assert result.reason == reason
+    assert result.status == ("success" if reason == "verified_proposal" else "execution_failure")
+    assert (result.output_json is not None) == (reason == "verified_proposal")
+    assert commands == ["image", "create", "inspect", "rm", "ps"]
 
 
 @pytest.mark.parametrize("output,reason", [
@@ -294,6 +393,31 @@ def test_revoked_promotion_during_execution_discards_result(candidate, monkeypat
     assert result.status == "execution_failure" and result.output_json is None
 
 
+@pytest.mark.parametrize("mode,read_method", [("evaluation", "load_bundle"), ("serving", "load_bundle"),
+                                             ("serving", "active_pointer")])
+def test_cancellation_during_final_verification_discards_output(
+    candidate, recording_executor, monkeypatch, mode, read_method,
+):
+    store, _ = candidate
+    if mode == "serving":
+        promote(candidate)
+    cancel = threading.Event()
+    original = getattr(store, read_method)
+    reads = []
+
+    def read(*args, **kwargs):
+        value = original(*args, **kwargs)
+        reads.append(value)
+        if len(reads) == 2:
+            cancel.set()
+        return value
+
+    monkeypatch.setattr(store, read_method, read)
+    result = invoke(candidate, mode=mode, cancel=cancel)
+    assert cancel.is_set() and len(recording_executor) == 1
+    assert (result.status, result.reason, result.output_json) == ("execution_failure", "cancelled", None)
+
+
 def test_manifest_immutability_and_source_evidence(candidate):
     manifest = inspect_executable_skill(candidate[0], candidate[1].digest)
     with pytest.raises(ValidationError):
@@ -368,13 +492,29 @@ else:
     assert sentinel.read_text() == "host-secret"
     for source, expected in [
         ("def choose_action(state):\n    raise RuntimeError('failed')", "candidate_error"),
-        ("memory = bytearray(512 * 1024 * 1024)", "candidate_error"),
+        ("memory = bytearray(512 * 1024 * 1024)", "oom"),
         ("while True: print('x' * 4096, flush=True)", "output_limit"),
         ("while True: pass", "timeout"),
     ]:
         limits = CandidateLimits(timeout_seconds=2, max_memory_mb=128, max_output_bytes=1024)
         outcome = executor.execute(source, INPUT, limits)
         assert outcome.failure == expected, outcome
+    # A child can be OOM-killed while the parent exits zero with correct JSON.
+    # Docker's durable OOM marker must still prevent a verified proposal.
+    child_oom_source = '''import subprocess, sys
+def choose_action(state):
+    child = subprocess.run([sys.executable, '-c', 'memory = bytearray(512 * 1024 * 1024)'])
+    assert child.returncode == -9
+    return {"schema_version": 2, "display_name": state["name"],
+            "status": "enabled" if state["enabled"] else "disabled"}
+'''
+    store, _ = candidate
+    child_oom_bundle = propose_schema_migration(
+        store, SkillReference(entrypoint="choose_action", source=child_oom_source),
+        source_evidence=evidence(), run_id="child-oom",
+    )
+    child_oom = invoke((store, child_oom_bundle))
+    assert (child_oom.status, child_oom.reason, child_oom.output_json) == ("execution_failure", "oom", None), child_oom
     # Wait until this container is running before cancelling, so this exercises
     # mid-execution termination rather than just the preflight event check.
     cancel = threading.Event()
