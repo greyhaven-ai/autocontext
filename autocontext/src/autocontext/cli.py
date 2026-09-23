@@ -28,6 +28,7 @@ from autocontext.cli_epoch import epoch_app
 from autocontext.cli_errors import StructuredUsageGroup
 from autocontext.cli_help import configure_help_surface
 from autocontext.cli_hermes import register_hermes_command
+from autocontext.cli_human_labels import labels_app
 from autocontext.cli_improve import register_improve_command
 from autocontext.cli_investigate import run_investigate_command
 from autocontext.cli_mission import register_mission_command
@@ -787,6 +788,7 @@ def _serve_mcp() -> None:
 app.add_typer(_serve_app, name="serve")
 app.add_typer(ambient_app, name="ambient")
 app.add_typer(epoch_app, name="epoch")
+app.add_typer(labels_app, name="labels")
 
 
 @app.command()
