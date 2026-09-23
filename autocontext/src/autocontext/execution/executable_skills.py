@@ -214,6 +214,8 @@ class SkillInvocation(FrozenContract):
     mode: Literal["evaluation", "serving"]
     model_calls: Literal[0] = 0
     execution_seconds: float = 0
+    cpu_seconds: float | None = None
+    peak_memory_bytes: int | None = None
     elapsed_seconds: float
     limits_json: str | None = None
 
@@ -310,7 +312,8 @@ serving, LLM completion dependency, automatic activation or fallback execution.
         else:
             execution = executor.execute(manifest.skill.source, normalized_input, manifest.limits, cancel=cancel,
                                           request_budget=request_budget)
-        metadata.update(execution_seconds=execution.elapsed_seconds, image_identity=execution.image_identity)
+        metadata.update(execution_seconds=execution.elapsed_seconds, image_identity=execution.image_identity,
+                        cpu_seconds=execution.cpu_seconds, peak_memory_bytes=execution.peak_memory_bytes)
         metadata["environment_digest"] = stable_digest({
             "declared_environment": metadata["environment_digest"], "resolved_image": execution.image_identity,
         })

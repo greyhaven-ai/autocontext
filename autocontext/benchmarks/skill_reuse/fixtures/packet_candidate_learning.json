@@ -1,0 +1,22 @@
+{
+  "training_digest": "ca75d8d5273aed21f73b3c6814c063ea98ae08b46f4e006245ff6516afac0e39",
+  "origin": "fixture",
+  "method": "Agent-authored from the same exported four-case training packet and the public task contract, without an external synthesis service. The public held-out fixture was inspected before this authoring and is ineligible as blind efficacy evidence. This is a development-only candidate; agent authoring resources are unmetered.",
+  "evidence_refs": [
+    "fixtures/corpus.json#training",
+    "benchmarks/skill_reuse/study.py:learning_packet",
+    "src/autocontext/execution/routed_model.py:SYSTEM_PROMPT"
+  ],
+  "discovery": [
+    {
+      "id": "packet-candidate-authoring",
+      "phase": "discovery",
+      "arms": ["baseline", "textual", "executable", "cheap_textual"],
+      "seconds": null,
+      "model_calls": null,
+      "tokens": null,
+      "total_cost_usd": null,
+      "evidence": "Both candidate representations use the same four training inputs and public contract; unmetered agent authoring cannot be reported as zero cost. No development or held-out model results were used for selection."
+    }
+  ]
+}

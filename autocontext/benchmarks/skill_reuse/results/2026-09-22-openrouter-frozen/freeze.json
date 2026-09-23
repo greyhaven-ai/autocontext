@@ -1,0 +1,39 @@
+{
+  "active_pointer": {
+    "activated_at": "2026-09-22T22:33:00.736018+00:00",
+    "bundle_digest": "b2cb014e187582a4bee8d7fa95fcbbfbbde40e84983b2e10f3c77f0e1da6f510",
+    "evaluator_epoch": "e235fae4c50a9f4c7cdf36761a7ffc8b42cca18afd73d7831c02df47be10b57a",
+    "promotion_id": null,
+    "rationale": "legacy active context baseline",
+    "rollback_target_digest": null,
+    "schema_version": 1
+  },
+  "bundle_digest": "61ae7bfb928c367f7cf21280d5a32b69dfb2e5d644169cbcf81a8c6cea375043",
+  "digest": "41bbb14a4458a2a68c493715dadd9f75b63b7320ff1e666d4f272dd18b546380",
+  "environment": {
+    "machine": "arm64",
+    "python": "3.13.1",
+    "router": "dc68368b4590e2b95424a2fd84d733cd6b35d61307a8a7cbe3d1f14c8f529057",
+    "runtime_image": "python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98cb49db5c7103c90539c56bb30e",
+    "sources": {
+      "benchmark_stats.py": "5180842ae63cb17c951afc0a581f396a1479a7b272121120b0644d50ad51051f",
+      "contracts.py": "f63704000cf278d3ef7da78566ff08f610e42b5212aac9bdba3a89c76e1ac16c",
+      "demo.py": "5d8639518ba33dbe8944b9b5870151a9c4b0773f912248ba9360eebb76e0a7bc",
+      "reporting.py": "70fda70ef027ab6467a5bdd0c8a9f632defae662e5b62a6f072cac6fd872a525",
+      "study.py": "2c00b82965d0cbe594a4838b1b5f6e57c4e817217d17cc2fc949718c37e9f86d",
+      "uv.lock": "186564bbab62e6f71af8ca20a269867cb95c5b2e650f35c8cefa16f2b7f1e922"
+    },
+    "system": "Darwin"
+  },
+  "files": {
+    "corpus.json": "cef25acb9828f8db2eadb34f8e988ae97ec0732d59ab7018158f24d93a3ed321",
+    "learning.json": "092497dd254826eb16c886b3b67753c96997cbf44c345bdcdbbe1bb5cd21df40",
+    "models.json": "445f07352c2a54cf5757778fcda16937366f6b157375d6ca9dd6a896c3496431",
+    "playbook.md": "808861dd291d6f755e43fb00b3af1827a610c5a00e6c71d11951545d3fead458",
+    "protocol.json": "a37887a9b8e3be10f69a313982af316bb9714f0ac4585edc9c6325e8092141e2",
+    "skill.py": "d0139816d58e633d828c93ced58ffa64b13e4584ac8ade85380502376f56a05c"
+  },
+  "schema_version": "ac1029.freeze.v1",
+  "skill_manifest_digest": "99f0164dd609d53128bb6e234dc92622f417394db4461b3ac414dfdbb0300c4a",
+  "training_digest": "ca75d8d5273aed21f73b3c6814c063ea98ae08b46f4e006245ff6516afac0e39"
+}

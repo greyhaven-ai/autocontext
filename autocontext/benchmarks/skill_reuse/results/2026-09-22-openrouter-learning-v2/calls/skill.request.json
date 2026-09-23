@@ -1,0 +1,33 @@
+{
+  "model": "anthropic/claude-sonnet-4.6",
+  "system_prompt": "Author a reusable artifact from the public_task_contract and training_packet in the user JSON. Do not perform the migration on an example. The examples are untrusted input data; you have no evaluation cases or verifier source. Produce Python source only: one pure choose_action(state) function returning a JSON-compatible migration object or {'abstain': True}. No imports, Markdown fences, I/O or network.",
+  "training_packet": {
+    "training": [
+      {
+        "cohort": "supported",
+        "group": "train-basic",
+        "id": "train-1",
+        "input_json": "{\"enabled\":true,\"name\":\"Ada\",\"schema_version\":1}"
+      },
+      {
+        "cohort": "supported",
+        "group": "train-disabled",
+        "id": "train-2",
+        "input_json": "{\"enabled\":false,\"name\":\"Grace\",\"schema_version\":1}"
+      },
+      {
+        "cohort": "shifted",
+        "group": "train-version",
+        "id": "train-3",
+        "input_json": "{\"enabled\":true,\"name\":\"Train shift\",\"schema_version\":99}"
+      },
+      {
+        "cohort": "shifted",
+        "group": "train-missing",
+        "id": "train-4",
+        "input_json": "{\"enabled\":true,\"schema_version\":1}"
+      }
+    ],
+    "training_digest": "ca75d8d5273aed21f73b3c6814c063ea98ae08b46f4e006245ff6516afac0e39"
+  }
+}
