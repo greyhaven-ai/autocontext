@@ -166,6 +166,12 @@ class ContextBundleStore:
     def _negative_result_path(self, scenario: str, digest: str) -> Path:
         return self._candidate_dir(scenario, digest) / "negative_result.json"
 
+    def _execution_policy_path(self, scenario: str, digest: str) -> Path:
+        return self._candidate_dir(scenario, digest) / "execution_policy_evidence.json"
+
+    def _execution_policy_monitor_path(self, scenario: str, digest: str) -> Path:
+        return self._candidate_dir(scenario, digest) / "execution_policy_monitor.json"
+
     def _active_path(self, scenario: str) -> Path:
         return self._root(scenario) / "active.json"
 
@@ -377,6 +383,102 @@ class ContextBundleStore:
             else:
                 write_json(discoverable_path, artifact)
             return path
+
+    def execution_policy_evidence(self, scenario: str, digest: str) -> dict[str, Any]:
+        value = read_json(self._execution_policy_path(scenario, digest))
+        if not isinstance(value, dict):
+            raise ValueError("execution policy evidence must be a JSON object")
+        return value
+
+    def record_execution_policy_evidence(self, scenario: str, digest: str, evidence: dict[str, Any]) -> Path:
+        from autocontext.execution.execution_policy_promotion import (
+            ExecutionPolicyEvidence,
+            require_execution_policy_gate,
+        )
+
+        with self._lock(scenario):
+            record = self.candidate(scenario, digest)
+            if record.lifecycle != BundleLifecycle.CONFIRMED:
+                raise ValueError("policy cost evidence requires a confirmed context candidate")
+            bundle = self.load_bundle(scenario, digest)
+            if bundle.parent_digest is None:
+                raise ValueError("policy evidence requires an incumbent bundle")
+            incumbent = self.load_bundle(scenario, bundle.parent_digest)
+            validated = ExecutionPolicyEvidence.model_validate(evidence)
+            require_execution_policy_gate(self, bundle, incumbent, validated.cohort, validated)
+            path = self._execution_policy_path(scenario, digest)
+            payload = validated.model_dump(mode="json")
+            if path.exists():
+                if read_json(path) != payload:
+                    raise ValueError("execution policy evidence is immutable")
+            else:
+                write_json(path, payload)
+            return path
+
+    def execution_policy_monitor(self, scenario: str, digest: str) -> dict[str, Any]:
+        state = read_json(self._execution_policy_monitor_path(scenario, digest))
+        if (not isinstance(state, dict) or set(state) != {
+                "schema_version", "bundle_digest", "evidence_digest", "status", "reason", "observations",
+                "observations_digest"}
+                or state["schema_version"] != 1 or state["bundle_digest"] != digest
+                or state["status"] not in {"active", "suspended"} or not isinstance(state["observations"], list)
+                or state["observations_digest"] != stable_digest(state["observations"])
+                or not isinstance(state["reason"], str) or (state["status"] == "active") != (state["reason"] == "")):
+            raise ValueError("execution policy monitoring record is invalid")
+        return state
+
+    def record_execution_policy_observation(
+        self, scenario: str, digest: str, evidence_digest: str, observation: dict[str, Any],
+    ) -> tuple[bool, str]:
+        from autocontext.execution.execution_policy_promotion import (
+            ExecutionPolicyEvidence,
+            PolicyObservation,
+            monitored_cost_limit,
+        )
+
+        with self._lock(scenario):
+            pointer = self.active_pointer(scenario)
+            if (pointer is None or pointer.get("bundle_digest") != digest
+                    or pointer.get("execution_policy_evidence_digest") != evidence_digest):
+                raise ValueError("execution policy changed before outcome monitoring")
+            evidence = ExecutionPolicyEvidence.model_validate(self.execution_policy_evidence(scenario, digest))
+            if evidence.digest != evidence_digest:
+                raise ValueError("execution policy evidence changed before outcome monitoring")
+            current = self.execution_policy_monitor(scenario, digest)
+            if current["evidence_digest"] != evidence_digest:
+                raise ValueError("execution policy monitoring identity changed")
+            entry = PolicyObservation.model_validate(observation)
+            if (entry.bundle_digest != digest or entry.evidence_digest != evidence_digest
+                    or entry.evaluator_identity != evidence.evaluator_identity):
+                raise ValueError("outcome does not belong to the active policy")
+            history = [PolicyObservation.model_validate(row) for row in current["observations"]]
+            previous = {row.request_id: row.model_dump(mode="json") for row in history}
+            if (len(previous) != len(history) or any(row.bundle_digest != digest
+                    or row.evidence_digest != evidence_digest or row.evaluator_identity != evidence.evaluator_identity
+                    for row in history)):
+                raise ValueError("execution policy monitoring history is inconsistent")
+            payload = entry.model_dump(mode="json")
+            if entry.request_id in previous:
+                if previous[entry.request_id] != payload:
+                    raise ValueError("policy observation cannot be overwritten")
+                return current["status"] == "suspended", current["reason"]
+            observations = [*current["observations"], payload]
+            reason = current["reason"]
+            if entry.cost_usd is None and not reason:
+                reason = "unverified_post_activation_cost"
+            elif entry.cost_usd is not None and len(observations) >= evidence.monitor_min_cases and not reason:
+                successes = sum(row["correct"] for row in observations)
+                if successes / len(observations) < evidence.monitor_quality_floor:
+                    reason = "post_activation_quality_regression"
+                elif sum(row["fallback"] for row in observations) / len(observations) > evidence.monitor_max_fallback_frequency:
+                    reason = "post_activation_fallback_regression"
+                elif (not successes or sum(row["cost_usd"] for row in observations) / successes
+                      > monitored_cost_limit(evidence)):
+                    reason = "post_activation_cost_regression"
+            updated = {**current, "status": "suspended" if reason else "active", "reason": reason,
+                       "observations": observations, "observations_digest": stable_digest(observations)}
+            write_json(self._execution_policy_monitor_path(scenario, digest), updated)
+            return bool(reason), reason
 
     def _matched_evidence(self, scenario: str, digest: str) -> _MatchedEvidence:
         path = self._trials_path(scenario, digest)
@@ -623,7 +725,26 @@ class ContextBundleStore:
                 raise ValueError("persisted matched trials and policy do not reproduce the candidate comparison")
             if comparison.decision != ComparisonDecision.CONFIRMED:
                 raise ValueError("replayed candidate evidence is not confirmed")
+            from autocontext.execution.execution_policy_promotion import (
+                has_executable_policy_skill,
+                require_execution_policy_gate,
+            )
 
+            policy_evidence_digest = None
+            if has_executable_policy_skill(bundle):
+                assert incumbent_bundle is not None
+                policy_evidence_digest = require_execution_policy_gate(self, bundle, incumbent_bundle, cohort).digest
+
+            if policy_evidence_digest is not None:
+                monitor = {"schema_version": 1, "bundle_digest": digest,
+                           "evidence_digest": policy_evidence_digest, "status": "active", "reason": "",
+                           "observations": [], "observations_digest": stable_digest([])}
+                path = self._execution_policy_monitor_path(scenario, digest)
+                if path.exists():
+                    if read_json(path) != monitor:
+                        raise ValueError("execution policy has prior or changed monitoring history")
+                else:
+                    write_json(path, monitor)
             now = _now()
             artifact = PromotionArtifact(
                 promotion_id=uuid.uuid4().hex,
@@ -653,6 +774,8 @@ class ContextBundleStore:
                     "promotion_id": artifact.promotion_id,
                     "rollback_target_digest": incumbent_digest,
                     "manifest_diff_digest": manifest_diff.digest,
+                    **({"execution_policy_evidence_digest": policy_evidence_digest}
+                       if policy_evidence_digest is not None else {}),
                     "activated_at": now,
                     "rationale": rationale,
                 },
@@ -696,13 +819,15 @@ class ContextBundleStore:
             raise ValueError("persisted context bundle manifest diff does not match promotion manifests")
         return persisted
 
-    def rollback(self, scenario: str, *, rationale: str) -> ContextBundle:
+    def rollback(self, scenario: str, *, rationale: str, expected_digest: str | None = None) -> ContextBundle:
         """Atomically restore the active pointer's explicit rollback target."""
         with self._lock(scenario):
             pointer = self.active_pointer(scenario)
             if pointer is None:
                 raise ValueError("cannot roll back without an active context bundle")
             current_digest = str(pointer["bundle_digest"])
+            if expected_digest is not None and current_digest != expected_digest:
+                raise ValueError("active bundle changed before conditional rollback")
             target_digest = pointer.get("rollback_target_digest")
             if not isinstance(target_digest, str) or not target_digest:
                 raise ValueError("active context bundle has no rollback target")

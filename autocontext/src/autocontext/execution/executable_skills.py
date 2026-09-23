@@ -27,6 +27,7 @@ from autocontext.context_bundles.store import ContextBundleStore
 from autocontext.context_bundles.store_transactions import promotion_from_pointer
 from autocontext.execution import docker_isolation, docker_skill
 from autocontext.execution.docker_skill import DockerSkillExecutor, encode_skill_payload
+from autocontext.execution.skill_routing_models import SkillRoutingConfig
 from autocontext.kernel_evolution import _process_control
 from autocontext.knowledge.harness_entries import SkillReference
 from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
@@ -157,6 +158,7 @@ def evaluator_identity() -> str:
 def propose_schema_migration(
     store: ContextBundleStore, skill: SkillReference, *, source_evidence: tuple[SkillSourceEvidence, ...],
     run_id: str, limits: CandidateLimits = DEFAULT_LIMITS,
+    routing_config: SkillRoutingConfig | None = None,
 ) -> ContextBundle:
     """Explicitly enroll one helper as an inactive candidate in existing storage."""
     baseline = store.active_bundle(SCENARIO)
@@ -179,6 +181,12 @@ def propose_schema_migration(
                                         manifest_digest=manifest.digest, manifest_json=json_payload(manifest))
     components = [c for c in baseline.components if not (c.kind == ComponentKind.TOOL_SPEC and c.key == COMPONENT_KEY)]
     components.append(BundleComponent.json(ComponentKind.TOOL_SPEC, COMPONENT_KEY, record.model_dump(mode="json")))
+    if routing_config is not None:
+        if not routing_config.enabled or routing_config.bundle_digest is not None or routing_config.override is not None:
+            raise ValueError("execution policy routing template must be enabled and unbound")
+        components = [c for c in components if not (c.kind == ComponentKind.ROUTING_CONFIG and c.key == "execution_policy")]
+        components.append(BundleComponent.json(ComponentKind.ROUTING_CONFIG, "execution_policy",
+                                               routing_config.model_dump(mode="json")))
     bundle = ContextBundle.create(scenario=SCENARIO, evaluator_epoch=identity, parent_digest=baseline.digest,
                                   components=components)
     store.propose(bundle, source_run_id=run_id, source_generation=0, rationale="Explicit isolated schema migration candidate")

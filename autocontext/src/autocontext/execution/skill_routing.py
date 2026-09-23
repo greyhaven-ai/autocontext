@@ -13,9 +13,10 @@ from typing import Any, Literal
 
 from autocontext import offline
 from autocontext.artifacts.policy_candidate import CandidateLimits, json_payload
-from autocontext.context_bundles.models import stable_digest
+from autocontext.context_bundles.models import ComparisonDecision, ComponentKind, stable_digest
 from autocontext.context_bundles.store import ContextBundleStore
-from autocontext.execution import executable_skills, routed_model, skill_routing_models
+from autocontext.context_bundles.store_transactions import promotion_from_pointer
+from autocontext.execution import executable_skills, execution_policy_promotion, routed_model, skill_routing_models
 from autocontext.execution.docker_skill import encode_skill_payload
 from autocontext.execution.executable_skills import (
     CONTRACT,
@@ -43,7 +44,8 @@ from autocontext.util.json_io import write_json
 
 def routing_evaluator_identity() -> str:
     """Reuse canonical digests and the bridge verifier epoch; bind all route code."""
-    modules = (routed_model, skill_routing_models, scenario_routing, _workspace_process, anthropic, openai_compat,
+    modules = (routed_model, skill_routing_models, execution_policy_promotion, scenario_routing, _workspace_process,
+               anthropic, openai_compat,
                provider_base, token_caps, usage_receipt, model_registry, offline, _generation_usage, calculator, runtime_budget)
     packages = {}
     for package in ("openai", "anthropic"):
@@ -126,11 +128,20 @@ def route_schema_migration(
     attempts: list[dict[str, Any]] = []
     raw_input: str | None = None
     input_digest: str | None = None
+    active_policy_gate: execution_policy_promotion.ExecutionPolicyEvidence | None = None
 
     def stop_reason() -> str | None:
         if cancel.is_set():
             return "cancelled"
         return "request_timeout" if wall.expired() else None
+
+    def withhold(result: SkillRoutingResult, reason: str) -> SkillRoutingResult:
+        withheld_path = path.with_name(f"{request_id}.policy-verdict.json")
+        withheld = result.model_copy(update={"status": "execution_failure", "reason": reason,
+                                             "selected_route": None, "output_json": None,
+                                             "trace_path": str(withheld_path)})
+        write_json(withheld_path, withheld.model_dump(mode="json"))
+        return withheld
 
     def persist(status: Literal["started", "success", "abstention", "execution_failure"], reason: str,
                 output: str | None = None, route: Route | None = None) -> SkillRoutingResult:
@@ -152,6 +163,29 @@ def route_schema_migration(
             result = result.model_copy(update={"status": "execution_failure", "reason": stopped,
                                                "selected_route": None, "output_json": None})
             write_json(path, result.model_dump(mode="json"))
+        if status != "started" and active_policy_gate is not None and raw_input is not None:
+            try:
+                observation = execution_policy_promotion.observe_execution_policy(active_policy_gate, result)
+                suspended, reason = store.record_execution_policy_observation(
+                    SCENARIO, active_policy_gate.candidate_digest, active_policy_gate.digest,
+                    observation.model_dump(mode="json"))
+                pointer = store.active_pointer(SCENARIO)
+                if suspended:
+                    try:
+                        store.rollback(SCENARIO, rationale=reason,
+                                       expected_digest=active_policy_gate.candidate_digest)
+                    except (OSError, ValueError):
+                        pass
+                    return withhold(result, "execution_policy_suspended")
+                if pointer is None or pointer.get("bundle_digest") != active_policy_gate.candidate_digest:
+                    return withhold(result, "execution_policy_changed")
+            except (OSError, ValueError, TypeError, KeyError):
+                try:
+                    store.rollback(SCENARIO, rationale="post-activation monitoring unverified",
+                                   expected_digest=active_policy_gate.candidate_digest)
+                except (OSError, ValueError):
+                    pass
+                return withhold(result, "execution_policy_monitor_unverified")
         return result
 
     def skip(route: Route, reason: str, target: ModelTarget | None = None) -> None:
@@ -167,6 +201,38 @@ def route_schema_migration(
 
     if not config.enabled:
         return persist("abstention", "routing_disabled")
+    if mode == "serving":
+        try:
+            pointer = store.active_pointer(SCENARIO)
+            active = store.load_bundle(SCENARIO, str(pointer["bundle_digest"])) if pointer is not None else None
+            if active is not None and execution_policy_promotion.is_execution_policy(active):
+                template = execution_policy_promotion.policy_template(active)
+                has_skill = any(c.kind == ComponentKind.TOOL_SPEC and c.key == executable_skills.COMPONENT_KEY
+                                for c in active.components)
+                expected = template.model_copy(update={"bundle_digest": active.digest if has_skill else None})
+                if config != expected:
+                    raise ValueError("serving config differs from the active execution policy")
+                if has_skill:
+                    assert pointer is not None
+                    promotion = promotion_from_pointer(store, SCENARIO, pointer)
+                    if promotion.comparison.decision != ComparisonDecision.CONFIRMED or promotion.incumbent_digest is None:
+                        raise ValueError("active execution policy has no confirmed promotion")
+                    incumbent = store.load_bundle(SCENARIO, promotion.incumbent_digest)
+                    gate = execution_policy_promotion.require_execution_policy_gate(store, active, incumbent,
+                                                                                  promotion.cohort)
+                    if pointer.get("execution_policy_evidence_digest") != gate.digest:
+                        raise ValueError("active execution policy evidence differs from the promotion record")
+                    monitor = store.execution_policy_monitor(SCENARIO, active.digest)
+                    if monitor["evidence_digest"] != gate.digest:
+                        raise ValueError("active execution policy monitoring record changed")
+                    if monitor["status"] == "suspended":
+                        store.rollback(SCENARIO, rationale=monitor["reason"], expected_digest=active.digest)
+                        raise ValueError("active execution policy was suspended")
+                    active_policy_gate = gate
+            elif config.bundle_digest is not None:
+                raise ValueError("executable serving requires an active complete execution policy")
+        except (OSError, ValueError, TypeError, KeyError):
+            return persist("execution_failure", "unverified_execution_policy")
     if stopped := stop_reason():
         return persist("execution_failure", stopped)
     try:
