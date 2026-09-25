@@ -21,6 +21,19 @@ from generation artifacts rather than infer activation from a strategy
 `advance` decision. See [context bundles](../../docs/context-bundles.md) for the
 artifact and comparison contract.
 
+For deterministic non-game transformations, the opt-in
+[executable-skill bridge](executable-skills.md) shares candidate evaluation and
+serving assembly without an LLM completion interface. Explicit eligibility is
+required; ordinary `TOOL_SPEC` helpers remain reference-only. The initial Python
+schema-migration pilot returns verified proposals from Docker and requires a
+durable active promotion record for serving.
+The [skill/model router](skill-routing.md) adds opt-in, verified fallback through
+registered and general model targets. It preserves explicit overrides and
+shares time, token, attempt and model-spend budgets across the request.
+Optional frozen `learned_playbook` context is included in model prompts, input
+admission and route identity. The [reuse study](../benchmarks/skill_reuse/README.md)
+compares textual and executable representations through this same boundary.
+
 ## Research workspace capabilities
 
 External agents that only need plain data exploration should use the default

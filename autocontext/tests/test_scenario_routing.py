@@ -82,6 +82,18 @@ class TestScenarioRoutingContext:
         assert ctx.role == ""
         assert ctx.runtime_type == "provider"
 
+    def test_default_metadata_is_an_empty_per_instance_dict(self) -> None:
+        from autocontext.providers.scenario_routing import ScenarioRoutingContext
+
+        first = ScenarioRoutingContext(scenario="grid_ctf")
+        second = ScenarioRoutingContext(scenario="othello")
+
+        assert first.metadata == {}
+        assert first.metadata is not second.metadata
+
+        first.metadata["attempt"] = 1
+        assert second.metadata == {}
+
 
 # ===========================================================================
 # AC-289: RoutingDecision

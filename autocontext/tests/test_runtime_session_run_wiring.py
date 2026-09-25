@@ -82,7 +82,7 @@ def _prompts():
 
 
 def test_orchestrator_records_run_scoped_runtime_session_for_runtime_bridge(tmp_path: Path) -> None:
-    settings = AppSettings(agent_provider="deterministic", db_path=tmp_path / "events.db")
+    settings = AppSettings(agent_provider="deterministic", db_path=tmp_path / "events.db", architect_every_n_gens=1)
     orchestrator = AgentOrchestrator(
         client=RuntimeBridgeClient(_DeterministicAgentRuntime()),
         settings=settings,

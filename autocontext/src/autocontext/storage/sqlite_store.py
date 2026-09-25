@@ -746,6 +746,31 @@ class SQLiteStore(
                 ),
             )
 
+    def get_search_knowledge_summary(self) -> dict[str, dict[str, Any]]:
+        """Read completed counts and best snapshots in one connection/snapshot."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                WITH completed AS (
+                    SELECT scenario, COUNT(*) AS completed_runs
+                    FROM runs WHERE status = 'completed' GROUP BY scenario
+                ), ranked AS (
+                    SELECT scenario, best_score, best_elo,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY scenario ORDER BY best_score DESC, id ASC
+                        ) AS rank
+                    FROM knowledge_snapshots
+                    WHERE scenario IN (SELECT scenario FROM completed)
+                )
+                SELECT completed.scenario, completed.completed_runs,
+                    COALESCE(ranked.best_score, 0.0) AS best_score,
+                    COALESCE(ranked.best_elo, 1500.0) AS best_elo
+                FROM completed LEFT JOIN ranked
+                    ON completed.scenario = ranked.scenario AND ranked.rank = 1
+                """
+            ).fetchall()
+            return {row["scenario"]: dict(row) for row in rows}
+
     def get_best_knowledge_snapshot(self, scenario: str) -> dict[str, Any] | None:
         with self.connection() as conn:
             row = conn.execute(

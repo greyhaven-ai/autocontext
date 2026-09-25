@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -519,57 +520,56 @@ def test_lone_surrogate_claim_is_rejected_as_an_authentication_failure() -> None
         )
 
 
-def test_secure_credentials_registry_is_authoritative(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_secure_credentials_registry_is_authoritative(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(SERVER_AUTH_TOKEN_ENV, raising=False)
-    registry = tmp_path / "credentials.json"
-    registry.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "credentials": [
-                    {
-                        "kid": "operator-1",
-                        "principal": "alice",
-                        "secret": TOKEN,
-                        "capabilities": [CONTROL_OPERATE, CONTROL_READ],
-                        "not_before": 900,
-                        "not_after": 2_000,
-                    }
-                ],
-            }
+    with tempfile.TemporaryDirectory(prefix="autoctx-credentials-", dir=Path.home()) as root:
+        tmp_path = Path(root)
+        registry = tmp_path / "credentials.json"
+        registry.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "credentials": [
+                        {
+                            "kid": "operator-1",
+                            "principal": "alice",
+                            "secret": TOKEN,
+                            "capabilities": [CONTROL_OPERATE, CONTROL_READ],
+                            "not_before": 900,
+                            "not_after": 2_000,
+                        }
+                    ],
+                }
+            )
         )
-    )
-    registry.chmod(0o600)
-    monkeypatch.setenv(SERVER_CREDENTIALS_FILE_ENV, str(registry))
-    authenticator = ControlPlaneAuthenticator.from_environment()
-    principal = authenticator.authenticate(
-        _direct_proof(
-            caps=[CONTROL_OPERATE],
-            jti="00000000000000000000000000000006",
-        ),
-        method="GET",
-        target="/api/runs",
-        origin="",
-        now=1_030,
-    )
-    assert principal.name == "alice"
+        registry.chmod(0o600)
+        monkeypatch.setenv(SERVER_CREDENTIALS_FILE_ENV, str(registry))
+        authenticator = ControlPlaneAuthenticator.from_environment()
+        principal = authenticator.authenticate(
+            _direct_proof(
+                caps=[CONTROL_OPERATE],
+                jti="00000000000000000000000000000006",
+            ),
+            method="GET",
+            target="/api/runs",
+            origin="",
+            now=1_030,
+        )
+        assert principal.name == "alice"
 
-    registry.chmod(0o644)
-    with pytest.raises(RuntimeError, match="permissions"):
-        ControlPlaneAuthenticator.from_environment()
+        registry.chmod(0o644)
+        with pytest.raises(RuntimeError, match="permissions"):
+            ControlPlaneAuthenticator.from_environment()
 
-    writable_parent = tmp_path / "writable"
-    writable_parent.mkdir(mode=0o700)
-    exposed_registry = writable_parent / "credentials.json"
-    exposed_registry.write_text(json.dumps({"version": 1, "credentials": []}))
-    exposed_registry.chmod(0o600)
-    writable_parent.chmod(0o777)
-    monkeypatch.setenv(SERVER_CREDENTIALS_FILE_ENV, str(exposed_registry))
-    with pytest.raises(RuntimeError, match="parent is group/world writable"):
-        ControlPlaneAuthenticator.from_environment()
+        writable_parent = tmp_path / "writable"
+        writable_parent.mkdir(mode=0o700)
+        exposed_registry = writable_parent / "credentials.json"
+        exposed_registry.write_text(json.dumps({"version": 1, "credentials": []}))
+        exposed_registry.chmod(0o600)
+        writable_parent.chmod(0o777)
+        monkeypatch.setenv(SERVER_CREDENTIALS_FILE_ENV, str(exposed_registry))
+        with pytest.raises(RuntimeError, match="parent is group/world writable"):
+            ControlPlaneAuthenticator.from_environment()
 
 
 def test_credentials_registry_fails_closed_without_windows_dacl_validation(

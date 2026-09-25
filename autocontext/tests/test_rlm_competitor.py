@@ -560,6 +560,7 @@ class TestOrchestratorCompetitorRlm:
         settings = AppSettings(
             agent_provider="deterministic",
             rlm_enabled=True,
+            architect_every_n_gens=1,
             rlm_competitor_enabled=False,  # Use normal competitor path
             rlm_max_turns=5,
             curator_enabled=False,

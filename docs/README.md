@@ -14,6 +14,8 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Python package guide](../autocontext/README.md)
 - [TypeScript package guide](../ts/README.md)
 - [Demo data notes](../autocontext/demo_data/README.md)
+- [GridCTF policy reuse pilot and reproducible measurements](../autocontext/benchmarks/policy_reuse/REPORT.md)
+- [Schema-migration reuse study protocol and four-arm harness](../autocontext/benchmarks/skill_reuse/README.md)
 
 Public examples use the canonical nested CLI paths: `autoctx scenario create`
 for scenario authoring and `autoctx serve mcp` for MCP clients.
@@ -23,6 +25,7 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [External agent integration guide](../autocontext/docs/agent-integration.md)
 - [Running the loop on your own hardware](../autocontext/docs/self-hosted-models.md)
 - [Hermes Curator + autocontext positioning](internal/hermes-positioning.md)
+- [Judge serving identity and migration](../autocontext/docs/judge-serving-identity.md)
 - [Python and TypeScript extension hooks](../autocontext/docs/extensions.md)
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
 - [Capability-scoped research workspaces](research-workspaces.md)
@@ -86,6 +89,9 @@ contracts are available.
 - [Goal run report](goal-run-report.md)
 - [Playbook approval gate](playbook-approval-gate.md)
 - [Immutable context bundles and outcome-gated promotion](context-bundles.md)
+- [Scoped executable policy candidates](../autocontext/docs/policy-candidates.md)
+- [Explicit executable skills and schema-migration fixture](../autocontext/docs/executable-skills.md)
+- [Applicability-aware skill/model routing and shared budgets](../autocontext/docs/skill-routing.md)
 - [Campaign false-promotion calibration](false-promotion-calibration.md)
 - [Derived lesson curation](internal/derived-lesson-curation.md)
 - [Soft structural hints](soft-structural-hints.md)

@@ -10,7 +10,7 @@ AC-290: PiModelHandoff, resolve_pi_model, PiExecutionTrace
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -28,7 +28,7 @@ class ScenarioRoutingContext:
     backend: str = ""
     runtime_type: str = "provider"
     manual_model_override: str = ""
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class RoutingDecision(BaseModel):

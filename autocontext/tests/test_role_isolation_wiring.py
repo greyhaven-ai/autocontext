@@ -16,6 +16,7 @@ from autocontext.agents.architect import ArchitectRunner
 from autocontext.agents.coach import CoachRunner
 from autocontext.agents.competitor import CompetitorRunner
 from autocontext.agents.subagent_runtime import SubagentRuntime
+from autocontext.config.settings import AppSettings
 from autocontext.extensions.hooks import HookBus
 from autocontext.extensions.llm import HookedLanguageModelClient
 from autocontext.harness.core.llm_client import LanguageModelClient
@@ -89,6 +90,7 @@ class _FakeOrch:
     """Minimal orchestrator surface build_role_handler needs."""
 
     def __init__(self, client: LanguageModelClient) -> None:
+        self.settings = AppSettings(architect_every_n_gens=1)
         runtime = SubagentRuntime(client)
         self.competitor = CompetitorRunner(runtime, "m")
         self.analyst = AnalystRunner(runtime, "m")

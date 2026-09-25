@@ -13,7 +13,7 @@ Key types:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -160,7 +160,7 @@ class BasinCandidate:
     playbook: str
     lessons: str
     temperature: float
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _strip_specific_tactics(playbook: str) -> str:

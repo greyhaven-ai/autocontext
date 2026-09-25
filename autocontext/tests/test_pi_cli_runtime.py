@@ -92,6 +92,57 @@ def test_generate_raw_text_fallback() -> None:
     assert output.model == "pi"
 
 
+@pytest.mark.parametrize("exit_code", [0, 3])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param(' \n[1,  {"result": "nested"}]\t', id="array"),
+        pytest.param("\n[]\n", id="empty-array"),
+        pytest.param(' \t"hello\\nworld"\n', id="string"),
+        pytest.param(' ""\n', id="empty-string"),
+        pytest.param(" 42\n", id="integer"),
+        pytest.param(" -2.50e+3\n", id="float"),
+        pytest.param(" true\n", id="true"),
+        pytest.param(" false\t", id="false"),
+        pytest.param(" null\n", id="null"),
+    ],
+)
+def test_parse_non_object_json_uses_raw_text_fallback(raw: str, exit_code: int) -> None:
+    runtime = PiCLIRuntime(PiCLIConfig(json_output=True, model="configured-model"))
+
+    output = runtime._parse_output(raw, exit_code)
+
+    assert output == AgentOutput(
+        text=raw.strip(),
+        cost_usd=0.0,
+        model="pi",
+        metadata={"exit_code": exit_code},
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_text"),
+    [
+        pytest.param(" {}\n", "{}", id="empty-object"),
+        pytest.param('{"output": "alternate"}', "alternate", id="output-envelope"),
+        pytest.param('{"result": "preferred", "output": "alternate"}', "preferred", id="result-precedence"),
+        pytest.param('{"result": []}', '{"result": []}', id="non-text-result"),
+        pytest.param('{"result": "  "}', '{"result": "  "}', id="blank-result"),
+    ],
+)
+def test_parse_object_json_preserves_envelope_behavior(raw: str, expected_text: str) -> None:
+    runtime = PiCLIRuntime(PiCLIConfig())
+
+    output = runtime._parse_output(raw, 3)
+
+    assert output == AgentOutput(
+        text=expected_text,
+        cost_usd=0.0,
+        model="pi",
+        metadata={"exit_code": 3, "raw_json": json.loads(raw)},
+    )
+
+
 def test_generate_json_object_without_result_serializes_full_payload() -> None:
     runtime = PiCLIRuntime(PiCLIConfig())
     raw_payload = {

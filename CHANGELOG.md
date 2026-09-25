@@ -4,8 +4,178 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Python: AC-1029 schema-migration study protocol, isolated data splits, frozen
+  four-arm comparison harness and lifecycle reporting. Reuses the existing
+  Docker/router boundaries and adds optional digest-bound textual playbooks.
+  Fixture results do not establish live efficacy; unknown resource costs remain
+  unknown and production promotion is separate.
+  Absolute study deadlines also cover ledger persistence and router startup;
+  unresolved call reservations invalidate affected cost totals and projections.
+
+- Python: opt-in applicability-aware routing for the profile schema-migration
+  pilot, with verified skill/registered-model/general-model fallback, explicit
+  abstention and overrides, shared request budgets, durable decisions and
+  cancellable single-dispatch provider workers (AC-1020). Complete route
+  promotion, semantic classification and TypeScript parity remain deferred.
+  HTTP usage is captured before SDK coercion; absolute deadlines cover
+  preflight and worker setup, and skipped model tiers do not suppress fallback.
+
+- Python: explicit context-bundle executable-skill eligibility and a bounded
+  schema-migration pilot, with Docker isolation, verified JSON proposals and
+  promotion-gated serving (AC-1028). Rejects child-process OOMs, bounds input
+  encoding/hashing and honors cancellation through final verification. Includes
+  an end-to-end fixture; TypeScript parity and automatic routing remain deferred.
+
+- Python: opt-in trace-derived GridCTF skill candidates with immutable manifests,
+  typed action/abstention contracts, isolated evaluation and retained negative
+  evidence in the existing candidate lifecycle (AC-1019). No automatic activation.
+
+### Changed
+
+- Python judge epochs now bind an immutable serving specification, including
+  ordered human calibration examples, prompt versions, and scoring rules.
+  Historical rubric-only epochs remain distinct. Mixed-specification
+  leave-one-out calibration reports cannot authorize automatic promotion.
+  See [migration and runtime scope](autocontext/docs/judge-serving-identity.md).
+
+## [Pi 0.11.0] - 2026-09-17
+
+The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This
+also ships `pi-autocontext` for the first time since 0.10.0: `pi-v0.10.1` was
+tagged on 2026-09-08 but its publish job failed before reaching npm, so the
+packaged documentation and dependency metadata from that tag arrive here.
+
+### Changed
+
+- The runtime dependency moves from `autoctx@^0.17.3` to `autoctx@^0.18.0`.
+  Because these are `0.x` versions, the previous caret range could not accept
+  0.18.0, so the extension needed this release to pick it up.
+- Development dependencies advance to the `@earendil-works` 0.85.1 line,
+  TypeScript 7, vitest 5 and typebox 1.3.30. `pi/tsconfig.json` gains an
+  explicit `rootDir`, which TypeScript 7 requires in order to emit.
+
+### Fixed
+
+- `npm publish` receives an explicit local path for the packed tarball. Without
+  the leading `./`, npm read `dist/<file>.tgz` as a GitHub shorthand and tried
+  to fetch it over SSH, which is why `pi-v0.10.0` and `pi-v0.10.1` both failed
+  to publish. The same fix carried `autoctx@0.18.0` to npm successfully.
+
+## [Python 0.18.0 / TypeScript 0.18.0] - 2026-09-16
+
+This release ships the TypeScript line for the first time since `autoctx@0.17.3`.
+`autoctx@0.17.4` was tagged on 2026-09-08 but never reached npm, so its changes,
+listed under that release below, first reach users here alongside everything
+merged since. `autocontext==0.18.0` contains bug fixes only; the Python package
+moves to 0.18.0 to stay aligned with the TypeScript version line. The Pi
+extension is not part of this release: `pi-autocontext@0.11.0` follows once
+`autoctx@0.18.0` is live, because it depends on it.
+
+### Added
+
+- TypeScript: `openai` v7 is supported alongside v4. The `openai` peer dependency
+  widens from `^4` to `^4 || ^7`, and the SDK matrix now runs the integration and
+  instrument suites against both majors. No source changes were required. v5 and
+  v6 are not claimed because they are not tested.
+
+### Fixed
+
+- TypeScript: `getHumanFeedbackRecords` and `getCalibrationExampleRecords`
+  returned the oldest matching rows instead of the newest whenever timestamps
+  tied. `human_feedback.created_at` has one-second resolution, so a burst of
+  writes shared a sort key and `ORDER BY created_at DESC LIMIT n` returned the
+  first n inserted. Results now break ties by id, newest first.
+- TypeScript: the `openai` and `anthropic` integration CommonJS bundles now
+  rethrow a module initialization error on every access. Previously a failed
+  lazy initialization threw once and then returned `undefined` on later
+  accesses. This comes from the esbuild 0.28 bundler helper.
+- Python: the compaction ledger blob mirror now mirrors every append. With the
+  shipped `blob_store_min_size_bytes=1024`, appends smaller than the floor were
+  skipped, leaving gaps in the middle of the mirrored `parentId` chain. Thanks
+  to @MaxFreedomPollard for the diagnosis and fix in
+  [#1345](https://github.com/greyhaven-ai/autocontext/pull/1345).
+- Python: initializing the external-evaluation outbox no longer fails with
+  `sqlite3.OperationalError: database is locked` when several initializers start
+  concurrently. `PRAGMA journal_mode=WAL` returns `SQLITE_BUSY` without invoking
+  SQLite's busy handler, so neither the connection timeout nor
+  `PRAGMA busy_timeout` covered that statement; it is now retried explicitly.
+
 ### Security
 
+- TypeScript and Pi: `sharp` advances to 0.35.4 (GHSA-rgj7-g3m4-5g8c, high) and
+  the pinned `hono` override to 4.13.7 (GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc,
+  GHSA-crvj-82cr-hjcx, moderate). Low-severity findings from `secure-exec@0.1.0`
+  (the `elliptic` chain and a nested `esbuild` 0.27) remain below the audit gate;
+  `secure-exec` 0.3.x was evaluated and deferred because it drops the sandbox
+  resource budgets and ships no Windows or musl sidecar
+  ([#1314](https://github.com/greyhaven-ai/autocontext/pull/1314)).
+- TypeScript: `ts/bun.lock` is regenerated to match `ts/package.json`. It had
+  drifted, so `bun audit` in the dependency-security gate was checking a
+  dependency set that did not match what ships.
+
+### Changed
+
+- TypeScript runtime dependencies: `better-sqlite3` 11.10.0 to 13.0.3 (requires
+  Node 22 or newer, within the existing `>=22.19.0` engine range),
+  `@earendil-works/pi-tui` 0.84.2 to 0.85.1, and `ws` 8.21.0 to 8.21.3.
+- CI builds the Pi package, so compiler errors that only appear when emitting
+  output fail CI instead of the release. `pi/dist` is now ignored.
+- Dependabot no longer opens pull requests for pins that cannot move on their
+  own: the tree-sitter family, the reviewed CUDA dependency graph, and zod major
+  versions.
+
+## [Python 0.17.1 / TypeScript 0.17.4 / Pi 0.10.1] - 2026-09-08
+
+These maintenance releases package the merged security and reliability fixes.
+Python runtime improvements ship in `autocontext==0.17.1`; TypeScript maintenance
+ships in `autoctx@0.17.4`. The Pi extension advances to `pi-autocontext@0.10.1`
+with refreshed packaged documentation and dependency metadata, retaining its
+existing `autoctx@^0.15.0` runtime dependency.
+
+> `autoctx@0.17.4` and `pi-autocontext@0.10.1` were tagged but never reached npm.
+> Their changes first ship in `autoctx@0.18.0` and `pi-autocontext@0.11.0`.
+
+### Performance
+
+- Python generation paths now skip architect provider calls between scheduled
+  generations, retaining zero-token `skipped` execution records. With the default
+  cadence of three, architect calls occur on generations 3, 6, 9, and so on;
+  set `AUTOCONTEXT_ARCHITECT_EVERY_N_GENS=1` to run the architect every generation.
+- Direct and pipeline role execution share dependency scheduling: architect can
+  overlap analyst and coach, and coach starts when analyst finishes. Role runtime
+  bindings are independent. RLM retains serial sessions and shares the skip policy.
+- Strategy search batches database reads and caches unchanged knowledge contents
+  and tokenized fields, with filesystem revision checks for external edits.
+- Python CI runs four test shards with combined coverage; smoke checks start
+  independently. Dependency caching remains disabled.
+
+These runtime optimizations land in Python first; TypeScript execution behavior
+is unchanged.
+
+### Fixed
+
+- Exploration and scenario-routing dataclasses now use independent dictionaries
+  for metadata defaults instead of Pydantic field descriptors.
+- Python's Pi CLI runtime uses the existing text fallback for JSON arrays, scalars
+  or null instead of failing object-envelope parsing. Thanks to @Ftgn-dpA for
+  reporting the issue and proposing a fix in
+  [#1321](https://github.com/greyhaven-ai/autocontext/pull/1321).
+- Interactive runs tolerate bursts of valid worker events before a controller
+  request without aborting. Event queues remain bounded, and terminal-result,
+  process-exit and controller-token checks still reject invalid requests.
+
+### Security
+
+- Release workflows validate protected-main ancestry and successful CI for the
+  exact release commit before building or publishing. Live service checks move
+  to a manual, main-only workflow behind independent environment approval.
+  Workflow credentials and caches are restricted, and the uv installer and
+  tool version are pinned.
+- TypeScript and Pi dependency locks update fast-uri and qs to resolve the
+  current high/moderate production audit findings without changing the sandbox
+  runtime API or weakening the audit threshold.
 - Control-plane WebSockets no longer accept bearer credentials in query strings;
   browser clients use an authenticated, echoed subprotocol, native clients may
   use the Authorization header, and the TUI authenticates both HTTP and WebSocket
@@ -1171,7 +1341,7 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.17.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.18.0...HEAD
 [0.17.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...py-v0.17.0
 [0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.1...py-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0

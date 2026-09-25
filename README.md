@@ -27,10 +27,10 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.17.0` |
-| Python library/dev  | `uv pip install autocontext==0.17.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.17.3`           |
-| Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
+| Python CLI          | `uv tool install autocontext==0.18.0` |
+| Python library/dev  | `uv pip install autocontext==0.18.0`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.18.0`           |
+| Pi extension        | `pi install npm:pi-autocontext@0.11.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
 The npm CLI and TUI require Node.js 22.19.0 or newer; contributors should use
@@ -94,6 +94,14 @@ serving boundary can additionally require a cancellable independent audit and
 a durable campaign-wide false-promotion budget; exact causal credit is accepted
 only from verified single-component manifest additions. See
 [context bundles and outcome-gated promotion](docs/context-bundles.md).
+Python also provides an opt-in [executable-skill bridge](autocontext/docs/executable-skills.md)
+for verified schema-migration proposals in Docker, with explicit eligibility
+and promotion-gated serving.
+An opt-in [skill/model router](autocontext/docs/skill-routing.md) adds verified
+fallback and explicit abstention under one request budget.
+The [schema-migration reuse study](autocontext/benchmarks/skill_reuse/README.md)
+compares baseline, textual context, executable reuse and cheaper-model controls
+under frozen paired evaluation; fixture runs are infrastructure evidence only.
 Controlled component trials feed
 [ablation-backed attribution](docs/context-attribution.md), so prompt selection
 can demote low-value context without presenting edit-size correlation as causal.
@@ -141,14 +149,14 @@ and the [persistent-host security model](autocontext/docs/persistent-host.md#tru
 before exposing a server beyond one trusted operator.
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.17.0
+## What's New in 0.18.0
 
-- **Outcome-gated context bundles:** immutable candidates now move through matched screening, adaptive confirmation, held-out evaluation, false-promotion control, causal attribution, and atomic activation while rejected evidence remains available for scoped retesting.
-- **Capability-scoped execution:** generated research code can run in a locked-down Docker workspace, remote scenarios ship as verified content-addressed packages, and trusted-local execution remains an explicit operator choice rather than a fallback.
-- **Durable campaign operations:** restart-safe scheduling, leases, heartbeats, cancellation, bounded reuse, campaign auditing, and a paid-result outbox make long-running local and remote evaluation inspectable, accountable, and recoverable without duplicate provider execution.
-- **Correctness-first kernel evolution:** protected workers, fresh confirmation, finite-sample promotion gates, autonomous model-backed campaigns, and three-family transfer studies expose regressions, specialists, plateaus, and generalizing champions without averaging failures away.
-- **Capability-validated accelerators:** Prime requests bind immutable images, accelerator type/count, region, telemetry, idempotency, and resolved hardware identity; unsupported or drifting configurations fail before paid candidate execution.
-- **Stronger learning evidence across runtimes:** Python and TypeScript share context-bundle, attribution, and negative-result contracts, while Python training adds replayable adaptive confirmation and minimum-effect promotion artifacts.
+- **TypeScript ships again:** autoctx 0.18.0 is the first npm release since 0.17.3. The 0.17.4 tag never reached npm, so its WebSocket credential hardening and dependency security updates first arrive here.
+- **OpenAI v7 support:** autoctx accepts openai ^4 || ^7, and the SDK matrix exercises the integration and instrument suites against both majors.
+- **Correct recent-feedback queries:** human feedback and calibration lookups return the newest records instead of the oldest when timestamps tie.
+- **More reliable Python runtimes:** the compaction ledger mirror records every append, and concurrent outbox initialization no longer fails on a locked database.
+- **Dependency security:** sharp and hono advisories are resolved, better-sqlite3 moves to 13, and the Bun lockfile audited in CI matches what ships again.
+- **Safer releases:** CI now builds the Pi package, catching emit-only compiler errors before release rather than during it.
 <!-- autocontext-whats-new:end -->
 
 ### npm 0.17.3 minimum iteration floors

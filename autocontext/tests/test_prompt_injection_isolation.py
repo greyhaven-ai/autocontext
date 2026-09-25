@@ -117,6 +117,7 @@ def _run(client: LanguageModelClient, *, use_pipeline: bool) -> _RecordingCapabl
     settings = AppSettings(
         agent_provider="deterministic",
         structural_role_isolation=True,
+        architect_every_n_gens=1,
         use_pipeline_engine=use_pipeline,
     )
     orch = AgentOrchestrator(client=client, settings=settings)
@@ -156,7 +157,7 @@ def test_isolation_survives_the_hook_wrapper() -> None:
     # client still isolates end-to-end rather than silently flattening.
     recorder = _RecordingCapableClient()
     wrapped = HookedLanguageModelClient(recorder, HookBus())
-    settings = AppSettings(agent_provider="deterministic", structural_role_isolation=True)
+    settings = AppSettings(agent_provider="deterministic", structural_role_isolation=True, architect_every_n_gens=1)
     orch = AgentOrchestrator(client=wrapped, settings=settings)
     prompts, parts = _build()
     orch.run_generation(prompts, generation_index=1, parts=parts)

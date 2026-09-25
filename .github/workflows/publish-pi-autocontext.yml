@@ -14,7 +14,31 @@ permissions:
   contents: read
 
 jobs:
+  validate-source:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    outputs:
+      sha: ${{ steps.authorize.outputs.sha }}
+    steps:
+      # Load policy from protected main, before executing any release source.
+      # Tag rules and registry environment binding must also protect this workflow.
+      - name: Check out trusted release policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: release-policy
+          persist-credentials: false
+      - name: Authorize release source and exact-commit CI
+        id: authorize
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 release-policy/scripts/check_release_source.py --tag-prefix pi-v
+
   build-npm:
+    needs: validate-source
     runs-on: ubuntu-latest
     env:
       # Delay fresh npm versions during publish workflow dependency installs.
@@ -23,10 +47,14 @@ jobs:
       run:
         working-directory: pi
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
       - name: Install npm with release-age exclusions
         run: npm install --global npm@12.0.1
@@ -60,7 +88,7 @@ jobs:
       - name: Pack immutable publish artifact
         run: npm pack --ignore-scripts
       - name: Upload package and SBOM
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pi-package
           path: |
@@ -76,14 +104,15 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
       - name: Download verified package artifact
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: pi-package
           path: dist
       - name: Publish to npm with provenance
-        run: npm publish dist/*.tgz --ignore-scripts --access public --provenance
+        run: npm publish ./dist/*.tgz --ignore-scripts --access public --provenance

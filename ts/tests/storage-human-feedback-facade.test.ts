@@ -41,7 +41,10 @@ describe("storage human feedback facade", () => {
 
     const feedback = getStoreHumanFeedback(db, "scenario");
     expect(feedback).toHaveLength(3);
-    expect(feedback[0]?.generation_id).toBeTruthy();
+    // Identify the record rather than indexing: created_at has second
+    // granularity, so all three rows tie and only the id tiebreak orders them.
+    const withGeneration = feedback.find((row) => row.agent_output === "output");
+    expect(withGeneration?.generation_id).toBe("gen-1");
 
     const calibration = getStoreCalibrationExamples(db, "scenario");
     expect(calibration.map((row) => row.agent_output)).toContain("output");

@@ -9,6 +9,14 @@ immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by
 itself does not activate a context edit. The artifact layout and Python API are
 documented in [context bundles](../docs/context-bundles.md).
+The opt-in [executable-skill bridge](docs/executable-skills.md) enrolls explicit
+schema-migration helpers as inactive candidates and verifies their proposals
+in Docker. Serving requires a durable promotion record.
+The opt-in [skill/model router](docs/skill-routing.md) adds registered-model and
+general-model fallback with one budget and the same objective verifier.
+The [schema-migration reuse study](benchmarks/skill_reuse/README.md) adds frozen
+paired comparisons against textual and cheaper-model controls, with a local
+Docker/HTTP fixture and explicit limits on quality and cost claims.
 The `autocontext.analytics.context_attribution` API joins controlled trials to
 those immutable digests, plans bounded re-ablation, and returns non-destructive
 prompt-selection decisions. See [ablation-backed attribution](../docs/context-attribution.md).
@@ -278,3 +286,16 @@ uv run pytest
 
 Keep this README concise. Add deep reference prose to `docs/` or the repo-level
 docs index instead.
+
+### Architect cadence and search efficiency
+
+Python runs the architect on generations divisible by
+`AUTOCONTEXT_ARCHITECT_EVERY_N_GENS` (default `3`). Other generations retain a
+`skipped` architect execution with zero token usage and no tool or harness
+changes. Set the value to `1` for an architect call every generation. This
+applies to direct, pipeline, and RLM generation paths.
+
+Direct and pipeline execution overlap the independent architect with the analyst
+and coach; the coach still receives the current analyst's findings. RLM sessions
+remain serial. Strategy search reuses unchanged knowledge-file contents while
+checking file revisions and current database summaries on every query.

@@ -30,6 +30,22 @@ These are copy-paste starting points for people evaluating the repo, integrating
   accelerator type/count, image, region, and telemetry must be declared and
   are never silently downgraded to CPU.
 
+## Scoped Policy Candidates
+
+For a non-game transformation, run the Python
+[executable-skill fixture](executable_skills/run.py). It enrolls a schema migration
+as an inactive bundle candidate and verifies proposals in real Docker, both
+directly and through the opt-in router. See the
+[bridge guide](../autocontext/docs/executable-skills.md) for setup and serving gates,
+and the [routing guide](../autocontext/docs/skill-routing.md) for fallback configuration.
+The [four-arm reuse study](../autocontext/benchmarks/skill_reuse/README.md) adds
+a reproducible local HTTP/Docker comparison with frozen learning and evaluation splits.
+
+The Python [candidate example](policy_candidates/run.py) projects selected training
+traces, replays a fixture synthesis response, evaluates fresh/counterexample inputs
+and stores an inactive candidate with immutable lineage. See the
+[candidate workflow guide](../autocontext/docs/policy-candidates.md) for usage and limits.
+
 ## Kernel Evolution MVP
 
 The Python kernel adapter composes AutoContext's multi-generation loop with a
