@@ -77,15 +77,17 @@ and setup-inclusive cost at the frozen horizon. A confirmed generic comparison
 without immutable, matching economic evidence cannot switch this policy's
 active pointer. The atomic pointer also binds the admitted evidence digest,
 and serving replays it before dispatch. Missing local, authoring or recurring
-costs cannot pass the numeric gate; the operator remains responsible for
-truthfully attesting any zero-cost inputs. The AC-1029 synthetic run has
+costs cannot pass the numeric gate; candidate setup and both local resource
+rates must be positive. The operator remains responsible for verifying those
+rates and any zero-cost incumbent inputs. The AC-1029 synthetic run has
 unknown total lifecycle costs and is therefore ineligible. This implementation
 is opt-in; no production route is automatically enabled.
 
 The first gate replays reported cases against the existing matched trial
 records, re-reads each frozen evaluation-route trace, recomputes objective
-correctness and provider-receipt completeness, and checks that accounted model
-spend plus declared local cost reproduces each paired amount. Missing, changed
+correctness and provider-receipt completeness, and recalculates each local
+amount from observed route/skill time and the frozen rates before comparing
+model spend plus local cost with the paired amount. Missing, changed
 or relocated trace files fail closed. After an opt-in promotion, each serving
 result is recorded once under its request ID. The evidence freezes local-rate,
 quality, fallback, sample-size and cost-per-success limits. Monitored local cost

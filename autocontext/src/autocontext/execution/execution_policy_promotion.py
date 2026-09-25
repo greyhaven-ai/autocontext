@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import statistics
 from pathlib import Path
 from typing import Literal
@@ -72,7 +73,7 @@ class ExecutionPolicyEvidence(FrozenContract):
     cohort: str = Field(min_length=1)
     trace_root: str = Field(min_length=1)
     source_split_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
-    candidate_setup_cost_usd: float = Field(ge=0)
+    candidate_setup_cost_usd: float = Field(gt=0)
     incumbent_setup_cost_usd: float = Field(ge=0)
     reuse_horizon: int = Field(default=100, ge=1, strict=True)
     shifted_frequency: float = Field(default=0.1, ge=0, le=1)
@@ -81,8 +82,8 @@ class ExecutionPolicyEvidence(FrozenContract):
     regression_tolerance: float = Field(default=0.02, ge=0, le=1)
     min_skill_coverage: float = Field(default=0.5, ge=0, le=1)
     cost_weight: float = Field(default=1.0, gt=0)
-    local_route_cost_per_second_usd: float = Field(ge=0)
-    isolated_skill_cost_per_second_usd: float = Field(ge=0)
+    local_route_cost_per_second_usd: float = Field(gt=0)
+    isolated_skill_cost_per_second_usd: float = Field(gt=0)
     monitor_min_cases: int = Field(default=12, ge=1, strict=True)
     monitor_quality_floor: float = Field(default=0.95, ge=0, le=1)
     monitor_max_fallback_frequency: float = Field(default=0.25, ge=0, le=1)
@@ -232,7 +233,13 @@ def require_execution_policy_gate(
             if not path.is_relative_to(trace_root) or not path.is_file():
                 raise ValueError("execution policy route trace is unavailable or outside the frozen trace root")
             raw = read_json(path)
-            if (raw != route.model_dump(mode="json") or stable_digest(raw) != digest
+            skill_elapsed = [a.elapsed_seconds for a in route.attempts if a.route == "skill" and a.status != "skipped"]
+            measured_seconds = (route.elapsed_seconds, *skill_elapsed)
+            measured_local_cost = (route.elapsed_seconds * evidence.local_route_cost_per_second_usd
+                                   + sum(skill_elapsed) * evidence.isolated_skill_cost_per_second_usd)
+            if (any(not math.isfinite(seconds) or seconds < 0 for seconds in measured_seconds)
+                    or abs(local_cost - measured_local_cost) > 1e-9
+                    or raw != route.model_dump(mode="json") or stable_digest(raw) != digest
                     or route.mode != "evaluation" or route.input_json != case.input_json
                     or route.input_sha256 != input_hash or route.config_digest != expected_config
                     or SkillRoutingConfig.model_validate(_json(route.config_json)).digest != expected_config

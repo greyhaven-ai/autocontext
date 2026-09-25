@@ -192,12 +192,16 @@ def test_complete_execution_policy_is_cost_gated_and_rolls_back(tmp_path, monkey
                                                trace_root=tmp_path / "traces", mode="evaluation")
             incumbent = route_schema_migration(store, registry, value, config=template,
                                                trace_root=tmp_path / "traces", mode="evaluation")
-            local_candidate = .005 if cohort == "supported" else .0044
+            local_candidate = .001 * (candidate.elapsed_seconds + sum(
+                attempt.elapsed_seconds for attempt in candidate.attempts if attempt.route == "skill"))
+            local_incumbent = .001 * incumbent.elapsed_seconds
             cases.append(PolicyCase(fixture_digest=stable_digest(json.loads(value)), seed=len(cases),
                                     group=f"{cohort}-{i // 3}", cohort=cohort, input_json=value,
-                                    candidate_correct=True, incumbent_correct=True, candidate_cost_usd=.005,
-                                    incumbent_cost_usd=.02, candidate_local_cost_usd=local_candidate,
-                                    incumbent_local_cost_usd=.0194,
+                                    candidate_correct=True, incumbent_correct=True,
+                                    candidate_cost_usd=candidate.accounted_model_cost_usd + local_candidate,
+                                    incumbent_cost_usd=incumbent.accounted_model_cost_usd + local_incumbent,
+                                    candidate_local_cost_usd=local_candidate,
+                                    incumbent_local_cost_usd=local_incumbent,
                                     candidate_trace_digest=stable_digest(candidate.model_dump(mode="json")),
                                     incumbent_trace_digest=stable_digest(incumbent.model_dump(mode="json")),
                                     candidate_route=candidate, incumbent_route=incumbent,
@@ -207,7 +211,8 @@ def test_complete_execution_policy_is_cost_gated_and_rolls_back(tmp_path, monkey
                            evaluator_epoch=bundle.evaluator_epoch, cohort="policy-test", fixture=f"{lane.value}-{i}",
                            fixture_digest=(cases[i].fixture_digest if lane == TrialLane.HELDOUT
                                            else f"{lane.value}-setup-{i}"), seed=i, lane=lane,
-                           candidate_score=.995, incumbent_score=.98)
+                           candidate_score=1 - cases[i].candidate_cost_usd,
+                           incumbent_score=1 - cases[i].incumbent_cost_usd)
               for lane, count in ((TrialLane.SCREEN, 2), (TrialLane.CONFIRMATION, 6), (TrialLane.HELDOUT, 24))
               for i in range(count)]
     policy = ConfirmationPolicy(min_heldout_pairs=24, max_confirmation_pairs=6)
@@ -223,13 +228,18 @@ def test_complete_execution_policy_is_cost_gated_and_rolls_back(tmp_path, monkey
         matched_trials_digest=stable_digest([trial.to_dict() for trial in store.matched_trials(SCENARIO, bundle.digest)]),
         cohort="policy-test", trace_root=str(tmp_path / "traces"),
         source_split_digest=stable_digest(sorted(case.fixture_digest for case in cases)),
-        candidate_setup_cost_usd=.05, incumbent_setup_cost_usd=0,
+        candidate_setup_cost_usd=.005, incumbent_setup_cost_usd=0,
         local_route_cost_per_second_usd=.001, isolated_skill_cost_per_second_usd=.001,
         monitor_min_cases=2, monitor_max_fallback_frequency=.25, cases=tuple(cases))
     missing = evidence.model_dump(mode="json")
     missing["candidate_setup_cost_usd"] = None
     with pytest.raises(ValueError):
         store.record_execution_policy_evidence(SCENARIO, bundle.digest, missing)
+    for field in ("candidate_setup_cost_usd", "local_route_cost_per_second_usd", "isolated_skill_cost_per_second_usd"):
+        zero_rate = evidence.model_dump(mode="json")
+        zero_rate[field] = 0
+        with pytest.raises(ValueError):
+            store.record_execution_policy_evidence(SCENARIO, bundle.digest, zero_rate)
     wrong_config = evidence.model_dump(mode="json")
     wrong_config["route_config_digest"] = "0" * 64
     with pytest.raises(ValueError, match="bind"):
@@ -238,6 +248,11 @@ def test_complete_execution_policy_is_cost_gated_and_rolls_back(tmp_path, monkey
     wrong_cost["cases"][0]["candidate_cost_usd"] = 0
     with pytest.raises(ValueError, match="trace or cost"):
         store.record_execution_policy_evidence(SCENARIO, bundle.digest, wrong_cost)
+    invented_local_cost = evidence.model_dump(mode="json")
+    invented_local_cost["cases"][0]["candidate_local_cost_usd"] += .01
+    invented_local_cost["cases"][0]["candidate_cost_usd"] += .01
+    with pytest.raises(ValueError, match="trace or cost"):
+        store.record_execution_policy_evidence(SCENARIO, bundle.digest, invented_local_cost)
     wrong_outcome = evidence.model_dump(mode="json")
     wrong_outcome["cases"][0]["candidate_correct"] = False
     with pytest.raises(ValueError, match="outcomes"):
