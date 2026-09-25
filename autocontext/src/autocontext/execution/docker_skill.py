@@ -6,8 +6,10 @@ file, pickle, local-exec fallback, or model interface crosses this seam.
 
 from __future__ import annotations
 
+import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -30,6 +32,33 @@ from autocontext.runtimes.runtime_budget import RuntimeBudget
 MAX_PAYLOAD_BYTES = 65536
 
 
+def verified_oom_events(data: bytes, container_id: str, exit_code: int) -> bool | None:
+    if len(data) > 8192:
+        return None
+    try:
+        events = [json.loads(line) for line in data.splitlines()]
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    dies = 0
+    oom = False
+    for event in events:
+        if not isinstance(event, dict) or event.get("Type") != "container":
+            return None
+        actor = event.get("Actor")
+        if not isinstance(actor, dict) or actor.get("ID") != container_id:
+            return None
+        if event.get("Action") == "oom":
+            oom = True
+        elif event.get("Action") == "die":
+            attributes = actor.get("Attributes")
+            if not isinstance(attributes, dict) or attributes.get("exitCode") != str(exit_code):
+                return None
+            dies += 1
+        else:
+            return None
+    return oom if dies == 1 else None
+
+
 def encode_skill_payload(value: str) -> bytes | None:
     """Bound allocation before UTF-8 encoding; None means the payload is too big."""
     if len(value) > MAX_PAYLOAD_BYTES:
@@ -42,16 +71,44 @@ def encode_skill_payload(value: str) -> bytes | None:
 # this process as untrusted, even if a skill replaces its Python interpreter state.
 RUNNER = """
 import json
+import os
 import pathlib
 import sys
 
-namespace = {}
-source = pathlib.Path('/input/skill.py').read_text()
-state = json.loads(pathlib.Path('/input/input.json').read_text())
-exec(compile(source, '/input/skill.py', 'exec'), namespace)
-result = namespace['choose_action'](state)
-sys.stdout.write(json.dumps(result, allow_nan=False, separators=(',', ':')))
+pid = os.fork()
+if pid == 0:
+    namespace = {}
+    source = pathlib.Path('/input/skill.py').read_text()
+    state = json.loads(pathlib.Path('/input/input.json').read_text())
+    exec(compile(source, '/input/skill.py', 'exec'), namespace)
+    result = namespace['choose_action'](state)
+    sys.stdout.write(json.dumps(result, allow_nan=False, separators=(',', ':')))
+    sys.stdout.flush()
+    os._exit(0)
+
+_, status, usage = os.wait4(pid, 0)
+sys.stderr.write('AC_RESOURCE_METRICS:' + json.dumps({
+    'cpu_seconds': usage.ru_utime + usage.ru_stime,
+    'peak_memory_bytes': usage.ru_maxrss * 1024,
+}) + '\\n')
+sys.stderr.flush()
+sys.exit(os.waitstatus_to_exitcode(status))
 """
+
+
+def parse_runner_metrics(stderr: str) -> tuple[float | None, int | None]:
+    lines = [line for line in stderr.splitlines() if line.startswith("AC_RESOURCE_METRICS:")]
+    if len(lines) != 1 or stderr.splitlines()[-1:] != lines:
+        return None, None
+    try:
+        data = json.loads(lines[0].removeprefix("AC_RESOURCE_METRICS:"))
+        cpu, peak = data["cpu_seconds"], data["peak_memory_bytes"]
+        if set(data) == {"cpu_seconds", "peak_memory_bytes"} and type(cpu) in (float, int) and math.isfinite(cpu) \
+                and cpu >= 0 and type(peak) is int and peak >= 0:
+            return float(cpu), peak
+    except (ValueError, TypeError, KeyError, OverflowError):
+        pass
+    return None, None
 
 
 @dataclass(frozen=True)
@@ -60,6 +117,8 @@ class DockerSkillResult:
     failure: str | None = None
     elapsed_seconds: float = 0.0
     image_identity: str | None = None
+    cpu_seconds: float | None = None
+    peak_memory_bytes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +158,8 @@ class DockerSkillExecutor:
         created = False
         failure: str | None = None
         output = ""
+        cpu_seconds: float | None = None
+        peak_memory_bytes: int | None = None
 
         def remaining() -> float:
             if cancel.is_set():
@@ -138,6 +199,7 @@ class DockerSkillExecutor:
                 # Create before start so cancellation always has an established
                 # container identity to remove; never leave a running docker run.
                 remaining()
+                event_since = time.time() - 5
                 created = True
                 creation = subprocess.run(  # noqa: S603
                     [command[0], "create", *command[2:]], capture_output=True,
@@ -145,6 +207,9 @@ class DockerSkillExecutor:
                 )
                 if creation.returncode != 0:
                     raise RuntimeError("container_create_failed")
+                container_id = creation.stdout.decode("ascii").strip()
+                if re.fullmatch(r"[0-9a-f]{64}", container_id) is None:
+                    raise RuntimeError("container_identity_unverified")
                 remaining()
                 proc = subprocess.Popen(  # noqa: S603
                     [self.docker_binary, "start", "--attach", name], stdin=subprocess.DEVNULL,
@@ -195,8 +260,29 @@ class DockerSkillExecutor:
                         failure = "resource_status_unverified"
                     elif oom == b"true":
                         failure = "oom"
-                    elif proc.returncode != 0:
-                        failure = "candidate_error"
+                    else:
+                        event_oom = None
+                        verification_deadline = min(deadline, time.monotonic() + 1)
+                        while True:
+                            events = subprocess.run(  # noqa: S603
+                                [self.docker_binary, "events", "--since", str(event_since), "--until", "0s",
+                                 "--filter", f"container={container_id}", "--filter", "event=oom",
+                                 "--filter", "event=die", "--format", "{{json .}}"],
+                                capture_output=True, check=False, timeout=min(5, remaining()), env=environment,
+                            )
+                            remaining()
+                            if events.returncode != 0:
+                                break
+                            event_oom = verified_oom_events(events.stdout, container_id, proc.returncode)
+                            if event_oom is not None or time.monotonic() >= verification_deadline:
+                                break
+                            cancel.wait(min(0.05, verification_deadline - time.monotonic()))
+                        if event_oom is None:
+                            failure = "resource_status_unverified"
+                        elif event_oom:
+                            failure = "oom"
+                        elif proc.returncode != 0:
+                            failure = "candidate_error"
                 # Cleanup below closes all pipes before decoding the bounded wire.
         except (TimeoutError, subprocess.TimeoutExpired):
             failure = "timeout"
@@ -242,9 +328,12 @@ class DockerSkillExecutor:
                     failure = failure or "output_limit"
                 elif stdout.read_failed or stderr.read_failed:
                     failure = failure or "output_read_failed"
+                else:
+                    cpu_seconds, peak_memory_bytes = parse_runner_metrics(stderr.text)
                 if failure is None:
                     try:
                         output = bytes(wire).decode("utf-8", errors="strict")
                     except UnicodeDecodeError:
                         failure = "invalid_output_encoding"
-        return DockerSkillResult(output, failure, time.monotonic() - started, image_identity)
+        return DockerSkillResult(output, failure, time.monotonic() - started, image_identity,
+                                 cpu_seconds, peak_memory_bytes)

@@ -1,0 +1,80 @@
+{
+  "discovery": [
+    {
+      "arms": [
+        "textual",
+        "executable",
+        "cheap_textual"
+      ],
+      "evidence": "prior-attempt.json sha256:1655f2043ef7debabbef16e8260e68d3188d630848a6639933dfb4227be56aed",
+      "id": "failed-playbook-001",
+      "model_calls": 1,
+      "phase": "failed_candidate",
+      "seconds": 2.868249541032128,
+      "tokens": 362,
+      "total_cost_usd": 0.001326
+    },
+    {
+      "arms": [
+        "textual",
+        "executable",
+        "cheap_textual"
+      ],
+      "evidence": "calls/playbook.request.json sha256:c1b15ab4234f8e9209b5571a71ae0ace21d68e8d6800605c6045a26c7275c469 calls/playbook.response.json sha256:4cba5adfdb1991d970cd4b168a365465d2613482b6ad249ce630deba010c4390",
+      "id": "playbook",
+      "model_calls": 1,
+      "phase": "discovery",
+      "seconds": 14.251640875008889,
+      "tokens": 944,
+      "total_cost_usd": 0.009408
+    },
+    {
+      "arms": [
+        "executable"
+      ],
+      "evidence": "calls/skill.request.json sha256:79df432b57384436ba1ef8d4ba5c1254bddbaedacb1bc349f380d27e8939044d calls/skill.response.json sha256:93c80af37f92a65df3e07a68323027fe7cb77874b2f3266740e825ef2da8da13",
+      "id": "skill",
+      "model_calls": 1,
+      "phase": "discovery",
+      "seconds": 4.59793179098051,
+      "tokens": 653,
+      "total_cost_usd": 0.004743
+    },
+    {
+      "arms": [
+        "baseline"
+      ],
+      "evidence": "Unmetered baseline task setup; no synthesis call",
+      "id": "baseline",
+      "model_calls": 0,
+      "phase": "discovery",
+      "seconds": null,
+      "tokens": 0,
+      "total_cost_usd": null
+    },
+    {
+      "arms": [
+        "baseline",
+        "textual",
+        "executable",
+        "cheap_textual"
+      ],
+      "evidence": "Prompt preparation, review and local resources unmetered",
+      "id": "authoring-overhead",
+      "model_calls": 0,
+      "phase": "discovery",
+      "seconds": null,
+      "tokens": 0,
+      "total_cost_usd": null
+    }
+  ],
+  "evidence_refs": [
+    "training-packet.json sha256:1cfdb3eaff774e8b58bad415a910c00ad7bcc786e32b1e37ad2e35b7047980f3",
+    "prior-attempt.json sha256:1655f2043ef7debabbef16e8260e68d3188d630848a6639933dfb4227be56aed",
+    "calls/playbook.request.json sha256:c1b15ab4234f8e9209b5571a71ae0ace21d68e8d6800605c6045a26c7275c469 calls/playbook.response.json sha256:4cba5adfdb1991d970cd4b168a365465d2613482b6ad249ce630deba010c4390",
+    "calls/skill.request.json sha256:79df432b57384436ba1ef8d4ba5c1254bddbaedacb1bc349f380d27e8939044d calls/skill.response.json sha256:93c80af37f92a65df3e07a68323027fe7cb77874b2f3266740e825ef2da8da13"
+  ],
+  "method": "Single-dispatch model calls from identical exported training evidence and the public contract; no evaluation inputs/results supplied. Any failed prior attempt is retained at its full cost. The synthetic held-out corpus was prepared by the same agent and does not establish broad generalization.",
+  "origin": "externally_prepared",
+  "training_digest": "ca75d8d5273aed21f73b3c6814c063ea98ae08b46f4e006245ff6516afac0e39"
+}

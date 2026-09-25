@@ -1,0 +1,44 @@
+{
+  "acceptable_regression": 0.02,
+  "bootstrap_resamples": 2000,
+  "bootstrap_seed": 1029,
+  "economic_horizon": 100,
+  "economic_shifted_frequency": 0.1,
+  "evaluation_wall_seconds": 3600.0,
+  "isolated_skill_cost_per_second_usd": null,
+  "local_route_cost_per_second_usd": null,
+  "max_evaluation_calls": 96,
+  "max_evaluation_model_cost_usd": 4.0,
+  "max_evaluation_tokens": 884736,
+  "max_synthesis_calls": 3,
+  "max_synthesis_model_cost_usd": 0.15,
+  "max_synthesis_tokens": 27648,
+  "max_synthesis_wall_seconds": 90.0,
+  "min_cases_per_cohort": 12,
+  "min_economic_savings": 0.05,
+  "min_groups_per_cohort": 4,
+  "min_skill_coverage": 0.5,
+  "quality_floor": 0.95,
+  "repetition_horizons": [
+    1,
+    2,
+    5,
+    10,
+    25,
+    100,
+    1000
+  ],
+  "request_budget": {
+    "max_attempts": 2,
+    "max_model_cost_usd": 0.05,
+    "max_tokens": 9216,
+    "wall_seconds": 30.0
+  },
+  "schema_version": "ac1029.protocol.v1",
+  "shifted_frequencies": [
+    0.0,
+    0.1,
+    0.5,
+    1.0
+  ]
+}

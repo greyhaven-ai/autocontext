@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from autocontext.artifacts.policy_candidate import CandidateLimits
 from autocontext.context_bundles import MatchedTrial, TrialLane
-from autocontext.context_bundles.models import ContextBundle
+from autocontext.context_bundles.models import BundleComponent, ComponentKind, ConfirmationPolicy, ContextBundle, stable_digest
 from autocontext.context_bundles.store import ContextBundleStore
 from autocontext.execution import docker_skill, executable_skills, routed_model, skill_routing
 from autocontext.execution.docker_skill import DockerSkillExecutor, DockerSkillResult
@@ -26,8 +26,10 @@ from autocontext.execution.executable_skills import (
     SCENARIO,
     SkillSourceEvidence,
     evaluator_identity,
+    inspect_executable_skill,
     propose_schema_migration,
 )
+from autocontext.execution.execution_policy_promotion import ExecutionPolicyEvidence, PolicyCase
 from autocontext.execution.routed_model import ModelCallError, complete_routed_model
 from autocontext.execution.skill_routing import route_schema_migration, routing_evaluator_identity
 from autocontext.execution.skill_routing_models import ModelTarget, RoutingBudget, SkillRoutingConfig
@@ -136,15 +138,177 @@ def test_opt_in_disabled_has_no_dispatch(pilot, skill, model):
     assert not skill and not model
 
 
-def test_serving_requires_promotion_and_preserves_evaluation_contract(pilot, skill, model):
+def test_serving_requires_complete_policy_not_only_a_skill_promotion(pilot, skill, model):
     blocked = run(pilot, mode="serving")
-    assert blocked.status == "abstention" and not skill
-    assert "not active" in blocked.attempts[0].reason
+    assert blocked.status == "execution_failure" and blocked.reason == "unverified_execution_policy"
     promote(pilot)
     served, evaluated = run(pilot, mode="serving"), run(pilot)
-    assert served.output_json == evaluated.output_json
-    assert served.evaluator_identity == evaluated.evaluator_identity
-    assert len(skill) == 2 and not model
+    assert served.status == "execution_failure" and served.reason == "unverified_execution_policy"
+    assert evaluated.status == "success" and evaluated.selected_route == "skill"
+    assert len(skill) == 1 and not model
+
+
+@pytest.mark.parametrize("suspension", ["fallback", "missing_cost", "restart_recovery"])
+def test_complete_execution_policy_is_cost_gated_and_rolls_back(tmp_path, monkeypatch, suspension):
+    store = ContextBundleStore(tmp_path / "knowledge")
+    template = SkillRoutingConfig(enabled=True, allow_network=True, general=target())
+    baseline = store.bootstrap(ContextBundle.create(scenario=SCENARIO, evaluator_epoch=evaluator_identity(), components=[
+        BundleComponent.json(ComponentKind.ROUTING_CONFIG, "execution_policy", template.model_dump(mode="json")),
+    ]))
+    bundle = propose_schema_migration(
+        store, SkillReference(entrypoint="choose_action", source=SOURCE), run_id="policy-test",
+        source_evidence=(SkillSourceEvidence.create("example", "example", {"input": json.loads(INPUT)}),
+                         SkillSourceEvidence.create("shift", "counterexample", {"schema_version": 2})),
+        routing_config=template,
+    )
+    skill_calls = []
+    model_calls = []
+
+    def execute(self, source, value, limits, **kwargs):
+        skill_calls.append(value)
+        data = json.loads(value)
+        return DockerSkillResult(json.dumps({"schema_version": 2, "display_name": data["name"],
+                                             "status": "enabled" if data["enabled"] else "disabled"}),
+                                 image_identity="synthetic-image")
+
+    def complete(selected, value, **kwargs):
+        model_calls.append(value)
+        data = json.loads(value)
+        text = ('{"abstain":true}' if data["schema_version"] != 1 else json.dumps({
+            "schema_version": 2, "display_name": data["name"],
+            "status": "enabled" if data["enabled"] else "disabled"}))
+        return receipt(model=selected.model, text=text, served_model=selected.model, cost_usd=.0006)
+
+    monkeypatch.setattr(DockerSkillExecutor, "execute", execute)
+    monkeypatch.setattr(skill_routing, "complete_routed_model", complete)
+    registry = ModelRegistry(tmp_path / "models")
+    config = template.model_copy(update={"bundle_digest": bundle.digest})
+    cases = []
+    for cohort in ("supported", "shifted"):
+        for i in range(12):
+            value = json.dumps({"schema_version": 1 if cohort == "supported" else 2,
+                                "name": f"case-{cohort}-{i}", "enabled": bool(i % 2)})
+            candidate = route_schema_migration(store, registry, value, config=config,
+                                               trace_root=tmp_path / "traces", mode="evaluation")
+            incumbent = route_schema_migration(store, registry, value, config=template,
+                                               trace_root=tmp_path / "traces", mode="evaluation")
+            local_candidate = .001 * (candidate.elapsed_seconds + sum(
+                attempt.elapsed_seconds for attempt in candidate.attempts if attempt.route == "skill"))
+            local_incumbent = .001 * incumbent.elapsed_seconds
+            cases.append(PolicyCase(fixture_digest=stable_digest(json.loads(value)), seed=len(cases),
+                                    group=f"{cohort}-{i // 3}", cohort=cohort, input_json=value,
+                                    candidate_correct=True, incumbent_correct=True,
+                                    candidate_cost_usd=candidate.accounted_model_cost_usd + local_candidate,
+                                    incumbent_cost_usd=incumbent.accounted_model_cost_usd + local_incumbent,
+                                    candidate_local_cost_usd=local_candidate,
+                                    incumbent_local_cost_usd=local_incumbent,
+                                    candidate_trace_digest=stable_digest(candidate.model_dump(mode="json")),
+                                    incumbent_trace_digest=stable_digest(incumbent.model_dump(mode="json")),
+                                    candidate_route=candidate, incumbent_route=incumbent,
+                                    skill_proposed=cohort == "supported", skill_verified=cohort == "supported",
+                                    fallback=cohort == "shifted"))
+    trials = [MatchedTrial(candidate_digest=bundle.digest, incumbent_digest=baseline.digest,
+                           evaluator_epoch=bundle.evaluator_epoch, cohort="policy-test", fixture=f"{lane.value}-{i}",
+                           fixture_digest=(cases[i].fixture_digest if lane == TrialLane.HELDOUT
+                                           else f"{lane.value}-setup-{i}"), seed=i, lane=lane,
+                           candidate_score=1 - cases[i].candidate_cost_usd,
+                           incumbent_score=1 - cases[i].incumbent_cost_usd)
+              for lane, count in ((TrialLane.SCREEN, 2), (TrialLane.CONFIRMATION, 6), (TrialLane.HELDOUT, 24))
+              for i in range(count)]
+    policy = ConfirmationPolicy(min_heldout_pairs=24, max_confirmation_pairs=6)
+    store.record_matched_trials(SCENARIO, bundle.digest, trials, policy=policy)
+    assert store.candidate(SCENARIO, bundle.digest).lifecycle.value == "confirmed"
+    with pytest.raises(FileNotFoundError):
+        store.promote(SCENARIO, bundle.digest, cohort="policy-test", rationale="missing economics")
+    assert store.active_bundle(SCENARIO).digest == baseline.digest
+    evidence = ExecutionPolicyEvidence(
+        candidate_digest=bundle.digest, incumbent_digest=baseline.digest, route_config_digest=template.digest,
+        incumbent_config_digest=template.digest, manifest_digest=inspect_executable_skill(store, bundle.digest).digest,
+        evaluator_identity=routing_evaluator_identity(),
+        matched_trials_digest=stable_digest([trial.to_dict() for trial in store.matched_trials(SCENARIO, bundle.digest)]),
+        cohort="policy-test", trace_root=str(tmp_path / "traces"),
+        source_split_digest=stable_digest(sorted(case.fixture_digest for case in cases)),
+        candidate_setup_cost_usd=.005, incumbent_setup_cost_usd=0,
+        local_route_cost_per_second_usd=.001, isolated_skill_cost_per_second_usd=.001,
+        monitor_min_cases=2, monitor_max_fallback_frequency=.25, cases=tuple(cases))
+    missing = evidence.model_dump(mode="json")
+    missing["candidate_setup_cost_usd"] = None
+    with pytest.raises(ValueError):
+        store.record_execution_policy_evidence(SCENARIO, bundle.digest, missing)
+    for field in ("candidate_setup_cost_usd", "local_route_cost_per_second_usd", "isolated_skill_cost_per_second_usd"):
+        zero_rate = evidence.model_dump(mode="json")
+        zero_rate[field] = 0
+        with pytest.raises(ValueError):
+            store.record_execution_policy_evidence(SCENARIO, bundle.digest, zero_rate)
+    wrong_config = evidence.model_dump(mode="json")
+    wrong_config["route_config_digest"] = "0" * 64
+    with pytest.raises(ValueError, match="bind"):
+        store.record_execution_policy_evidence(SCENARIO, bundle.digest, wrong_config)
+    wrong_cost = evidence.model_dump(mode="json")
+    wrong_cost["cases"][0]["candidate_cost_usd"] = 0
+    with pytest.raises(ValueError, match="trace or cost"):
+        store.record_execution_policy_evidence(SCENARIO, bundle.digest, wrong_cost)
+    invented_local_cost = evidence.model_dump(mode="json")
+    invented_local_cost["cases"][0]["candidate_local_cost_usd"] += .01
+    invented_local_cost["cases"][0]["candidate_cost_usd"] += .01
+    with pytest.raises(ValueError, match="trace or cost"):
+        store.record_execution_policy_evidence(SCENARIO, bundle.digest, invented_local_cost)
+    wrong_outcome = evidence.model_dump(mode="json")
+    wrong_outcome["cases"][0]["candidate_correct"] = False
+    with pytest.raises(ValueError, match="outcomes"):
+        store.record_execution_policy_evidence(SCENARIO, bundle.digest, wrong_outcome)
+    assert store.active_bundle(SCENARIO).digest == baseline.digest
+    store.record_execution_policy_evidence(SCENARIO, bundle.digest, evidence.model_dump(mode="json"))
+    store.promote(SCENARIO, bundle.digest, cohort="policy-test", rationale="synthetic fixture only")
+    assert store.active_pointer(SCENARIO)["execution_policy_evidence_digest"] == evidence.digest
+    result = route_schema_migration(store, registry, INPUT, config=config, trace_root=tmp_path / "traces", mode="serving")
+    assert result.status == "success" and result.selected_route == "skill"
+    observation = skill_routing.execution_policy_promotion.observe_execution_policy(evidence, result)
+    assert store.record_execution_policy_observation(SCENARIO, bundle.digest, evidence.digest,
+                                                     observation.model_dump(mode="json")) == (False, "")
+    assert len(store.execution_policy_monitor(SCENARIO, bundle.digest)["observations"]) == 1
+    conflicting = observation.model_dump(mode="json")
+    conflicting["correct"] = False
+    with pytest.raises(ValueError, match="cannot be overwritten"):
+        store.record_execution_policy_observation(SCENARIO, bundle.digest, evidence.digest, conflicting)
+    altered = config.model_copy(update={"budget": RoutingBudget(wall_seconds=15)})
+    blocked = route_schema_migration(store, registry, INPUT, config=altered,
+                                     trace_root=tmp_path / "traces", mode="serving")
+    assert blocked.status == "execution_failure" and blocked.reason == "unverified_execution_policy"
+    trace = Path(cases[0].candidate_route.trace_path)
+    original = trace.read_text()
+    trace.write_text("{}")
+    stale = route_schema_migration(store, registry, INPUT, config=config,
+                                   trace_root=tmp_path / "traces", mode="serving")
+    assert stale.status == "execution_failure" and stale.reason == "unverified_execution_policy"
+    trace.write_text(original)
+    assert len(skill_calls) == 13 and len(model_calls) == 36
+    if suspension == "missing_cost":
+        monkeypatch.setattr(skill_routing, "complete_routed_model", lambda selected, value, **kwargs:
+                            receipt(model=selected.model, text='{"abstain":true}', served_model=selected.model))
+    original_rollback = store.rollback
+    if suspension == "restart_recovery":
+        monkeypatch.setattr(store, "rollback", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk unavailable")))
+    shifted = '{"schema_version":2,"name":"Ada","enabled":true}'
+    revoked = route_schema_migration(store, registry, shifted, config=config,
+                                     trace_root=tmp_path / "traces", mode="serving")
+    assert revoked.status == "execution_failure" and revoked.reason == "execution_policy_suspended"
+    assert revoked.output_json is None and revoked.trace_path.endswith(".policy-verdict.json")
+    assert json.loads(Path(revoked.trace_path).read_text())["status"] == "execution_failure"
+    original_trace = Path(revoked.trace_path.replace(".policy-verdict.json", ".json"))
+    assert json.loads(original_trace.read_text())["status"] == "abstention"
+    assert store.execution_policy_monitor(SCENARIO, bundle.digest)["status"] == "suspended"
+    if suspension == "restart_recovery":
+        assert store.active_bundle(SCENARIO).digest == bundle.digest
+        monkeypatch.setattr(store, "rollback", original_rollback)
+    else:
+        assert store.active_bundle(SCENARIO).digest == baseline.digest
+    after = route_schema_migration(store, registry, INPUT, config=config, trace_root=tmp_path / "traces", mode="serving")
+    assert after.status == "execution_failure" and after.reason == "unverified_execution_policy"
+    assert store.active_bundle(SCENARIO).digest == baseline.digest
+    with pytest.raises(ValueError, match="changed before conditional rollback"):
+        store.rollback(SCENARIO, rationale="stale monitor", expected_digest=bundle.digest)
+    assert store.active_bundle(SCENARIO).digest == baseline.digest
 
 
 def test_invalid_skill_falls_back_to_registered_model(pilot, monkeypatch, model):
@@ -344,6 +508,45 @@ def test_unverifiable_accounting_stops_all_fallback(pilot, monkeypatch, kwargs):
                                                  general=target("general")))
     assert result.reason == "provider_accounting_unverified" and len(calls) == 1
     assert result.output_json is None and result.accounted_tokens == 9216
+
+
+def test_openrouter_scoped_provider_cost_and_cache_receipt(pilot, monkeypatch):
+    selected = ModelTarget(provider="openai-compatible", model="anthropic/claude-sonnet-4.6",
+                           base_url="https://openrouter.ai/api/v1", api_key_env="OPENROUTER_API_KEY",
+                           provider_only="anthropic", input_cost_per_1k=0.003, output_cost_per_1k=0.015)
+    raw = {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130, "cost": 0.0006,
+           "is_byok": False, "cost_details": {"upstream_inference_cost": 0.0005},
+           "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0, "video_tokens": 0},
+           "completion_tokens_details": {"reasoning_tokens": 0, "image_tokens": 0}}
+    monkeypatch.setattr(skill_routing, "complete_routed_model", lambda *a, **kw:
+                        receipt(model=selected.model, served_model=selected.model, raw_usage=raw))
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True, general=selected))
+    assert result.status == "success" and result.model_cost_complete
+    assert result.accounted_model_cost_usd == 0.0006
+    assert result.attempts[-1].reported_cost_usd == 0.0006
+    assert result.attempts[-1].accounting == "provider-reported"
+
+
+@pytest.mark.parametrize("change", [{"cost": None}, {"cost": -1}, {"is_byok": True},
+                                   {"cost_details": {"unexpected": 1}},
+                                   {"server_tool_use_details": {"tool_calls_executed": 1}},
+                                   {"prompt_tokens_details": {"video_tokens": 1}}])
+def test_openrouter_unverified_cost_or_byok_fails_closed(pilot, monkeypatch, change):
+    selected = ModelTarget(provider="openai-compatible", model="anthropic/claude-sonnet-4.6",
+                           base_url="https://openrouter.ai/api/v1", api_key_env="OPENROUTER_API_KEY",
+                           provider_only="anthropic", input_cost_per_1k=0.003, output_cost_per_1k=0.015)
+    raw = {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130,
+           "cost": 0.00075, "is_byok": False, **change}
+    monkeypatch.setattr(skill_routing, "complete_routed_model", lambda *a, **kw:
+                        receipt(model=selected.model, served_model=selected.model, raw_usage=raw))
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True, general=selected))
+    assert result.reason == "provider_accounting_unverified" and not result.model_cost_complete
+    assert result.attempts[-1].accounting == "reservation"
+
+
+def test_provider_pin_cannot_point_to_unrelated_endpoint():
+    with pytest.raises(ValueError, match="OpenRouter"):
+        target(provider_only="anthropic")
 
 
 @pytest.mark.parametrize("served", [None, "unexpected-model"])

@@ -6,11 +6,12 @@ configured general model. Every accepted result must pass the same objective
 profile-v1-to-v2 verifier. The result is a proposal; the router never applies a
 migration or grants the model tools.
 
-This first implementation uses deterministic applicability checks. It does not
+This implementation uses deterministic applicability checks. It does not
 train an AgentRun classifier, interpret model confidence as permission, or claim
-calibrated semantic routing. Complete route quality/cost promotion remains
-AC-1021; the held-out comparison remains AC-1029. The API changes no global
-provider settings and is not wired into automatic production routing.
+calibrated semantic routing. AC-1021 now adds a fail-closed, opt-in promotion
+contract for complete execution policies; the held-out comparison remains
+AC-1029. The API changes no global provider settings and is not wired into
+automatic production routing.
 
 ## Invoke the router
 
@@ -50,10 +51,60 @@ combinations are marked as attempted only when dispatch starts; a skipped
 specialized tier can still use the configured general fallback at that endpoint.
 
 `mode` is required. `evaluation` explicitly pins an inactive candidate for
-replay. `serving` preserves the bridge's active-bundle and durable-promotion
-checks, including revocation checks before acceptance. This is a skill gate,
-not evidence that the complete fallback configuration is production-approved.
-Keep the route configuration with matched evaluation records for AC-1021.
+replay. `serving` for a skill additionally requires a matching active complete
+`execution_policy` routing component, replayable promotion evidence, and the
+same immutable bundle/configuration as the evaluation. A legacy promotion of
+only a skill is no longer sufficient to serve through the complete router.
+A model-only active baseline still uses its explicit configuration. Existing
+active pointers are checked again before accepting skill output; rollback
+revokes the policy route. The bridge's standalone skill API retains its own
+legacy durable-promotion contract and does not imply full fallback approval.
+
+## Complete-policy promotion boundary
+
+`propose_schema_migration(..., routing_config=template)` stores the full
+bundle-independent `SkillRoutingConfig` in a `ROUTING_CONFIG` component named
+`execution_policy`. The incumbent baseline must have its own model-only
+component. At evaluation/serving time, the candidate's digest fills the skill
+reference; no mutable model, network grant or budget may be substituted.
+
+The existing ContextBundle comparison still requires a strictly positive
+matched effect. For quality-preserving, cheaper candidates, the predeclared
+trial score may express `correctness - cost_weight * measured_task_cost_usd`;
+the separate execution-policy gate checks **absolute correctness**, grouped
+paired regressions, raw skill precision/coverage, shifted-condition fallback,
+and setup-inclusive cost at the frozen horizon. A confirmed generic comparison
+without immutable, matching economic evidence cannot switch this policy's
+active pointer. The atomic pointer also binds the admitted evidence digest,
+and serving replays it before dispatch. Missing local, authoring or recurring
+costs cannot pass the numeric gate; candidate setup and both local resource
+rates must be positive. The operator remains responsible for verifying those
+rates and any zero-cost incumbent inputs. The AC-1029 synthetic run has
+unknown total lifecycle costs and is therefore ineligible. This implementation
+is opt-in; no production route is automatically enabled.
+
+The first gate replays reported cases against the existing matched trial
+records, re-reads each frozen evaluation-route trace, recomputes objective
+correctness and provider-receipt completeness, and recalculates each local
+amount from observed route/skill time and the frozen rates before comparing
+model spend plus local cost with the paired amount. Missing, changed
+or relocated trace files fail closed. After an opt-in promotion, each serving
+result is recorded once under its request ID. The evidence freezes local-rate,
+quality, fallback, sample-size and cost-per-success limits. Monitored local cost
+uses observed route/skill wall time multiplied by these operator-supplied rates;
+it is not an independently reconciled host invoice. Missing cost or a
+limit breach durably suspends the route, conditionally rolls the active pointer
+back to its predecessor and withholds the result from that request. A restart
+that finds a suspended route retries the conditional rollback before dispatch;
+a concurrent promotion cannot be rolled back by an old policy's monitor. The
+original execution trace remains available, while a separate policy-verdict
+trace records the withheld result.
+
+This does not independently attest corpus stewardship, the supplied local
+resource rates or final invoices. The operator still needs a fresh independent
+corpus and verified cost provenance before production eligibility. Neither the
+synthetic gate fixtures nor the AC-1029 pilot authorize live activation. Python
+is implemented first; TypeScript policy-gate parity is deferred.
 
 ## Configure model fallback
 

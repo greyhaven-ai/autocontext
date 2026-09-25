@@ -1,0 +1,9 @@
+{
+  "activated_at": "2026-09-22T22:33:00.736018+00:00",
+  "bundle_digest": "b2cb014e187582a4bee8d7fa95fcbbfbbde40e84983b2e10f3c77f0e1da6f510",
+  "evaluator_epoch": "e235fae4c50a9f4c7cdf36761a7ffc8b42cca18afd73d7831c02df47be10b57a",
+  "promotion_id": null,
+  "rationale": "legacy active context baseline",
+  "rollback_target_digest": null,
+  "schema_version": 1
+}

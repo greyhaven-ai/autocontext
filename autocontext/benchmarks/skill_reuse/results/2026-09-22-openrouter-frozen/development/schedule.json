@@ -1,0 +1,38 @@
+[
+  {
+    "arms": [
+      "baseline",
+      "executable",
+      "textual",
+      "cheap_textual"
+    ],
+    "case_id": "dev-2"
+  },
+  {
+    "arms": [
+      "executable",
+      "textual",
+      "cheap_textual",
+      "baseline"
+    ],
+    "case_id": "dev-1"
+  },
+  {
+    "arms": [
+      "baseline",
+      "executable",
+      "textual",
+      "cheap_textual"
+    ],
+    "case_id": "dev-4"
+  },
+  {
+    "arms": [
+      "executable",
+      "textual",
+      "cheap_textual",
+      "baseline"
+    ],
+    "case_id": "dev-3"
+  }
+]

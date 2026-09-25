@@ -17,6 +17,7 @@ Key types:
 
 from __future__ import annotations
 
+import json
 import math
 import statistics
 from collections.abc import Iterable
@@ -298,6 +299,9 @@ def calibration_set_from_examples(
                 metadata={
                     "created_at": example.get("created_at"),
                     "generation_id": example.get("generation_id"),
+                    "acquisition_id": example.get("acquisition_id"),
+                    "reviewer": example.get("reviewer"),
+                    "criterion_scores": json.loads(example.get("criterion_scores_json") or "{}"),
                 },
             ),
         )

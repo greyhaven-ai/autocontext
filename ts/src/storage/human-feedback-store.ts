@@ -58,6 +58,7 @@ export function getCalibrationExampleRecords<TRow extends HumanFeedbackRecord>(
       `SELECT id, scenario_name, agent_output, human_score, human_notes, created_at
        FROM human_feedback
        WHERE scenario_name = ? AND human_score IS NOT NULL AND human_notes != ''
+         AND acquisition_id IS NULL
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
     )
