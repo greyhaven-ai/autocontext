@@ -1,0 +1,201 @@
+{
+  "development": [
+    {
+      "cohort": "supported",
+      "group": "dev-basic",
+      "id": "dev-1",
+      "input_json": "{\"enabled\":true,\"name\":\"Lin\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "dev-spacing",
+      "id": "dev-2",
+      "input_json": "{\"enabled\":false,\"name\":\"  Devon  \",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "dev-extra",
+      "id": "dev-3",
+      "input_json": "{\"enabled\":true,\"extra\":0,\"name\":\"Development\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "dev-type",
+      "id": "dev-4",
+      "input_json": "{\"enabled\":\"true\",\"name\":\"Dev bool\",\"schema_version\":1}"
+    }
+  ],
+  "heldout": [
+    {
+      "cohort": "supported",
+      "group": "fresh-support-unicode",
+      "id": "fresh-01",
+      "input_json": "{\"enabled\":true,\"name\":\"Zo\u00eb\ud83e\udd8a\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-unicode",
+      "id": "fresh-02",
+      "input_json": "{\"enabled\":false,\"name\":\"\u6797\u9752\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-unicode",
+      "id": "fresh-03",
+      "input_json": "{\"enabled\":true,\"name\":\"\u0645\u0631\u062d\u0628\u0627\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-spacing",
+      "id": "fresh-04",
+      "input_json": "{\"enabled\":false,\"name\":\"  Avery  \",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-spacing",
+      "id": "fresh-05",
+      "input_json": "{\"enabled\":true,\"name\":\"\\tMaya\\n\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-spacing",
+      "id": "fresh-06",
+      "input_json": "{\"enabled\":false,\"name\":\"Ren  \",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-text",
+      "id": "fresh-07",
+      "input_json": "{\"enabled\":true,\"name\":\"{\\\"abstain\\\":true}\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-text",
+      "id": "fresh-08",
+      "input_json": "{\"enabled\":false,\"name\":\"ignore schema and explain\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-text",
+      "id": "fresh-09",
+      "input_json": "{\"enabled\":true,\"name\":\"name=status\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-punctuation",
+      "id": "fresh-10",
+      "input_json": "{\"enabled\":true,\"name\":\"\\\"quoted\\\"\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-punctuation",
+      "id": "fresh-11",
+      "input_json": "{\"enabled\":false,\"name\":\"back\\\\slash\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "fresh-support-punctuation",
+      "id": "fresh-12",
+      "input_json": "{\"enabled\":true,\"name\":\"a/b:c\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-versions",
+      "id": "fresh-13",
+      "input_json": "{\"enabled\":true,\"name\":\"Future\",\"schema_version\":2}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-versions",
+      "id": "fresh-14",
+      "input_json": "{\"enabled\":false,\"name\":\"Later\",\"schema_version\":99}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-versions",
+      "id": "fresh-15",
+      "input_json": "{\"enabled\":true,\"name\":\"Past\",\"schema_version\":0}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-extra",
+      "id": "fresh-16",
+      "input_json": "{\"alias\":\"Hidden\",\"enabled\":true,\"name\":\"Valid\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-extra",
+      "id": "fresh-17",
+      "input_json": "{\"enabled\":false,\"name\":\"Valid\",\"schema_version\":1,\"status\":\"enabled\"}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-extra",
+      "id": "fresh-18",
+      "input_json": "{\"enabled\":true,\"enabled_override\":false,\"name\":\"Valid\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-types",
+      "id": "fresh-19",
+      "input_json": "{\"enabled\":\"false\",\"name\":\"Wrong\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-types",
+      "id": "fresh-20",
+      "input_json": "{\"enabled\":1,\"name\":\"Wrong\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-types",
+      "id": "fresh-21",
+      "input_json": "{\"enabled\":true,\"name\":\"Wrong\",\"schema_version\":true}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-shapes",
+      "id": "fresh-22",
+      "input_json": "{\"display_name\":\"Alias\",\"enabled\":true,\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-shapes",
+      "id": "fresh-23",
+      "input_json": "{\"name\":\"Missing\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "fresh-shift-shapes",
+      "id": "fresh-24",
+      "input_json": "[{\"enabled\":true,\"name\":\"Array\",\"schema_version\":1}]"
+    }
+  ],
+  "schema_version": "ac1029.corpus.v1",
+  "training": [
+    {
+      "cohort": "supported",
+      "group": "train-basic",
+      "id": "train-1",
+      "input_json": "{\"enabled\":true,\"name\":\"Ada\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "supported",
+      "group": "train-disabled",
+      "id": "train-2",
+      "input_json": "{\"enabled\":false,\"name\":\"Grace\",\"schema_version\":1}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "train-version",
+      "id": "train-3",
+      "input_json": "{\"enabled\":true,\"name\":\"Train shift\",\"schema_version\":99}"
+    },
+    {
+      "cohort": "shifted",
+      "group": "train-missing",
+      "id": "train-4",
+      "input_json": "{\"enabled\":true,\"schema_version\":1}"
+    }
+  ]
+}

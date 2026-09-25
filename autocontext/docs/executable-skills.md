@@ -108,10 +108,13 @@ capability grants are supported.
 The default budget is 10 seconds, 128 MiB memory and 64 KiB per output stream;
 source/input are each limited to 64 KiB and scratch tmpfs to 16 MiB. CPU quota is
 one core, process count is capped at 16, and CPU time is capped per process.
-The wall deadline includes image inspection, container startup and the final
-Docker OOM-state inspection. An OOM kill, including a killed child whose parent
-returns valid JSON and exits zero, returns `oom`. Missing or malformed resource
-state returns `resource_status_unverified`; inspection errors also fail closed.
+The wall deadline includes image inspection, container startup, Docker OOM-state
+inspection and a bounded check of the container's daemon OOM and exit events.
+An OOM kill, including a killed child whose parent returns valid JSON and exits
+zero, returns `oom`. A Python `MemoryError` without a kernel OOM event can return
+`candidate_error`, but cannot authorize output. Missing or malformed resource
+state or an unverified container exit event returns `resource_status_unverified`;
+inspection errors also fail closed.
 Cancellation, timeout and output overflow terminate the invocation; cleanup force-removes the
 container and verifies removal with a separate bounded cleanup allowance.
 Cleanup failure returns `cleanup_unverified` and never accepts an output. Host

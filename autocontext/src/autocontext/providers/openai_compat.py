@@ -108,6 +108,8 @@ class OpenAICompatibleProvider(LLMProvider):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         output_schema: OutputSchema | None = None,
+        provider_only: str | None = None,
+        provider_max_price: tuple[float, float] | None = None,
     ) -> CompletionResult:
         model_id = model or self._default_model
         request: dict[str, Any] = {
@@ -118,6 +120,12 @@ class OpenAICompatibleProvider(LLMProvider):
             ],
         }
         request[_output_token_field(model_id)] = clamp_output_tokens(max_tokens, model_id)
+        if provider_only is not None:
+            routing: dict[str, Any] = {"only": [provider_only], "allow_fallbacks": False,
+                                       "require_parameters": True}
+            if provider_max_price is not None:
+                routing["max_price"] = {"prompt": provider_max_price[0], "completion": provider_max_price[1]}
+            request["extra_body"] = {"provider": routing}
         if _supports_temperature(model_id):
             request["temperature"] = temperature
         if _is_gpt_56_plus(model_id):

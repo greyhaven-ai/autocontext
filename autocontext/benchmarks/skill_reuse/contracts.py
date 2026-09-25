@@ -77,9 +77,18 @@ class Corpus(FrozenContract):
 class StudyProtocol(FrozenContract):
     schema_version: Literal["ac1029.protocol.v1"] = "ac1029.protocol.v1"
     request_budget: RoutingBudget = Field(default_factory=lambda: RoutingBudget(max_attempts=2))
+    max_synthesis_calls: int = Field(default=2, ge=2, le=10, strict=True)
+    max_synthesis_tokens: int = Field(default=18432, ge=1, le=100000, strict=True)
+    max_synthesis_model_cost_usd: float = Field(default=0.1, ge=0)
+    max_synthesis_wall_seconds: float = Field(default=90, gt=0, le=600)
     max_evaluation_calls: int = Field(default=400, ge=4, le=10000, strict=True)
     max_evaluation_tokens: int = Field(default=4000000, ge=1, le=100000000, strict=True)
     max_evaluation_model_cost_usd: float = Field(default=100, ge=0)
+    local_route_cost_per_second_usd: float | None = Field(default=None, ge=0)
+    isolated_skill_cost_per_second_usd: float | None = Field(default=None, ge=0)
+    economic_horizon: int = Field(default=100, ge=1, strict=True)
+    economic_shifted_frequency: float = Field(default=0.1, ge=0, le=1)
+    min_economic_savings: float = Field(default=0.05, ge=0, lt=1)
     evaluation_wall_seconds: float = Field(default=3600, gt=0, le=86400)
     min_cases_per_cohort: int = Field(default=12, ge=2, strict=True)
     min_groups_per_cohort: int = Field(default=4, ge=2, strict=True)
@@ -101,6 +110,9 @@ class StudyProtocol(FrozenContract):
             raise ValueError("shift frequencies must be probabilities")
         if self.request_budget.max_attempts != 2:
             raise ValueError("pilot allows one skill attempt and at most one model dispatch")
+        if (self.economic_horizon not in self.repetition_horizons
+                or self.economic_shifted_frequency not in self.shifted_frequencies):
+            raise ValueError("economic decision must use a predeclared horizon and shifted frequency")
         return self
 
 

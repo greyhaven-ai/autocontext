@@ -510,6 +510,45 @@ def test_unverifiable_accounting_stops_all_fallback(pilot, monkeypatch, kwargs):
     assert result.output_json is None and result.accounted_tokens == 9216
 
 
+def test_openrouter_scoped_provider_cost_and_cache_receipt(pilot, monkeypatch):
+    selected = ModelTarget(provider="openai-compatible", model="anthropic/claude-sonnet-4.6",
+                           base_url="https://openrouter.ai/api/v1", api_key_env="OPENROUTER_API_KEY",
+                           provider_only="anthropic", input_cost_per_1k=0.003, output_cost_per_1k=0.015)
+    raw = {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130, "cost": 0.0006,
+           "is_byok": False, "cost_details": {"upstream_inference_cost": 0.0005},
+           "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0, "video_tokens": 0},
+           "completion_tokens_details": {"reasoning_tokens": 0, "image_tokens": 0}}
+    monkeypatch.setattr(skill_routing, "complete_routed_model", lambda *a, **kw:
+                        receipt(model=selected.model, served_model=selected.model, raw_usage=raw))
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True, general=selected))
+    assert result.status == "success" and result.model_cost_complete
+    assert result.accounted_model_cost_usd == 0.0006
+    assert result.attempts[-1].reported_cost_usd == 0.0006
+    assert result.attempts[-1].accounting == "provider-reported"
+
+
+@pytest.mark.parametrize("change", [{"cost": None}, {"cost": -1}, {"is_byok": True},
+                                   {"cost_details": {"unexpected": 1}},
+                                   {"server_tool_use_details": {"tool_calls_executed": 1}},
+                                   {"prompt_tokens_details": {"video_tokens": 1}}])
+def test_openrouter_unverified_cost_or_byok_fails_closed(pilot, monkeypatch, change):
+    selected = ModelTarget(provider="openai-compatible", model="anthropic/claude-sonnet-4.6",
+                           base_url="https://openrouter.ai/api/v1", api_key_env="OPENROUTER_API_KEY",
+                           provider_only="anthropic", input_cost_per_1k=0.003, output_cost_per_1k=0.015)
+    raw = {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130,
+           "cost": 0.00075, "is_byok": False, **change}
+    monkeypatch.setattr(skill_routing, "complete_routed_model", lambda *a, **kw:
+                        receipt(model=selected.model, served_model=selected.model, raw_usage=raw))
+    result = run(pilot, config=SkillRoutingConfig(enabled=True, allow_network=True, general=selected))
+    assert result.reason == "provider_accounting_unverified" and not result.model_cost_complete
+    assert result.attempts[-1].accounting == "reservation"
+
+
+def test_provider_pin_cannot_point_to_unrelated_endpoint():
+    with pytest.raises(ValueError, match="OpenRouter"):
+        target(provider_only="anthropic")
+
+
 @pytest.mark.parametrize("served", [None, "unexpected-model"])
 def test_actual_served_model_must_match_pin(pilot, monkeypatch, served):
     monkeypatch.setattr(skill_routing, "complete_routed_model", lambda *a, **k: receipt(served_model=served))

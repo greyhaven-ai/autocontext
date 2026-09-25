@@ -8,12 +8,14 @@ import sys
 import threading
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from autocontext.execution import skill_routing
-from autocontext.execution.docker_skill import DockerSkillExecutor, DockerSkillResult
+from autocontext.execution.docker_skill import DockerSkillExecutor, DockerSkillResult, parse_runner_metrics
 from autocontext.execution.routed_model import ModelCallError
+from autocontext.execution.skill_routing_models import ModelTarget
 from autocontext.providers.base import CompletionResult
 from autocontext.util.json_io import read_json, write_json
 
@@ -50,6 +52,131 @@ def execution(monkeypatch):
     monkeypatch.setattr(DockerSkillExecutor, "execute", lambda self, source, value, limits, **kw:
                         DockerSkillResult(fixture_answer(value), image_identity="fixture-image"))
     return requests
+
+
+def test_runner_resource_receipt_requires_valid_terminal_measurement():
+    valid = 'AC_RESOURCE_METRICS:{"cpu_seconds":0.125,"peak_memory_bytes":1048576}\n'
+    assert parse_runner_metrics(valid) == (0.125, 1048576)
+    for invalid in ('', valid + valid, 'AC_RESOURCE_METRICS:{"cpu_seconds":-1,"peak_memory_bytes":2}\n',
+                    'AC_RESOURCE_METRICS:{"cpu_seconds":0.5,"peak_memory_bytes":1.5}\n',
+                    'AC_RESOURCE_METRICS:{"cpu_seconds":0.5,"peak_memory_bytes":2,"other":1}\n'):
+        assert parse_runner_metrics(invalid) == (None, None)
+
+
+def test_measured_skill_resources_reach_study_episode(prepared, execution, monkeypatch):
+    monkeypatch.setattr(DockerSkillExecutor, "execute", lambda self, source, value, limits, **kw:
+                        DockerSkillResult(fixture_answer(value), image_identity="fixture-image",
+                                          cpu_seconds=0.125, peak_memory_bytes=1048576, elapsed_seconds=0.2))
+    report = study.run(prepared, split="development")
+    rows = read_json(prepared / "development/episodes.json")
+    measured = [row for row in rows if row["arm"] == "executable" and row["cohort"] == "supported"]
+    assert len(measured) == 2 and all(row["cpu_seconds"] == 0.125 for row in measured)
+    assert all(row["peak_memory_bytes"] == 1048576 for row in measured)
+    assert report["stats"]["supported/executable"]["cpu_seconds"] == 0.25
+    assert report["stats"]["supported/executable"]["peak_memory_bytes"] == 1048576
+    assert report["stats"]["shifted/executable"]["cpu_seconds"] is None
+
+
+def test_packet_candidate_uses_matched_training_and_stays_development_only(tmp_path, execution):
+    candidate = study.HERE / "fixtures"
+    corpus = Corpus.model_validate_json((candidate / "corpus.json").read_text())
+    learning = LearningRecord.model_validate_json((candidate / "packet_candidate_learning.json").read_text())
+    assert learning.training_digest == study.learning_packet(corpus)["training_digest"]
+    assert learning.origin == "fixture"
+    models = tmp_path / "models.json"
+    write_json(models, fixture_models("http://127.0.0.1:9/v1"))
+    root = tmp_path / "frozen"
+    study.freeze(study.HERE / "protocol.json", candidate / "corpus.json", models,
+                 candidate / "packet_candidate_learning.json", candidate / "packet_candidate_skill.py",
+                 candidate / "packet_candidate_playbook.md", root)
+    report = study.run(root, split="development")
+    assert report["decision"] == "infrastructure_only" and not report["production_activation_authorized"]
+    assert all(row["successes"] == row["cases"] for row in report["stats"].values())
+    data = fixture_models("http://127.0.0.1:9/v1")
+    data["evidence_kind"] = "live"
+    write_json(models, data)
+    with pytest.raises(ValueError, match="fixture artifacts cannot become live"):
+        study.freeze(study.HERE / "protocol.json", candidate / "corpus.json", models,
+                     candidate / "packet_candidate_learning.json", candidate / "packet_candidate_skill.py",
+                     candidate / "packet_candidate_playbook.md", tmp_path / "not-live")
+
+
+def test_post_candidate_corpus_preserves_learning_split_and_changes_every_heldout_case():
+    original = Corpus.model_validate_json((study.HERE / "fixtures/corpus.json").read_text())
+    fresh = Corpus.model_validate_json((study.HERE / "fixtures/post_candidate_corpus.json").read_text())
+    assert fresh.training == original.training and fresh.development == original.development
+    assert fresh.training_digest == original.training_digest
+    assert not ({c.id for c in original.heldout} & {c.id for c in fresh.heldout})
+    assert not ({c.input_digest for c in original.heldout} & {c.input_digest for c in fresh.heldout})
+    for cohort in ("supported", "shifted"):
+        cases = [c for c in fresh.heldout if c.cohort == cohort]
+        assert len(cases) == 12 and len({c.group for c in cases}) == 4
+    assert {case.id for case in fresh.heldout} == {f"fresh-{i:02d}" for i in range(1, 25)}
+
+
+def test_bounded_training_only_synthesis_produces_freeze_ready_evidence(tmp_path, monkeypatch):
+    corpus = study.HERE / "fixtures/post_candidate_corpus.json"
+    model = ModelTarget(provider="openai-compatible", model="anthropic/claude-sonnet-4.6",
+                        base_url="https://openrouter.ai/api/v1", api_key_env="OPENROUTER_API_KEY",
+                        provider_only="anthropic", input_cost_per_1k=0.003, output_cost_per_1k=0.015)
+    models = tmp_path / "models.json"
+    write_json(models, {"evidence_kind": "live", "reference": model.model_dump(mode="json"),
+                        "cheaper": {**model.model_dump(mode="json"), "model": "anthropic/claude-haiku-4.5",
+                                    "input_cost_per_1k": .001, "output_cost_per_1k": .005}})
+    requests = []
+
+    def complete(target, value, **kwargs):
+        requests.append((value, kwargs["system_prompt"]))
+        name = "skill.py" if "Python source" in kwargs["system_prompt"] else "playbook.md"
+        return CompletionResult(text=(study.HERE / "fixtures" / f"packet_candidate_{name}").read_text(),
+                                model=target.model, served_model=target.model,
+                                raw_usage={"prompt_tokens": 100, "completion_tokens": 80, "total_tokens": 180,
+                                           "cost": 0.002, "is_byok": False})
+
+    monkeypatch.setattr(study, "complete_routed_model", complete)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fixture-not-a-credential")
+    output = tmp_path / "learning"
+    study.synthesize(study.HERE / "protocol.json", corpus, models, output)
+    record = LearningRecord.model_validate_json((output / "learning.json").read_text())
+    assert record.origin == "externally_prepared" and len(requests) == 2
+    assert record.training_digest == Corpus.model_validate_json(corpus.read_text()).training_digest
+    assert all("fresh-" not in value for request in requests for value in request)
+    assert {entry.id for entry in record.discovery} == {"playbook", "skill", "baseline", "authoring-overhead"}
+    root = tmp_path / "freeze"
+    study.freeze(study.HERE / "protocol.json", corpus, models, output / "learning.json",
+                 output / "skill.py", output / "playbook.md", root)
+    assert (root / "freeze.json").exists()
+
+
+def test_failed_prior_synthesis_is_reconciled_before_new_calls(tmp_path, monkeypatch):
+    corpus = study.HERE / "fixtures/post_candidate_corpus.json"
+    models = study.HERE / "openrouter-models.json"
+    prior = tmp_path / "prior"
+    (prior / "calls").mkdir(parents=True)
+    packet = study.learning_packet(Corpus.model_validate_json(corpus.read_text()))
+    write_json(prior / "ledger.json", [{"phase": "playbook", "state": "unverified", "seconds": 2.5}])
+    write_json(prior / "calls/playbook.request.json", {"model": "anthropic/claude-sonnet-4.6",
+                                                        "training_packet": packet})
+    write_json(prior / "calls/playbook.response.json", {
+        "model": "anthropic/claude-sonnet-4.6", "output": '{"schema_version":2}',
+        "raw_usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130,
+                      "cost": 0.001, "is_byok": False}})
+
+    def complete(target, value, **kwargs):
+        name = "skill.py" if "Python source" in kwargs["system_prompt"] else "playbook.md"
+        return CompletionResult(text=(study.HERE / "fixtures" / f"packet_candidate_{name}").read_text(),
+                                model=target.model, served_model=target.model,
+                                raw_usage={"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130,
+                                           "cost": 0.001, "is_byok": False})
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fixture-not-a-credential")
+    monkeypatch.setattr(study, "complete_routed_model", complete)
+    output = tmp_path / "learning"
+    study.synthesize(study.HERE / "openrouter-protocol.json", corpus, models, output, prior_attempt=prior)
+    learning = LearningRecord.model_validate_json((output / "learning.json").read_text())
+    assert learning.discovery[0].id == "failed-playbook-001"
+    assert learning.discovery[0].model_calls == 1 and learning.discovery[0].total_cost_usd == .001
+    assert read_json(output / "ledger.json")[0]["state"] == "reconciled_failed_candidate"
 
 
 def test_learning_packet_excludes_development_and_heldout():
@@ -250,6 +377,21 @@ def test_cost_ledger_includes_failed_discovery_and_unknown_resources(prepared, e
     assert report["observed_first_resource_crossing_vs"]["textual"]["tokens"] is None
 
 
+def test_total_cost_requires_measured_prices_and_verified_model_receipt(prepared, execution):
+    skill = SimpleNamespace(route="skill", execution_seconds=0.2, accounting="none")
+    model = SimpleNamespace(route="general", execution_seconds=0, accounting="provider-reported")
+    result = SimpleNamespace(attempts=[skill, model], model_cost_complete=True, accounted_model_cost_usd=0.03)
+    protocol = StudyProtocol(local_route_cost_per_second_usd=0.001, isolated_skill_cost_per_second_usd=0.002)
+    assert study.measured_task_cost(result, protocol, 2) == pytest.approx(0.0324)
+    assert study.measured_task_cost(result, StudyProtocol(), 2) is None
+    result.model_cost_complete = False
+    model.accounting = "declared-pricing"
+    assert study.measured_task_cost(result, protocol, 2) is None
+    assert study.estimated_task_cost(result, protocol, 2) == pytest.approx(0.0324)
+    model.accounting = "reservation"
+    assert study.estimated_task_cost(result, protocol, 2) is None
+
+
 def test_live_report_cannot_claim_economic_go_from_quality_only(prepared, execution):
     study.run(prepared)
     _, _, protocol, _, _, learning, _, _ = study.load_frozen(prepared)
@@ -257,6 +399,30 @@ def test_live_report_cannot_claim_economic_go_from_quality_only(prepared, execut
                           evidence_kind="live", split="heldout", expected_cases=24, status="complete")
     assert report["quality_and_coverage_checks_pass"]
     assert report["decision"] == "inconclusive_total_lifecycle_cost_unmeasured"
+
+
+def test_economic_decision_requires_lifecycle_savings_against_both_text_controls(prepared, execution):
+    study.run(prepared)
+    _, _, protocol, _, _, learning, _, _ = study.load_frozen(prepared)
+    ledger = [{**entry.model_dump(mode="json"), "total_cost_usd": 0.1 if "executable" in entry.arms else 0.0}
+              for entry in learning.discovery]
+    accounted = LearningRecord.model_validate({**learning.model_dump(mode="json"), "discovery": ledger})
+    rows = read_json(prepared / "heldout/episodes.json")
+    for row in rows:
+        row["total_cost_usd"] = {"baseline": 0.01, "textual": 0.02, "cheap_textual": 0.005,
+                                 "executable": 0.001}[row["arm"]]
+        if row["arm"] == "executable" and row["skill_proposals"]:
+            row.update(cpu_seconds=0.1, peak_memory_bytes=1048576)
+    report = build_report(rows, protocol, accounted, evidence_kind="live", split="heldout", expected_cases=24,
+                          status="complete")
+    assert report["decision"] == "conditional_go_for_promotion_review"
+    assert not report["production_activation_authorized"]
+    for row in rows:
+        if row["arm"] == "executable":
+            row["total_cost_usd"] = 0.1
+    report = build_report(rows, protocol, accounted, evidence_kind="live", split="heldout", expected_cases=24,
+                          status="complete")
+    assert report["decision"] == "no_go_economics"
 
 
 def test_development_costs_are_retained_in_final_run(prepared, execution):
@@ -309,6 +475,24 @@ def test_fixture_models_cannot_call_external_endpoints_or_share_same_model():
 
 
 @pytest.mark.skipif(os.environ.get("AUTOCONTEXT_RUN_DOCKER_TESTS") != "1", reason="requires explicit real Docker lane")
+def test_real_docker_packet_candidate_development(tmp_path):
+    candidate = study.HERE / "fixtures"
+    with fixture_endpoint() as (endpoint, requests):
+        models = tmp_path / "models.json"
+        write_json(models, fixture_models(endpoint))
+        root = tmp_path / "frozen"
+        study.freeze(study.HERE / "protocol.json", candidate / "post_candidate_corpus.json", models,
+                     candidate / "packet_candidate_learning.json", candidate / "packet_candidate_skill.py",
+                     candidate / "packet_candidate_playbook.md", root)
+        report = study.run(root, split="development")
+    assert report["decision"] == "infrastructure_only"
+    assert all(row["successes"] == row["cases"] == 2 for row in report["stats"].values())
+    assert report["stats"]["supported/executable"]["cpu_seconds"] is not None
+    assert report["stats"]["supported/executable"]["peak_memory_bytes"] is not None
+    assert len(requests) == 14
+
+
+@pytest.mark.skipif(os.environ.get("AUTOCONTEXT_RUN_DOCKER_TESTS") != "1", reason="requires explicit real Docker lane")
 def test_real_docker_four_arm_study(tmp_path):
     with fixture_endpoint() as (endpoint, requests):
         models = tmp_path / "models.json"
@@ -323,3 +507,5 @@ def test_real_docker_four_arm_study(tmp_path):
     assert len(requests) == 14
     assert sum("Learned playbook" in r["messages"][0]["content"] for r in requests) == 10
     assert report["stats"]["supported/executable"]["model_calls"] == 0
+    assert report["stats"]["supported/executable"]["cpu_seconds"] is not None
+    assert report["stats"]["supported/executable"]["peak_memory_bytes"] is not None

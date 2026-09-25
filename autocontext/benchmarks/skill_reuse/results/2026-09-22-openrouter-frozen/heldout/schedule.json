@@ -1,0 +1,218 @@
+[
+  {
+    "arms": [
+      "executable",
+      "cheap_textual",
+      "textual",
+      "baseline"
+    ],
+    "case_id": "fresh-01"
+  },
+  {
+    "arms": [
+      "cheap_textual",
+      "textual",
+      "baseline",
+      "executable"
+    ],
+    "case_id": "fresh-12"
+  },
+  {
+    "arms": [
+      "executable",
+      "cheap_textual",
+      "textual",
+      "baseline"
+    ],
+    "case_id": "fresh-23"
+  },
+  {
+    "arms": [
+      "textual",
+      "baseline",
+      "executable",
+      "cheap_textual"
+    ],
+    "case_id": "fresh-08"
+  },
+  {
+    "arms": [
+      "baseline",
+      "executable",
+      "cheap_textual",
+      "textual"
+    ],
+    "case_id": "fresh-09"
+  },
+  {
+    "arms": [
+      "executable",
+      "cheap_textual",
+      "textual",
+      "baseline"
+    ],
+    "case_id": "fresh-04"
+  },
+  {
+    "arms": [
+      "cheap_textual",
+      "textual",
+      "baseline",
+      "executable"
+    ],
+    "case_id": "fresh-03"
+  },
+  {
+    "arms": [
+      "textual",
+      "baseline",
+      "executable",
+      "cheap_textual"
+    ],
+    "case_id": "fresh-11"
+  },
+  {
+    "arms": [
+      "cheap_textual",
+      "textual",
+      "baseline",
+      "executable"
+    ],
+    "case_id": "fresh-16"
+  },
+  {
+    "arms": [
+      "baseline",
+      "executable",
+      "cheap_textual",
+      "textual"
+    ],
+    "case_id": "fresh-02"
+  },
+  {
+    "arms": [
+      "textual",
+      "baseline",
+      "executable",
+      "cheap_textual"
+    ],
+    "case_id": "fresh-22"
+  },
+  {
+    "arms": [
+      "executable",
+      "cheap_textual",
+      "textual",
+      "baseline"
+    ],
+    "case_id": "fresh-07"
+  },
+  {
+    "arms": [
+      "baseline",
+      "executable",
+      "cheap_textual",
+      "textual"
+    ],
+    "case_id": "fresh-13"
+  },
+  {
+    "arms": [
+      "cheap_textual",
+      "textual",
+      "baseline",
+      "executable"
+    ],
+    "case_id": "fresh-05"
+  },
+  {
+    "arms": [
+      "executable",
+      "cheap_textual",
+      "textual",
+      "baseline"
+    ],
+    "case_id": "fresh-15"
+  },
+  {
+    "arms": [
+      "cheap_textual",
+      "textual",
+      "baseline",
+      "executable"
+    ],
+    "case_id": "fresh-14"
+  },
+  {
+    "arms": [
+      "textual",
+      "baseline",
+      "executable",
+      "cheap_textual"
+    ],
+    "case_id": "fresh-21"
+  },
+  {
+    "arms": [
+      "baseline",
+      "executable",
+      "cheap_textual",
+      "textual"
+    ],
+    "case_id": "fresh-19"
+  },
+  {
+    "arms": [
+      "executable",
+      "cheap_textual",
+      "textual",
+      "baseline"
+    ],
+    "case_id": "fresh-18"
+  },
+  {
+    "arms": [
+      "textual",
+      "baseline",
+      "executable",
+      "cheap_textual"
+    ],
+    "case_id": "fresh-06"
+  },
+  {
+    "arms": [
+      "cheap_textual",
+      "textual",
+      "baseline",
+      "executable"
+    ],
+    "case_id": "fresh-17"
+  },
+  {
+    "arms": [
+      "textual",
+      "baseline",
+      "executable",
+      "cheap_textual"
+    ],
+    "case_id": "fresh-24"
+  },
+  {
+    "arms": [
+      "baseline",
+      "executable",
+      "cheap_textual",
+      "textual"
+    ],
+    "case_id": "fresh-10"
+  },
+  {
+    "arms": [
+      "baseline",
+      "executable",
+      "cheap_textual",
+      "textual"
+    ],
+    "case_id": "fresh-20"
+  }
+]

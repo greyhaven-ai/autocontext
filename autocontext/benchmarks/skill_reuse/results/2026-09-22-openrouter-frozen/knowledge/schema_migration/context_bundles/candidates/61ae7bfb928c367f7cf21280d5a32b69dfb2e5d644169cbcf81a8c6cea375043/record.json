@@ -1,0 +1,15 @@
+{
+  "bundle_digest": "61ae7bfb928c367f7cf21280d5a32b69dfb2e5d644169cbcf81a8c6cea375043",
+  "comparison": null,
+  "confirmation_policy": null,
+  "confirmation_policy_digest": null,
+  "created_at": "2026-09-22T22:33:00.742466+00:00",
+  "evaluator_epoch": "e235fae4c50a9f4c7cdf36761a7ffc8b42cca18afd73d7831c02df47be10b57a",
+  "lifecycle": "proposed",
+  "parent_digest": "b2cb014e187582a4bee8d7fa95fcbbfbbde40e84983b2e10f3c77f0e1da6f510",
+  "rationale": "Explicit isolated schema migration candidate",
+  "schema_version": 2,
+  "source_generation": 0,
+  "source_run_id": "ac1029-frozen-study",
+  "updated_at": "2026-09-22T22:33:00.742466+00:00"
+}

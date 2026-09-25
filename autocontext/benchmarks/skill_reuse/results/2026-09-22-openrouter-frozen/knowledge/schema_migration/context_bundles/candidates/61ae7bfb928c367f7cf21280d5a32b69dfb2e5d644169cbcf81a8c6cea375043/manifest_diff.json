@@ -1,0 +1,15 @@
+{
+  "changes": [
+    {
+      "comparison_component_digest": null,
+      "component_key": "schema_migration_skill",
+      "component_kind": "tool_spec",
+      "tested_component_digest": "203b879f15f4a8ea002ec3a839c88deaf2c74cbe2e06504a90710b5856cabf65"
+    }
+  ],
+  "comparison_bundle_digest": "b2cb014e187582a4bee8d7fa95fcbbfbbde40e84983b2e10f3c77f0e1da6f510",
+  "digest": "9e4b5f6ca541a9216fa603ae1166b3bde8195c0df24e1f02dccdeea2a95a4aaa",
+  "evaluator_epoch": "e235fae4c50a9f4c7cdf36761a7ffc8b42cca18afd73d7831c02df47be10b57a",
+  "schema_version": 1,
+  "tested_bundle_digest": "61ae7bfb928c367f7cf21280d5a32b69dfb2e5d644169cbcf81a8c6cea375043"
+}

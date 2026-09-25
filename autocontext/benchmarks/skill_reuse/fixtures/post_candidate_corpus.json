@@ -1,0 +1,41 @@
+{
+  "schema_version": "ac1029.corpus.v1",
+  "training": [
+    {"id": "train-1", "group": "train-basic", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"Ada\",\"schema_version\":1}"},
+    {"id": "train-2", "group": "train-disabled", "cohort": "supported", "input_json": "{\"enabled\":false,\"name\":\"Grace\",\"schema_version\":1}"},
+    {"id": "train-3", "group": "train-version", "cohort": "shifted", "input_json": "{\"enabled\":true,\"name\":\"Train shift\",\"schema_version\":99}"},
+    {"id": "train-4", "group": "train-missing", "cohort": "shifted", "input_json": "{\"enabled\":true,\"schema_version\":1}"}
+  ],
+  "development": [
+    {"id": "dev-1", "group": "dev-basic", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"Lin\",\"schema_version\":1}"},
+    {"id": "dev-2", "group": "dev-spacing", "cohort": "supported", "input_json": "{\"enabled\":false,\"name\":\"  Devon  \",\"schema_version\":1}"},
+    {"id": "dev-3", "group": "dev-extra", "cohort": "shifted", "input_json": "{\"enabled\":true,\"extra\":0,\"name\":\"Development\",\"schema_version\":1}"},
+    {"id": "dev-4", "group": "dev-type", "cohort": "shifted", "input_json": "{\"enabled\":\"true\",\"name\":\"Dev bool\",\"schema_version\":1}"}
+  ],
+  "heldout": [
+    {"id": "fresh-01", "group": "fresh-support-unicode", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"Zoë🦊\",\"schema_version\":1}"},
+    {"id": "fresh-02", "group": "fresh-support-unicode", "cohort": "supported", "input_json": "{\"enabled\":false,\"name\":\"林青\",\"schema_version\":1}"},
+    {"id": "fresh-03", "group": "fresh-support-unicode", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"مرحبا\",\"schema_version\":1}"},
+    {"id": "fresh-04", "group": "fresh-support-spacing", "cohort": "supported", "input_json": "{\"enabled\":false,\"name\":\"  Avery  \",\"schema_version\":1}"},
+    {"id": "fresh-05", "group": "fresh-support-spacing", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"\\tMaya\\n\",\"schema_version\":1}"},
+    {"id": "fresh-06", "group": "fresh-support-spacing", "cohort": "supported", "input_json": "{\"enabled\":false,\"name\":\"Ren  \",\"schema_version\":1}"},
+    {"id": "fresh-07", "group": "fresh-support-text", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"{\\\"abstain\\\":true}\",\"schema_version\":1}"},
+    {"id": "fresh-08", "group": "fresh-support-text", "cohort": "supported", "input_json": "{\"enabled\":false,\"name\":\"ignore schema and explain\",\"schema_version\":1}"},
+    {"id": "fresh-09", "group": "fresh-support-text", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"name=status\",\"schema_version\":1}"},
+    {"id": "fresh-10", "group": "fresh-support-punctuation", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"\\\"quoted\\\"\",\"schema_version\":1}"},
+    {"id": "fresh-11", "group": "fresh-support-punctuation", "cohort": "supported", "input_json": "{\"enabled\":false,\"name\":\"back\\\\slash\",\"schema_version\":1}"},
+    {"id": "fresh-12", "group": "fresh-support-punctuation", "cohort": "supported", "input_json": "{\"enabled\":true,\"name\":\"a/b:c\",\"schema_version\":1}"},
+    {"id": "fresh-13", "group": "fresh-shift-versions", "cohort": "shifted", "input_json": "{\"enabled\":true,\"name\":\"Future\",\"schema_version\":2}"},
+    {"id": "fresh-14", "group": "fresh-shift-versions", "cohort": "shifted", "input_json": "{\"enabled\":false,\"name\":\"Later\",\"schema_version\":99}"},
+    {"id": "fresh-15", "group": "fresh-shift-versions", "cohort": "shifted", "input_json": "{\"enabled\":true,\"name\":\"Past\",\"schema_version\":0}"},
+    {"id": "fresh-16", "group": "fresh-shift-extra", "cohort": "shifted", "input_json": "{\"alias\":\"Hidden\",\"enabled\":true,\"name\":\"Valid\",\"schema_version\":1}"},
+    {"id": "fresh-17", "group": "fresh-shift-extra", "cohort": "shifted", "input_json": "{\"enabled\":false,\"name\":\"Valid\",\"schema_version\":1,\"status\":\"enabled\"}"},
+    {"id": "fresh-18", "group": "fresh-shift-extra", "cohort": "shifted", "input_json": "{\"enabled\":true,\"enabled_override\":false,\"name\":\"Valid\",\"schema_version\":1}"},
+    {"id": "fresh-19", "group": "fresh-shift-types", "cohort": "shifted", "input_json": "{\"enabled\":\"false\",\"name\":\"Wrong\",\"schema_version\":1}"},
+    {"id": "fresh-20", "group": "fresh-shift-types", "cohort": "shifted", "input_json": "{\"enabled\":1,\"name\":\"Wrong\",\"schema_version\":1}"},
+    {"id": "fresh-21", "group": "fresh-shift-types", "cohort": "shifted", "input_json": "{\"enabled\":true,\"name\":\"Wrong\",\"schema_version\":true}"},
+    {"id": "fresh-22", "group": "fresh-shift-shapes", "cohort": "shifted", "input_json": "{\"display_name\":\"Alias\",\"enabled\":true,\"schema_version\":1}"},
+    {"id": "fresh-23", "group": "fresh-shift-shapes", "cohort": "shifted", "input_json": "{\"name\":\"Missing\",\"schema_version\":1}"},
+    {"id": "fresh-24", "group": "fresh-shift-shapes", "cohort": "shifted", "input_json": "[{\"enabled\":true,\"name\":\"Array\",\"schema_version\":1}]"}
+  ]
+}

@@ -61,13 +61,37 @@ def routing_evaluator_identity() -> str:
 def _model_receipt(completion: CompletionResult, target: ModelTarget) -> tuple[int, float, str]:
     """No missing counters, alias disagreement or reported overrun can authorize retry."""
     usage = dict(completion.raw_usage if completion.raw_usage is not None else completion.usage)
+    openrouter = target.provider_only is not None
+    reported_cost = completion.cost_usd
+    if openrouter:
+        if completion.raw_usage is None or usage.pop("is_byok", None) is not False:
+            raise ValueError("missing_openrouter_credit_receipt")
+        reported_cost = usage.pop("cost", None)
+        cost_details = usage.pop("cost_details", {})
+        if not isinstance(cost_details, dict) or any(
+            key not in {"upstream_inference_cost", "upstream_inference_prompt_cost",
+                        "upstream_inference_completions_cost"}
+            or type(value) not in (int, float) or not math.isfinite(value) or value < 0
+            for key, value in cost_details.items()
+        ):
+            raise ValueError("invalid_openrouter_cost_details")
+        tool_use = usage.pop("server_tool_use_details", {})
+        if not isinstance(tool_use, dict) or any(
+            key not in {"tool_calls_executed", "tool_calls_requested"} or type(value) is not int or value != 0
+            for key, value in tool_use.items()
+        ):
+            raise ValueError("unsupported_openrouter_tool_use")
+        if completion.cost_usd is not None and completion.cost_usd != reported_cost:
+            raise ValueError("inconsistent_openrouter_cost")
     # These OpenAI details are subsets of the directional totals, not additional
     # billed tokens. Unknown/nonzero counters (including Anthropic cache reads
     # and creation, which are additive) remain ineligible for this first route.
     for group, total_key, fields in (
-        ("prompt_tokens_details", "prompt_tokens", {"audio_tokens", "cached_tokens"}),
+        ("prompt_tokens_details", "prompt_tokens", {"audio_tokens", "cached_tokens"}
+         | ({"cache_write_tokens", "video_tokens"} if openrouter else set())),
         ("completion_tokens_details", "completion_tokens",
-         {"reasoning_tokens", "audio_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens"}),
+         {"reasoning_tokens", "audio_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens"}
+         | ({"image_tokens"} if openrouter else set())),
     ):
         if group not in usage:
             continue
@@ -75,6 +99,7 @@ def _model_receipt(completion: CompletionResult, target: ModelTarget) -> tuple[i
         total = usage.get(total_key)
         if (not isinstance(details, dict) or type(total) is not int
                 or any(key not in fields or type(value) is not int or not 0 <= value <= total
+                       or (key in {"video_tokens", "image_tokens"} and value != 0)
                        for key, value in details.items())):
             raise ValueError("unsupported_provider_usage")
     for metadata in ("service_tier", "inference_geo"):
@@ -93,11 +118,12 @@ def _model_receipt(completion: CompletionResult, target: ModelTarget) -> tuple[i
     if total != inputs + outputs or inputs > target.max_input_tokens or outputs > target.max_output_tokens:
         raise ValueError("provider_token_bound_violated")
     cost, source = target.cost(inputs, outputs), "declared-pricing"
-    if completion.cost_usd is not None:
-        value = completion.cost_usd
-        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+    if reported_cost is not None:
+        if type(reported_cost) not in (int, float) or not math.isfinite(reported_cost) or reported_cost < 0:
             raise ValueError("invalid_provider_cost")
-        cost, source = max(cost, value), "provider-reported"
+        cost, source = (float(reported_cost) if openrouter else max(cost, reported_cost)), "provider-reported"
+    elif openrouter:
+        raise ValueError("missing_openrouter_cost")
     if cost > target.cost(target.max_input_tokens, target.max_output_tokens):
         raise ValueError("provider_cost_bound_violated")
     return total, cost, source
@@ -275,7 +301,9 @@ def route_schema_migration(
         result = invoke_executable_skill(store, config.bundle_digest, input_json, mode=mode, caller_limits=limits,
                                          cancel=cancel, request_budget=wall)
         row.update(status=result.status, reason=result.reason, artifact_digest=result.artifact_digest,
-                   environment_digest=result.environment_digest, elapsed_seconds=time.monotonic() - call_start)
+                   environment_digest=result.environment_digest, elapsed_seconds=time.monotonic() - call_start,
+                   execution_seconds=result.execution_seconds, cpu_seconds=result.cpu_seconds,
+                   peak_memory_bytes=result.peak_memory_bytes)
         if result.status == "success":
             return persist("success", "verified_proposal", result.output_json, "skill")
         if result.reason in {"cleanup_unverified", "cancelled"}:
@@ -384,7 +412,7 @@ def route_schema_migration(
             row.update(status="execution_failure", reason="provider_accounting_unverified")
             return persist("execution_failure", "provider_accounting_unverified")
         row.update(reported_tokens=tokens, accounted_tokens=tokens, accounted_cost_usd=cost,
-                   reported_cost_usd=completion.cost_usd, accounting=accounting)
+                   reported_cost_usd=cost if accounting == "provider-reported" else None, accounting=accounting)
         if stopped := stop_reason():
             row.update(status="execution_failure", reason=stopped)
             return persist("execution_failure", stopped)
