@@ -166,9 +166,14 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             agent_output TEXT NOT NULL,
             human_score REAL,
             human_notes TEXT NOT NULL DEFAULT '',
+            acquisition_id TEXT,
+            reviewer TEXT,
+            criterion_scores_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_feedback_scenario ON human_feedback(scenario_name);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_human_feedback_acquisition_id
+            ON human_feedback(acquisition_id) WHERE acquisition_id IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS task_queue (
             id TEXT PRIMARY KEY,

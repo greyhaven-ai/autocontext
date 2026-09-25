@@ -14444,6 +14444,130 @@
           ]
         }
       }
+    },
+    {
+      "id": "labels.select",
+      "path": ["labels", "select"],
+      "summary": "Freeze a protected, budgeted queue of tasks for human review.",
+      "audience": "advanced",
+      "maturity": "beta",
+      "domain_concept": "Task",
+      "aliases": [],
+      "runtime_support": {
+        "python": {"status": "yes"},
+        "typescript": {"status": "intentional_gap", "reason": "Human label acquisition is currently implemented only in Python."}
+      },
+      "positionals": [],
+      "flags": [],
+      "output_contract": "json",
+      "output": {"modes": ["json"], "streaming": "single", "success_stream": "stdout", "error_stream": "stderr", "schemas": {}, "fixtures": {}},
+      "exit_codes": {"success": 0, "usage": 2, "execution": 1},
+      "examples": ["autoctx labels select --pool pool.json --protected protected.json --round-id review-1"],
+      "runtime_shapes": {"python": {
+        "positionals": [],
+        "flags": [
+          {"name": "pool", "type": "path", "required": true, "description": "Candidate task pool."},
+          {"name": "protected", "type": "path", "required": true, "description": "Current protected membership."},
+          {"name": "round-id", "type": "string", "required": true, "description": "New acquisition round ID."},
+          {"name": "budget", "type": "int", "default": 10, "description": "Maximum labels to request."},
+          {"name": "audit-fraction", "type": "float", "default": 0.2, "description": "Random audit fraction."},
+          {"name": "boundary", "type": "float", "default": 0.5, "description": "Acceptance boundary."},
+          {"name": "seed", "type": "int", "default": 1023, "description": "Deterministic sampling seed."},
+          {"name": "root", "type": "path", "description": "Calibration storage root."}
+        ]
+      }}
+    },
+    {
+      "id": "labels.pending",
+      "path": ["labels", "pending"],
+      "summary": "Show unreviewed or disputed acquisition samples and reconcile interrupted writes.",
+      "audience": "advanced",
+      "maturity": "beta",
+      "domain_concept": "Task",
+      "aliases": [],
+      "runtime_support": {
+        "python": {"status": "yes"},
+        "typescript": {"status": "intentional_gap", "reason": "Human label acquisition is currently implemented only in Python."}
+      },
+      "positionals": [{"name": "round-id", "type": "string", "required": true, "description": "Existing acquisition round."}],
+      "flags": [],
+      "output_contract": "json",
+      "output": {"modes": ["json"], "streaming": "single", "success_stream": "stdout", "error_stream": "stderr", "schemas": {}, "fixtures": {}},
+      "exit_codes": {"success": 0, "usage": 2, "execution": 1},
+      "examples": ["autoctx labels pending review-1"],
+      "runtime_shapes": {"python": {
+        "positionals": [{"name": "round-id", "type": "string", "required": true, "description": "Existing acquisition round."}],
+        "flags": [
+          {"name": "root", "type": "path", "description": "Calibration storage root."},
+          {"name": "db-path", "type": "path", "description": "Human feedback database."}
+        ]
+      }}
+    },
+    {
+      "id": "labels.review",
+      "path": ["labels", "review"],
+      "summary": "Record an explicit human label, correction, disagreement, or skip.",
+      "audience": "advanced",
+      "maturity": "beta",
+      "domain_concept": "Task",
+      "aliases": [],
+      "runtime_support": {
+        "python": {"status": "yes"},
+        "typescript": {"status": "intentional_gap", "reason": "Human label acquisition is currently implemented only in Python."}
+      },
+      "positionals": [
+        {"name": "round-id", "type": "string", "required": true, "description": "Existing acquisition round."},
+        {"name": "sample-id", "type": "string", "required": true, "description": "Selected sample."}
+      ],
+      "flags": [],
+      "output_contract": "json",
+      "output": {"modes": ["json"], "streaming": "single", "success_stream": "stdout", "error_stream": "stderr", "schemas": {}, "fixtures": {}},
+      "exit_codes": {"success": 0, "usage": 2, "execution": 1},
+      "examples": ["autoctx labels review review-1 acq-sample --protected protected.json --by reviewer --decision label --score 0.8"],
+      "runtime_shapes": {"python": {
+        "positionals": [
+          {"name": "round-id", "type": "string", "required": true, "description": "Existing acquisition round."},
+          {"name": "sample-id", "type": "string", "required": true, "description": "Selected sample."}
+        ],
+        "flags": [
+          {"name": "protected", "type": "path", "required": true, "description": "Current protected membership."},
+          {"name": "by", "type": "string", "required": true, "description": "Human reviewer identity."},
+          {"name": "decision", "type": "string", "required": true, "description": "Human review action.", "choices": ["label", "skip", "correct", "disagree"]},
+          {"name": "score", "type": "float", "description": "Human-assigned score."},
+          {"name": "rationale", "type": "string", "default": "", "description": "Human review notes."},
+          {"name": "criterion-scores", "type": "path", "description": "Criterion-score JSON file."},
+          {"name": "root", "type": "path", "description": "Calibration storage root."},
+          {"name": "db-path", "type": "path", "description": "Human feedback database."}
+        ]
+      }}
+    },
+    {
+      "id": "labels.export",
+      "path": ["labels", "export"],
+      "summary": "Export reviewed training and development labels without protected samples.",
+      "audience": "advanced",
+      "maturity": "beta",
+      "domain_concept": "Task",
+      "aliases": [],
+      "runtime_support": {
+        "python": {"status": "yes"},
+        "typescript": {"status": "intentional_gap", "reason": "Human label acquisition is currently implemented only in Python."}
+      },
+      "positionals": [{"name": "round-id", "type": "string", "required": true, "description": "Existing acquisition round."}],
+      "flags": [],
+      "output_contract": "json",
+      "output": {"modes": ["json"], "streaming": "single", "success_stream": "stdout", "error_stream": "stderr", "schemas": {}, "fixtures": {}},
+      "exit_codes": {"success": 0, "usage": 2, "execution": 1},
+      "examples": ["autoctx labels export review-1 --protected protected.json"],
+      "runtime_shapes": {"python": {
+        "positionals": [{"name": "round-id", "type": "string", "required": true, "description": "Existing acquisition round."}],
+        "flags": [
+          {"name": "protected", "type": "path", "required": true, "description": "Current protected membership."},
+          {"name": "output", "type": "path", "description": "Optional new JSON export path."},
+          {"name": "root", "type": "path", "description": "Calibration storage root."},
+          {"name": "db-path", "type": "path", "description": "Human feedback database."}
+        ]
+      }}
     }
   ]
 }

@@ -34,13 +34,15 @@ describe("human feedback store workflow", () => {
 
     insertHumanFeedbackRecord(db, "scenario", "second", null, "notes only");
     insertHumanFeedbackRecord(db, "scenario", "third", 0.8, "strong response");
+    db.prepare(`INSERT INTO human_feedback(scenario_name, agent_output, human_score, human_notes, acquisition_id)
+                VALUES (?, ?, ?, ?, ?)`).run("scenario", "acquired", 0.9, "human review", "acq-1");
 
     expect(() => insertHumanFeedbackRecord(db, "scenario", "bad", 1.5)).toThrow(
       "human_score must be in [0.0, 1.0], got 1.5",
     );
 
     const feedback = getHumanFeedbackRecords(db, "scenario");
-    expect(feedback).toHaveLength(3);
+    expect(feedback).toHaveLength(4);
     // Identify the record rather than indexing into the result: `created_at` has
     // second granularity, so all three rows tie and position is meaningless
     // except for the id tiebreak asserted in the ordering tests below.
@@ -51,6 +53,7 @@ describe("human feedback store workflow", () => {
     expect(calibration.map((row) => row.agent_output)).toContain("output");
     expect(calibration.map((row) => row.agent_output)).toContain("third");
     expect(calibration.map((row) => row.agent_output)).not.toContain("second");
+    expect(calibration.map((row) => row.agent_output)).not.toContain("acquired");
   });
 
   it("returns the newest records, not an arbitrary page, when created_at ties", () => {
