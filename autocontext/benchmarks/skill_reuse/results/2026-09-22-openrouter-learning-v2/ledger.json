@@ -1,0 +1,30 @@
+[
+  {
+    "cost_usd": 0.001326,
+    "model_calls": 1,
+    "phase": "prior-playbook",
+    "seconds": 2.868249541032128,
+    "state": "reconciled_failed_candidate",
+    "tokens": 362
+  },
+  {
+    "cost_usd": 0.009408,
+    "model_calls": 1,
+    "phase": "playbook",
+    "reserved_cost_usd": 0.039936,
+    "reserved_tokens": 9216,
+    "seconds": 14.251640875008889,
+    "state": "completed",
+    "tokens": 944
+  },
+  {
+    "cost_usd": 0.004743,
+    "model_calls": 1,
+    "phase": "skill",
+    "reserved_cost_usd": 0.039936,
+    "reserved_tokens": 9216,
+    "seconds": 4.59793179098051,
+    "state": "completed",
+    "tokens": 653
+  }
+]

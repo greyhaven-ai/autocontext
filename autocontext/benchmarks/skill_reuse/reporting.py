@@ -70,7 +70,10 @@ def summarize_group(rows):
             "fallback_frequency": sum(r["fallback"] for r in rows) / count if count else None,
             "harmful_proposals_rejected": sum(r["harmful_proposals_rejected"] for r in rows),
             "cpu_seconds": known_sum([r["cpu_seconds"] for r in rows]) if rows else None,
-            "peak_memory_bytes": None, "total_cost_usd": known_sum([r["total_cost_usd"] for r in rows]) if rows else None}
+            "peak_memory_bytes": (max(r["peak_memory_bytes"] for r in rows)
+                                  if rows and all(r["peak_memory_bytes"] is not None for r in rows) else None),
+            "estimated_task_cost_usd": known_sum([r["estimated_task_cost_usd"] for r in rows]) if rows else None,
+            "total_cost_usd": known_sum([r["total_cost_usd"] for r in rows]) if rows else None}
 
 
 def comparisons(rows, protocol):
@@ -152,8 +155,9 @@ def economics(rows, protocol, learning, *, unreconciled=()):
                                 "Observed crossings refer to the evaluation sequence, not post-qualification deployment. "
                                 "Unreconciled dispatches make affected totals, projections and crossings unknown. "
                                 "Frozen artifact with shifted-input fallback, no retuning. Horizons are projections, not runs. "
-                                "CPU/memory, Docker cost and remote invoices are not measured by this adapter. "
-                                "Declared model prices are partial estimates, never total lifecycle dollars."}
+                                "Candidate child CPU/peak RSS exclude Docker daemon and model-provider resources. "
+                                "Operator-priced local/Docker seconds and provider-reported spend are conditional "
+                                "estimates, not audited invoices; incomplete discovery costs remain unknown."}
 
 
 def build_report(rows, protocol, learning, *, evidence_kind, split, expected_cases, status, unreconciled=()):
@@ -166,7 +170,8 @@ def build_report(rows, protocol, learning, *, evidence_kind, split, expected_cas
             stat = stats[f"{cohort}/{arm}"]
             stat["unreconciled_attempts"] = count
             if count:
-                for metric in (*RESOURCES, "declared_model_cost_usd", "cpu_seconds"):
+                for metric in (*RESOURCES, "declared_model_cost_usd", "estimated_task_cost_usd", "cpu_seconds",
+                               "peak_memory_bytes"):
                     stat[metric] = None
     costs = economics(rows, protocol, learning, unreconciled=unreconciled)
     complete = status == "complete" and not unreconciled and len(rows) == expected_cases * len(ARMS)
@@ -179,18 +184,34 @@ def build_report(rows, protocol, learning, *, evidence_kind, split, expected_cas
                              for cohort in ("supported", "shifted") for reference in ("textual", "cheap_textual"))
     quality = quality and stats["supported/executable"]["skill_coverage"] >= protocol.min_skill_coverage
     quality = quality and stats["supported/executable"]["skill_precision"] == 1
+    horizon = protocol.economic_horizon
+    frequency = protocol.economic_shifted_frequency
+    projected = {arm: next((row["total_cost_usd"] for row in costs["projected_horizons"][arm]
+                            if row["tasks"] == horizon and row["shifted_frequency"] == frequency), None)
+                 for arm in ARMS}
+    measured_skill = all(r["cpu_seconds"] is not None and r["peak_memory_bytes"] is not None
+                         for r in rows if r["arm"] == "executable"
+                         and any(a["route"] == "skill" and a["status"] != "skipped" for a in r["attempts"]))
+    economics_known = measured_skill and all(value is not None for value in projected.values())
+    savings = (all(projected["executable"] <= (1 - protocol.min_economic_savings) * projected[arm]
+                   for arm in ("textual", "cheap_textual")) if economics_known else None)
     if evidence_kind == "fixture" or split != "heldout":
         decision = "infrastructure_only" if evidence_kind == "fixture" else "development_only"
     elif not complete or not enough:
         decision = "inconclusive_incomplete_evidence"
     elif not quality:
         decision = "no_go_quality_or_coverage"
-    else:
+    elif not economics_known:
         # Current route receipts cover declared model spend, not CPU/Docker or
         # all lifecycle costs. Passing quality alone cannot establish an economic go.
         decision = "inconclusive_total_lifecycle_cost_unmeasured"
+    else:
+        decision = "conditional_go_for_promotion_review" if savings else "no_go_economics"
     return {"schema_version": "ac1029.report.v1", "evidence_kind": evidence_kind, "split": split, "status": status,
-            "decision": decision, "production_activation_authorized": False, "complete_pairs": complete,
+            "decision": decision, "economic_test": {"horizon": horizon, "shifted_frequency": frequency,
+                                                "min_savings": protocol.min_economic_savings,
+                                                "projected_total_cost_usd": projected, "passes": savings},
+            "production_activation_authorized": False, "complete_pairs": complete,
             "quality_and_coverage_checks_pass": bool(quality), "unreconciled_reservations": list(unreconciled),
             "stats": stats, "comparisons": paired, **costs,
             "limitations": "Synthetic task-family pilot; intervals are conditional on frozen artifacts and model draws. "
@@ -202,14 +223,20 @@ def build_report(rows, protocol, learning, *, evidence_kind, split, expected_cas
 def render_report(report):
     lines = ["# Schema-migration reuse study", "", f"Decision: **{report['decision']}**.", "",
              f"Evidence: {report['evidence_kind']}; split: {report['split']}; status: {report['status']}.", "",
-             "| Cohort / arm | Correct / cases | Model calls | Tokens | p50 / p95 seconds |",
-             "|---|---:|---:|---:|---:|"]
+             "| Cohort / arm | Correct / cases | Model calls | Tokens | p50 / p95 seconds | Estimated task USD |",
+             "|---|---:|---:|---:|---:|---:|"]
     for name, row in report["stats"].items():
         latency = "unknown" if row["p50_seconds"] is None else f"{row['p50_seconds']:.4f} / {row['p95_seconds']:.4f}"
         calls = row["model_calls"] if row["model_calls"] is not None else "unknown"
         tokens = row["tokens"] if row["tokens"] is not None else "unknown"
-        lines.append(f"| {name} | {row['successes']} / {row['cases']} | {calls} | {tokens} | {latency} |")
-    lines.extend(["", "Total lifecycle dollars, CPU and peak memory: **unknown** with the current adapter.", "",
+        estimate = ("unknown" if row["estimated_task_cost_usd"] is None
+                    else f"{row['estimated_task_cost_usd']:.6f}")
+        lines.append(f"| {name} | {row['successes']} / {row['cases']} | {calls} | {tokens} | {latency} | {estimate} |")
+    measured = report["stats"]["supported/executable"]
+    lines.extend(["", f"Supported skill child CPU / peak RSS: {measured['cpu_seconds']} seconds / "
+                  f"{measured['peak_memory_bytes']} bytes (null means unknown).", "",
+                  f"Lifecycle dollar decision is conditional on the frozen pricing assumptions: "
+                  f"{report['economic_test']}. Unknown inputs remain unknown.", "",
                   "Case counts and latency describe completed outcomes. Unreconciled dispatches are retained in the ledger; "
                   "affected cost totals, projections and resource crossings remain unknown.", "",
                   "[Machine-readable report](summary.json) includes paired differences, precision/coverage, fallback, "

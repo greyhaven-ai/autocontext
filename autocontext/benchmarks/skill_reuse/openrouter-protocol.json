@@ -1,0 +1,31 @@
+{
+  "schema_version": "ac1029.protocol.v1",
+  "request_budget": {
+    "wall_seconds": 30.0,
+    "max_attempts": 2,
+    "max_tokens": 9216,
+    "max_model_cost_usd": 0.05
+  },
+  "max_synthesis_calls": 3,
+  "max_synthesis_tokens": 27648,
+  "max_synthesis_model_cost_usd": 0.15,
+  "max_synthesis_wall_seconds": 90,
+  "max_evaluation_calls": 96,
+  "max_evaluation_tokens": 884736,
+  "max_evaluation_model_cost_usd": 4.0,
+  "local_route_cost_per_second_usd": null,
+  "isolated_skill_cost_per_second_usd": null,
+  "economic_horizon": 100,
+  "economic_shifted_frequency": 0.1,
+  "min_economic_savings": 0.05,
+  "evaluation_wall_seconds": 3600.0,
+  "min_cases_per_cohort": 12,
+  "min_groups_per_cohort": 4,
+  "quality_floor": 0.95,
+  "acceptable_regression": 0.02,
+  "min_skill_coverage": 0.5,
+  "bootstrap_seed": 1029,
+  "bootstrap_resamples": 2000,
+  "repetition_horizons": [1, 2, 5, 10, 25, 100, 1000],
+  "shifted_frequencies": [0.0, 0.1, 0.5, 1.0]
+}

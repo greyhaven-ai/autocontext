@@ -64,9 +64,12 @@ the caller's responsibility and is outside this pilot.
 Both modes use the same immutable manifest, `SkillReference` assembly, pinned
 runtime, applicability checks and verifier. Candidate/incumbent evaluators pin
 their respective bundle digests and invoke this same function. AC-1020's
-[opt-in router](skill-routing.md) composes this seam with verified model fallback;
-AC-1021 owns complete route promotion decisions and atomic activation.
-This seam is opt-in and is not wired into automatic production routing.
+[opt-in router](skill-routing.md) composes this seam with verified model fallback.
+For a *complete execution policy*, pass an enabled, bundle-independent
+`routing_config` when proposing the skill. Its active pointer requires the
+additional AC-1021 quality/cost evidence gate; promoting only the historical
+standalone skill does not authorize serving it through the full router.
+Neither path is wired into automatic production routing.
 When a `RuntimeBudget` is supplied, its absolute deadline is checked after
 preflight and carried into Docker execution. It caps runtime timeouts without
 changing the immutable manifest, and expired requests never start a container.
@@ -105,10 +108,13 @@ capability grants are supported.
 The default budget is 10 seconds, 128 MiB memory and 64 KiB per output stream;
 source/input are each limited to 64 KiB and scratch tmpfs to 16 MiB. CPU quota is
 one core, process count is capped at 16, and CPU time is capped per process.
-The wall deadline includes image inspection, container startup and the final
-Docker OOM-state inspection. An OOM kill, including a killed child whose parent
-returns valid JSON and exits zero, returns `oom`. Missing or malformed resource
-state returns `resource_status_unverified`; inspection errors also fail closed.
+The wall deadline includes image inspection, container startup, Docker OOM-state
+inspection and a bounded check of the container's daemon OOM and exit events.
+An OOM kill, including a killed child whose parent returns valid JSON and exits
+zero, returns `oom`. A Python `MemoryError` without a kernel OOM event can return
+`candidate_error`, but cannot authorize output. Missing or malformed resource
+state or an unverified container exit event returns `resource_status_unverified`;
+inspection errors also fail closed.
 Cancellation, timeout and output overflow terminate the invocation; cleanup force-removes the
 container and verifies removal with a separate bounded cleanup allowance.
 Cleanup failure returns `cleanup_unverified` and never accepts an output. Host

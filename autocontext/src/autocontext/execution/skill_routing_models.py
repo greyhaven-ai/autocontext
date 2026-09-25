@@ -28,6 +28,7 @@ class ModelTarget(FrozenContract):
     model: str = Field(min_length=1, max_length=256)
     base_url: str | None = Field(default=None, max_length=2048)
     api_key_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]{0,100}_(?:API_KEY|TOKEN)$")
+    provider_only: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,64}$")
     max_input_tokens: int = Field(default=8192, ge=1, le=131072, strict=True)
     max_output_tokens: int = Field(default=1024, ge=1, le=8192, strict=True)
     input_cost_per_1k: float = Field(ge=0, strict=True)
@@ -43,6 +44,11 @@ class ModelTarget(FrozenContract):
             raise ValueError("an HTTP endpoint without embedded credentials is required")
         if parsed.query or parsed.fragment:
             raise ValueError("endpoint query/fragment is unsupported")
+        openrouter = self.resolved_endpoint.rstrip("/") == "https://openrouter.ai/api/v1"
+        if self.provider_only is not None and (not openrouter or self.provider != "openai-compatible"):
+            raise ValueError("provider pin requires the explicit OpenRouter endpoint")
+        if openrouter and self.provider_only is None:
+            raise ValueError("OpenRouter requires a pinned provider")
         return self
 
     @property
@@ -108,6 +114,9 @@ class RouteAttempt(FrozenContract):
     target_digest: str | None = None
     environment_digest: str | None = None
     elapsed_seconds: float = 0
+    execution_seconds: float = 0
+    cpu_seconds: float | None = None
+    peak_memory_bytes: int | None = None
     model_calls: int = 0
     reserved_tokens: int = 0
     reserved_cost_usd: float = 0
