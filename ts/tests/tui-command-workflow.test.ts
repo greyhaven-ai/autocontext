@@ -12,20 +12,28 @@ describe("tui command workflow", () => {
     expect(TUI_HELP_TEXT).toContain("autoctx tui");
     expect(TUI_HELP_TEXT).toContain("--port 8000");
     expect(TUI_HELP_TEXT).toContain("--headless");
+    expect(TUI_HELP_TEXT).toContain("--admin");
   });
 
   it("plans TUI startup with headless TTY fallback", () => {
     expect(planTuiCommand({ port: undefined, headless: false }, false)).toEqual({
       port: 8000,
       headless: true,
+      admin: false,
     });
     expect(planTuiCommand({ port: "9000", headless: false }, true)).toEqual({
       port: 9000,
       headless: false,
+      admin: false,
     });
     expect(planTuiCommand({ port: "9100", headless: true }, true)).toEqual({
       port: 9100,
       headless: true,
+      admin: false,
+    });
+    expect(planTuiCommand({ port: "9200", admin: true }, true)).toMatchObject({
+      port: 9200,
+      admin: true,
     });
   });
 

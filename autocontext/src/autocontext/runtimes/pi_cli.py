@@ -21,6 +21,7 @@ from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 from autocontext.runtimes.pi_artifacts import PiExecutionTrace
 from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,7 @@ def _run_with_group_kill(
         "stderr": subprocess.PIPE,
         "text": True,
         "cwd": cwd,
+        "env": child_process_env_without_control_plane_secrets(),
     }
     if sys.platform != "win32":
         popen_kwargs["start_new_session"] = True

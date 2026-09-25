@@ -12,7 +12,10 @@ import {
 describe("agent app Fetch invocation conformance suite", () => {
   it("exposes reusable Fetch invocation conformance cases", async () => {
     const cases = createAgentAppFetchInvocationConformanceCases({
-      createHandler: createAgentAppFetchHandler,
+      createHandler: (options) => createAgentAppFetchHandler({
+        ...options,
+        allowInsecureUnauthenticated: true,
+      }),
     });
 
     expect(cases.map((testCase) => testCase.name)).toEqual([
@@ -27,7 +30,10 @@ describe("agent app Fetch invocation conformance suite", () => {
     ]);
     await expect(
       runAgentAppFetchInvocationConformance({
-        createHandler: createAgentAppFetchHandler,
+        createHandler: (options) => createAgentAppFetchHandler({
+          ...options,
+          allowInsecureUnauthenticated: true,
+        }),
       }),
     ).resolves.toBeUndefined();
   });
@@ -38,7 +44,10 @@ describe("agent app Fetch invocation conformance suite", () => {
         createHandler: (options) => {
           const { workspaceStore, ...delegatedOptions } = options;
           void workspaceStore;
-          return createAgentAppFetchHandler(delegatedOptions);
+          return createAgentAppFetchHandler({
+            ...delegatedOptions,
+            allowInsecureUnauthenticated: true,
+          });
         },
       }),
     ).rejects.toThrow("expected supplied workspaceStore to be used");
@@ -59,7 +68,10 @@ describe("agent app Fetch invocation conformance suite", () => {
           void runtimeFactoryName;
           void runtimeFactoryPlan;
           void runtimeFactoryModuleMap;
-          return createAgentAppFetchHandler(delegatedOptions);
+          return createAgentAppFetchHandler({
+            ...delegatedOptions,
+            allowInsecureUnauthenticated: true,
+          });
         },
       }),
     ).rejects.toThrow("expected explicit runtimeFactory to be used");

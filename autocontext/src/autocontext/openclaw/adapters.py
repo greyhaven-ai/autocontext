@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from autocontext.offline import require_endpoint_available, require_runtime_available
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
 from autocontext.security.outbound_url import (
     DEFAULT_JSON_MAX_RESPONSE_BYTES,
     OutboundUrlPolicy,
@@ -44,14 +45,16 @@ class OpenClawRequest:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> str:
-        return json.dumps({
-            "task_prompt": self.task_prompt,
-            "system_prompt": self.system_prompt,
-            "context": self.context,
-            "schema": self.schema,
-            "timeout": self.timeout,
-            "metadata": self.metadata,
-        })
+        return json.dumps(
+            {
+                "task_prompt": self.task_prompt,
+                "system_prompt": self.system_prompt,
+                "context": self.context,
+                "schema": self.schema,
+                "timeout": self.timeout,
+                "metadata": self.metadata,
+            }
+        )
 
 
 @dataclass(slots=True)
@@ -220,6 +223,7 @@ class CLIOpenClawAdapter(OpenClawAdapter):
         try:
             result = subprocess.run(
                 args,
+                env=child_process_env_without_control_plane_secrets(),
                 input=request.to_json(),
                 capture_output=True,
                 text=True,

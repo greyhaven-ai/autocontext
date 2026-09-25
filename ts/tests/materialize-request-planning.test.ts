@@ -30,4 +30,18 @@ describe("materialize request planning", () => {
     expect(healSpec).toHaveBeenCalledWith({ taskPrompt: "Draft poem" }, "agent_task");
     expect(getScenarioTypeMarker).toHaveBeenCalledWith("agent_task");
   });
+
+  it("rejects traversal names before planning a materialization path", () => {
+    const healSpec = vi.fn(() => ({}));
+    expect(() => planMaterializeScenarioRequest({
+      family: "agent_task",
+      name: "../escaped",
+      spec: {},
+      knowledgeRoot: "/tmp/knowledge",
+      coerceMaterializeFamily: (): ScenarioFamilyName => "agent_task",
+      healSpec,
+      getScenarioTypeMarker: () => "agent_task",
+    })).toThrow(/safe scenario identifier/);
+    expect(healSpec).not.toHaveBeenCalled();
+  });
 });

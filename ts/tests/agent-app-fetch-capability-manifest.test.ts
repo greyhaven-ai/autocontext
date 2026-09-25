@@ -48,6 +48,11 @@ describe("agent app Fetch host capability manifest", () => {
         },
       ],
       acceptedHostCapabilities: [
+        "authToken",
+        "authCredentials",
+        "authenticator",
+        "allowedOrigins",
+        "allowInsecureUnauthenticated",
         "env",
         "runtime",
         "runtimeFactory",

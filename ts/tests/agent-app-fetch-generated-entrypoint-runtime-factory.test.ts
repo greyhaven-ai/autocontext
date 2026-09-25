@@ -40,7 +40,10 @@ const PROVIDER_OR_HOSTED_BOUNDARY_TERMS =
 describe("generated Fetch entrypoint runtime factory integration", () => {
   it("selects a bundled named runtime factory lazily through generated entrypoints", async () => {
     const { generated, state } = createGeneratedEntrypointSmoke("named-lazy");
-    const handler = generated.createAgentAppFetchEntrypoint({ runtimeFactoryName: "bundled" });
+    const handler = generated.createAgentAppFetchEntrypoint({
+      runtimeFactoryName: "bundled",
+      allowInsecureUnauthenticated: true,
+    });
 
     expect(state).toMatchObject({
       agentModuleLoads: 0,
@@ -69,6 +72,7 @@ describe("generated Fetch entrypoint runtime factory integration", () => {
     const handler = generated.createAgentAppFetchEntrypoint({
       runtime: createRuntime("direct"),
       runtimeFactoryName: "bundled",
+      allowInsecureUnauthenticated: true,
     });
 
     await expect(invokePrompt(handler, "direct-runtime-run", "hello")).resolves.toMatchObject({
@@ -82,6 +86,7 @@ describe("generated Fetch entrypoint runtime factory integration", () => {
     const { generated, state } = createGeneratedEntrypointSmoke("direct-factory");
     const calls = { directFactory: 0 };
     const handler = generated.createAgentAppFetchEntrypoint({
+      allowInsecureUnauthenticated: true,
       runtimeFactory: () => {
         calls.directFactory += 1;
         return createRuntime("direct-factory");

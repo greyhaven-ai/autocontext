@@ -84,6 +84,7 @@ describe("agent app Fetch catalog planner", () => {
       },
     });
     const handler = createAgentAppFetchHandler({
+      allowInsecureUnauthenticated: true,
       env: { SUPPORT_TOKEN: "explicit-token" },
       catalog,
     });

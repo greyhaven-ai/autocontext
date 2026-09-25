@@ -109,6 +109,7 @@ export async function cmdTui(dbPath: string): Promise<void> {
       port: { type: "string", default: "8000" },
       connect: { type: "string" },
       headless: { type: "boolean" },
+      admin: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -127,7 +128,14 @@ export async function cmdTui(dbPath: string): Promise<void> {
   const { resolveServerAuthToken } = await import("../../server/server-auth.js");
   const { loadSettings } = await import("../../config/index.js");
   const settings = loadSettings();
-  const serverAuthToken = resolveServerAuthToken();
+  let serverAuthToken = resolveServerAuthToken();
+  if (!plan.connect && serverAuthToken === null) {
+    const { randomBytes } = await import("node:crypto");
+    // The embedded local server and TUI share this process-only key. It is not
+    // exported to the environment or persisted, so child agent CLIs cannot
+    // reuse the operator's control-plane authority.
+    serverAuthToken = randomBytes(32).toString("hex");
+  }
   let mgr: InstanceType<typeof RunManager> | null = null;
   if (!plan.connect) {
     const { resolveProviderConfig } = await import("../../providers/index.js");
@@ -144,7 +152,9 @@ export async function cmdTui(dbPath: string): Promise<void> {
       model: providerConfig.model,
     });
   }
-  const server = mgr ? new InteractiveServer({ runManager: mgr, port: plan.port }) : null;
+  const server = mgr
+    ? new InteractiveServer({ runManager: mgr, port: plan.port, authToken: serverAuthToken ?? undefined })
+    : null;
   if (server) await server.start();
   const endpoint = plan.connect ?? server!.url;
 
@@ -179,6 +189,9 @@ export async function cmdTui(dbPath: string): Promise<void> {
     mkdirSync(logDirectory, { recursive: true });
     const session = new TuiSession(new WebSocketTuiTransport(endpoint, {
       authToken: serverAuthToken,
+      authCapabilities: plan.admin
+        ? ["content:read", "control:admin", "host:execute"]
+        : ["content:read", "control:operate", "host:execute"],
     }));
     const app = startInteractiveTui({
       session,

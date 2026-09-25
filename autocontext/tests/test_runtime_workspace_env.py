@@ -132,6 +132,25 @@ def test_local_workspace_fallback_shell_accepts_explicit_env(tmp_path: Path) -> 
     assert result.exit_code == 0
 
 
+def test_local_workspace_never_grants_control_plane_credentials(tmp_path: Path) -> None:
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    code = "import os; print(os.environ.get('EXPLICIT_VALUE', '') + ':' + os.environ.get('AUTOCONTEXT_SERVER_TOKEN', ''), end='')"
+
+    result = env.exec(
+        f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}",
+        options=RuntimeExecOptions(
+            env={
+                "EXPLICIT_VALUE": "allowed",
+                "AUTOCONTEXT_SERVER_TOKEN": "must-not-cross-boundary",
+            }
+        ),
+    )
+
+    assert result.stdout == "allowed:"
+    assert result.exit_code == 0
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups are required")
 def test_local_workspace_kills_term_resistant_descendants_on_timeout(tmp_path: Path) -> None:
     env = create_local_workspace_env(root=tmp_path, cwd="/repo")

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,7 @@ class CodexCLIRuntime(AgentRuntime):
                 capture_output=True,
                 text=True,
                 timeout=self._config.timeout,
+                env=child_process_env_without_control_plane_secrets(),
             )
         except subprocess.TimeoutExpired:
             logger.error("codex exec timed out after %.0fs", self._config.timeout)

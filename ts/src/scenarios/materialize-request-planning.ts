@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { assertSafeScenarioId } from "../knowledge/scenario-id.js";
 import type { ScenarioFamilyName } from "./families.js";
 
 export interface MaterializeRequestPlanningResult {
@@ -18,13 +19,14 @@ export function planMaterializeScenarioRequest(opts: {
   healSpec: (spec: Record<string, unknown>, family: string) => Record<string, unknown>;
   getScenarioTypeMarker: (family: ScenarioFamilyName) => string;
 }): MaterializeRequestPlanningResult {
+  const safeName = assertSafeScenarioId(opts.name, "scenario name");
   const family = opts.coerceMaterializeFamily(opts.family);
   const healedSpec = opts.healSpec(opts.spec, family);
 
   return {
     family,
     healedSpec,
-    scenarioDir: join(opts.knowledgeRoot, "_custom_scenarios", opts.name),
+    scenarioDir: join(opts.knowledgeRoot, "_custom_scenarios", safeName),
     scenarioType: opts.getScenarioTypeMarker(family),
   };
 }

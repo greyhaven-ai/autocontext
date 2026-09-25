@@ -1,6 +1,11 @@
 import WebSocket from "ws";
 
-import { serverAuthSubprotocol } from "../server/server-auth.js";
+import {
+  serverAuthSubprotocolFromProof,
+  ServerCredentialSigner,
+  type ServerCapability,
+  type ServerRequestSigner,
+} from "../server/server-auth.js";
 import {
   TRANSCRIPT_PROTOCOL_QUERY_PARAM,
   TRANSCRIPT_PROTOCOL_QUERY_VALUE,
@@ -27,7 +32,12 @@ export interface TuiTransport {
 export interface WebSocketTuiTransportOptions {
   readonly reconnectBaseMs?: number;
   readonly reconnectMaxMs?: number;
+  /** Backward-compatible HMAC secret for the implicit environment key. */
   readonly authToken?: string | null;
+  /** Capability-aware signer for an explicitly configured key. */
+  readonly authSigner?: ServerRequestSigner | null;
+  /** Explicit proof scope; provider administration is excluded by default. */
+  readonly authCapabilities?: readonly ServerCapability[];
   readonly createSocket?: (url: string, protocols?: string | string[]) => WebSocket;
 }
 
@@ -35,7 +45,8 @@ export class WebSocketTuiTransport implements TuiTransport {
   readonly endpoint: string;
   readonly #reconnectBaseMs: number;
   readonly #reconnectMaxMs: number;
-  readonly #authProtocol: string | null;
+  readonly #authSigner: ServerRequestSigner | null;
+  readonly #authCapabilities: readonly ServerCapability[];
   readonly #createSocket: (url: string, protocols?: string | string[]) => WebSocket;
   readonly #messageListeners = new Set<(message: ServerMessage) => void>();
   readonly #connectionListeners = new Set<(event: TuiTransportConnectionEvent) => void>();
@@ -52,7 +63,14 @@ export class WebSocketTuiTransport implements TuiTransport {
     this.endpoint = normalizedEndpoint;
     this.#reconnectBaseMs = options.reconnectBaseMs ?? 250;
     this.#reconnectMaxMs = options.reconnectMaxMs ?? 5_000;
-    this.#authProtocol = options.authToken ? serverAuthSubprotocol(options.authToken) : null;
+    if (options.authToken && options.authSigner) {
+      throw new Error("configure either authToken or authSigner, not both");
+    }
+    this.#authSigner = options.authSigner
+      ?? (options.authToken ? new ServerCredentialSigner(options.authToken) : null);
+    this.#authCapabilities = options.authCapabilities
+      ? [...options.authCapabilities]
+      : ["content:read", "control:operate", "host:execute"];
     this.#createSocket = options.createSocket ?? ((url, protocols) =>
       protocols === undefined ? new WebSocket(url) : new WebSocket(url, protocols));
   }
@@ -123,7 +141,15 @@ export class WebSocketTuiTransport implements TuiTransport {
     });
     let socket: WebSocket;
     try {
-      socket = this.#createSocket(this.endpoint, this.#authProtocol ?? undefined);
+      const endpoint = new URL(this.endpoint);
+      const authProtocol = this.#authSigner === null
+        ? undefined
+        : serverAuthSubprotocolFromProof(this.#authSigner.signRequest({
+            method: "GET",
+            target: `${endpoint.pathname}${endpoint.search}`,
+            capabilities: this.#authCapabilities,
+          }));
+      socket = this.#createSocket(this.endpoint, authProtocol);
     } catch (error) {
       this.#handleOpenFailure(error);
       return;

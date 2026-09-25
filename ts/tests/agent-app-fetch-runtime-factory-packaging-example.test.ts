@@ -78,7 +78,10 @@ describe("generated Fetch runtime-factory packaging example", () => {
 
   it("selects bundled runtimeFactoryName lazily through the generated entrypoint", async () => {
     const { generated, state } = createRuntimeFactoryPackagingSmoke("named-lazy");
-    const handler = generated.createAgentAppFetchEntrypoint({ runtimeFactoryName: "standard" });
+    const handler = generated.createAgentAppFetchEntrypoint({
+      runtimeFactoryName: "standard",
+      allowInsecureUnauthenticated: true,
+    });
 
     expect(state).toEqual({ agentModuleLoads: 0, runtimeModuleLoads: 0, runtimeFactoryCalls: 0 });
     await expect(invokePrompt(handler, "named-run", "hello")).resolves.toMatchObject({
@@ -95,6 +98,7 @@ describe("generated Fetch runtime-factory packaging example", () => {
     const directRuntimeHandler = directRuntimeSmoke.generated.createAgentAppFetchEntrypoint({
       runtime: createRuntime("direct"),
       runtimeFactoryName: "standard",
+      allowInsecureUnauthenticated: true,
     });
 
     await expect(
@@ -108,6 +112,7 @@ describe("generated Fetch runtime-factory packaging example", () => {
     const directFactorySmoke = createRuntimeFactoryPackagingSmoke("direct-factory");
     const calls = { directFactory: 0 };
     const directFactoryHandler = directFactorySmoke.generated.createAgentAppFetchEntrypoint({
+      allowInsecureUnauthenticated: true,
       runtimeFactory: () => {
         calls.directFactory += 1;
         return createRuntime("direct-factory");

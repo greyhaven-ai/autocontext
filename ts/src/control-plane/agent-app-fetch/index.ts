@@ -18,9 +18,17 @@ import type {
   RuntimeToolGrant,
   RuntimeWorkspaceEnv,
 } from "../../runtimes/workspace-env.js";
+import { isControlPlaneSecretEnvKey } from "../../security/child-process-env.js";
 import type { RuntimeSession, RuntimeSessionPromptResult } from "../../session/runtime-session.js";
 import type { RuntimeSessionEventStore } from "../../session/runtime-events.js";
 import type { RuntimeSessionEventSink } from "../../session/runtime-session-notifications.js";
+import {
+  isExplicitlyAllowedServerOrigin,
+  resolveServerAllowedOrigins,
+  ServerAuthenticator,
+  type ServerCapability,
+  type ServerCredentialConfig,
+} from "../../server/server-auth.js";
 import {
   createAgentAppFetchLazyRuntime,
   createAgentAppFetchRuntimeFactoryFromModuleMap,
@@ -60,6 +68,16 @@ export interface StaticAgentAppCatalogEntry<Payload = unknown, Result = unknown>
 
 export interface AgentAppFetchHandlerOptions<Payload = unknown, Result = unknown> {
   catalog: readonly AgentAppFetchCatalogEntry<Payload, Result>[];
+  /** HMAC secret used to verify short-lived request proofs. Never exposed to agents. */
+  authToken?: string;
+  /** Server-owned principals and capability ceilings accepted by this handler. */
+  authCredentials?: readonly ServerCredentialConfig[];
+  /** A persistent verifier supplied by wrappers that call handleAgentAppFetchRequest directly. */
+  authenticator?: ServerAuthenticator;
+  /** Exact browser origins allowed to call this handler. Browser origins are denied by default. */
+  allowedOrigins?: readonly string[];
+  /** Explicit test/local escape hatch. Fetch deployments cannot infer a safe loopback peer. */
+  allowInsecureUnauthenticated?: boolean;
   env?: Record<string, string | undefined>;
   workspace?: RuntimeWorkspaceEnv;
   workspaceStore?: AgentAppFetchWorkspaceStore;
@@ -122,6 +140,12 @@ type FetchAgentContextOptions<Payload> = AgentAppFetchHandlerOptions<Payload> & 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
+interface AgentAppFetchSecurity {
+  authenticator: ServerAuthenticator;
+  allowedOrigins: ReadonlySet<string>;
+  allowInsecureUnauthenticated: boolean;
+}
+
 export function createStaticAgentAppCatalog<Payload = unknown, Result = unknown>(
   entries: readonly StaticAgentAppCatalogEntry<Payload, Result>[],
 ): AgentAppFetchCatalogEntry<Payload, Result>[] {
@@ -132,10 +156,11 @@ export function createAgentAppFetchHandler<Payload = unknown, Result = unknown>(
   options: AgentAppFetchHandlerOptions<Payload, Result>,
 ): (request: Request) => Promise<Response> {
   const catalog = [...options.catalog];
-  const env = definedStringRecord(options.env ?? {});
+  const env = definedStringRecordWithoutControlPlaneSecrets(options.env ?? {});
   const runtime = resolveAgentAppFetchRuntime(options);
+  const security = resolveAgentAppFetchSecurity(options, true);
   return async (request) =>
-    handleAgentAppFetchRequest(request, {
+    handleAgentAppFetchRequestWithSecurity(request, {
       ...options,
       catalog,
       env,
@@ -145,7 +170,7 @@ export function createAgentAppFetchHandler<Payload = unknown, Result = unknown>(
         createAgentAppFetchWorkspaceEnv({
           store: options.workspaceStore ?? createInMemoryAgentAppFetchWorkspaceStore(),
         }),
-    });
+    }, security);
 }
 
 export async function handleAgentAppFetchRequest<Payload = unknown, Result = unknown>(
@@ -155,21 +180,77 @@ export async function handleAgentAppFetchRequest<Payload = unknown, Result = unk
     workspace: RuntimeWorkspaceEnv;
   },
 ): Promise<Response> {
-  const sessionEventBridge = options.sessionEventStore
-    ? createAgentAppFetchSessionEventStoreBridge(options.sessionEventStore)
-    : undefined;
-  const effectiveEventStore = (options.eventStore ?? sessionEventBridge?.eventStore) as
-    | RuntimeSessionEventStore
+  return handleAgentAppFetchRequestWithSecurity(
+    request,
+    {
+      ...options,
+      env: definedStringRecordWithoutControlPlaneSecrets(options.env),
+    },
+    resolveAgentAppFetchSecurity(options, false),
+  );
+}
+
+async function handleAgentAppFetchRequestWithSecurity<Payload = unknown, Result = unknown>(
+  request: Request,
+  options: AgentAppFetchHandlerOptions<Payload, Result> & {
+    env: AutoctxAgentEnv;
+    workspace: RuntimeWorkspaceEnv;
+  },
+  security: AgentAppFetchSecurity,
+): Promise<Response> {
+  let sessionEventBridge:
+    | ReturnType<typeof createAgentAppFetchSessionEventStoreBridge>
     | undefined;
-  const effectiveOptions = {
-    ...options,
-    eventStore: effectiveEventStore,
-  };
+  const origin = request.headers.get("origin");
 
   try {
     const url = new URL(request.url);
+    if (
+      origin !== null
+      && !isExplicitlyAllowedServerOrigin(origin, security.allowedOrigins)
+    ) {
+      return agentAppFetchJsonResponse(403, {
+        ok: false,
+        error: { code: "AUTOCTX_AGENT_FORBIDDEN_ORIGIN", message: "Forbidden origin" },
+      } satisfies AgentAppFetchErrorEnvelope);
+    }
+    if (request.method === "OPTIONS" && isAgentAppFetchRoutePath(url.pathname)) {
+      return agentAppFetchEmptyResponse(204, origin);
+    }
+
+    const requiredCapabilities = requiredAgentAppFetchRouteCapabilities(
+      request.method,
+      url.pathname,
+    );
+    if (requiredCapabilities !== null) {
+      if (!security.authenticator.authenticationRequired && !security.allowInsecureUnauthenticated) {
+        return agentAppFetchAuthenticationError(401, origin);
+      }
+      const authentication = security.authenticator.authenticateRequest({
+        method: request.method,
+        target: `${url.pathname}${url.search}`,
+        origin: origin ?? "",
+        capabilities: requiredCapabilities,
+        authorizationHeader: request.headers.get("authorization") ?? undefined,
+      });
+      if (!authentication.ok) {
+        return agentAppFetchAuthenticationError(authentication.status, origin);
+      }
+    }
+
+    sessionEventBridge = options.sessionEventStore
+      ? createAgentAppFetchSessionEventStoreBridge(options.sessionEventStore)
+      : undefined;
+    const effectiveEventStore = (options.eventStore ?? sessionEventBridge?.eventStore) as
+      | RuntimeSessionEventStore
+      | undefined;
+    const effectiveOptions = {
+      ...options,
+      eventStore: effectiveEventStore,
+    };
+
     if (request.method === "GET" && (url.pathname === "/manifest" || url.pathname === "/agents")) {
-      return jsonResponse(200, buildManifest(effectiveOptions.catalog));
+      return agentAppFetchJsonResponse(200, buildManifest(effectiveOptions.catalog), origin);
     }
 
     const match = /^\/agents\/([^/]+)\/invoke$/.exec(url.pathname);
@@ -177,12 +258,17 @@ export async function handleAgentAppFetchRequest<Payload = unknown, Result = unk
       const agentName = decodeURIComponent(match[1]!);
       const entry = resolveCatalogEntry(effectiveOptions.catalog, agentName);
       if (!entry) {
-        return jsonResponse(404, renderAgentNotFound(agentName, effectiveOptions.catalog));
+        return agentAppFetchJsonResponse(
+          404,
+          renderAgentNotFound(agentName, effectiveOptions.catalog),
+          origin,
+        );
       }
       const body = await readJsonRequestBody(
         request,
         effectiveOptions.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
       );
+      clearAmbientControlPlaneSecrets();
       const loaded = await loadCatalogEntry(entry);
       const id = readOptionalString(body.id) ?? "default";
       const payload = ("payload" in body ? body.payload : {}) as Payload;
@@ -195,50 +281,108 @@ export async function handleAgentAppFetchRequest<Payload = unknown, Result = unk
         }),
       );
       await sessionEventBridge?.flush();
-      return jsonResponse(200, {
+      return agentAppFetchJsonResponse(200, {
         ok: true,
         agent: loaded.name,
         id,
         result,
-      } satisfies AgentAppFetchSuccessEnvelope);
+      } satisfies AgentAppFetchSuccessEnvelope, origin);
     }
 
-    return jsonResponse(404, {
+    return agentAppFetchJsonResponse(404, {
       ok: false,
       error: {
         code: "AUTOCTX_AGENT_NOT_FOUND",
         message: `No Fetch agent app route for ${request.method} ${url.pathname}`,
       },
-    } satisfies AgentAppFetchErrorEnvelope);
+    } satisfies AgentAppFetchErrorEnvelope, origin);
   } catch (error) {
     try {
       await sessionEventBridge?.flush();
     } catch (flushError) {
-      return jsonResponse(500, {
+      return agentAppFetchJsonResponse(500, {
         ok: false,
         error: {
           code: "AUTOCTX_AGENT_APP_SESSION_EVENT_STORE_ERROR",
           message: flushError instanceof Error ? flushError.message : String(flushError),
         },
-      } satisfies AgentAppFetchErrorEnvelope);
+      } satisfies AgentAppFetchErrorEnvelope, origin);
     }
     if (error instanceof AgentAppFetchRequestError) {
-      return jsonResponse(error.statusCode, {
+      return agentAppFetchJsonResponse(error.statusCode, {
         ok: false,
         error: {
           code: error.code,
           message: error.message,
         },
-      } satisfies AgentAppFetchErrorEnvelope);
+      } satisfies AgentAppFetchErrorEnvelope, origin);
     }
-    return jsonResponse(500, {
+    return agentAppFetchJsonResponse(500, {
       ok: false,
       error: {
         code: "AUTOCTX_AGENT_APP_ERROR",
         message: error instanceof Error ? error.message : String(error),
       },
-    } satisfies AgentAppFetchErrorEnvelope);
+    } satisfies AgentAppFetchErrorEnvelope, origin);
   }
+}
+
+function resolveAgentAppFetchSecurity<Payload, Result>(
+  options: AgentAppFetchHandlerOptions<Payload, Result>,
+  mayConstructAuthenticator: boolean,
+): AgentAppFetchSecurity {
+  if (
+    options.authenticator
+    && (options.authToken !== undefined || options.authCredentials !== undefined)
+  ) {
+    throw new Error(
+      "agent app Fetch authentication must use either authenticator or credential options",
+    );
+  }
+  if (
+    !mayConstructAuthenticator
+    && !options.authenticator
+    && (options.authToken !== undefined || options.authCredentials !== undefined)
+  ) {
+    throw new Error(
+      "handleAgentAppFetchRequest requires a persistent authenticator; use createAgentAppFetchHandler for credential options",
+    );
+  }
+  const authenticator = options.authenticator ?? new ServerAuthenticator({
+    authToken: mayConstructAuthenticator ? (options.authToken ?? null) : null,
+    credentials: mayConstructAuthenticator ? options.authCredentials : undefined,
+  });
+  const allowedOrigins = resolveServerAllowedOrigins(options.allowedOrigins ?? []);
+  if (!authenticator.authenticationRequired && allowedOrigins.size > 0) {
+    throw new Error(
+      "agent app Fetch browser origins require configured authentication",
+    );
+  }
+  return {
+    authenticator,
+    // Passing [] deliberately prevents Fetch runtimes from consulting ambient host configuration.
+    allowedOrigins,
+    allowInsecureUnauthenticated: options.allowInsecureUnauthenticated === true,
+  };
+}
+
+function requiredAgentAppFetchRouteCapabilities(
+  method: string,
+  pathname: string,
+): readonly ServerCapability[] | null {
+  if (method === "GET" && (pathname === "/manifest" || pathname === "/agents")) {
+    return ["control:read"];
+  }
+  if (method === "POST" && /^\/agents\/[^/]+\/invoke$/.test(pathname)) {
+    return ["content:read", "control:operate", "host:execute"];
+  }
+  return null;
+}
+
+function isAgentAppFetchRoutePath(pathname: string): boolean {
+  return pathname === "/manifest"
+    || pathname === "/agents"
+    || /^\/agents\/[^/]+\/invoke$/.test(pathname);
 }
 
 function resolveAgentAppFetchRuntime<Payload, Result>(
@@ -577,19 +721,70 @@ function requestTooLargeError(): AgentAppFetchRequestError {
   );
 }
 
-function jsonResponse(status: number, body: unknown): Response {
+function agentAppFetchAuthenticationError(
+  status: 401 | 403,
+  origin: string | null,
+): Response {
+  const headers = agentAppFetchResponseHeaders(origin);
+  if (status === 401) headers.set("www-authenticate", 'Bearer realm="autocontext"');
+  return agentAppFetchJsonResponse(status, {
+    ok: false,
+    error: {
+      code: status === 401 ? "AUTOCTX_AGENT_UNAUTHORIZED" : "AUTOCTX_AGENT_FORBIDDEN",
+      message: status === 401 ? "Unauthorized" : "Forbidden",
+    },
+  } satisfies AgentAppFetchErrorEnvelope, origin, headers);
+}
+
+function agentAppFetchJsonResponse(
+  status: number,
+  body: unknown,
+  origin: string | null = null,
+  headers = agentAppFetchResponseHeaders(origin),
+): Response {
   return new Response(`${JSON.stringify(body, null, 2)}\n`, {
     status,
-    headers: JSON_HEADERS,
+    headers,
   });
 }
 
-function definedStringRecord(values: Record<string, string | undefined>): Record<string, string> {
+function agentAppFetchEmptyResponse(status: number, origin: string | null): Response {
+  return new Response(null, {
+    status,
+    headers: agentAppFetchResponseHeaders(origin),
+  });
+}
+
+function agentAppFetchResponseHeaders(origin: string | null): Headers {
+  const headers = new Headers(JSON_HEADERS);
+  if (origin !== null) {
+    headers.set("access-control-allow-origin", origin);
+    headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
+    headers.set("access-control-allow-headers", "Authorization, Content-Type");
+    headers.set("vary", "Origin");
+  }
+  return headers;
+}
+
+function definedStringRecordWithoutControlPlaneSecrets(
+  values: Record<string, string | undefined>,
+): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined) result[key] = value;
+    if (value !== undefined && !isControlPlaneSecretEnvKey(key)) {
+      result[key] = value;
+    }
   }
   return result;
+}
+
+function clearAmbientControlPlaneSecrets(): void {
+  const ambientProcess: unknown = Reflect.get(globalThis, "process");
+  if (!isRecord(ambientProcess) || !isRecord(ambientProcess.env)) return;
+  const environment = ambientProcess.env;
+  for (const key of Object.keys(environment)) {
+    if (isControlPlaneSecretEnvKey(key)) delete environment[key];
+  }
 }
 
 function cloneRecord(

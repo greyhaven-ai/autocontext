@@ -27,19 +27,6 @@ def resolve_scenario_class(name: str, knowledge_root: Path) -> ScenarioFactory |
     return SCENARIO_REGISTRY.get(name)
 
 
-def _load_persisted_custom_scenarios() -> None:
-    knowledge_root = Path("knowledge")
-    if knowledge_root.is_dir():
-        # Populate the registry once for the conventional root. Callers using a
-        # configured root resolve through ``resolve_scenario_class`` instead.
-        from autocontext.scenarios.custom.registry import load_all_custom_scenarios
-
-        SCENARIO_REGISTRY.update(load_all_custom_scenarios(knowledge_root))
-
-
-_load_persisted_custom_scenarios()
-
-
 def get_registered_scenario_family(name: str) -> ScenarioFamily:
     """Return the registered family metadata for a scenario name."""
     cls = SCENARIO_REGISTRY[name]

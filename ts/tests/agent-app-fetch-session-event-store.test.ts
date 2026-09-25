@@ -22,6 +22,7 @@ describe("agent app Fetch session event-store contract", () => {
   it("records and replays runtime-session events through an explicit edge-safe store", async () => {
     const sessionEventStore = createInMemoryAgentAppFetchSessionEventStore();
     const handler = createAgentAppFetchHandler({
+      allowInsecureUnauthenticated: true,
       sessionEventStore,
       runtime: {
         name: "edge-test-runtime",
@@ -83,6 +84,7 @@ describe("agent app Fetch session event-store contract", () => {
   it("exposes in-request child logs through the Fetch bridge before flush", async () => {
     const sessionEventStore = createInMemoryAgentAppFetchSessionEventStore();
     const handler = createAgentAppFetchHandler({
+      allowInsecureUnauthenticated: true,
       sessionEventStore,
       catalog: createStaticAgentAppCatalog([
         {

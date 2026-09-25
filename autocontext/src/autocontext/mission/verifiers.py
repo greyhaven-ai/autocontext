@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from autocontext.mission.types import Mission, MissionBudget, VerifierResult
+from autocontext.security.child_process_env import child_process_env_without_control_plane_secrets
 
 if TYPE_CHECKING:
     from autocontext.mission.manager import MissionManager
@@ -70,6 +71,7 @@ class CommandVerifier:
             proc = subprocess.run(
                 ["/bin/sh", "-c", self._command],
                 cwd=self._cwd,
+                env=child_process_env_without_control_plane_secrets(),
                 capture_output=True,
                 text=True,
                 timeout=_COMMAND_TIMEOUT_SECONDS,

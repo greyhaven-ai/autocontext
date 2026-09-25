@@ -1,18 +1,21 @@
 export const TUI_HELP_TEXT = [
-  "autoctx tui [--port 8000] [--connect http://host:port] [--headless]",
+  "autoctx tui [--port 8000] [--connect http://host:port] [--headless] [--admin]",
   "Starts the pi-tui operator UI with a local server, or attaches to an existing autoctx serve endpoint.",
   "Set AUTOCONTEXT_SERVER_TOKEN for authenticated HTTP and WebSocket connections; credentials in endpoint URLs are rejected.",
+  "Use --admin only when login, logout, or provider switching is required.",
 ].join("\n");
 
 export interface TuiCommandValues {
   port?: string;
   headless?: boolean;
   connect?: string;
+  admin?: boolean;
 }
 
 export interface PlannedTuiCommand {
   port: number;
   headless: boolean;
+  admin: boolean;
   connect?: string;
 }
 
@@ -32,6 +35,7 @@ export function planTuiCommand(
   return {
     port,
     headless,
+    admin: values.admin === true,
     ...(connect ? { connect } : {}),
   };
 }

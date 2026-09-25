@@ -84,5 +84,10 @@ export function buildFetchConformanceHostWrapperExample(
 function createDefaultHostFetchHandler(
   options: AgentAppFetchHandlerOptions<Record<string, unknown>, unknown>,
 ): AgentAppFetchInvocationConformanceHandler {
-  return createAgentAppFetchHandler(options);
+  // Conformance cases intentionally issue unsigned synthetic requests. This
+  // escape hatch belongs only in this isolated test harness, never a host.
+  return createAgentAppFetchHandler({
+    ...options,
+    allowInsecureUnauthenticated: true,
+  });
 }

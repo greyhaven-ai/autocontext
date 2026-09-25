@@ -13,7 +13,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("AUTOCONTEXT_KNOWLEDGE_ROOT", str(tmp_path / "knowledge"))
     monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "runs.sqlite3"))
     monkeypatch.setenv("AUTOCONTEXT_AGENT_PROVIDER", "deterministic")
-    return TestClient(create_app())
+    return TestClient(create_app(allow_insecure_test_principal=True))
 
 
 def test_get_allows_local_gui_origin(client: TestClient) -> None:
@@ -38,7 +38,7 @@ def test_put_preflight_allows_tauri_origin(client: TestClient) -> None:
 
 def test_unknown_origin_gets_no_cors_headers(client: TestClient) -> None:
     response = client.get("/api/runs", headers={"Origin": "https://evil.example"})
-    assert response.status_code == 200
+    assert response.status_code == 403
     assert "access-control-allow-origin" not in response.headers
 
 
@@ -47,8 +47,9 @@ def test_origins_overridable_via_env(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "runs.sqlite3"))
     monkeypatch.setenv("AUTOCONTEXT_AGENT_PROVIDER", "deterministic")
     monkeypatch.setenv("AUTOCONTEXT_CORS_ORIGINS", "http://localhost:9999")
-    client = TestClient(create_app())
+    client = TestClient(create_app(allow_insecure_test_principal=True))
     allowed = client.get("/api/runs", headers={"Origin": "http://localhost:9999"})
     assert allowed.headers["access-control-allow-origin"] == "http://localhost:9999"
     default_gone = client.get("/api/runs", headers={"Origin": "http://localhost:1420"})
+    assert default_gone.status_code == 403
     assert "access-control-allow-origin" not in default_gone.headers
