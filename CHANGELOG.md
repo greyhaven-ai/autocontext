@@ -40,6 +40,26 @@ All notable changes to this project will be documented in this file.
   leave-one-out calibration reports cannot authorize automatic promotion.
   See [migration and runtime scope](autocontext/docs/judge-serving-identity.md).
 
+### Fixed
+
+- Python: with relative artifact roots (the default), per-generation run
+  artifacts (replays, `metrics.json`, `narrative.md` and, when enabled,
+  `consultation.md`, `exploration_collapse_guard.json` and Pi session traces)
+  and analytics traces no longer land at doubled paths such as
+  `runs/<run>/generations/gen_1/runs/<run>/generations/gen_1/metrics.json`,
+  including in MCP sandbox runs. The `artifact_write` hook path is now read in
+  the frame it is emitted in, as in the TypeScript runtime (AC-1033). In new
+  runs, replay (CLI, API and MCP), RLM context loading, trace-grounded weakness
+  reports and writeups, and `autoctx analytics trace-findings` and
+  `render-timeline` find these artifacts. Runs written by Python 0.4.7 through
+  0.18.0 keep them at the doubled paths, since this release does not move
+  existing files, and their weakness reports came from the fallback analyzer.
+  To move them back, see
+  [recovering doubled artifacts](autocontext/docs/recovering-doubled-artifacts.md).
+  Extensions that return a relative path expecting it to resolve next to the
+  original file must now derive it from the emitted path; see
+  [extensions](autocontext/docs/extensions.md).
+
 ## [Pi 0.11.0] - 2026-09-17
 
 The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This

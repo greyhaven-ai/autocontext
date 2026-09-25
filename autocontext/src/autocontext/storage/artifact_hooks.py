@@ -34,7 +34,9 @@ def emit_artifact_write(
         event_payload["heading"] = heading
     event = hook_bus.emit(HookEvents.ARTIFACT_WRITE, event_payload)
     event.raise_if_blocked()
-    next_path = _resolve_hook_path(path, event.payload.get("path", path))
+    # The payload path is in the caller's frame (relative to the working directory when the
+    # roots are relative), so a returned path is read in that same frame, as in the TS runtime.
+    next_path = Path(str(event.payload.get("path", path)))
     next_path = _validate_redirect(path, next_path, managed_roots)
     next_content = event.payload.get("content", content)
     next_payload = event.payload.get("payload", payload)
@@ -44,13 +46,6 @@ def emit_artifact_write(
     if next_payload is not None and not isinstance(next_payload, dict):
         next_payload = payload
     return next_path, next_content, next_payload, next_heading
-
-
-def _resolve_hook_path(original_path: Path, hook_path: Any) -> Path:
-    next_path = Path(str(hook_path))
-    if next_path.is_absolute():
-        return next_path
-    return original_path.parent / next_path
 
 
 def _validate_redirect(original_path: Path, next_path: Path, managed_roots: tuple[Path, ...]) -> Path:

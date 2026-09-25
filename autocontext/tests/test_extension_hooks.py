@@ -432,3 +432,79 @@ def test_artifact_write_hooks_cannot_redirect_outside_managed_root(tmp_path: Pat
         store.write_markdown(tmp_path / "knowledge" / "notes.md", "hello")
 
     assert not outside_path.exists()
+
+
+def _relative_root_artifact_store(hook_bus: Any) -> ArtifactStore:
+    """Mirror the default AppSettings, whose artifact roots are relative to the working directory."""
+    return ArtifactStore(
+        runs_root=Path("runs"),
+        knowledge_root=Path("knowledge"),
+        skills_root=Path("skills"),
+        claude_skills_path=Path(".claude") / "skills",
+        hook_bus=hook_bus,
+    )
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda store, path: store.write_json(path, {"score": 1}),
+        lambda store, path: store.write_markdown(path, "note"),
+        lambda store, path: store.append_markdown(path, "note", heading="Gen 1"),
+        lambda store, path: store.buffered_write_json(path, {"score": 1}),
+    ],
+    ids=["write_json", "write_markdown", "append_markdown", "buffered_write_json"],
+)
+def test_artifact_writes_keep_relative_paths_the_hook_left_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, write: Any
+) -> None:
+    from autocontext.extensions import HookBus
+
+    monkeypatch.chdir(tmp_path)
+    store = _relative_root_artifact_store(HookBus())
+
+    write(store, Path("runs") / "run_a" / "generations" / "gen_1" / "artifact.out")
+
+    gen_dir = tmp_path / "runs" / "run_a" / "generations" / "gen_1"
+    assert (gen_dir / "artifact.out").is_file()
+    assert not (gen_dir / "runs").exists()
+
+
+def test_artifact_write_hook_relative_rewrite_resolves_like_the_emitted_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autocontext.extensions import HookBus, HookEvents, HookResult
+
+    bus = HookBus()
+
+    def rename(event: Any) -> HookResult:
+        return HookResult(payload={"path": str(Path(event.payload["path"]).with_name("renamed.md"))})
+
+    bus.on(HookEvents.ARTIFACT_WRITE, rename)
+    monkeypatch.chdir(tmp_path)
+    store = _relative_root_artifact_store(bus)
+
+    store.write_markdown(Path("runs") / "run_a" / "generations" / "gen_1" / "narrative.md", "hello")
+
+    assert (tmp_path / "runs" / "run_a" / "generations" / "gen_1" / "renamed.md").read_text(encoding="utf-8") == "hello\n"
+
+
+def test_artifact_write_hook_relative_rewrite_outside_managed_root_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autocontext.extensions import HookBus, HookEvents, HookResult
+
+    bus = HookBus()
+
+    def redirect(event: Any) -> HookResult:
+        return HookResult(payload={"path": "outside.md"})
+
+    bus.on(HookEvents.ARTIFACT_WRITE, redirect)
+    monkeypatch.chdir(tmp_path)
+    store = _relative_root_artifact_store(bus)
+
+    with pytest.raises(RuntimeError, match="outside managed root"):
+        store.write_markdown(Path("runs") / "run_a" / "notes.md", "hello")
+
+    assert not (tmp_path / "outside.md").exists()
+    assert not (tmp_path / "runs" / "run_a" / "outside.md").exists()
