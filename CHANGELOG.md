@@ -61,16 +61,16 @@ All notable changes to this project will be documented in this file.
   [extensions](autocontext/docs/extensions.md).
 
 - `artifact_write` hooks can no longer move a write out of its managed root
-  through a symlink. Python picked the root after following symlinks, so a write
-  through a directory symlinked outside every root (for example
+  through a symlink (AC-1038). Python picked the root after following symlinks,
+  so a write through a directory symlinked outside every root (for example
   `knowledge/grid_ctf -> ../shared/grid_ctf`) had no root and a rewritten path
   went unchecked. TypeScript checked rewritten paths without following symlinks,
-  so `runs/<run>/escape/x.md` passed when `escape` pointed outside. Both runtimes
-  now pick the root from the path as written, check a changed path with symlinks
-  followed, and reject a changed path for a write outside every managed root.
-  Unchanged paths still write through such symlinks. A hook that renamed files
-  inside a symlinked directory that leads outside the roots is now rejected; see
-  [extensions](autocontext/docs/extensions.md).
+  so `runs/<run>/escape/x.md` passed when `escape` pointed outside. Both
+  runtimes now pick the root from the path as written, check a changed path with
+  symlinks followed, and reject a changed path for a write outside every managed
+  root. Unchanged paths still write through such symlinks. A hook that renamed
+  files inside a symlinked directory that leads outside the roots is now
+  rejected; see [extensions](autocontext/docs/extensions.md).
 
 ## [Pi 0.11.0] - 2026-09-17
 
