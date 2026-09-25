@@ -40,6 +40,17 @@ All notable changes to this project will be documented in this file.
   leave-one-out calibration reports cannot authorize automatic promotion.
   See [migration and runtime scope](autocontext/docs/judge-serving-identity.md).
 
+### Fixed
+
+- Python and TypeScript: starting several processes against the same new SQLite
+  database (for example `autoctx serve` alongside an MCP server or task runner)
+  no longer fails with `UNIQUE constraint failed` on the migration ledger or
+  `database is locked` while switching to WAL. Each pending migration now
+  applies under the write lock after re-reading the ledger, and the WAL
+  conversion is retried until the busy timeout. Importing
+  `autocontext.server.app` no longer migrates the default database; the
+  module-level `app` is built on first access.
+
 ## [Pi 0.11.0] - 2026-09-17
 
 The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This
