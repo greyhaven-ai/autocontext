@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import closing, contextmanager
 from pathlib import Path
@@ -18,8 +19,23 @@ from autocontext.storage.sqlite_store_notebooks import SQLiteNotebookStoreMixin
 from autocontext.storage.sqlite_store_task_queue import SQLiteTaskQueueStoreMixin
 
 SQLITE_BUSY_TIMEOUT_MS = 5_000
+_WAL_RETRY_INTERVAL_S = 0.05
 AgentOutputBatch = tuple[str, str]
 AgentRoleMetricBatch = tuple[str, str, int, int, int, str, str]
+
+
+def _enable_wal(conn: sqlite3.Connection) -> None:
+    # Switching a fresh database to WAL upgrades a read lock to a write lock,
+    # and SQLite reports contention there without consulting busy_timeout.
+    deadline = time.monotonic() + SQLITE_BUSY_TIMEOUT_MS / 1000
+    while True:
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            return
+        except sqlite3.OperationalError as exc:
+            if "database is locked" not in str(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(_WAL_RETRY_INTERVAL_S)
 
 
 class SQLiteStore(
@@ -48,7 +64,7 @@ class SQLiteStore(
         try:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys=ON;")
-            conn.execute("PRAGMA journal_mode=WAL;")
+            _enable_wal(conn)
             conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS};")
         except BaseException:
             try:

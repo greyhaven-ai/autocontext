@@ -98,31 +98,44 @@ export function migrateDatabase(db: Database.Database, migrationsDir: string): v
   );
 
   const appliedTypescript = readAppliedSet(db, "SELECT filename FROM schema_version", "filename");
-  const appliedPython = readAppliedSet(db, "SELECT version FROM schema_migrations", "version");
-
-  const files = readdirSync(migrationsDir)
-    .filter((file) => file.endsWith(".sql"))
+  const pending = readdirSync(migrationsDir)
+    .filter((file) => file.endsWith(".sql") && !appliedTypescript.has(file))
     .sort();
 
-  for (const file of files) {
-    if (appliedTypescript.has(file)) {
-      continue;
+  if (pending.length === 0) {
+    return;
+  }
+
+  // PRAGMA foreign_keys is a no-op inside a transaction, so table rebuilds
+  // such as 013 need enforcement off before BEGIN or DROP TABLE cascades.
+  const foreignKeys = db.pragma("foreign_keys", { simple: true });
+  db.pragma("foreign_keys = OFF");
+  try {
+    for (const file of pending) {
+      db.transaction(() => applyPendingMigration(db, migrationsDir, file)).immediate();
     }
-    if (isCoveredByPythonLedger(file, appliedPython)) {
-      db.prepare("INSERT OR IGNORE INTO schema_version(filename) VALUES (?)").run(file);
-      appliedTypescript.add(file);
-      continue;
-    }
-    const sql = readFileSync(join(migrationsDir, file), "utf8");
-    db.exec(sql);
-    reconcilePythonBaselineSchema(db, file);
-    db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
-    appliedTypescript.add(file);
-    for (const pythonMigration of TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES[file] ?? []) {
-      db.prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)").run(
-        pythonMigration,
-      );
-      appliedPython.add(pythonMigration);
-    }
+  } finally {
+    db.pragma(`foreign_keys = ${foreignKeys ? "ON" : "OFF"}`);
+  }
+}
+
+function applyPendingMigration(db: Database.Database, migrationsDir: string, file: string): void {
+  // Another process may be migrating the same database. This runs under the
+  // write lock, so re-read both ledgers before applying the file.
+  const appliedTypescript = readAppliedSet(db, "SELECT filename FROM schema_version", "filename");
+  const appliedPython = readAppliedSet(db, "SELECT version FROM schema_migrations", "version");
+  if (appliedTypescript.has(file)) {
+    return;
+  }
+  if (isCoveredByPythonLedger(file, appliedPython)) {
+    db.prepare("INSERT OR IGNORE INTO schema_version(filename) VALUES (?)").run(file);
+    return;
+  }
+  const sql = readFileSync(join(migrationsDir, file), "utf8");
+  db.exec(sql);
+  reconcilePythonBaselineSchema(db, file);
+  db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
+  for (const pythonMigration of TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES[file] ?? []) {
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)").run(pythonMigration);
   }
 }

@@ -64,6 +64,30 @@ def _create_app(
     return app_module.create_app(controller=controller, events=events, run_manager=run_manager), settings
 
 
+def test_importing_app_module_does_not_migrate_default_database(tmp_path: Path) -> None:
+    db_path = tmp_path / "import-side-effect.sqlite3"
+    environment = dict(os.environ)
+    environment["AUTOCONTEXT_DB_PATH"] = str(db_path)
+    completed = subprocess.run(
+        [sys.executable, "-c", "import autocontext.server.app"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=environment,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert not db_path.exists()
+
+
+def test_module_level_app_is_built_once_on_first_access() -> None:
+    application = app_module.app
+
+    assert app_module.app is application
+    assert application.state.store.db_path == app_module.load_settings().db_path
+
+
 def test_importing_module_level_app_does_not_start_monitor_thread() -> None:
     environment = dict(os.environ)
     environment["AUTOCONTEXT_MONITOR_ENABLED"] = "true"
@@ -72,7 +96,7 @@ def test_importing_module_level_app_does_not_start_monitor_thread() -> None:
             sys.executable,
             "-c",
             (
-                "import json, threading; import autocontext.server.app; "
+                "import json, threading; from autocontext.server.app import app; "
                 "print(json.dumps([t.name for t in threading.enumerate()]))"
             ),
         ],

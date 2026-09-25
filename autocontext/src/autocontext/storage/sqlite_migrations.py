@@ -35,6 +35,10 @@ def _execute_migration_script(conn: sqlite3.Connection, script: str) -> None:
             raise
 
 
+def _applied_python_migrations(conn: sqlite3.Connection) -> set[str]:
+    return {row[0] for row in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+
+
 def apply_python_migration_files(conn: sqlite3.Connection, migrations_dir: Path) -> None:
     conn.execute(
         """
@@ -52,15 +56,25 @@ def apply_python_migration_files(conn: sqlite3.Connection, migrations_dir: Path)
         );
         """
     )
-    applied_python = {row[0] for row in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+    applied_python = _applied_python_migrations(conn)
     for migration in sorted(migrations_dir.glob("*.sql")):
         if migration.name in applied_python:
             continue
-        _execute_migration_script(conn, migration.read_text(encoding="utf-8"))
-        conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (migration.name,))
-        applied_python.add(migration.name)
-        for typescript_migration in typescript_baselines_for_python_migrations(applied_python):
-            conn.execute(
-                "INSERT OR IGNORE INTO schema_version(filename) VALUES (?)",
-                (typescript_migration,),
-            )
+        # Another process may be migrating the same database. Take the write
+        # lock first, then re-read the ledger so each version applies once.
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            applied_python = _applied_python_migrations(conn)
+            if migration.name not in applied_python:
+                _execute_migration_script(conn, migration.read_text(encoding="utf-8"))
+                conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (migration.name,))
+                applied_python.add(migration.name)
+                for typescript_migration in typescript_baselines_for_python_migrations(applied_python):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO schema_version(filename) VALUES (?)",
+                        (typescript_migration,),
+                    )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise

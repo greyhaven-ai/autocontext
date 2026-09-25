@@ -696,5 +696,12 @@ def create_app(
     return application
 
 
-# Module-level app for backward compatibility (autoctx serve)
-app = create_app()
+def __getattr__(name: str) -> FastAPI:
+    # Module-level app for backward compatibility (autoctx serve). Build it on
+    # first access so importing this module does not load settings or migrate
+    # the default database.
+    if name == "app":
+        application = create_app()
+        globals()["app"] = application
+        return application
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
