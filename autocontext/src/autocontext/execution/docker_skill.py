@@ -6,8 +6,10 @@ file, pickle, local-exec fallback, or model interface crosses this seam.
 
 from __future__ import annotations
 
+import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -28,6 +30,33 @@ from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
 from autocontext.runtimes.runtime_budget import RuntimeBudget
 
 MAX_PAYLOAD_BYTES = 65536
+
+
+def verified_oom_events(data: bytes, container_id: str, exit_code: int) -> bool | None:
+    if len(data) > 8192:
+        return None
+    try:
+        events = [json.loads(line) for line in data.splitlines()]
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    dies = 0
+    oom = False
+    for event in events:
+        if not isinstance(event, dict) or event.get("Type") != "container":
+            return None
+        actor = event.get("Actor")
+        if not isinstance(actor, dict) or actor.get("ID") != container_id:
+            return None
+        if event.get("Action") == "oom":
+            oom = True
+        elif event.get("Action") == "die":
+            attributes = actor.get("Attributes")
+            if not isinstance(attributes, dict) or attributes.get("exitCode") != str(exit_code):
+                return None
+            dies += 1
+        else:
+            return None
+    return oom if dies == 1 else None
 
 
 def encode_skill_payload(value: str) -> bytes | None:
@@ -138,6 +167,7 @@ class DockerSkillExecutor:
                 # Create before start so cancellation always has an established
                 # container identity to remove; never leave a running docker run.
                 remaining()
+                event_since = time.time() - 5
                 created = True
                 creation = subprocess.run(  # noqa: S603
                     [command[0], "create", *command[2:]], capture_output=True,
@@ -145,6 +175,9 @@ class DockerSkillExecutor:
                 )
                 if creation.returncode != 0:
                     raise RuntimeError("container_create_failed")
+                container_id = creation.stdout.decode("ascii").strip()
+                if re.fullmatch(r"[0-9a-f]{64}", container_id) is None:
+                    raise RuntimeError("container_identity_unverified")
                 remaining()
                 proc = subprocess.Popen(  # noqa: S603
                     [self.docker_binary, "start", "--attach", name], stdin=subprocess.DEVNULL,
@@ -195,8 +228,29 @@ class DockerSkillExecutor:
                         failure = "resource_status_unverified"
                     elif oom == b"true":
                         failure = "oom"
-                    elif proc.returncode != 0:
-                        failure = "candidate_error"
+                    else:
+                        event_oom = None
+                        verification_deadline = min(deadline, time.monotonic() + 1)
+                        while True:
+                            events = subprocess.run(  # noqa: S603
+                                [self.docker_binary, "events", "--since", str(event_since), "--until", "0s",
+                                 "--filter", f"container={container_id}", "--filter", "event=oom",
+                                 "--filter", "event=die", "--format", "{{json .}}"],
+                                capture_output=True, check=False, timeout=min(5, remaining()), env=environment,
+                            )
+                            remaining()
+                            if events.returncode != 0:
+                                break
+                            event_oom = verified_oom_events(events.stdout, container_id, proc.returncode)
+                            if event_oom is not None or time.monotonic() >= verification_deadline:
+                                break
+                            cancel.wait(min(0.05, verification_deadline - time.monotonic()))
+                        if event_oom is None:
+                            failure = "resource_status_unverified"
+                        elif event_oom:
+                            failure = "oom"
+                        elif proc.returncode != 0:
+                            failure = "candidate_error"
                 # Cleanup below closes all pipes before decoding the bounded wire.
         except (TimeoutError, subprocess.TimeoutExpired):
             failure = "timeout"
