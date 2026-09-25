@@ -71,16 +71,44 @@ def encode_skill_payload(value: str) -> bytes | None:
 # this process as untrusted, even if a skill replaces its Python interpreter state.
 RUNNER = """
 import json
+import os
 import pathlib
 import sys
 
-namespace = {}
-source = pathlib.Path('/input/skill.py').read_text()
-state = json.loads(pathlib.Path('/input/input.json').read_text())
-exec(compile(source, '/input/skill.py', 'exec'), namespace)
-result = namespace['choose_action'](state)
-sys.stdout.write(json.dumps(result, allow_nan=False, separators=(',', ':')))
+pid = os.fork()
+if pid == 0:
+    namespace = {}
+    source = pathlib.Path('/input/skill.py').read_text()
+    state = json.loads(pathlib.Path('/input/input.json').read_text())
+    exec(compile(source, '/input/skill.py', 'exec'), namespace)
+    result = namespace['choose_action'](state)
+    sys.stdout.write(json.dumps(result, allow_nan=False, separators=(',', ':')))
+    sys.stdout.flush()
+    os._exit(0)
+
+_, status, usage = os.wait4(pid, 0)
+sys.stderr.write('AC_RESOURCE_METRICS:' + json.dumps({
+    'cpu_seconds': usage.ru_utime + usage.ru_stime,
+    'peak_memory_bytes': usage.ru_maxrss * 1024,
+}) + '\\n')
+sys.stderr.flush()
+sys.exit(os.waitstatus_to_exitcode(status))
 """
+
+
+def parse_runner_metrics(stderr: str) -> tuple[float | None, int | None]:
+    lines = [line for line in stderr.splitlines() if line.startswith("AC_RESOURCE_METRICS:")]
+    if len(lines) != 1 or stderr.splitlines()[-1:] != lines:
+        return None, None
+    try:
+        data = json.loads(lines[0].removeprefix("AC_RESOURCE_METRICS:"))
+        cpu, peak = data["cpu_seconds"], data["peak_memory_bytes"]
+        if set(data) == {"cpu_seconds", "peak_memory_bytes"} and type(cpu) in (float, int) and math.isfinite(cpu) \
+                and cpu >= 0 and type(peak) is int and peak >= 0:
+            return float(cpu), peak
+    except (ValueError, TypeError, KeyError, OverflowError):
+        pass
+    return None, None
 
 
 @dataclass(frozen=True)
@@ -89,6 +117,8 @@ class DockerSkillResult:
     failure: str | None = None
     elapsed_seconds: float = 0.0
     image_identity: str | None = None
+    cpu_seconds: float | None = None
+    peak_memory_bytes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +158,8 @@ class DockerSkillExecutor:
         created = False
         failure: str | None = None
         output = ""
+        cpu_seconds: float | None = None
+        peak_memory_bytes: int | None = None
 
         def remaining() -> float:
             if cancel.is_set():
@@ -296,9 +328,12 @@ class DockerSkillExecutor:
                     failure = failure or "output_limit"
                 elif stdout.read_failed or stderr.read_failed:
                     failure = failure or "output_read_failed"
+                else:
+                    cpu_seconds, peak_memory_bytes = parse_runner_metrics(stderr.text)
                 if failure is None:
                     try:
                         output = bytes(wire).decode("utf-8", errors="strict")
                     except UnicodeDecodeError:
                         failure = "invalid_output_encoding"
-        return DockerSkillResult(output, failure, time.monotonic() - started, image_identity)
+        return DockerSkillResult(output, failure, time.monotonic() - started, image_identity,
+                                 cpu_seconds, peak_memory_bytes)
