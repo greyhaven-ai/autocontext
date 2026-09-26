@@ -38,6 +38,20 @@ class TestBootstrapSchema:
         assert rows[0]["duration_seconds"] == 1.5
         assert rows[0]["scoring_backend"] == "elo"
 
+    def test_bootstrapped_runs_reject_minimum_generations_below_one(self, tmp_path: Path) -> None:
+        import sqlite3
+
+        import pytest
+
+        from autocontext.storage.sqlite_store import SQLiteStore
+
+        store = SQLiteStore(tmp_path / "fresh.db")
+        store.migrate(tmp_path / "missing-migrations")
+        store.create_run("r1", "test_scenario", 3, "local")
+        # create_run uses INSERT OR IGNORE, which skips CHECK failures silently.
+        with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"), store.connection() as conn:
+            conn.execute("UPDATE runs SET minimum_generations = 0 WHERE run_id = 'r1'")
+
     def test_bootstrapped_db_can_later_run_real_migrations(self, tmp_path: Path) -> None:
         from autocontext.storage.sqlite_store import SQLiteStore
 
