@@ -54,6 +54,8 @@ from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
 from autocontext.knowledge.weakness import WeaknessAnalyzer
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
+from autocontext.loop.run_reentry import NON_LOOP_EXECUTOR_MODES as NON_LOOP_EXECUTOR_MODES
+from autocontext.loop.run_reentry import recover_stale_run_state, validate_reentry
 from autocontext.loop.runner_hooks import (
     emit_generation_failed,
     emit_run_completed,
@@ -69,8 +71,6 @@ from autocontext.storage import SQLiteStore, artifact_store_from_settings
 from autocontext.storage.run_paths import resolve_run_root
 
 logger = logging.getLogger(__name__)
-# Run rows the generation loop did not write: agent-task `run`, task-like `solve`, package import.
-NON_LOOP_EXECUTOR_MODES = frozenset({"agent_task", "artifact_editing", "import"})
 
 
 def _current_release_version() -> str:
@@ -904,65 +904,6 @@ class GenerationRunner:
         except (TypeError, ValueError):
             return default
 
-    def _recover_stale_run_state(self, run_id: str) -> None:
-        """Repair an interrupted run before attempting a resume.
-
-        This handles the persisted broken state left behind after a prior process
-        died or was interrupted while a run still had `running` rows in SQLite.
-        """
-        run_row = self.sqlite.get_run(run_id)
-        if run_row is None or str(run_row.get("status") or "") != "running":
-            return
-
-        generation_rows = self.sqlite.get_generation_metrics(run_id)
-        running_generations = [
-            self._int_value(row.get("generation_index")) for row in generation_rows if str(row.get("status") or "") == "running"
-        ]
-        if running_generations:
-            recovery_markers = self.sqlite.get_recovery_markers_for_run(run_id)
-            retry_counts: dict[int, int] = defaultdict(int)
-            for marker in recovery_markers:
-                retry_counts[self._int_value(marker.get("generation_index"))] += 1
-            for generation_index in running_generations:
-                self.sqlite.update_generation_status(
-                    run_id,
-                    generation_index,
-                    status="failed",
-                    gate_decision="stalled",
-                )
-                self.sqlite.append_recovery_marker(
-                    run_id,
-                    generation_index,
-                    decision="mark_failed",
-                    reason="Recovered stale running generation from a prior interrupted run",
-                    retry_count=retry_counts[generation_index] + 1,
-                )
-            self.sqlite.mark_run_failed(run_id)
-            logger.warning(
-                "recovered stale running generations for run %s: %s",
-                run_id,
-                ", ".join(str(gen) for gen in running_generations),
-            )
-            return
-
-        completed_generations = sum(1 for row in generation_rows if str(row.get("status") or "") == "completed")
-        target_generations = self._int_value(run_row.get("target_generations"), 0)
-        if target_generations > 0 and completed_generations >= target_generations:
-            self.sqlite.mark_run_completed(run_id)
-            logger.info(
-                "marking run %s completed during recovery (%d/%d generations already completed)",
-                run_id,
-                completed_generations,
-                target_generations,
-            )
-            return
-
-        self.sqlite.mark_run_failed(run_id)
-        logger.warning(
-            "marking run %s failed during recovery; run was still 'running' without an active generation",
-            run_id,
-        )
-
     def _hydrate_run_state(
         self,
         run_id: str,
@@ -1045,17 +986,8 @@ class GenerationRunner:
                 minimum_generations=minimum_generations,
             )
         else:
-            # A stopped run is terminal (first-terminal-outcome-wins): refuse to
-            # resume it into 'running', which would let it later be marked
-            # 'completed' and overwrite the terminal outcome. Restart under a new id.
-            if str(existing_run.get("status") or "") == "stopped":
-                raise ValueError(f"run '{active_run_id}' was stopped and is terminal; start a new run id to continue")
-            stored_scenario = existing_run.get("scenario")
-            if isinstance(stored_scenario, str) and stored_scenario != scenario_name:
-                raise ValueError(f"run '{active_run_id}' belongs to scenario '{stored_scenario}', not '{scenario_name}'")
-            if existing_run.get("executor_mode") in NON_LOOP_EXECUTOR_MODES:
-                raise ValueError(f"run '{active_run_id}' was not created by the generation loop and cannot be resumed")
-            self._recover_stale_run_state(active_run_id)
+            validate_reentry(existing_run, run_id=active_run_id, scenario_name=scenario_name)
+            recover_stale_run_state(self.sqlite, active_run_id)
             refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
             target_generations = max(self._int_value(refreshed_run.get("target_generations"), generations), generations)
             done = self._int_value(self.sqlite.count_completed_generations(active_run_id), 0)
@@ -1342,7 +1274,7 @@ class GenerationRunner:
             try:
                 run_row = self.sqlite.get_run(active_run_id)
                 if run_row is not None and str(run_row.get("status") or "") == "running":
-                    self._recover_stale_run_state(active_run_id)
+                    recover_stale_run_state(self.sqlite, active_run_id)
             except Exception:
                 logger.warning("failed to recover stale run state for %s", active_run_id, exc_info=True)
             try:
