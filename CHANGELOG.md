@@ -47,7 +47,8 @@ All notable changes to this project will be documented in this file.
   report the run's total completed generations, as `run_stopped` already did,
   instead of only the generations that invocation ran. `generations_executed`
   (in the run summary and `autoctx resume --json`) still counts only the
-  invocation (AC-1045).
+  invocation, and a failing run whose total cannot be read still fires
+  `run_end` with the invocation's count (AC-1045).
 
 - Python: re-entering a run that already completed its target
   (`autoctx resume <run-id>`, or `autoctx run --run-id` at or below its

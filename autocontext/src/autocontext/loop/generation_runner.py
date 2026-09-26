@@ -1291,11 +1291,17 @@ class GenerationRunner:
             except Exception:
                 logger.warning("failed to recover stale run state for %s", active_run_id, exc_info=True)
             try:
+                total_completed = self.sqlite.count_completed_generations(active_run_id)
+            except Exception:
+                # The store may be what failed; RUN_END still fires, with this invocation's count.
+                logger.debug("failed to count completed generations for %s", active_run_id, exc_info=True)
+                total_completed = completed
+            try:
                 emit_run_failed(
                     self,
                     run_id=active_run_id,
                     scenario=scenario_name,
-                    completed_generations=self.sqlite.count_completed_generations(active_run_id),
+                    completed_generations=total_completed,
                     best_score=previous_best,
                     elo=challenger_elo,
                     error=str(exc),

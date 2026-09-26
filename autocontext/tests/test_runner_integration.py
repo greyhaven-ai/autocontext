@@ -529,3 +529,22 @@ def test_failed_extension_reports_its_durable_generation_total_on_run_end(
         runner.run(scenario_name="grid_ctf", generations=3, run_id=run_id)
 
     assert [(end["status"], end["completed_generations"]) for end in ends] == [("failed", 2)]
+
+
+def test_run_end_still_fires_when_the_durable_generation_count_cannot_be_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A run failing because SQLite fails cannot read its durable count either, and that read skipped RUN_END.
+    runner = _reentry_runner(tmp_path)
+
+    def disk_error(*_args: object) -> None:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(GenerationPipeline, "run_generation", disk_error)
+    monkeypatch.setattr(runner.sqlite, "count_completed_generations", disk_error)
+    ends = _record_run_ends(runner)
+
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+        runner.run(scenario_name="grid_ctf", generations=1, run_id="disk_run")
+
+    assert [(end["status"], end["completed_generations"], end["error"]) for end in ends] == [("failed", 0, "disk I/O error")]
