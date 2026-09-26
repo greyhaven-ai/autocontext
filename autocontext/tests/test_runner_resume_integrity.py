@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
 from pathlib import Path
 
@@ -16,7 +18,7 @@ from autocontext.scenarios import SCENARIO_REGISTRY
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
 
-def _runner(tmp_path: Path) -> GenerationRunner:
+def _runner(tmp_path: Path, **overrides: object) -> GenerationRunner:
     settings = AppSettings(
         db_path=tmp_path / "runs" / "autocontext.sqlite3",
         runs_root=tmp_path / "runs",
@@ -27,7 +29,7 @@ def _runner(tmp_path: Path) -> GenerationRunner:
         audit_log_path=tmp_path / "runs" / "audit.ndjson",
         agent_provider="deterministic",
         matches_per_generation=1,
-    )
+    ).model_copy(update=overrides)
     runner = GenerationRunner(settings)
     runner.migrate(MIGRATIONS_DIR)
     return runner
@@ -101,6 +103,109 @@ def test_reentry_of_a_run_the_generation_loop_did_not_create_is_rejected(tmp_pat
 
     assert _state(tmp_path, "r") == (("othello", 1, "running"), [(1, "completed")])
     assert runner.sqlite.get_recovery_markers_for_run("r") == []
+
+
+def _runtime(tmp_path: Path, run_id: str) -> tuple:
+    conn = sqlite3.connect(tmp_path / "runs" / "autocontext.sqlite3")
+    try:
+        return conn.execute("SELECT agent_provider, executor_mode FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+    finally:
+        conn.close()
+
+
+# (field, value the run was created with, value the re-entering settings use, variable that selects it)
+RUNTIME_CHANGES = [
+    ("agent_provider", "deterministic", "openai-compatible", "AUTOCONTEXT_AGENT_PROVIDER"),
+    ("executor_mode", "local", "monty", "AUTOCONTEXT_EXECUTOR_MODE"),
+]
+
+
+def _switched_runner(tmp_path: Path, field: str, current: str) -> GenerationRunner:
+    # A closed local port, so a re-entry the guard misses cannot reach a real endpoint.
+    return _runner(tmp_path, **{field: current}, agent_base_url="http://127.0.0.1:9/v1")
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(("field", "stored", "current", "variable"), RUNTIME_CHANGES)
+def test_reentry_under_another_runtime_is_rejected_before_any_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str, stored: str, current: str, variable: str
+) -> None:
+    # Resume ran the rest of the run on the current provider or executor while the row kept the old
+    # one, so its facets, trace and snapshot contradicted the run's recorded runtime.
+    _fail_generation(monkeypatch, 2)
+    with pytest.raises(RuntimeError, match="injected generation 2"):
+        _runner(tmp_path).run(scenario_name="othello", generations=2, run_id="r")
+    monkeypatch.undo()
+    active_bundle = tmp_path / "knowledge" / "othello" / "context_bundles" / "active.json"
+    before = (_state(tmp_path, "r"), _runtime(tmp_path, "r"), active_bundle.read_bytes())
+    assert before[:2] == ((("othello", 2, "failed"), [(1, "completed"), (2, "failed")]), ("deterministic", "local"))
+
+    with pytest.raises(ValueError) as refused:
+        _switched_runner(tmp_path, field, current).run(scenario_name="othello", generations=2, run_id="r")
+
+    message = str(refused.value)
+    assert f"run 'r' was created with {field} '{stored}'" in message
+    assert f"the current settings use {field} '{current}'" in message
+    assert f"{variable}={stored}" in message
+    assert "autoctx resume r --allow-runtime-change" in message
+    assert (_state(tmp_path, "r"), _runtime(tmp_path, "r"), active_bundle.read_bytes()) == before
+
+
+@pytest.mark.parametrize(("field", "stored", "current", "variable"), RUNTIME_CHANGES)
+def test_reentry_of_an_interrupted_run_under_another_runtime_is_rejected_before_recovery(
+    tmp_path: Path, field: str, stored: str, current: str, variable: str
+) -> None:
+    runner = _runner(tmp_path)
+    runner.sqlite.create_run("r", "othello", 2, "local", agent_provider="deterministic")
+    _seed_generation(runner, "r", 1, "completed")
+    _seed_generation(runner, "r", 2, "running")
+
+    with pytest.raises(ValueError, match=f"{variable}={stored}"):
+        _switched_runner(tmp_path, field, current).run(scenario_name="othello", generations=2, run_id="r")
+
+    assert _state(tmp_path, "r") == (("othello", 2, "running"), [(1, "completed"), (2, "running")])
+    assert runner.sqlite.get_recovery_markers_for_run("r") == []
+
+
+@pytest.mark.slow
+def test_reentry_of_a_run_with_no_stored_provider_still_resumes(tmp_path: Path) -> None:
+    # Rows from before the provider column have an empty agent_provider: unknown, so not a change.
+    runner = _runner(tmp_path)
+    runner.sqlite.create_run("r", "othello", 1, "local")
+    runner.sqlite.mark_run_failed("r")
+
+    summary = runner.run(scenario_name="othello", generations=1, run_id="r")
+
+    assert summary.generations_executed == 1
+    assert _state(tmp_path, "r") == (("othello", 1, "completed"), [(1, "completed")])
+    assert _runtime(tmp_path, "r") == ("", "local")
+
+
+@pytest.mark.slow
+def test_allowed_runtime_change_resumes_records_the_switch_and_keeps_the_stored_runtime(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    runner = _runner(tmp_path)
+    runner.sqlite.create_run("r", "othello", 2, "monty", agent_provider="openai-compatible")
+    _seed_generation(runner, "r", 1, "completed")
+    runner.sqlite.mark_run_failed("r")
+
+    with caplog.at_level(logging.WARNING):
+        summary = runner.run(scenario_name="othello", generations=2, run_id="r", allow_runtime_change=True)
+
+    assert summary.generations_executed == 1
+    assert _state(tmp_path, "r") == (("othello", 2, "completed"), [(1, "completed"), (2, "completed")])
+    assert _runtime(tmp_path, "r") == ("openai-compatible", "monty")
+    events = [json.loads(line) for line in (tmp_path / "runs" / "events.ndjson").read_text(encoding="utf-8").splitlines()]
+    names = [event["event"] for event in events]
+    assert names.index("run_started") < names.index("run_runtime_changed") < names.index("generation_started")
+    assert events[names.index("run_runtime_changed")]["payload"] == {
+        "run_id": "r",
+        "from": {"agent_provider": "openai-compatible", "executor_mode": "monty"},
+        "to": {"agent_provider": "deterministic", "executor_mode": "local"},
+        "first_generation": 2,
+    }
+    assert any("openai-compatible" in record.getMessage() and "monty" in record.getMessage() for record in caplog.records)
 
 
 @pytest.mark.slow

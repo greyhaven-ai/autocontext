@@ -1,4 +1,7 @@
-"""Re-entering an existing run: refuse runs the loop must not continue, and repair state a dead process left."""
+"""Re-entering an existing run: refuse runs the loop must not continue, and repair state a dead process left.
+
+An allowed switch of the run's recorded runtime is announced rather than written to the row.
+"""
 
 from __future__ import annotations
 
@@ -6,11 +9,15 @@ import logging
 from collections import defaultdict
 from typing import Any, cast
 
+from autocontext.config.settings import AppSettings
+from autocontext.loop.events import EventStreamEmitter
 from autocontext.storage.sqlite_store import SQLiteStore
 
 logger = logging.getLogger(__name__)
 # Run rows the generation loop did not write: agent-task `run`, task-like `solve`, package import.
 NON_LOOP_EXECUTOR_MODES = frozenset({"agent_task", "artifact_editing", "import"})
+# The runtime a run row records, and the variable that selects each value.
+RUNTIME_VARIABLES = {"agent_provider": "AUTOCONTEXT_AGENT_PROVIDER", "executor_mode": "AUTOCONTEXT_EXECUTOR_MODE"}
 
 
 def _int_value(value: object, default: int = 0) -> int:
@@ -20,8 +27,41 @@ def _int_value(value: object, default: int = 0) -> int:
         return default
 
 
-def validate_reentry(run_row: dict[str, Any], *, run_id: str, scenario_name: str) -> None:
-    """Refuse to re-enter a run this loop cannot continue, before anything is written."""
+def runtime_changes(run_row: dict[str, Any], settings: AppSettings) -> dict[str, tuple[str, str]]:
+    """Stored runtime values the current settings differ from, as field -> (stored, current).
+
+    An empty or missing stored value (a row from before migration 005) is unknown, so it is never a change.
+    """
+    changes: dict[str, tuple[str, str]] = {}
+    for field in RUNTIME_VARIABLES:
+        stored, current = run_row.get(field), str(getattr(settings, field))
+        if isinstance(stored, str) and stored and stored != current:
+            changes[field] = (stored, current)
+    return changes
+
+
+def runtime_change_error(run_id: str, changes: dict[str, tuple[str, str]]) -> str:
+    created = " and ".join(f"{field} '{stored}'" for field, (stored, _) in changes.items())
+    current = " and ".join(f"{field} '{value}'" for field, (_, value) in changes.items())
+    restore = " ".join(f"{RUNTIME_VARIABLES[field]}={stored}" for field, (stored, _) in changes.items())
+    return (
+        f"run '{run_id}' was created with {created}, but the current settings use {current}; set {restore} "
+        f"to continue it, or run `autoctx resume {run_id} --allow-runtime-change` to switch deliberately"
+    )
+
+
+def validate_reentry(
+    run_row: dict[str, Any],
+    *,
+    run_id: str,
+    scenario_name: str,
+    settings: AppSettings,
+    allow_runtime_change: bool = False,
+) -> bool:
+    """Refuse to re-enter a run this loop cannot continue, before anything is written.
+
+    Returns whether the re-entry switches the run's recorded runtime, which only ``allow_runtime_change`` permits.
+    """
     # A stopped run is terminal (first-terminal-outcome-wins): refuse to
     # resume it into 'running', which would let it later be marked
     # 'completed' and overwrite the terminal outcome. Restart under a new id.
@@ -32,6 +72,43 @@ def validate_reentry(run_row: dict[str, Any], *, run_id: str, scenario_name: str
         raise ValueError(f"run '{run_id}' belongs to scenario '{stored_scenario}', not '{scenario_name}'")
     if run_row.get("executor_mode") in NON_LOOP_EXECUTOR_MODES:
         raise ValueError(f"run '{run_id}' was not created by the generation loop and cannot be resumed")
+    # Only the provider name and executor mode are stored, so continuing under the stored values would pair
+    # them with this process's credentials and endpoints; refuse unless the switch is deliberate.
+    changes = runtime_changes(run_row, settings)
+    if changes and not allow_runtime_change:
+        raise ValueError(runtime_change_error(run_id, changes))
+    return bool(changes)
+
+
+def announce_runtime_change(
+    events: EventStreamEmitter,
+    sqlite: SQLiteStore,
+    run_row: dict[str, Any],
+    settings: AppSettings,
+    target_generations: int,
+) -> None:
+    """Record an allowed runtime switch; the run row keeps the runtime it was created with."""
+    run_id = str(run_row["run_id"])
+    done = {
+        _int_value(row.get("generation_index"))
+        for row in sqlite.get_generation_metrics(run_id)
+        if str(row.get("status") or "") == "completed"
+    }
+    # None when every generation is done and only the post-run tail runs under the new runtime.
+    first_generation = next((gen for gen in range(1, target_generations + 1) if gen not in done), None)
+    created = {field: str(run_row.get(field) or "") for field in RUNTIME_VARIABLES}
+    current = {field: str(getattr(settings, field)) for field in RUNTIME_VARIABLES}
+    logger.warning(
+        "run %s continues under %s instead of %s from generation %s; its row keeps the original runtime",
+        run_id,
+        current,
+        created,
+        first_generation,
+    )
+    events.emit(
+        "run_runtime_changed",
+        {"run_id": run_id, "from": created, "to": current, "first_generation": first_generation},
+    )
 
 
 def recover_stale_run_state(sqlite: SQLiteStore, run_id: str) -> None:

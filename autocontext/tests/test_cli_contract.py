@@ -440,7 +440,8 @@ def test_resume_takes_scenario_and_target_from_the_stored_run(contract: Contract
     """``resume`` must not advertise a fixed scenario or generation count."""
     cmd = next(c for c in contract.commands if c.id == "resume")
     flags = {f.name: f for f in cmd.flags}
-    assert sorted(flags) == ["iterations", "json", "scenario"]
+    assert sorted(flags) == ["allow-runtime-change", "iterations", "json", "scenario"]
+    assert flags["allow-runtime-change"].default is False
     assert (flags["scenario"].short_names, flags["scenario"].default) == (("s",), None)
     assert (flags["iterations"].aliases, flags["iterations"].short_names) == (("gens",), ("g",))
     assert flags["iterations"].default is None

@@ -55,7 +55,7 @@ from autocontext.knowledge.weakness import WeaknessAnalyzer
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
 from autocontext.loop.run_reentry import NON_LOOP_EXECUTOR_MODES as NON_LOOP_EXECUTOR_MODES
-from autocontext.loop.run_reentry import recover_stale_run_state, validate_reentry
+from autocontext.loop.run_reentry import announce_runtime_change, recover_stale_run_state, validate_reentry
 from autocontext.loop.runner_hooks import (
     emit_generation_failed,
     emit_run_completed,
@@ -968,6 +968,7 @@ class GenerationRunner:
         *,
         minimum_generations: int = 1,
         require_playbook_approval: bool = False,
+        allow_runtime_change: bool = False,
     ) -> RunSummary:
         if minimum_generations < 1 or minimum_generations > generations:
             raise ValueError("minimum_generations must be between 1 and generations")
@@ -975,10 +976,16 @@ class GenerationRunner:
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         run_start_time = time.monotonic()
         target_generations = generations
-        reopen = False
+        reopen = runtime_changed = False
         existing_run = self.sqlite.get_run(active_run_id)
         if existing_run is not None:
-            validate_reentry(existing_run, run_id=active_run_id, scenario_name=scenario_name)
+            runtime_changed = validate_reentry(
+                existing_run,
+                run_id=active_run_id,
+                scenario_name=scenario_name,
+                settings=self.settings,
+                allow_runtime_change=allow_runtime_change,
+            )
             recover_stale_run_state(self.sqlite, active_run_id)
             refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
             target_generations = max(self._int_value(refreshed_run.get("target_generations"), generations), generations)
@@ -1029,6 +1036,8 @@ class GenerationRunner:
             if minimum_generations > 1:
                 run_started_payload["minimum_generations"] = minimum_generations
             self.events.emit("run_started", run_started_payload)
+            if runtime_changed and existing_run is not None:
+                announce_runtime_change(self.events, self.sqlite, existing_run, self.settings, target_generations)
 
             # Seed scenario-specific tools before first generation
             if not self.artifacts.tools_dir(scenario_name).exists():

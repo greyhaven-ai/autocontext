@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import typer
 
 from autocontext.loop.generation_runner import NON_LOOP_EXECUTOR_MODES
+from autocontext.loop.run_reentry import runtime_change_error, runtime_changes
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -36,6 +37,11 @@ def register_resume_command(
             None, "--iterations", min=1, help="Generation target. Defaults to the run's stored target; a larger value extends it."
         ),
         gens: int | None = typer.Option(None, "--gens", "-g", min=1, help="Deprecated alias for --iterations."),
+        allow_runtime_change: bool = typer.Option(
+            False,
+            "--allow-runtime-change",
+            help="Continue under a different agent provider or executor mode than the run was created with.",
+        ),
         json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
     ) -> None:
         """Continue an interrupted run or extend its target; a completed run is left unchanged."""
@@ -62,6 +68,8 @@ def register_resume_command(
             fail(f"run {run_id!r} belongs to scenario {stored_scenario!r}, not {requested!r}", 2)
         if run.get("executor_mode") in NON_LOOP_EXECUTOR_MODES:
             fail(f"run {run_id!r} was not created by the generation loop and cannot be resumed", 2)
+        if not allow_runtime_change and (changes := runtime_changes(run, settings)):
+            fail(runtime_change_error(run_id, changes), 2)
         target = iterations if iterations is not None else gens if gens is not None else stored_target
         if target < stored_target:
             fail(f"run {run_id!r} targets {stored_target} generations; --iterations cannot lower it to {target}", 2)
@@ -69,7 +77,13 @@ def register_resume_command(
 
         with error_boundary(json_output, action="resume"):
             runner = _cli_attr(dependency_module, "_runner")()
-            summary = runner.run(scenario_name=stored_scenario, generations=target, run_id=run_id, minimum_generations=minimum)
+            summary = runner.run(
+                scenario_name=stored_scenario,
+                generations=target,
+                run_id=run_id,
+                minimum_generations=minimum,
+                allow_runtime_change=allow_runtime_change,
+            )
         if json_output:
             _cli_attr(dependency_module, "_write_json_stdout")(dataclasses.asdict(summary))
         elif run.get("status") == "completed" and summary.generations_executed == 0:

@@ -33,10 +33,10 @@ def _settings(tmp_path: Path) -> AppSettings:
     )
 
 
-def _seed(tmp_path: Path, *, scenario="othello", target=3, executor_mode="local", minimum=1) -> None:
+def _seed(tmp_path: Path, *, scenario="othello", target=3, executor_mode="local", minimum=1, agent_provider="") -> None:
     store = SQLiteStore(tmp_path / "runs" / "autocontext.sqlite3")
     store.migrate(MIGRATIONS_DIR)
-    store.create_run("r1", scenario, target, executor_mode, minimum_generations=minimum)
+    store.create_run("r1", scenario, target, executor_mode, agent_provider=agent_provider, minimum_generations=minimum)
     store.mark_run_failed("r1")
 
 
@@ -66,7 +66,9 @@ def test_resume_defaults_scenario_and_target_to_the_stored_run(tmp_path: Path) -
     _seed(tmp_path)
     result, fake, _ = _invoke(tmp_path, ["r1", "--json"])
     assert result.exit_code == 0, result.output
-    fake.run.assert_called_once_with(scenario_name="othello", generations=3, run_id="r1", minimum_generations=1)
+    fake.run.assert_called_once_with(
+        scenario_name="othello", generations=3, run_id="r1", minimum_generations=1, allow_runtime_change=False
+    )
 
 
 def test_resume_rejects_a_different_scenario_as_a_usage_error(tmp_path: Path) -> None:
@@ -140,6 +142,34 @@ def test_resume_refuses_runs_the_generation_loop_did_not_create(tmp_path: Path, 
     assert result.exit_code == 2
     assert "not created by the generation loop" in json.loads(result.stderr)["error"]
     make_runner.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("seeded", "stored", "current"),
+    [
+        ({"agent_provider": "deterministic"}, "agent_provider 'deterministic'", "agent_provider 'anthropic'"),
+        ({"executor_mode": "monty"}, "executor_mode 'monty'", "executor_mode 'local'"),
+    ],
+)
+@pytest.mark.parametrize("json_output", [True, False])
+def test_resume_refuses_a_runtime_change_as_a_usage_error(
+    tmp_path: Path, seeded: dict, stored: str, current: str, json_output: bool
+) -> None:
+    # Resume built the runner from the current settings, so the rest of the run silently used them.
+    _seed(tmp_path, **seeded)
+    result, _, make_runner = _invoke(tmp_path, ["r1", "--json"] if json_output else ["r1"])
+    assert result.exit_code == 2
+    error = json.loads(result.stderr)["error"] if json_output else result.stderr
+    assert f"run 'r1' was created with {stored}, but the current settings use {current}" in error
+    assert "autoctx resume r1 --allow-runtime-change" in error
+    make_runner.assert_not_called()
+
+
+def test_resume_allow_runtime_change_hands_the_switch_to_the_runner(tmp_path: Path) -> None:
+    _seed(tmp_path, executor_mode="monty", agent_provider="deterministic")
+    result, fake, _ = _invoke(tmp_path, ["r1", "--allow-runtime-change", "--json"])
+    assert result.exit_code == 0, result.output
+    assert fake.run.call_args.kwargs["allow_runtime_change"] is True
 
 
 def test_resume_forwards_the_stored_minimum(tmp_path: Path) -> None:
@@ -217,6 +247,42 @@ def test_resume_finishes_a_failed_run_end_to_end(workspace: Path, monkeypatch: p
     replay = cli.invoke(app, ["replay", "demo", "--generation", "2"])
     assert replay.exit_code == 0, replay.output
     assert json.loads(replay.stdout)["scenario"] == "othello"
+
+
+@pytest.mark.slow
+def test_resume_under_another_executor_exits_2_without_running_a_generation(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Resume ran generation 2 on the current executor while the row still said 'local' (monty, unlike ssh, needs no host).
+    monkeypatch.setenv("AUTOCONTEXT_MATCHES_PER_GENERATION", "1")
+    first = cli.invoke(app, ["run", "othello", "--iterations", "1", "--run-id", "ex1", "--json", "--skip-preflight"])
+    assert first.exit_code == 0, first.output
+    db_path = workspace / "runs" / "autocontext.sqlite3"
+
+    def stored() -> tuple:
+        conn = sqlite3.connect(db_path)
+        try:
+            run = conn.execute(
+                "SELECT target_generations, status, executor_mode, agent_provider FROM runs WHERE run_id = 'ex1'"
+            ).fetchone()
+            gens = conn.execute("SELECT generation_index, status FROM generations WHERE run_id = 'ex1' ORDER BY 1").fetchall()
+        finally:
+            conn.close()
+        return run, gens
+
+    before = stored()
+    assert before == ((1, "completed", "local", "deterministic"), [(1, "completed")])
+    events = (workspace / "runs" / "events.ndjson").read_text(encoding="utf-8")
+    monkeypatch.setenv("AUTOCONTEXT_EXECUTOR_MODE", "monty")
+
+    resumed = cli.invoke(app, ["resume", "ex1", "--iterations", "2", "--json"])
+
+    assert resumed.exit_code == 2, resumed.output
+    error = json.loads(resumed.stderr)["error"]
+    assert "created with executor_mode 'local', but the current settings use executor_mode 'monty'" in error
+    assert "AUTOCONTEXT_EXECUTOR_MODE=local" in error
+    assert stored() == before
+    assert (workspace / "runs" / "events.ndjson").read_text(encoding="utf-8") == events
 
 
 @pytest.mark.slow
