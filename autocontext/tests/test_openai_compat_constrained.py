@@ -100,6 +100,14 @@ def test_successful_schema_request_is_reported_as_constrained() -> None:
     assert completions.calls[0]["response_format"]["json_schema"]["strict"] is True
 
 
+def test_openrouter_provider_pin_uses_single_allowed_backend() -> None:
+    provider, completions = _provider([_response()])
+    provider.complete("system", "user", provider_only="anthropic", provider_max_price=(3, 15))
+    assert completions.calls[0]["extra_body"] == {"provider": {
+        "only": ["anthropic"], "allow_fallbacks": False, "require_parameters": True,
+        "max_price": {"prompt": 3, "completion": 15}}}
+
+
 def test_gpt_56_ordinary_completion_disables_implicit_reasoning() -> None:
     provider, completions = _provider([_response("plain")])
     provider._default_model = "gpt-5.6-terra"

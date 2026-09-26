@@ -13,9 +13,10 @@ from typing import Any, Literal
 
 from autocontext import offline
 from autocontext.artifacts.policy_candidate import CandidateLimits, json_payload
-from autocontext.context_bundles.models import stable_digest
+from autocontext.context_bundles.models import ComparisonDecision, ComponentKind, stable_digest
 from autocontext.context_bundles.store import ContextBundleStore
-from autocontext.execution import executable_skills, routed_model, skill_routing_models
+from autocontext.context_bundles.store_transactions import promotion_from_pointer
+from autocontext.execution import executable_skills, execution_policy_promotion, routed_model, skill_routing_models
 from autocontext.execution.docker_skill import encode_skill_payload
 from autocontext.execution.executable_skills import (
     CONTRACT,
@@ -43,7 +44,8 @@ from autocontext.util.json_io import write_json
 
 def routing_evaluator_identity() -> str:
     """Reuse canonical digests and the bridge verifier epoch; bind all route code."""
-    modules = (routed_model, skill_routing_models, scenario_routing, _workspace_process, anthropic, openai_compat,
+    modules = (routed_model, skill_routing_models, execution_policy_promotion, scenario_routing, _workspace_process,
+               anthropic, openai_compat,
                provider_base, token_caps, usage_receipt, model_registry, offline, _generation_usage, calculator, runtime_budget)
     packages = {}
     for package in ("openai", "anthropic"):
@@ -59,13 +61,37 @@ def routing_evaluator_identity() -> str:
 def _model_receipt(completion: CompletionResult, target: ModelTarget) -> tuple[int, float, str]:
     """No missing counters, alias disagreement or reported overrun can authorize retry."""
     usage = dict(completion.raw_usage if completion.raw_usage is not None else completion.usage)
+    openrouter = target.provider_only is not None
+    reported_cost = completion.cost_usd
+    if openrouter:
+        if completion.raw_usage is None or usage.pop("is_byok", None) is not False:
+            raise ValueError("missing_openrouter_credit_receipt")
+        reported_cost = usage.pop("cost", None)
+        cost_details = usage.pop("cost_details", {})
+        if not isinstance(cost_details, dict) or any(
+            key not in {"upstream_inference_cost", "upstream_inference_prompt_cost",
+                        "upstream_inference_completions_cost"}
+            or type(value) not in (int, float) or not math.isfinite(value) or value < 0
+            for key, value in cost_details.items()
+        ):
+            raise ValueError("invalid_openrouter_cost_details")
+        tool_use = usage.pop("server_tool_use_details", {})
+        if not isinstance(tool_use, dict) or any(
+            key not in {"tool_calls_executed", "tool_calls_requested"} or type(value) is not int or value != 0
+            for key, value in tool_use.items()
+        ):
+            raise ValueError("unsupported_openrouter_tool_use")
+        if completion.cost_usd is not None and completion.cost_usd != reported_cost:
+            raise ValueError("inconsistent_openrouter_cost")
     # These OpenAI details are subsets of the directional totals, not additional
     # billed tokens. Unknown/nonzero counters (including Anthropic cache reads
     # and creation, which are additive) remain ineligible for this first route.
     for group, total_key, fields in (
-        ("prompt_tokens_details", "prompt_tokens", {"audio_tokens", "cached_tokens"}),
+        ("prompt_tokens_details", "prompt_tokens", {"audio_tokens", "cached_tokens"}
+         | ({"cache_write_tokens", "video_tokens"} if openrouter else set())),
         ("completion_tokens_details", "completion_tokens",
-         {"reasoning_tokens", "audio_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens"}),
+         {"reasoning_tokens", "audio_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens"}
+         | ({"image_tokens"} if openrouter else set())),
     ):
         if group not in usage:
             continue
@@ -73,6 +99,7 @@ def _model_receipt(completion: CompletionResult, target: ModelTarget) -> tuple[i
         total = usage.get(total_key)
         if (not isinstance(details, dict) or type(total) is not int
                 or any(key not in fields or type(value) is not int or not 0 <= value <= total
+                       or (key in {"video_tokens", "image_tokens"} and value != 0)
                        for key, value in details.items())):
             raise ValueError("unsupported_provider_usage")
     for metadata in ("service_tier", "inference_geo"):
@@ -91,11 +118,12 @@ def _model_receipt(completion: CompletionResult, target: ModelTarget) -> tuple[i
     if total != inputs + outputs or inputs > target.max_input_tokens or outputs > target.max_output_tokens:
         raise ValueError("provider_token_bound_violated")
     cost, source = target.cost(inputs, outputs), "declared-pricing"
-    if completion.cost_usd is not None:
-        value = completion.cost_usd
-        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+    if reported_cost is not None:
+        if type(reported_cost) not in (int, float) or not math.isfinite(reported_cost) or reported_cost < 0:
             raise ValueError("invalid_provider_cost")
-        cost, source = max(cost, value), "provider-reported"
+        cost, source = (float(reported_cost) if openrouter else max(cost, reported_cost)), "provider-reported"
+    elif openrouter:
+        raise ValueError("missing_openrouter_cost")
     if cost > target.cost(target.max_input_tokens, target.max_output_tokens):
         raise ValueError("provider_cost_bound_violated")
     return total, cost, source
@@ -126,11 +154,20 @@ def route_schema_migration(
     attempts: list[dict[str, Any]] = []
     raw_input: str | None = None
     input_digest: str | None = None
+    active_policy_gate: execution_policy_promotion.ExecutionPolicyEvidence | None = None
 
     def stop_reason() -> str | None:
         if cancel.is_set():
             return "cancelled"
         return "request_timeout" if wall.expired() else None
+
+    def withhold(result: SkillRoutingResult, reason: str) -> SkillRoutingResult:
+        withheld_path = path.with_name(f"{request_id}.policy-verdict.json")
+        withheld = result.model_copy(update={"status": "execution_failure", "reason": reason,
+                                             "selected_route": None, "output_json": None,
+                                             "trace_path": str(withheld_path)})
+        write_json(withheld_path, withheld.model_dump(mode="json"))
+        return withheld
 
     def persist(status: Literal["started", "success", "abstention", "execution_failure"], reason: str,
                 output: str | None = None, route: Route | None = None) -> SkillRoutingResult:
@@ -152,6 +189,29 @@ def route_schema_migration(
             result = result.model_copy(update={"status": "execution_failure", "reason": stopped,
                                                "selected_route": None, "output_json": None})
             write_json(path, result.model_dump(mode="json"))
+        if status != "started" and active_policy_gate is not None and raw_input is not None:
+            try:
+                observation = execution_policy_promotion.observe_execution_policy(active_policy_gate, result)
+                suspended, reason = store.record_execution_policy_observation(
+                    SCENARIO, active_policy_gate.candidate_digest, active_policy_gate.digest,
+                    observation.model_dump(mode="json"))
+                pointer = store.active_pointer(SCENARIO)
+                if suspended:
+                    try:
+                        store.rollback(SCENARIO, rationale=reason,
+                                       expected_digest=active_policy_gate.candidate_digest)
+                    except (OSError, ValueError):
+                        pass
+                    return withhold(result, "execution_policy_suspended")
+                if pointer is None or pointer.get("bundle_digest") != active_policy_gate.candidate_digest:
+                    return withhold(result, "execution_policy_changed")
+            except (OSError, ValueError, TypeError, KeyError):
+                try:
+                    store.rollback(SCENARIO, rationale="post-activation monitoring unverified",
+                                   expected_digest=active_policy_gate.candidate_digest)
+                except (OSError, ValueError):
+                    pass
+                return withhold(result, "execution_policy_monitor_unverified")
         return result
 
     def skip(route: Route, reason: str, target: ModelTarget | None = None) -> None:
@@ -167,6 +227,38 @@ def route_schema_migration(
 
     if not config.enabled:
         return persist("abstention", "routing_disabled")
+    if mode == "serving":
+        try:
+            pointer = store.active_pointer(SCENARIO)
+            active = store.load_bundle(SCENARIO, str(pointer["bundle_digest"])) if pointer is not None else None
+            if active is not None and execution_policy_promotion.is_execution_policy(active):
+                template = execution_policy_promotion.policy_template(active)
+                has_skill = any(c.kind == ComponentKind.TOOL_SPEC and c.key == executable_skills.COMPONENT_KEY
+                                for c in active.components)
+                expected = template.model_copy(update={"bundle_digest": active.digest if has_skill else None})
+                if config != expected:
+                    raise ValueError("serving config differs from the active execution policy")
+                if has_skill:
+                    assert pointer is not None
+                    promotion = promotion_from_pointer(store, SCENARIO, pointer)
+                    if promotion.comparison.decision != ComparisonDecision.CONFIRMED or promotion.incumbent_digest is None:
+                        raise ValueError("active execution policy has no confirmed promotion")
+                    incumbent = store.load_bundle(SCENARIO, promotion.incumbent_digest)
+                    gate = execution_policy_promotion.require_execution_policy_gate(store, active, incumbent,
+                                                                                  promotion.cohort)
+                    if pointer.get("execution_policy_evidence_digest") != gate.digest:
+                        raise ValueError("active execution policy evidence differs from the promotion record")
+                    monitor = store.execution_policy_monitor(SCENARIO, active.digest)
+                    if monitor["evidence_digest"] != gate.digest:
+                        raise ValueError("active execution policy monitoring record changed")
+                    if monitor["status"] == "suspended":
+                        store.rollback(SCENARIO, rationale=monitor["reason"], expected_digest=active.digest)
+                        raise ValueError("active execution policy was suspended")
+                    active_policy_gate = gate
+            elif config.bundle_digest is not None:
+                raise ValueError("executable serving requires an active complete execution policy")
+        except (OSError, ValueError, TypeError, KeyError):
+            return persist("execution_failure", "unverified_execution_policy")
     if stopped := stop_reason():
         return persist("execution_failure", stopped)
     try:
@@ -209,7 +301,9 @@ def route_schema_migration(
         result = invoke_executable_skill(store, config.bundle_digest, input_json, mode=mode, caller_limits=limits,
                                          cancel=cancel, request_budget=wall)
         row.update(status=result.status, reason=result.reason, artifact_digest=result.artifact_digest,
-                   environment_digest=result.environment_digest, elapsed_seconds=time.monotonic() - call_start)
+                   environment_digest=result.environment_digest, elapsed_seconds=time.monotonic() - call_start,
+                   execution_seconds=result.execution_seconds, cpu_seconds=result.cpu_seconds,
+                   peak_memory_bytes=result.peak_memory_bytes)
         if result.status == "success":
             return persist("success", "verified_proposal", result.output_json, "skill")
         if result.reason in {"cleanup_unverified", "cancelled"}:
@@ -318,7 +412,7 @@ def route_schema_migration(
             row.update(status="execution_failure", reason="provider_accounting_unverified")
             return persist("execution_failure", "provider_accounting_unverified")
         row.update(reported_tokens=tokens, accounted_tokens=tokens, accounted_cost_usd=cost,
-                   reported_cost_usd=completion.cost_usd, accounting=accounting)
+                   reported_cost_usd=cost if accounting == "provider-reported" else None, accounting=accounting)
         if stopped := stop_reason():
             row.update(status="execution_failure", reason=stopped)
             return persist("execution_failure", stopped)

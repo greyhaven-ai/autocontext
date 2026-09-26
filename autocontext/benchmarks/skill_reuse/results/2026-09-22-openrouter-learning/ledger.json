@@ -1,0 +1,10 @@
+[
+  {
+    "failure": "ValueError",
+    "phase": "playbook",
+    "reserved_cost_usd": 0.039936,
+    "reserved_tokens": 9216,
+    "seconds": 2.868249541032128,
+    "state": "unverified"
+  }
+]

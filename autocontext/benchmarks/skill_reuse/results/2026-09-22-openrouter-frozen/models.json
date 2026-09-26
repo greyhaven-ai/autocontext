@@ -1,0 +1,27 @@
+{
+  "cheaper": {
+    "api_key_env": "OPENROUTER_API_KEY",
+    "base_url": "https://openrouter.ai/api/v1",
+    "input_cost_per_1k": 0.001,
+    "max_input_tokens": 8192,
+    "max_output_tokens": 1024,
+    "model": "anthropic/claude-haiku-4.5",
+    "output_cost_per_1k": 0.005,
+    "provider": "openai-compatible",
+    "provider_only": "anthropic",
+    "timeout_seconds": 20.0
+  },
+  "evidence_kind": "live",
+  "reference": {
+    "api_key_env": "OPENROUTER_API_KEY",
+    "base_url": "https://openrouter.ai/api/v1",
+    "input_cost_per_1k": 0.003,
+    "max_input_tokens": 8192,
+    "max_output_tokens": 1024,
+    "model": "anthropic/claude-sonnet-4.6",
+    "output_cost_per_1k": 0.015,
+    "provider": "openai-compatible",
+    "provider_only": "anthropic",
+    "timeout_seconds": 20.0
+  }
+}

@@ -44,6 +44,7 @@ def complete_routed_model(
     target: ModelTarget, input_json: str, *, timeout_seconds: float, cancel: threading.Event,
     request_budget: RuntimeBudget | None = None,
     learned_playbook: str = "",
+    system_prompt: str | None = None,
 ) -> CompletionResult:
     started = time.monotonic()
     deadline = started + timeout_seconds
@@ -63,7 +64,8 @@ def complete_routed_model(
     with tempfile.TemporaryDirectory(prefix="autocontext-model-route-") as temp:
         request = Path(temp) / "request.json"
         request.write_text(json.dumps({"target": target.model_dump(mode="json"), "input": input_json,
-                                       "deadline": deadline, "learned_playbook": learned_playbook}), encoding="utf-8")
+                                       "deadline": deadline, "learned_playbook": learned_playbook,
+                                       "system_prompt": system_prompt}), encoding="utf-8")
         request.chmod(0o600)
         if time.monotonic() >= deadline:
             raise ModelCallError("model_timeout")
@@ -107,8 +109,17 @@ def _main() -> None:
     if time.monotonic() >= data["deadline"]:
         raise SystemExit(124)
     try:
-        result = provider.complete(model_system_prompt(data["learned_playbook"]), data["input"],
-                                   model=target.model, max_tokens=target.max_output_tokens)
+        prompt = data["system_prompt"] or model_system_prompt(data["learned_playbook"])
+        if target.provider_only is not None:
+            if not isinstance(provider, OpenAICompatibleProvider):
+                raise ValueError("provider pin requires OpenRouter transport")
+            result = provider.complete(prompt, data["input"], model=target.model,
+                                       max_tokens=target.max_output_tokens, provider_only=target.provider_only,
+                                       provider_max_price=(target.input_cost_per_1k * 1000,
+                                                           target.output_cost_per_1k * 1000))
+        else:
+            result = provider.complete(prompt, data["input"], model=target.model,
+                                       max_tokens=target.max_output_tokens)
     except ProviderReceiptError:
         raise SystemExit(65) from None
     print(json.dumps(asdict(result), allow_nan=False))

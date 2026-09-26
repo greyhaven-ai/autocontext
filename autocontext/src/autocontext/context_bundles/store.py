@@ -31,15 +31,21 @@ from autocontext.context_bundles.store_transactions import (
     bound_confirmation_policy,
     comparison_from_dict,
     confirmation_policy_from_binding,
+    execution_policy_evidence,
+    execution_policy_monitor,
     finalize_active_lifecycles,
     matched_evidence_binding,
     migrate_terminal_matched_evidence,
     parse_matched_trials,
     pending_candidates,
+    prepare_execution_policy_monitor,
     promotion_from_pointer,
+    record_execution_policy_evidence,
+    record_execution_policy_observation,
     replay_matched_trials,
     rollover_evaluator_epoch,
     stale_terminalization_path,
+    verified_manifest_diff,
 )
 from autocontext.storage.scenario_paths import resolve_scenario_root
 from autocontext.util.file_lock import advisory_path_lock
@@ -378,6 +384,20 @@ class ContextBundleStore:
                 write_json(discoverable_path, artifact)
             return path
 
+    def execution_policy_evidence(self, scenario: str, digest: str) -> dict[str, Any]:
+        return execution_policy_evidence(self, scenario, digest)
+
+    def record_execution_policy_evidence(self, scenario: str, digest: str, evidence: dict[str, Any]) -> Path:
+        return record_execution_policy_evidence(self, scenario, digest, evidence)
+
+    def execution_policy_monitor(self, scenario: str, digest: str) -> dict[str, Any]:
+        return execution_policy_monitor(self, scenario, digest)
+
+    def record_execution_policy_observation(
+        self, scenario: str, digest: str, evidence_digest: str, observation: dict[str, Any],
+    ) -> tuple[bool, str]:
+        return record_execution_policy_observation(self, scenario, digest, evidence_digest, observation)
+
     def _matched_evidence(self, scenario: str, digest: str) -> _MatchedEvidence:
         path = self._trials_path(scenario, digest)
         if not path.exists():
@@ -623,7 +643,8 @@ class ContextBundleStore:
                 raise ValueError("persisted matched trials and policy do not reproduce the candidate comparison")
             if comparison.decision != ComparisonDecision.CONFIRMED:
                 raise ValueError("replayed candidate evidence is not confirmed")
-
+            policy_evidence_digest = prepare_execution_policy_monitor(
+                self, scenario, digest, bundle, incumbent_bundle, cohort)
             now = _now()
             artifact = PromotionArtifact(
                 promotion_id=uuid.uuid4().hex,
@@ -653,6 +674,8 @@ class ContextBundleStore:
                     "promotion_id": artifact.promotion_id,
                     "rollback_target_digest": incumbent_digest,
                     "manifest_diff_digest": manifest_diff.digest,
+                    **({"execution_policy_evidence_digest": policy_evidence_digest}
+                       if policy_evidence_digest is not None else {}),
                     "activated_at": now,
                     "rationale": rationale,
                 },
@@ -678,31 +701,18 @@ class ContextBundleStore:
         write_json(path, expected.to_dict())
         return expected
 
-    def _verified_manifest_diff(
-        self,
-        bundle: ContextBundle,
-        incumbent: ContextBundle | None,
-    ) -> ContextBundleManifestDiff:
-        if incumbent is None:
-            raise ValueError("context bundle promotion requires an incumbent manifest")
-        path = self._manifest_diff_path(bundle.scenario, bundle.digest)
-        if not path.exists():
-            # Candidates created before manifest-diff persistence can be
-            # migrated exactly from their immutable parent/tested manifests.
-            return self._persist_manifest_diff(bundle)
-        persisted = ContextBundleManifestDiff.from_dict(read_json(path))
-        expected = context_bundle_manifest_diff(bundle, incumbent)
-        if persisted != expected:
-            raise ValueError("persisted context bundle manifest diff does not match promotion manifests")
-        return persisted
+    def _verified_manifest_diff(self, bundle: ContextBundle, incumbent: ContextBundle | None) -> ContextBundleManifestDiff:
+        return verified_manifest_diff(self, bundle, incumbent)
 
-    def rollback(self, scenario: str, *, rationale: str) -> ContextBundle:
+    def rollback(self, scenario: str, *, rationale: str, expected_digest: str | None = None) -> ContextBundle:
         """Atomically restore the active pointer's explicit rollback target."""
         with self._lock(scenario):
             pointer = self.active_pointer(scenario)
             if pointer is None:
                 raise ValueError("cannot roll back without an active context bundle")
             current_digest = str(pointer["bundle_digest"])
+            if expected_digest is not None and current_digest != expected_digest:
+                raise ValueError("active bundle changed before conditional rollback")
             target_digest = pointer.get("rollback_target_digest")
             if not isinstance(target_digest, str) or not target_digest:
                 raise ValueError("active context bundle has no rollback target")

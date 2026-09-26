@@ -39,6 +39,38 @@ pip install 'autocontext[mcp]'              # MCP server dependencies
 
 The CLI entrypoint is `autoctx`. Provider env vars are listed in the repo-level [`.env.example`](../.env.example).
 
+For evaluator learning, `autoctx labels` extends the AC-260 calibration store
+with a human-only annotation queue. Supply a JSON array of candidates with a
+source trace/digest, evaluator identity, complete task prompt, output, rubric,
+judge scores, a group ID, and a `training`, `development`, or `promotion_test`
+split. Supply the current protected membership as a JSON object with
+`group_ids`, `content_digests`, and `task_digests` arrays (all may be empty only
+after explicitly checking the protected registry). Task digests normalize case
+and whitespace before hashing to catch simple near-duplicates; semantic
+paraphrases still require stewarded group IDs. From the Python package directory:
+
+```bash
+uv run --frozen autoctx labels select --pool pool.json --protected protected.json \
+  --round-id review-01 --budget 10 --audit-fraction 0.2 --boundary 0.5 --seed 1023
+uv run --frozen autoctx labels pending review-01
+uv run --frozen autoctx labels review review-01 acq-sample-id --protected protected.json \
+  --by human-reviewer --decision label --score 0.7 --rationale "Checked against rubric"
+uv run --frozen autoctx labels export review-01 --protected protected.json --output labels.json
+```
+
+Review actions also support `skip`, explicit `correct`, and a second reviewer's
+`disagree`; unresolved disagreements do not export as ground truth. Resume or
+export with the same round ID reconciles interrupted SQLite writes without
+requesting a second label. Selection and review recheck protected groups/duplicates, random
+audits remain distinct from targeted examples, and exports include only
+human-authored training/development labels with reviewer and criterion provenance.
+Acquired labels are excluded from the existing automatic serving-calibration
+example query; only explicit training/development exports can use them. The CLI
+does not call an LLM to assign human scores, estimate population accuracy from
+the selected sample, or activate a learned evaluator. The canonical
+promotion-test policy and promotion gate belong to AC-1025; use its current
+protected membership when available. TypeScript workflow parity is deferred.
+
 Autoresearch checkpoint selection uses a minimum-effect gate by default and
 supports adaptive matched-trial confirmation through the Python API. Raw
 trials and stopping rationale are persisted separately from deployment

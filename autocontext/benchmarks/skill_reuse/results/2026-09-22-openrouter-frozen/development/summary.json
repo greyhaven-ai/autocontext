@@ -1,0 +1,1416 @@
+{
+  "actual_lifecycle_resources_per_success": {
+    "baseline": {
+      "model_calls": 1.0,
+      "seconds": null,
+      "tokens": 130.25,
+      "total_cost_usd": null
+    },
+    "cheap_textual": {
+      "model_calls": 6.0,
+      "seconds": null,
+      "tokens": 4070.0,
+      "total_cost_usd": null
+    },
+    "executable": {
+      "model_calls": 1.25,
+      "seconds": null,
+      "tokens": 831.0,
+      "total_cost_usd": null
+    },
+    "textual": {
+      "model_calls": 1.5,
+      "seconds": null,
+      "tokens": 1014.75,
+      "total_cost_usd": null
+    }
+  },
+  "comparisons": {
+    "shifted/cheap_textual-vs-textual": {
+      "conditional_group_bootstrap_95_interval": [
+        -1,
+        0
+      ],
+      "mean_group_difference": -0.5,
+      "paired_cases": 2,
+      "regressions": 1,
+      "sampling_groups": 2
+    },
+    "shifted/executable-vs-cheap_textual": {
+      "conditional_group_bootstrap_95_interval": [
+        0,
+        1
+      ],
+      "mean_group_difference": 0.5,
+      "paired_cases": 2,
+      "regressions": 0,
+      "sampling_groups": 2
+    },
+    "shifted/executable-vs-textual": {
+      "conditional_group_bootstrap_95_interval": [
+        0,
+        0
+      ],
+      "mean_group_difference": 0,
+      "paired_cases": 2,
+      "regressions": 0,
+      "sampling_groups": 2
+    },
+    "shifted/textual-vs-baseline": {
+      "conditional_group_bootstrap_95_interval": [
+        0,
+        0
+      ],
+      "mean_group_difference": 0,
+      "paired_cases": 2,
+      "regressions": 0,
+      "sampling_groups": 2
+    },
+    "supported/cheap_textual-vs-textual": {
+      "conditional_group_bootstrap_95_interval": [
+        -1,
+        -1
+      ],
+      "mean_group_difference": -1,
+      "paired_cases": 2,
+      "regressions": 2,
+      "sampling_groups": 2
+    },
+    "supported/executable-vs-cheap_textual": {
+      "conditional_group_bootstrap_95_interval": [
+        1,
+        1
+      ],
+      "mean_group_difference": 1,
+      "paired_cases": 2,
+      "regressions": 0,
+      "sampling_groups": 2
+    },
+    "supported/executable-vs-textual": {
+      "conditional_group_bootstrap_95_interval": [
+        0,
+        0
+      ],
+      "mean_group_difference": 0,
+      "paired_cases": 2,
+      "regressions": 0,
+      "sampling_groups": 2
+    },
+    "supported/textual-vs-baseline": {
+      "conditional_group_bootstrap_95_interval": [
+        0,
+        0
+      ],
+      "mean_group_difference": 0,
+      "paired_cases": 2,
+      "regressions": 0,
+      "sampling_groups": 2
+    }
+  },
+  "complete_pairs": true,
+  "cost_accounting_incomplete_arms": [],
+  "decision": "development_only",
+  "discovery_ledger": [
+    {
+      "arms": [
+        "textual",
+        "executable",
+        "cheap_textual"
+      ],
+      "evidence": "prior-attempt.json sha256:1655f2043ef7debabbef16e8260e68d3188d630848a6639933dfb4227be56aed",
+      "id": "failed-playbook-001",
+      "model_calls": 1,
+      "phase": "failed_candidate",
+      "seconds": 2.868249541032128,
+      "tokens": 362,
+      "total_cost_usd": 0.001326
+    },
+    {
+      "arms": [
+        "textual",
+        "executable",
+        "cheap_textual"
+      ],
+      "evidence": "calls/playbook.request.json sha256:c1b15ab4234f8e9209b5571a71ae0ace21d68e8d6800605c6045a26c7275c469 calls/playbook.response.json sha256:4cba5adfdb1991d970cd4b168a365465d2613482b6ad249ce630deba010c4390",
+      "id": "playbook",
+      "model_calls": 1,
+      "phase": "discovery",
+      "seconds": 14.251640875008889,
+      "tokens": 944,
+      "total_cost_usd": 0.009408
+    },
+    {
+      "arms": [
+        "executable"
+      ],
+      "evidence": "calls/skill.request.json sha256:79df432b57384436ba1ef8d4ba5c1254bddbaedacb1bc349f380d27e8939044d calls/skill.response.json sha256:93c80af37f92a65df3e07a68323027fe7cb77874b2f3266740e825ef2da8da13",
+      "id": "skill",
+      "model_calls": 1,
+      "phase": "discovery",
+      "seconds": 4.59793179098051,
+      "tokens": 653,
+      "total_cost_usd": 0.004743
+    },
+    {
+      "arms": [
+        "baseline"
+      ],
+      "evidence": "Unmetered baseline task setup; no synthesis call",
+      "id": "baseline",
+      "model_calls": 0,
+      "phase": "discovery",
+      "seconds": null,
+      "tokens": 0,
+      "total_cost_usd": null
+    },
+    {
+      "arms": [
+        "baseline",
+        "textual",
+        "executable",
+        "cheap_textual"
+      ],
+      "evidence": "Prompt preparation, review and local resources unmetered",
+      "id": "authoring-overhead",
+      "model_calls": 0,
+      "phase": "discovery",
+      "seconds": null,
+      "tokens": 0,
+      "total_cost_usd": null
+    }
+  ],
+  "economic_test": {
+    "horizon": 100,
+    "min_savings": 0.05,
+    "passes": null,
+    "projected_total_cost_usd": {
+      "baseline": null,
+      "cheap_textual": null,
+      "executable": null,
+      "textual": null
+    },
+    "shifted_frequency": 0.1
+  },
+  "evidence_kind": "live",
+  "failure": null,
+  "first_observed_task_with_setup": {
+    "baseline": {
+      "model_calls": 1,
+      "seconds": null,
+      "tokens": 139,
+      "total_cost_usd": null
+    },
+    "cheap_textual": {
+      "model_calls": 3,
+      "seconds": null,
+      "tokens": 2007,
+      "total_cost_usd": null
+    },
+    "executable": {
+      "model_calls": 3,
+      "seconds": null,
+      "tokens": 1959,
+      "total_cost_usd": null
+    },
+    "textual": {
+      "model_calls": 3,
+      "seconds": null,
+      "tokens": 2003,
+      "total_cost_usd": null
+    }
+  },
+  "freeze_digest": "41bbb14a4458a2a68c493715dadd9f75b63b7320ff1e666d4f272dd18b546380",
+  "limitations": "Synthetic task-family pilot; intervals are conditional on frozen artifacts and model draws. Bootstrap sampling units are paired fixture groups. Binomial intervals and latency quantiles are descriptive. Public fixtures are not an independent private generalization suite. No caching, tool changes, learned judge, retuning or work-skipping ablations are introduced.",
+  "observed_first_resource_crossing_vs": {
+    "cheap_textual": {
+      "model_calls": 2,
+      "seconds": null,
+      "tokens": 1,
+      "total_cost_usd": null
+    },
+    "textual": {
+      "model_calls": 2,
+      "seconds": null,
+      "tokens": 1,
+      "total_cost_usd": null
+    }
+  },
+  "one_time_costs": {
+    "baseline": {
+      "model_calls": 0,
+      "seconds": null,
+      "tokens": 0,
+      "total_cost_usd": null
+    },
+    "cheap_textual": {
+      "model_calls": 2,
+      "seconds": null,
+      "tokens": 1306,
+      "total_cost_usd": null
+    },
+    "executable": {
+      "model_calls": 3,
+      "seconds": null,
+      "tokens": 1959,
+      "total_cost_usd": null
+    },
+    "textual": {
+      "model_calls": 2,
+      "seconds": null,
+      "tokens": 1306,
+      "total_cost_usd": null
+    }
+  },
+  "production_activation_authorized": false,
+  "projected_horizons": {
+    "baseline": [
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 1,
+        "tokens": 657.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 6.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 2,
+        "tokens": 793.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 9.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 5,
+        "tokens": 1201.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 14.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 10,
+        "tokens": 1881.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 29.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 25,
+        "tokens": 3921.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 104.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 100,
+        "tokens": 14121.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1004.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 1000,
+        "tokens": 136521.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 1,
+        "tokens": 655.85,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 6.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 2,
+        "tokens": 790.7,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 9.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 5,
+        "tokens": 1195.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 14.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 10,
+        "tokens": 1869.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 29.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 25,
+        "tokens": 3892.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 104.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 100,
+        "tokens": 14006.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1004.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 1000,
+        "tokens": 135371.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 1,
+        "tokens": 651.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 6.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 2,
+        "tokens": 781.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 9.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 5,
+        "tokens": 1172.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 14.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 10,
+        "tokens": 1823.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 29.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 25,
+        "tokens": 3777.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 104.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 100,
+        "tokens": 13546.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1004.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 1000,
+        "tokens": 130771.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 1,
+        "tokens": 645.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 6.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 2,
+        "tokens": 770.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 9.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 5,
+        "tokens": 1143.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 14.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 10,
+        "tokens": 1766.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 29.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 25,
+        "tokens": 3633.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 104.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 100,
+        "tokens": 12971.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1004.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 1000,
+        "tokens": 125021.0,
+        "total_cost_usd": null
+      }
+    ],
+    "cheap_textual": [
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 1,
+        "tokens": 4768.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 8.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 2,
+        "tokens": 5466.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 11.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 5,
+        "tokens": 7560.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 16.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 10,
+        "tokens": 11050.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 31.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 25,
+        "tokens": 21520.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 106.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 100,
+        "tokens": 73870.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1006.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 1000,
+        "tokens": 702070.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 1,
+        "tokens": 4766.6,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 8.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 2,
+        "tokens": 5463.2,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 11.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 5,
+        "tokens": 7553.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 16.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 10,
+        "tokens": 11036.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 31.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 25,
+        "tokens": 21485.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 106.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 100,
+        "tokens": 73730.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1006.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 1000,
+        "tokens": 700670.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 1,
+        "tokens": 4761.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 8.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 2,
+        "tokens": 5452.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 11.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 5,
+        "tokens": 7525.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 16.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 10,
+        "tokens": 10980.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 31.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 25,
+        "tokens": 21345.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 106.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 100,
+        "tokens": 73170.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1006.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 1000,
+        "tokens": 695070.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 1,
+        "tokens": 4754.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 8.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 2,
+        "tokens": 5438.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 11.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 5,
+        "tokens": 7490.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 16.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 10,
+        "tokens": 10910.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 31.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 25,
+        "tokens": 21170.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 106.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 100,
+        "tokens": 72470.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1006.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 1000,
+        "tokens": 688070.0,
+        "total_cost_usd": null
+      }
+    ],
+    "executable": [
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 1,
+        "tokens": 3324.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 2,
+        "tokens": 3324.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 5,
+        "tokens": 3324.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 10,
+        "tokens": 3324.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 25,
+        "tokens": 3324.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 100,
+        "tokens": 3324.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 1000,
+        "tokens": 3324.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.1,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 1,
+        "tokens": 3392.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.2,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 2,
+        "tokens": 3460.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.5,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 5,
+        "tokens": 3665.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 6.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 10,
+        "tokens": 4006.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.5,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 25,
+        "tokens": 5030.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 15.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 100,
+        "tokens": 10149.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 105.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 1000,
+        "tokens": 71574.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 5.5,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 1,
+        "tokens": 3665.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 6.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 2,
+        "tokens": 4006.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.5,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 5,
+        "tokens": 5030.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 10.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 10,
+        "tokens": 6736.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 17.5,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 25,
+        "tokens": 11855.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 55.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 100,
+        "tokens": 37449.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 505.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 1000,
+        "tokens": 344574.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 6.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 1,
+        "tokens": 4006.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 2,
+        "tokens": 4689.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 10.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 5,
+        "tokens": 6736.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 15.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 10,
+        "tokens": 10149.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 30.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 25,
+        "tokens": 20386.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 105.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 100,
+        "tokens": 71574.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1005.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 1000,
+        "tokens": 685824.0,
+        "total_cost_usd": null
+      }
+    ],
+    "textual": [
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 1,
+        "tokens": 4753.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 8.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 2,
+        "tokens": 5447.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 11.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 5,
+        "tokens": 7529.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 16.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 10,
+        "tokens": 10999.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 31.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 25,
+        "tokens": 21409.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 106.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 100,
+        "tokens": 73459.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1006.0,
+        "seconds": null,
+        "shifted_frequency": 0.0,
+        "tasks": 1000,
+        "tokens": 698059.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 1,
+        "tokens": 4751.85,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 8.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 2,
+        "tokens": 5444.7,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 11.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 5,
+        "tokens": 7523.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 16.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 10,
+        "tokens": 10987.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 31.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 25,
+        "tokens": 21380.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 106.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 100,
+        "tokens": 73344.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1006.0,
+        "seconds": null,
+        "shifted_frequency": 0.1,
+        "tasks": 1000,
+        "tokens": 696909.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 1,
+        "tokens": 4747.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 8.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 2,
+        "tokens": 5435.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 11.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 5,
+        "tokens": 7500.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 16.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 10,
+        "tokens": 10941.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 31.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 25,
+        "tokens": 21265.25,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 106.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 100,
+        "tokens": 72884.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1006.0,
+        "seconds": null,
+        "shifted_frequency": 0.5,
+        "tasks": 1000,
+        "tokens": 692309.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 7.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 1,
+        "tokens": 4741.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 8.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 2,
+        "tokens": 5424.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 11.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 5,
+        "tokens": 7471.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 16.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 10,
+        "tokens": 10884.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 31.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 25,
+        "tokens": 21121.5,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 106.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 100,
+        "tokens": 72309.0,
+        "total_cost_usd": null
+      },
+      {
+        "model_calls": 1006.0,
+        "seconds": null,
+        "shifted_frequency": 1.0,
+        "tasks": 1000,
+        "tokens": 686559.0,
+        "total_cost_usd": null
+      }
+    ]
+  },
+  "projection_scope": "Projection pays discovery, development and this arm's evaluation before new tasks. Shared qualification overhead belongs in the explicit discovery ledger. Observed crossings refer to the evaluation sequence, not post-qualification deployment. Unreconciled dispatches make affected totals, projections and crossings unknown. Frozen artifact with shifted-input fallback, no retuning. Horizons are projections, not runs. Candidate child CPU/peak RSS exclude Docker daemon and model-provider resources. Operator-priced local/Docker seconds and provider-reported spend are conditional estimates, not audited invoices; incomplete discovery costs remain unknown.",
+  "qualification_costs_including_evaluation": {
+    "baseline": {
+      "model_calls": 4,
+      "seconds": null,
+      "tokens": 521,
+      "total_cost_usd": null
+    },
+    "cheap_textual": {
+      "model_calls": 6,
+      "seconds": null,
+      "tokens": 4070,
+      "total_cost_usd": null
+    },
+    "executable": {
+      "model_calls": 5,
+      "seconds": null,
+      "tokens": 3324,
+      "total_cost_usd": null
+    },
+    "textual": {
+      "model_calls": 6,
+      "seconds": null,
+      "tokens": 4059,
+      "total_cost_usd": null
+    }
+  },
+  "quality_and_coverage_checks_pass": false,
+  "schema_version": "ac1029.report.v1",
+  "split": "development",
+  "stats": {
+    "shifted/baseline": {
+      "cases": 2,
+      "cpu_seconds": null,
+      "declared_model_cost_usd": 0.000963,
+      "descriptive_binomial_95_interval": [
+        0.34238022750665303,
+        1
+      ],
+      "estimated_task_cost_usd": null,
+      "fallback_frequency": 0.0,
+      "harmful_proposals_rejected": 0,
+      "model_calls": 2,
+      "p50_seconds": 2.960117166978307,
+      "p95_seconds": 3.1085444580530748,
+      "peak_memory_bytes": null,
+      "seconds": 6.068661625031382,
+      "skill_coverage": 0.0,
+      "skill_precision": null,
+      "skill_precision_binomial_95_interval": null,
+      "skill_proposals": 0,
+      "success_rate": 1.0,
+      "successes": 2,
+      "tokens": 249,
+      "total_cost_usd": null,
+      "unreconciled_attempts": 0
+    },
+    "shifted/cheap_textual": {
+      "cases": 2,
+      "cpu_seconds": null,
+      "declared_model_cost_usd": 0.00146,
+      "descriptive_binomial_95_interval": [
+        0.09453120573423074,
+        0.9054687942657693
+      ],
+      "estimated_task_cost_usd": null,
+      "fallback_frequency": 0.0,
+      "harmful_proposals_rejected": 0,
+      "model_calls": 2,
+      "p50_seconds": 1.6291433749720454,
+      "p95_seconds": 1.6872913329862058,
+      "peak_memory_bytes": null,
+      "seconds": 3.3164347079582512,
+      "skill_coverage": 0.0,
+      "skill_precision": null,
+      "skill_precision_binomial_95_interval": null,
+      "skill_proposals": 0,
+      "success_rate": 0.5,
+      "successes": 1,
+      "tokens": 1368,
+      "total_cost_usd": null,
+      "unreconciled_attempts": 0
+    },
+    "shifted/executable": {
+      "cases": 2,
+      "cpu_seconds": null,
+      "declared_model_cost_usd": 0.004311000000000001,
+      "descriptive_binomial_95_interval": [
+        0.34238022750665303,
+        1
+      ],
+      "estimated_task_cost_usd": null,
+      "fallback_frequency": 1.0,
+      "harmful_proposals_rejected": 0,
+      "model_calls": 2,
+      "p50_seconds": 2.0572254169965163,
+      "p95_seconds": 4.147079874994233,
+      "peak_memory_bytes": null,
+      "seconds": 6.2043052919907495,
+      "skill_coverage": 0.0,
+      "skill_precision": null,
+      "skill_precision_binomial_95_interval": null,
+      "skill_proposals": 0,
+      "success_rate": 1.0,
+      "successes": 2,
+      "tokens": 1365,
+      "total_cost_usd": null,
+      "unreconciled_attempts": 0
+    },
+    "shifted/textual": {
+      "cases": 2,
+      "cpu_seconds": null,
+      "declared_model_cost_usd": 0.004311000000000001,
+      "descriptive_binomial_95_interval": [
+        0.34238022750665303,
+        1
+      ],
+      "estimated_task_cost_usd": null,
+      "fallback_frequency": 0.0,
+      "harmful_proposals_rejected": 0,
+      "model_calls": 2,
+      "p50_seconds": 2.207200040924363,
+      "p95_seconds": 2.775179292075336,
+      "peak_memory_bytes": null,
+      "seconds": 4.982379332999699,
+      "skill_coverage": 0.0,
+      "skill_precision": null,
+      "skill_precision_binomial_95_interval": null,
+      "skill_proposals": 0,
+      "success_rate": 1.0,
+      "successes": 2,
+      "tokens": 1365,
+      "total_cost_usd": null,
+      "unreconciled_attempts": 0
+    },
+    "supported/baseline": {
+      "cases": 2,
+      "cpu_seconds": null,
+      "declared_model_cost_usd": 0.001332,
+      "descriptive_binomial_95_interval": [
+        0.34238022750665303,
+        1
+      ],
+      "estimated_task_cost_usd": null,
+      "fallback_frequency": 0.0,
+      "harmful_proposals_rejected": 0,
+      "model_calls": 2,
+      "p50_seconds": 2.2772766249254346,
+      "p95_seconds": 2.594380958005786,
+      "peak_memory_bytes": null,
+      "seconds": 4.8716575829312205,
+      "skill_coverage": 0.0,
+      "skill_precision": null,
+      "skill_precision_binomial_95_interval": null,
+      "skill_proposals": 0,
+      "success_rate": 1.0,
+      "successes": 2,
+      "tokens": 272,
+      "total_cost_usd": null,
+      "unreconciled_attempts": 0
+    },
+    "supported/cheap_textual": {
+      "cases": 2,
+      "cpu_seconds": null,
+      "declared_model_cost_usd": 0.001608,
+      "descriptive_binomial_95_interval": [
+        0,
+        0.6576197724933469
+      ],
+      "estimated_task_cost_usd": null,
+      "fallback_frequency": 0.0,
+      "harmful_proposals_rejected": 0,
+      "model_calls": 2,
+      "p50_seconds": 1.5627510830527171,
+      "p95_seconds": 1.7240035409340635,
+      "peak_memory_bytes": null,
+      "seconds": 3.2867546239867806,
+      "skill_coverage": 0.0,
+      "skill_precision": null,
+      "skill_precision_binomial_95_interval": null,
+      "skill_proposals": 0,
+      "success_rate": 0.0,
+      "successes": 0,
+      "tokens": 1396,
+      "total_cost_usd": null,
+      "unreconciled_attempts": 0
+    },
+    "supported/executable": {
+      "cases": 2,
+      "cpu_seconds": 0.0024419999999999997,
+      "declared_model_cost_usd": 0.0,
+      "descriptive_binomial_95_interval": [
+        0.34238022750665303,
+        1
+      ],
+      "estimated_task_cost_usd": null,
+      "fallback_frequency": 0.0,
+      "harmful_proposals_rejected": 0,
+      "model_calls": 0,
+      "p50_seconds": 0.39844895899295807,
+      "p95_seconds": 0.5381683750310913,
+      "peak_memory_bytes": 11747328,
+      "seconds": 0.9366173340240493,
+      "skill_coverage": 1.0,
+      "skill_precision": 1.0,
+      "skill_precision_binomial_95_interval": [
+        0.34238022750665303,
+        1
+      ],
+      "skill_proposals": 2,
+      "success_rate": 1.0,
+      "successes": 2,
+      "tokens": 0,
+      "total_cost_usd": null,
+      "unreconciled_attempts": 0
+    },
+    "supported/textual": {
+      "cases": 2,
+      "cpu_seconds": null,
+      "declared_model_cost_usd": 0.00468,
+      "descriptive_binomial_95_interval": [
+        0.34238022750665303,
+        1
+      ],
+      "estimated_task_cost_usd": null,
+      "fallback_frequency": 0.0,
+      "harmful_proposals_rejected": 0,
+      "model_calls": 2,
+      "p50_seconds": 3.0525875000748783,
+      "p95_seconds": 3.122700999956578,
+      "peak_memory_bytes": null,
+      "seconds": 6.175288500031456,
+      "skill_coverage": 0.0,
+      "skill_precision": null,
+      "skill_precision_binomial_95_interval": null,
+      "skill_proposals": 0,
+      "success_rate": 1.0,
+      "successes": 2,
+      "tokens": 1388,
+      "total_cost_usd": null,
+      "unreconciled_attempts": 0
+    }
+  },
+  "status": "complete",
+  "unreconciled_reservations": []
+}

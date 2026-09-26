@@ -109,6 +109,9 @@ class HumanFeedbackRow(TypedDict):
     human_score: float | None
     human_notes: str
     generation_id: str | None
+    acquisition_id: str | None
+    reviewer: str | None
+    criterion_scores_json: str
     created_at: str
 
 

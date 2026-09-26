@@ -205,19 +205,24 @@ def test_direct_executor_bounds_payloads_before_docker(monkeypatch, field, value
     assert result.failure == reason and not result.output
 
 
-@pytest.mark.parametrize("oom_output,inspect_code,exit_code,reason", [
-    (b"true\n", 0, 0, "oom"),
-    (b"true\n", 0, 137, "oom"),
-    (b"false\n", 0, 0, "verified_proposal"),
-    (b"false\n", 0, 1, "candidate_error"),
-    (b"", 0, 0, "resource_status_unverified"),
-    (b"unknown\n", 0, 0, "resource_status_unverified"),
-    (b"false\n", 1, 0, "resource_status_unverified"),
-    (OSError("daemon unavailable"), 0, 0, "sandbox_error"),
-    (subprocess.TimeoutExpired("docker inspect", 1), 0, 0, "timeout"),
+@pytest.mark.parametrize("oom_output,inspect_code,exit_code,event_kind,event_code,reason", [
+    (b"true\n", 0, 0, "die", 0, "oom"),
+    (b"true\n", 0, 137, "die", 0, "oom"),
+    (b"false\n", 0, 0, "die", 0, "verified_proposal"),
+    (b"false\n", 0, 1, "die", 0, "candidate_error"),
+    (b"false\n", 0, 0, "oom", 0, "oom"),
+    (b"false\n", 0, 0, "missing", 0, "resource_status_unverified"),
+    (b"false\n", 0, 0, "wrong-id", 0, "resource_status_unverified"),
+    (b"false\n", 0, 0, "malformed", 0, "resource_status_unverified"),
+    (b"false\n", 0, 0, "die", 1, "resource_status_unverified"),
+    (b"", 0, 0, "die", 0, "resource_status_unverified"),
+    (b"unknown\n", 0, 0, "die", 0, "resource_status_unverified"),
+    (b"false\n", 1, 0, "die", 0, "resource_status_unverified"),
+    (OSError("daemon unavailable"), 0, 0, "die", 0, "sandbox_error"),
+    (subprocess.TimeoutExpired("docker inspect", 1), 0, 0, "die", 0, "timeout"),
 ])
 def test_oom_state_is_required_before_accepting_output_and_cleanup(
-    candidate, monkeypatch, oom_output, inspect_code, exit_code, reason,
+    candidate, monkeypatch, oom_output, inspect_code, exit_code, event_kind, event_code, reason,
 ):
     commands = []
 
@@ -230,7 +235,17 @@ def test_oom_state_is_required_before_accepting_output_and_cleanup(
             if isinstance(oom_output, Exception):
                 raise oom_output
             return subprocess.CompletedProcess(command, inspect_code, oom_output)
-        assert command[1] in {"create", "rm", "ps"}
+        if command[1] == "create":
+            return subprocess.CompletedProcess(command, 0, b"a" * 64)
+        if command[1] == "events":
+            assert "container=" + "a" * 64 in command and 0 < kwargs["timeout"] <= DEFAULT_LIMITS.timeout_seconds
+            actor = {"ID": "b" * 64 if event_kind == "wrong-id" else "a" * 64,
+                     "Attributes": {"exitCode": str(exit_code)}}
+            die = json.dumps({"Type": "container", "Action": "die", "Actor": actor})
+            body = (json.dumps({"Type": "container", "Action": "oom", "Actor": actor}) + "\n" + die
+                    if event_kind == "oom" else "" if event_kind == "missing" else "{" if event_kind == "malformed" else die)
+            return subprocess.CompletedProcess(command, event_code, body.encode())
+        assert command[1] in {"rm", "ps"}
         return subprocess.CompletedProcess(command, 0, b"")
 
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
@@ -245,7 +260,8 @@ def test_oom_state_is_required_before_accepting_output_and_cleanup(
     assert result.reason == reason
     assert result.status == ("success" if reason == "verified_proposal" else "execution_failure")
     assert (result.output_json is not None) == (reason == "verified_proposal")
-    assert commands == ["image", "create", "inspect", "rm", "ps"]
+    assert commands[:3] == ["image", "create", "inspect"] and commands[-2:] == ["rm", "ps"]
+    assert ("events" in commands) == (oom_output == b"false\n" and inspect_code == 0)
 
 
 @pytest.mark.parametrize("output,reason", [
@@ -491,14 +507,14 @@ else:
     assert json.loads(protected.output) == json.loads(OUTPUT)
     assert sentinel.read_text() == "host-secret"
     for source, expected in [
-        ("def choose_action(state):\n    raise RuntimeError('failed')", "candidate_error"),
-        ("memory = bytearray(512 * 1024 * 1024)", "oom"),
-        ("while True: print('x' * 4096, flush=True)", "output_limit"),
-        ("while True: pass", "timeout"),
+        ("def choose_action(state):\n    raise RuntimeError('failed')", {"candidate_error"}),
+        ("memory = bytearray(512 * 1024 * 1024)", {"oom", "candidate_error"}),
+        ("while True: print('x' * 4096, flush=True)", {"output_limit"}),
+        ("while True: pass", {"timeout"}),
     ]:
         limits = CandidateLimits(timeout_seconds=2, max_memory_mb=128, max_output_bytes=1024)
         outcome = executor.execute(source, INPUT, limits)
-        assert outcome.failure == expected, outcome
+        assert outcome.failure in expected and not outcome.output, outcome
     # A child can be OOM-killed while the parent exits zero with correct JSON.
     # Docker's durable OOM marker must still prevent a verified proposal.
     child_oom_source = '''import subprocess, sys
