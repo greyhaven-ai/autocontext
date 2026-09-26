@@ -203,6 +203,7 @@ prompt-derived data and should be redacted before persistence or export.
 | `uv run autoctx investigate --description "..."`                                       | Run synthetic or iterative investigations                                                              |
 | `uv run autoctx list` / `status <run_id>` / `show <run_id>`                            | Inspect runs                                                                                           |
 | `uv run autoctx replay <run_id> --generation 1`                                        | Replay a generation before accepting knowledge                                                         |
+| `uv run autoctx resume <run-id> --json`                                                | Finish a failed or interrupted run with its own scenario and target                                    |
 | `uv run autoctx queue add --task-prompt "..." --rubric "..."`                          | Queue evaluation/improvement work                                                                      |
 | `uv run autoctx scenario create --family workflow --name support --description "..."`   | Create a reusable scenario through a family-specific pipeline                                            |
 | `uv run autoctx serve --host 127.0.0.1 --port 8000`                                    | Start the local HTTP API                                                                               |
