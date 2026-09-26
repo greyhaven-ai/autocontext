@@ -8,7 +8,7 @@ import pytest
 
 from autocontext.config import AppSettings
 from autocontext.context_bundles import ComponentKind, ContextBundleStore
-from autocontext.extensions import HookEvents
+from autocontext.extensions import HookEvents, HookResult
 from autocontext.loop import GenerationRunner
 from autocontext.loop.generation_pipeline import GenerationPipeline
 
@@ -434,6 +434,46 @@ def test_reentry_that_extends_or_recovers_a_run_still_runs_the_tail_once(
     assert report.exists()
     assert _snapshot_rows(tmp_path, run_id) == 2
     assert _event_names(tmp_path).count("run_completed") == 2
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("cut_short", ["blocked_resume", "interrupted"])
+def test_run_cut_short_after_its_last_generation_still_gets_its_tail_on_the_next_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cut_short: str
+) -> None:
+    # Recovery marked a 'running' run whose generations were all done 'completed' before its tail had run,
+    # so the next resume took it for finished and never wrote its report, snapshot or run_completed.
+    runner = _reentry_runner(tmp_path)
+    run_id = "cut_run"
+    report = tmp_path / "knowledge" / "grid_ctf" / "reports" / f"{run_id}.md"
+    if cut_short == "blocked_resume":
+        # A process killed after its last generation, then a resume that RUN_START refused.
+        runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+        report.unlink()
+        runner.sqlite.mark_run_running(run_id)
+        runner.hook_bus.on(HookEvents.RUN_START, lambda event: HookResult(block=True, reason="policy says no"))
+        with pytest.raises(RuntimeError, match="blocked run_start"):
+            runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    else:
+        # Interrupted after generation 1 was persisted, before the run was marked completed.
+        interrupts = [KeyboardInterrupt()]
+
+        def interrupt_once(*_args: object) -> None:
+            if interrupts:
+                raise interrupts.pop()
+
+        monkeypatch.setattr(runner, "_safe_generate_run_trace_artifacts", interrupt_once)
+        with pytest.raises(KeyboardInterrupt):
+            runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    assert runner.sqlite.get_run(run_id)["status"] == "failed"
+    receipts = _event_names(tmp_path).count("run_completed")
+
+    summary = _reentry_runner(tmp_path).run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+
+    assert summary.generations_executed == 0
+    assert runner.sqlite.get_run(run_id)["status"] == "completed"
+    assert report.exists()
+    assert _event_names(tmp_path).count("run_completed") == receipts + 1
 
 
 def _record_run_ends(runner: GenerationRunner) -> list[dict]:

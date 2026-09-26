@@ -75,18 +75,9 @@ def recover_stale_run_state(sqlite: SQLiteStore, run_id: str) -> None:
         )
         return
 
-    completed_generations = sum(1 for row in generation_rows if str(row.get("status") or "") == "completed")
-    target_generations = _int_value(run_row.get("target_generations"), 0)
-    if target_generations > 0 and completed_generations >= target_generations:
-        sqlite.mark_run_completed(run_id)
-        logger.info(
-            "marking run %s completed during recovery (%d/%d generations already completed)",
-            run_id,
-            completed_generations,
-            target_generations,
-        )
-        return
-
+    # Failed even when every generation is done: its post-run tail (report, knowledge snapshot, run_completed)
+    # may not have run, and a run completed at its target is left unchanged on re-entry, so the next resume
+    # must still see it as unfinished.
     sqlite.mark_run_failed(run_id)
     logger.warning(
         "marking run %s failed during recovery; run was still 'running' without an active generation",

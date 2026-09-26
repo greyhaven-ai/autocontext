@@ -56,7 +56,10 @@ All notable changes to this project will be documented in this file.
   current knowledge under the old run (so cross-run inheritance could restore
   content that never earned the recorded score), appended duplicate snapshot
   rows and drift output, rewrote the session report and emitted another
-  `run_completed` (AC-1044).
+  `run_completed`. Recovery now marks a run found `running` after its last
+  generation as failed rather than completed, so a run cut short before its
+  post-run tail (including by a blocked resume) no longer looks finished and
+  the next resume still writes its report, snapshot and receipt (AC-1044).
 
 - Python: a run no longer stays `running` with no process behind it when a
   `run_start` extension hook blocks it or setup before its first generation
