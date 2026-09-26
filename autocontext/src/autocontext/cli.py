@@ -20,6 +20,7 @@ from rich.table import Table
 
 from autocontext import __version__
 from autocontext.agents.orchestrator import AgentOrchestrator
+from autocontext.cli_agent_task_run import refuse_existing_agent_task_run
 from autocontext.cli_ambient import ambient_app
 from autocontext.cli_analytics import register_analytics_command
 from autocontext.cli_campaign import register_campaign_command
@@ -256,6 +257,7 @@ def _run_agent_task(
 ) -> AgentTaskRunSummary:
     """Execute an agent-task scenario through ImprovementLoop."""
     sqlite = _sqlite_from_settings(settings)
+    refuse_existing_agent_task_run(sqlite, run_id, scenario_name)
     hook_bus, _loaded_extensions = initialize_hook_bus(settings)
     cls = SCENARIO_REGISTRY[scenario_name]
     instance = cls()
@@ -292,23 +294,85 @@ def _run_agent_task(
         "agent_task",
         agent_provider=settings.agent_provider,
     )
-    sqlite.upsert_generation(
-        active_run_id,
-        1,
-        mean_score=0.0,
-        best_score=0.0,
-        elo=0.0,
-        wins=0,
-        losses=0,
-        gate_decision="running",
-        status="running",
-    )
-    sqlite.append_agent_output(active_run_id, 1, "competitor_initial", initial_output)
-
+    # The run row is ours from here, so a failure or interrupt must still leave it
+    # terminal: `autoctx resume` refuses agent-task runs, so nothing else would.
     try:
+        sqlite.upsert_generation(
+            active_run_id,
+            1,
+            mean_score=0.0,
+            best_score=0.0,
+            elo=0.0,
+            wins=0,
+            losses=0,
+            gate_decision="running",
+            status="running",
+        )
+        sqlite.append_agent_output(active_run_id, 1, "competitor_initial", initial_output)
         with active_hook_bus(hook_bus):
             result = loop.run(initial_output=initial_output, state=state)
-    except Exception:
+
+        # AC-848: apply the same guardrail-adjusted effective_met_threshold that
+        # execution/task_runner.py::_process_task applies, via the shared
+        # agent_task_completion helpers, so the two execution paths cannot drift.
+        # There is no queued objective_verification config for a direct scenario
+        # run, so only the evaluator guardrail (judge_samples / bias probes) can
+        # veto here.
+        guardrail_config = TaskConfig(
+            judge_samples=settings.judge_samples,
+            judge_temperature=settings.judge_temperature,
+            judge_disagreement_threshold=settings.judge_disagreement_threshold,
+            judge_bias_probes_enabled=settings.judge_bias_probes_enabled,
+        )
+        # The guardrail re-runs the live judge, so it must run inside the same
+        # hook-bus context as the loop's judge calls (above), and it must see the
+        # same prepared/validated ``state`` the loop ran against -- not a fresh
+        # ``task.initial_state()`` that would drop any injected context.
+        with active_hook_bus(hook_bus):
+            evaluator_guardrail = build_evaluator_guardrail_payload(
+                task,
+                result.best_output,
+                guardrail_config,
+                state=state,
+            )
+        effective_met_threshold = compute_effective_met_threshold(
+            result.met_threshold,
+            None,
+            evaluator_guardrail,
+        )
+        # When a guardrail vetoes a loop that met the threshold, the persisted
+        # termination_reason/gate_decision must not still claim "threshold_met".
+        # Mirror the ``"threshold_met" if effective else "max_rounds"`` derivation
+        # in execution/task_runner.py::_run_task_multi_generation.
+        effective_termination_reason = (
+            "max_rounds" if result.met_threshold and not effective_met_threshold else result.termination_reason
+        )
+
+        epoch_id = getattr(result, "evaluator_epoch", None)
+        quarantined = observe_epoch_quarantined(
+            settings.knowledge_root / "_evaluator_epochs", scenario_name, epoch_id,
+            serving_spec=getattr(result, "evaluator_spec", None),
+        )
+        sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
+        provenance = getattr(result, "evaluation_provenance", [])
+        if provenance:
+            sqlite.append_agent_output(active_run_id, 1, "judge_provenance", json.dumps(provenance))
+        sqlite.upsert_generation(
+            active_run_id,
+            1,
+            mean_score=result.best_score,
+            best_score=result.best_score,
+            elo=0.0,
+            wins=0,
+            losses=0,
+            gate_decision=effective_termination_reason,
+            status="completed",
+            duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
+            evaluator_epoch=epoch_id,
+            quarantined=quarantined,
+        )
+        sqlite.mark_run_completed(active_run_id)
+    except BaseException:
         logger.debug("cli: caught Exception", exc_info=True)
         sqlite.upsert_generation(
             active_run_id,
@@ -321,67 +385,8 @@ def _run_agent_task(
             gate_decision="failed",
             status="failed",
         )
+        sqlite.mark_run_failed(active_run_id)
         raise
-
-    # AC-848: apply the same guardrail-adjusted effective_met_threshold that
-    # execution/task_runner.py::_process_task applies, via the shared
-    # agent_task_completion helpers, so the two execution paths cannot drift.
-    # There is no queued objective_verification config for a direct scenario
-    # run, so only the evaluator guardrail (judge_samples / bias probes) can
-    # veto here.
-    guardrail_config = TaskConfig(
-        judge_samples=settings.judge_samples,
-        judge_temperature=settings.judge_temperature,
-        judge_disagreement_threshold=settings.judge_disagreement_threshold,
-        judge_bias_probes_enabled=settings.judge_bias_probes_enabled,
-    )
-    # The guardrail re-runs the live judge, so it must run inside the same
-    # hook-bus context as the loop's judge calls (above), and it must see the
-    # same prepared/validated ``state`` the loop ran against -- not a fresh
-    # ``task.initial_state()`` that would drop any injected context.
-    with active_hook_bus(hook_bus):
-        evaluator_guardrail = build_evaluator_guardrail_payload(
-            task,
-            result.best_output,
-            guardrail_config,
-            state=state,
-        )
-    effective_met_threshold = compute_effective_met_threshold(
-        result.met_threshold,
-        None,
-        evaluator_guardrail,
-    )
-    # When a guardrail vetoes a loop that met the threshold, the persisted
-    # termination_reason/gate_decision must not still claim "threshold_met".
-    # Mirror the ``"threshold_met" if effective else "max_rounds"`` derivation
-    # in execution/task_runner.py::_run_task_multi_generation.
-    effective_termination_reason = (
-        "max_rounds" if result.met_threshold and not effective_met_threshold else result.termination_reason
-    )
-
-    epoch_id = getattr(result, "evaluator_epoch", None)
-    quarantined = observe_epoch_quarantined(
-        settings.knowledge_root / "_evaluator_epochs", scenario_name, epoch_id,
-        serving_spec=getattr(result, "evaluator_spec", None),
-    )
-    sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
-    provenance = getattr(result, "evaluation_provenance", [])
-    if provenance:
-        sqlite.append_agent_output(active_run_id, 1, "judge_provenance", json.dumps(provenance))
-    sqlite.upsert_generation(
-        active_run_id,
-        1,
-        mean_score=result.best_score,
-        best_score=result.best_score,
-        elo=0.0,
-        wins=0,
-        losses=0,
-        gate_decision=effective_termination_reason,
-        status="completed",
-        duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
-        evaluator_epoch=epoch_id,
-        quarantined=quarantined,
-    )
 
     return AgentTaskRunSummary(
         run_id=active_run_id,

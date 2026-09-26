@@ -1074,7 +1074,7 @@ jq . "logs/${RUN_ID}.json"
 
 **Timeouts**: Each `autoctx` command has its own timeout. For runs with many generations, the CLI may take minutes, so run it in the background and poll `status` from the foreground shell.
 
-**Idempotency**: For generation-loop scenarios, `autoctx run` with the same `--run-id` and scenario is idempotent; completed generations are skipped. Re-entering such a run continues it to the larger of its stored target and the requested `--iterations`, and reusing its run id with a different scenario is refused. `autoctx resume <run-id>` finishes a failed or interrupted run using the scenario and generation target stored on it.
+**Idempotency**: For generation-loop scenarios, `autoctx run` with the same `--run-id` and scenario is idempotent; completed generations are skipped. Re-entering such a run continues it to the larger of its stored target and the requested `--iterations`, and reusing its run id with a different scenario is refused. `autoctx resume <run-id>` finishes a failed or interrupted run using the scenario and generation target stored on it. Agent-task scenarios run once per run id: `autoctx run` exits 1 before any provider call or write when `--run-id` names an existing run, including an earlier run of the same task, so rerun the task under a new run id. An agent-task run ends `completed` or `failed`, also when interrupted with Ctrl-C, and `autoctx resume` does not apply to it.
 
 #### Step 4: Export knowledge
 
