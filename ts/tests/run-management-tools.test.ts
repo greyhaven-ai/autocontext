@@ -1,5 +1,10 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { asDbPath } from "../src/domain/ids.js";
+import { SQLiteStore } from "../src/storage/index.js";
 import {
   buildGenerationNotFoundPayload,
   buildRunNotFoundPayload,
@@ -169,6 +174,61 @@ describe("run management MCP tools", () => {
       generations: 2,
       status: "started",
     });
+  });
+
+  // AC-1048: the runner is fire-and-forget, so an existing run id must be refused
+  // before it starts; otherwise the refusal is swallowed and "started" is returned.
+  it.each([
+    ["othello", "run 'tssame' belongs to scenario 'grid_ctf', not 'othello'"],
+    [
+      "grid_ctf",
+      "run 'tssame' already exists; continue it with the Python `autoctx resume` or use a new run id",
+    ],
+  ])("refuses run_scenario for %s on an existing run id without starting a runner", async (
+    scenario,
+    error,
+  ) => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-mcp-existing-run-"));
+    const store = new SQLiteStore(asDbPath(join(root, "test.db")));
+    try {
+      store.migrate(join(import.meta.dirname, "..", "migrations"));
+      store.createRun("tssame", "grid_ctf", 3, "local", "deterministic");
+      store.updateRunStatus("tssame", "completed");
+      const before = store.getRun("tssame");
+      const server = createFakeServer();
+      const createRunner = vi.fn(() => ({ run: vi.fn(async () => undefined) }));
+      class ScenarioStub {}
+
+      registerRunManagementTools(server, {
+        store,
+        provider: { complete: vi.fn(), defaultModel: () => "mock", name: "mock" } as never,
+        runsRoot: join(root, "runs"),
+        knowledgeRoot: join(root, "knowledge"),
+        settings: runSettings,
+        internals: {
+          loadScenarioRegistry: () => ({
+            grid_ctf: ScenarioStub as never,
+            othello: ScenarioStub as never,
+          }),
+          assertFamilyContract: vi.fn(),
+          createRunner,
+        },
+      });
+
+      const result = await server.registeredTools.run_scenario.handler({
+        scenario,
+        runId: "tssame",
+        generations: 1,
+        matchesPerGeneration: 3,
+      });
+
+      expect(JSON.parse(result.content[0].text)).toEqual({ error });
+      expect(createRunner).not.toHaveBeenCalled();
+      expect(store.getRun("tssame")).toEqual(before);
+    } finally {
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("returns stable unknown-scenario payloads and trims generation output previews", async () => {

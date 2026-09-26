@@ -82,6 +82,17 @@ All notable changes to this project will be documented in this file.
   completed. Data written under the wrong scenario by earlier releases is not
   cleaned up (AC-1034).
 
+- TypeScript: `autoctx run --run-id`, the MCP `run_scenario` tool's `runId`
+  and the generation loop now refuse a run id that already exists, instead of
+  re-running generation 1 inside that run, replacing its generations, adding
+  duplicate matches and agent outputs, and marking it completed or failed. The
+  TypeScript runtime cannot resume a run, so every existing id is refused: a
+  stopped run, a run of another scenario, a run the loop did not write, and a
+  same-scenario loop run, which Python `autoctx resume` can continue.
+  `run_scenario` returns the refusal as an error instead of
+  `status: "started"`, and a refused agent-task `run` leaves the existing run's
+  status unchanged (AC-1048).
+
 - Python: with relative artifact roots (the default), per-generation run
   artifacts (replays, `metrics.json`, `narrative.md` and, when enabled,
   `consultation.md`, `exploration_collapse_guard.json` and Pi session traces)

@@ -1074,7 +1074,7 @@ jq . "logs/${RUN_ID}.json"
 
 **Timeouts**: Each `autoctx` command has its own timeout. For runs with many generations, the CLI may take minutes, so run it in the background and poll `status` from the foreground shell.
 
-**Idempotency**: For generation-loop scenarios, `autoctx run` with the same `--run-id` and scenario is idempotent; completed generations are skipped. Re-entering such a run continues it to the larger of its stored target and the requested `--iterations`, and reusing its run id with a different scenario is refused. `autoctx resume <run-id>` finishes a failed or interrupted run using the scenario and generation target stored on it.
+**Idempotency**: For generation-loop scenarios, `autoctx run` with the same `--run-id` and scenario is idempotent; completed generations are skipped. Re-entering such a run continues it to the larger of its stored target and the requested `--iterations`, and reusing its run id with a different scenario is refused. `autoctx resume <run-id>` finishes a failed or interrupted run using the scenario and generation target stored on it. The npm CLI and the TypeScript MCP `run_scenario` tool cannot continue a run, so they refuse any run id that already exists.
 
 #### Step 4: Export knowledge
 

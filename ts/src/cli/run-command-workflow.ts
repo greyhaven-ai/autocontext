@@ -7,6 +7,7 @@ import {
   formatPlaybookUpdateSkipped,
   PLAYBOOK_UPDATE_SKIPPED_EVENT,
 } from "../loop/playbook-update-events.js";
+import { assertRunIdAvailable, type RunLookup } from "../loop/run-id-availability.js";
 
 export const RUN_HELP_TEXT = `autoctx run — Run the generation loop for a scenario
 
@@ -118,7 +119,7 @@ type AgentTaskSolveExecutor = (opts: {
   hookBus?: HookBus | null;
 }) => Promise<{ progress: number; result: Record<string, unknown> }>;
 
-export interface AgentTaskRunStore {
+export interface AgentTaskRunStore extends RunLookup {
   migrate(migrationsDir: string): void;
   createRun(
     runId: string,
@@ -166,6 +167,7 @@ export async function executeAgentTaskRunCommandWorkflow<
   const provider = opts.providerBundle.defaultConfig.providerType;
   const migrationsDir = opts.migrationsDir;
   let store: AgentTaskRunStore | null = null;
+  let storedRun = false;
 
   try {
     const minimumGenerations = readMinimumGenerations(opts.spec);
@@ -178,6 +180,9 @@ export async function executeAgentTaskRunCommandWorkflow<
     if (store && migrationsDir) {
       store.migrate(migrationsDir);
     }
+    if (store) {
+      assertRunIdAvailable(store, opts.plan.runId, opts.plan.scenarioName);
+    }
     store?.createRun(
       opts.plan.runId,
       opts.plan.scenarioName,
@@ -186,6 +191,7 @@ export async function executeAgentTaskRunCommandWorkflow<
       provider,
       minimumGenerations,
     );
+    storedRun = true;
 
     const result = await opts.executeAgentTaskSolve({
       provider: opts.providerBundle.defaultProvider,
@@ -224,7 +230,10 @@ export async function executeAgentTaskRunCommandWorkflow<
       ...(provider === "deterministic" ? { synthetic: true } : {}),
     };
   } catch (error) {
-    store?.updateRunStatus(opts.plan.runId, "failed");
+    // Only a run this call created may be marked failed; a refused id belongs to another run.
+    if (storedRun) {
+      store?.updateRunStatus(opts.plan.runId, "failed");
+    }
     throw error;
   } finally {
     store?.close();
