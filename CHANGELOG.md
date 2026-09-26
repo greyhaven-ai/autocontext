@@ -42,6 +42,13 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Python: for a resumed or extended run, the `run_completed` event, the
+  `run_end` hook (completed or failed) and the mutation-log checkpoint now
+  report the run's total completed generations, as `run_stopped` already did,
+  instead of only the generations that invocation ran. `generations_executed`
+  (in the run summary and `autoctx resume --json`) still counts only the
+  invocation (AC-1045).
+
 - Python: re-entering a run that already completed its target
   (`autoctx resume <run-id>`, or `autoctx run --run-id` at or below its
   target) now leaves it unchanged, and `resume` says it is already completed.

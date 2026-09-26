@@ -1272,12 +1272,14 @@ class GenerationRunner:
                             )
                     except Exception:
                         logger.debug("loop.generation_runner: suppressed Exception", exc_info=True)
+            # Terminal receipts report the run's durable progress; RunSummary keeps this invocation's count.
+            total_completed = self.sqlite.count_completed_generations(active_run_id)
             if not stopped:
                 self.sqlite.mark_run_completed(active_run_id)
                 if completed > 0:
                     self.artifacts.mutation_log.create_checkpoint(
                         scenario_name,
-                        generation=completed,
+                        generation=total_completed,
                         run_id=active_run_id,
                     )
             self.artifacts.flush_writes()
@@ -1293,7 +1295,7 @@ class GenerationRunner:
                     self,
                     run_id=active_run_id,
                     scenario=scenario_name,
-                    completed_generations=completed,
+                    completed_generations=self.sqlite.count_completed_generations(active_run_id),
                     best_score=previous_best,
                     elo=challenger_elo,
                     error=str(exc),
@@ -1356,7 +1358,7 @@ class GenerationRunner:
                 "run_completed",
                 {
                     "run_id": active_run_id,
-                    "completed_generations": completed,
+                    "completed_generations": total_completed,
                     "best_score": previous_best,
                     "elo": challenger_elo,
                     "session_report_path": session_report_path,
@@ -1367,7 +1369,7 @@ class GenerationRunner:
                 self,
                 run_id=active_run_id,
                 scenario=scenario_name,
-                completed_generations=completed,
+                completed_generations=total_completed,
                 best_score=previous_best,
                 elo=challenger_elo,
                 session_report_path=session_report_path,

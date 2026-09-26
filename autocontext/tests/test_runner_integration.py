@@ -8,7 +8,9 @@ import pytest
 
 from autocontext.config import AppSettings
 from autocontext.context_bundles import ComponentKind, ContextBundleStore
+from autocontext.extensions import HookEvents
 from autocontext.loop import GenerationRunner
+from autocontext.loop.generation_pipeline import GenerationPipeline
 
 
 def test_single_generation_persists_metadata_and_artifacts(tmp_path: Path) -> None:
@@ -432,3 +434,58 @@ def test_reentry_that_extends_or_recovers_a_run_still_runs_the_tail_once(
     assert report.exists()
     assert _snapshot_rows(tmp_path, run_id) == 2
     assert _event_names(tmp_path).count("run_completed") == 2
+
+
+def _record_run_ends(runner: GenerationRunner) -> list[dict]:
+    ends: list[dict] = []
+    runner.hook_bus.on(HookEvents.RUN_END, lambda event: ends.append(dict(event.payload)))
+    return ends
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_resumed_run_reports_its_durable_generation_total(tmp_path: Path, interrupted: bool) -> None:
+    # run_completed, RUN_END and the checkpoint counted only this invocation's generations (2, not 3).
+    runner = _reentry_runner(tmp_path)
+    run_id = "total_run"
+    runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    if interrupted:
+        # A process killed during generation 2 of 3.
+        runner.sqlite.mark_run_running(run_id, target_generations=3)
+        runner.sqlite.upsert_generation(
+            run_id, 2, mean_score=0.0, best_score=0.0, elo=1000.0, wins=0, losses=0, gate_decision="running", status="running"
+        )
+    ends = _record_run_ends(runner)
+
+    summary = runner.run(scenario_name="grid_ctf", generations=3, run_id=run_id)
+
+    assert summary.generations_executed == 2
+    lines = (tmp_path / "runs" / "events.ndjson").read_text(encoding="utf-8").splitlines()
+    receipts = [event["payload"] for event in map(json.loads, lines) if event["event"] == "run_completed"]
+    assert receipts[-1]["completed_generations"] == 3
+    assert [(end["status"], end["completed_generations"]) for end in ends] == [("completed", 3)]
+    checkpoints = runner.artifacts.mutation_log.read("grid_ctf", mutation_types=["checkpoint"])
+    assert [checkpoint.generation for checkpoint in checkpoints] == [1, 3]
+
+
+@pytest.mark.slow
+def test_failed_extension_reports_its_durable_generation_total_on_run_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _reentry_runner(tmp_path)
+    run_id = "failing_run"
+    runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    original = GenerationPipeline.run_generation
+
+    def fail_generation_3(self, ctx):  # type: ignore[no-untyped-def]
+        if ctx.generation == 3:
+            raise RuntimeError("injected generation 3 failure")
+        return original(self, ctx)
+
+    monkeypatch.setattr(GenerationPipeline, "run_generation", fail_generation_3)
+    ends = _record_run_ends(runner)
+
+    with pytest.raises(RuntimeError, match="injected generation 3 failure"):
+        runner.run(scenario_name="grid_ctf", generations=3, run_id=run_id)
+
+    assert [(end["status"], end["completed_generations"]) for end in ends] == [("failed", 2)]
