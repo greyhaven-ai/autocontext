@@ -178,6 +178,36 @@ describe("GenerationRunner with an existing run id", () => {
       expect(runStarts).toEqual([]);
     },
   );
+
+  // Python checks a stopped run first, then the scenario, then the executor mode,
+  // so a row that trips two checks must report the earlier one, as Python does.
+  it.each([
+    [
+      "a stopped run of another scenario",
+      "stopped",
+      "local",
+      "run 'tsboth' was stopped and is terminal; start a new run id to continue",
+    ],
+    [
+      "an import run of another scenario",
+      "completed",
+      "import",
+      "run 'tsboth' belongs to scenario 'grid_ctf', not 'othello'",
+    ],
+  ])("refuses %s with the Python message", async (_label, status, executorMode, message) => {
+    const fixture = openFixture();
+    fixture.store.createRun("tsboth", "grid_ctf", 1, executorMode);
+    fixture.store.updateRunStatus("tsboth", status);
+    const before = snapshot(fixture, "tsboth");
+    const { hookBus, runStarts } = recordRunStarts();
+
+    await expect(
+      buildRunner(fixture, new OthelloScenario(), hookBus).run(asRunId("tsboth"), 1),
+    ).rejects.toThrow(message);
+
+    expect(snapshot(fixture, "tsboth")).toEqual(before);
+    expect(runStarts).toEqual([]);
+  });
 });
 
 describe("autoctx run --run-id with an existing run id", () => {
