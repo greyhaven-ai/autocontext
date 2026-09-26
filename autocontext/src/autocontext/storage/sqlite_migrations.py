@@ -3,11 +3,34 @@ from __future__ import annotations
 import re
 import sqlite3
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from autocontext.storage.migration_ledgers import typescript_baselines_for_python_migrations
 
 _ALTER_ADD_COLUMN_RE = re.compile(r"^\s*(?:--[^\n]*\n\s*)*ALTER\s+TABLE\s+\S+\s+ADD\s+COLUMN\s+", re.IGNORECASE)
+
+
+@dataclass(frozen=True, slots=True)
+class _LedgerRecordedColumn:
+    table: str
+    column: str
+    definition: str
+
+
+# Columns that must exist once the ledger records the migration that adds them.
+# Before TypeScript 013 preserved runs.minimum_generations, it dropped the
+# column after TypeScript recorded its 019 as covered by 020, so neither runtime
+# re-added it. TypeScript keeps the same repair in storage-migration-workflow.ts.
+_LEDGER_RECORDED_COLUMNS: dict[str, tuple[_LedgerRecordedColumn, ...]] = {
+    "020_run_minimum_generations.sql": (
+        _LedgerRecordedColumn(
+            table="runs",
+            column="minimum_generations",
+            definition="INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
+        ),
+    ),
+}
 
 
 def _iter_sql_statements(script: str) -> Sequence[str]:
@@ -33,6 +56,19 @@ def _execute_migration_script(conn: sqlite3.Connection, script: str) -> None:
             if "duplicate column name" in str(exc).lower() and _ALTER_ADD_COLUMN_RE.match(statement):
                 continue
             raise
+
+
+def restore_ledger_recorded_columns(conn: sqlite3.Connection) -> None:
+    applied_python = {row[0] for row in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+    for migration, recorded_columns in _LEDGER_RECORDED_COLUMNS.items():
+        if migration not in applied_python:
+            continue
+        for entry in recorded_columns:
+            columns = {row[1] for row in conn.execute(f"PRAGMA table_info({entry.table})").fetchall()}
+            if entry.column in columns:
+                continue
+            # Tolerates another process restoring the column since the check.
+            _execute_migration_script(conn, f"ALTER TABLE {entry.table} ADD COLUMN {entry.column} {entry.definition}")
 
 
 def apply_python_migration_files(conn: sqlite3.Connection, migrations_dir: Path) -> None:
@@ -64,3 +100,4 @@ def apply_python_migration_files(conn: sqlite3.Connection, migrations_dir: Path)
                 "INSERT OR IGNORE INTO schema_version(filename) VALUES (?)",
                 (typescript_migration,),
             )
+    restore_ledger_recorded_columns(conn)

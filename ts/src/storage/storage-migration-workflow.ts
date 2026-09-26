@@ -74,9 +74,11 @@ const TYPESCRIPT_REBUILD_PRESERVED_COLUMNS: Record<string, readonly PreservedReb
   "013_runs_status_default_parity.sql": [{ ...RUNS_MINIMUM_GENERATIONS, key: "run_id" }],
 };
 
-// Migrations whose only effect is adding these columns. A Python bootstrap
-// creates the current schema, and before it recorded Python 020 the column
-// already existed while 019 still looked pending.
+// Migrations whose only effect is adding these columns. The runner records one
+// without running it when its columns already exist (a Python bootstrap created
+// them before recording Python 020), and re-adds missing columns once one is
+// recorded (013 used to drop runs.minimum_generations after 019 was recorded).
+// Python keeps the same repair in sqlite_migrations.py.
 const TYPESCRIPT_COLUMN_ONLY_MIGRATIONS: Record<string, readonly AddedColumn[]> = {
   "019_run_minimum_generations.sql": [RUNS_MINIMUM_GENERATIONS],
 };
@@ -153,6 +155,28 @@ function execPreservingRebuildColumns(db: Database.Database, file: string, sql: 
   }
 }
 
+function restoreLedgerRecordedColumns(db: Database.Database): void {
+  const appliedTypescript = readAppliedSet(db, "SELECT filename FROM schema_version", "filename");
+  for (const [file, columns] of Object.entries(TYPESCRIPT_COLUMN_ONLY_MIGRATIONS)) {
+    if (!appliedTypescript.has(file)) {
+      continue;
+    }
+    for (const { table, column, definition } of columns) {
+      if (hasColumn(db, table, column)) {
+        continue;
+      }
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      } catch (error: unknown) {
+        // Another process may have restored the column since hasColumn ran.
+        if (!isDuplicateColumnError(error)) {
+          throw error;
+        }
+      }
+    }
+  }
+}
+
 export function migrateDatabase(db: Database.Database, migrationsDir: string): void {
   db.exec(
     `CREATE TABLE IF NOT EXISTS schema_version (
@@ -197,4 +221,5 @@ export function migrateDatabase(db: Database.Database, migrationsDir: string): v
       appliedPython.add(pythonMigration);
     }
   }
+  restoreLedgerRecordedColumns(db);
 }
