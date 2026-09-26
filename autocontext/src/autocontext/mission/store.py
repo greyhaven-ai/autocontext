@@ -36,6 +36,7 @@ from autocontext.mission.types import (
     SubgoalStatus,
     VerifierResult,
 )
+from autocontext.storage.sqlite_wal import enable_wal
 
 __all__ = ["MissionStore"]
 
@@ -89,7 +90,7 @@ class MissionStore:
             parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(db_path, isolation_level=None)
         # Match the TS pragma settings.
-        self._db.execute("PRAGMA journal_mode = WAL")
+        enable_wal(self._db)
         self._db.execute("PRAGMA foreign_keys = ON")
         self._db.row_factory = sqlite3.Row
         self._create_tables()

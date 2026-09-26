@@ -37,10 +37,10 @@ from autocontext.execution.harness_coverage import HarnessCoverage
 from autocontext.extensions import HookBus, wrap_language_model_client
 from autocontext.harness.orchestration.dag import RoleDAG
 from autocontext.harness.orchestration.types import RoleSpec
-from autocontext.prompts.templates import PromptBundle, PromptPartsBundle
 
 if TYPE_CHECKING:
     from autocontext.agents.role_router import ProviderConfig
+    from autocontext.prompts.templates import PromptBundle, PromptPartsBundle
 
 logger = logging.getLogger(__name__)
 

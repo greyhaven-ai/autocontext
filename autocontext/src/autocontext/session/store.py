@@ -12,6 +12,7 @@ from contextlib import closing
 from pathlib import Path
 
 from autocontext.session.types import Session
+from autocontext.storage.sqlite_wal import enable_wal
 
 
 class SessionStore:
@@ -39,7 +40,7 @@ class SessionStore:
         conn = sqlite3.connect(self.db_path)
         try:
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
+            enable_wal(conn)
         except BaseException:
             try:
                 conn.close()

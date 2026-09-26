@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import secrets
 import sqlite3
-import time
 from pathlib import Path
 from typing import cast
 
@@ -19,6 +18,7 @@ from autocontext.execution._external_eval_outbox_codec import (
     sha256,
     sqlite_bool,
 )
+from autocontext.storage.sqlite_wal import enable_wal
 
 SCHEMA_VERSION = 3
 
@@ -27,40 +27,10 @@ SCHEMA_VERSION = 3
 _WAL_CONVERSION_TIMEOUT_SECONDS = 30.0
 
 
-def _enable_wal(connection: sqlite3.Connection) -> None:
-    """Switch the database to WAL, tolerating a concurrent initializer.
-
-    The conversion needs a brief exclusive lock, and unlike ordinary statements
-    `PRAGMA journal_mode` returns SQLITE_BUSY *without* invoking the busy
-    handler, so neither `sqlite3.connect(timeout=...)` nor `PRAGMA busy_timeout`
-    covers it. Retry here instead. Losing the race is a success rather than an
-    error: the journal mode lives in the database header, so once any
-    initializer wins, every later connection already sees WAL.
-    """
-    deadline = time.monotonic() + _WAL_CONVERSION_TIMEOUT_SECONDS
-    delay = 0.001
-    while True:
-        try:
-            row = connection.execute("PRAGMA journal_mode=WAL").fetchone()
-        except sqlite3.OperationalError as error:
-            message = str(error).lower()
-            if "locked" not in message and "busy" not in message:
-                raise
-        else:
-            if row is not None and str(row[0]).lower() == "wal":
-                return
-        if time.monotonic() >= deadline:
-            raise sqlite3.OperationalError(
-                "external-evaluation outbox could not switch to WAL journal mode: database is locked"
-            )
-        time.sleep(delay)
-        delay = min(delay * 2, 0.05)
-
-
 def initialize_database(path: Path) -> str:
     connection = sqlite3.connect(path, timeout=30.0)
     try:
-        _enable_wal(connection)
+        enable_wal(connection, timeout_seconds=_WAL_CONVERSION_TIMEOUT_SECONDS)
         connection.execute("PRAGMA synchronous=FULL")
         connection.execute("PRAGMA busy_timeout=30000")
         connection.execute("BEGIN IMMEDIATE")

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
+import { enableWal } from "../storage/sqlite-wal.js";
 
 export const RuntimeSessionEventType = {
   PROMPT_SUBMITTED: "prompt_submitted",
@@ -214,7 +215,7 @@ export class RuntimeSessionEventStore {
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
+    enableWal(this.db);
     this.ensureSchema();
   }
 

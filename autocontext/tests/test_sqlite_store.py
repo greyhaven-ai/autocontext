@@ -107,9 +107,13 @@ def test_connect_closes_new_connection_when_setup_fails(
                 raise sqlite3.OperationalError("setup failed")
             self._row_factory = value
 
-        def execute(self, statement: str) -> None:
+        def execute(self, statement: str) -> SetupFailureConnection:
             if failure_stage in statement:
                 raise sqlite3.OperationalError("setup failed")
+            return self
+
+        def fetchone(self) -> tuple[str]:
+            return ("wal",)
 
         def close(self) -> None:
             self.closed = True

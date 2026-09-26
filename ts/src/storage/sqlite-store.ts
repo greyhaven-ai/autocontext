@@ -102,31 +102,8 @@ import {
   insertStoreConsultation,
   listStoreConsultations,
 } from "./storage-consultation-facade.js";
+import { enableWal } from "./sqlite-wal.js";
 import { migrateDatabase } from "./storage-migration-workflow.js";
-
-const WAL_RETRY_TIMEOUT_MS = 5_000;
-const WAL_RETRY_POLL_MS = 50;
-const WAL_RETRY_WAIT_BUFFER = new Int32Array(new SharedArrayBuffer(4));
-
-function enableWal(db: Pick<Database.Database, "pragma">): void {
-  // Switching a fresh database to WAL upgrades a read lock to a write lock,
-  // and SQLite reports contention there without consulting busy_timeout.
-  const deadline = Date.now() + WAL_RETRY_TIMEOUT_MS;
-  for (;;) {
-    try {
-      db.pragma("journal_mode = WAL");
-      return;
-    } catch (error: unknown) {
-      if (!(error instanceof Database.SqliteError) || error.code !== "SQLITE_BUSY") {
-        throw error;
-      }
-      if (Date.now() >= deadline) {
-        throw error;
-      }
-      Atomics.wait(WAL_RETRY_WAIT_BUFFER, 0, 0, WAL_RETRY_POLL_MS);
-    }
-  }
-}
 
 export function configureSqliteDatabase(db: Pick<Database.Database, "pragma">): void {
   enableWal(db);

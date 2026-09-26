@@ -51,6 +51,13 @@ All notable changes to this project will be documented in this file.
   `autocontext.server.app` no longer migrates the default database; the
   module-level `app` is built on first access.
 
+- Python and TypeScript: the mission, campaign (TypeScript), session and
+  runtime-session event stores now retry the WAL conversion too, through one
+  shared helper per runtime that keeps each caller's busy timeout and accepts
+  in-memory databases. Importing an `autocontext.storage` submodule no longer
+  loads the artifact store and agent stack, which removes a circular import
+  that fired when the working directory contained a `knowledge/` directory.
+
 ## [Pi 0.11.0] - 2026-09-17
 
 The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This

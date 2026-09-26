@@ -22,6 +22,8 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, PrivateAttr
 
+from autocontext.storage.sqlite_wal import enable_wal
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -353,7 +355,7 @@ class RuntimeSessionEventStore:
         conn = sqlite3.connect(self.db_path)
         try:
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
+            enable_wal(conn)
         except BaseException:
             try:
                 conn.close()
