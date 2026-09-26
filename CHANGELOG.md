@@ -87,6 +87,12 @@ packaged documentation and dependency metadata from that tag arrive here.
 
 ### Fixed
 
+- TypeScript: migrating a database that Python created no longer drops
+  `runs.minimum_generations`. Migration 013 rebuilds `runs` from a fixed column
+  list, and the later TypeScript migration that adds the column was skipped as
+  already covered by Python, so Python run creation then failed. The runner now
+  carries the column and its values across the rebuild.
+
 - `npm publish` receives an explicit local path for the packed tarball. Without
   the leading `./`, npm read `dist/<file>.tgz` as a GitHub shorthand and tried
   to fetch it over SSH, which is why `pi-v0.10.0` and `pi-v0.10.1` both failed
