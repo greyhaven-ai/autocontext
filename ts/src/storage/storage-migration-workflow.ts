@@ -50,24 +50,33 @@ const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[
   ],
 };
 
-type PreservedRebuildColumn = {
+type AddedColumn = {
   readonly table: string;
-  readonly key: string;
   readonly column: string;
   readonly definition: string;
+};
+
+type PreservedRebuildColumn = AddedColumn & {
+  readonly key: string;
+};
+
+const RUNS_MINIMUM_GENERATIONS: AddedColumn = {
+  table: "runs",
+  column: "minimum_generations",
+  definition: "INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
 };
 
 // Table rebuilds copy a fixed column list, so they would drop columns that a
 // runtime added before the rebuild ran (for example Python 020 before TS 013).
 const TYPESCRIPT_REBUILD_PRESERVED_COLUMNS: Record<string, readonly PreservedRebuildColumn[]> = {
-  "013_runs_status_default_parity.sql": [
-    {
-      table: "runs",
-      key: "run_id",
-      column: "minimum_generations",
-      definition: "INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
-    },
-  ],
+  "013_runs_status_default_parity.sql": [{ ...RUNS_MINIMUM_GENERATIONS, key: "run_id" }],
+};
+
+// Migrations whose only effect is adding these columns. A Python bootstrap
+// creates the current schema, and before it recorded Python 020 the column
+// already existed while 019 still looked pending.
+const TYPESCRIPT_COLUMN_ONLY_MIGRATIONS: Record<string, readonly AddedColumn[]> = {
+  "019_run_minimum_generations.sql": [RUNS_MINIMUM_GENERATIONS],
 };
 
 function readAppliedSet(
@@ -107,6 +116,11 @@ function hasColumn(db: Database.Database, table: string, column: string): boolea
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(
     (row) => row.name === column,
   );
+}
+
+function hasEveryAddedColumn(db: Database.Database, file: string): boolean {
+  const columns = TYPESCRIPT_COLUMN_ONLY_MIGRATIONS[file] ?? [];
+  return columns.length > 0 && columns.every(({ table, column }) => hasColumn(db, table, column));
 }
 
 function preservedColumnStash({ table, column }: PreservedRebuildColumn): string {
@@ -167,8 +181,10 @@ export function migrateDatabase(db: Database.Database, migrationsDir: string): v
       appliedTypescript.add(file);
       continue;
     }
-    const sql = readFileSync(join(migrationsDir, file), "utf8");
-    execPreservingRebuildColumns(db, file, sql);
+    if (!hasEveryAddedColumn(db, file)) {
+      const sql = readFileSync(join(migrationsDir, file), "utf8");
+      execPreservingRebuildColumns(db, file, sql);
+    }
     reconcilePythonBaselineSchema(db, file);
     db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
     appliedTypescript.add(file);
