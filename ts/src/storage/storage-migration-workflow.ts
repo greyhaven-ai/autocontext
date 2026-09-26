@@ -50,24 +50,35 @@ const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[
   ],
 };
 
-type PreservedRebuildColumn = {
+type AddedColumn = {
   readonly table: string;
-  readonly key: string;
   readonly column: string;
   readonly definition: string;
+};
+
+type PreservedRebuildColumn = AddedColumn & {
+  readonly key: string;
+};
+
+const RUNS_MINIMUM_GENERATIONS: AddedColumn = {
+  table: "runs",
+  column: "minimum_generations",
+  definition: "INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
 };
 
 // Table rebuilds copy a fixed column list, so they would drop columns that a
 // runtime added before the rebuild ran (for example Python 020 before TS 013).
 const TYPESCRIPT_REBUILD_PRESERVED_COLUMNS: Record<string, readonly PreservedRebuildColumn[]> = {
-  "013_runs_status_default_parity.sql": [
-    {
-      table: "runs",
-      key: "run_id",
-      column: "minimum_generations",
-      definition: "INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
-    },
-  ],
+  "013_runs_status_default_parity.sql": [{ ...RUNS_MINIMUM_GENERATIONS, key: "run_id" }],
+};
+
+// Migrations whose only effect is adding these columns. The runner records one
+// without running it when its columns already exist (a Python bootstrap created
+// them before recording Python 020), and re-adds missing columns once one is
+// recorded (013 used to drop runs.minimum_generations after 019 was recorded).
+// Python keeps the same repair in sqlite_migrations.py.
+const TYPESCRIPT_COLUMN_ONLY_MIGRATIONS: Record<string, readonly AddedColumn[]> = {
+  "019_run_minimum_generations.sql": [RUNS_MINIMUM_GENERATIONS],
 };
 
 function readAppliedSet(
@@ -109,6 +120,11 @@ function hasColumn(db: Database.Database, table: string, column: string): boolea
   );
 }
 
+function hasEveryAddedColumn(db: Database.Database, file: string): boolean {
+  const columns = TYPESCRIPT_COLUMN_ONLY_MIGRATIONS[file] ?? [];
+  return columns.length > 0 && columns.every(({ table, column }) => hasColumn(db, table, column));
+}
+
 function preservedColumnStash({ table, column }: PreservedRebuildColumn): string {
   return `preserved_${table}_${column}`;
 }
@@ -137,6 +153,28 @@ function execPreservingRebuildColumns(db: Database.Database, file: string, sql: 
   }
 }
 
+function restoreLedgerRecordedColumns(db: Database.Database): void {
+  const appliedTypescript = readAppliedSet(db, "SELECT filename FROM schema_version", "filename");
+  for (const [file, columns] of Object.entries(TYPESCRIPT_COLUMN_ONLY_MIGRATIONS)) {
+    if (!appliedTypescript.has(file)) {
+      continue;
+    }
+    for (const { table, column, definition } of columns) {
+      if (hasColumn(db, table, column)) {
+        continue;
+      }
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      } catch (error: unknown) {
+        // Another process may have restored the column since hasColumn ran.
+        if (!isDuplicateColumnError(error)) {
+          throw error;
+        }
+      }
+    }
+  }
+}
+
 export function migrateDatabase(db: Database.Database, migrationsDir: string): void {
   db.exec(
     `CREATE TABLE IF NOT EXISTS schema_version (
@@ -156,21 +194,20 @@ export function migrateDatabase(db: Database.Database, migrationsDir: string): v
     .filter((file) => file.endsWith(".sql") && !appliedTypescript.has(file))
     .sort();
 
-  if (pending.length === 0) {
-    return;
-  }
-
-  // PRAGMA foreign_keys is a no-op inside a transaction, so table rebuilds
-  // such as 013 need enforcement off before BEGIN or DROP TABLE cascades.
-  const foreignKeys = db.pragma("foreign_keys", { simple: true });
-  db.pragma("foreign_keys = OFF");
-  try {
-    for (const file of pending) {
-      db.transaction(() => applyPendingMigration(db, migrationsDir, file)).immediate();
+  if (pending.length > 0) {
+    // PRAGMA foreign_keys is a no-op inside a transaction, so table rebuilds
+    // such as 013 need enforcement off before BEGIN or DROP TABLE cascades.
+    const foreignKeys = db.pragma("foreign_keys", { simple: true });
+    db.pragma("foreign_keys = OFF");
+    try {
+      for (const file of pending) {
+        db.transaction(() => applyPendingMigration(db, migrationsDir, file)).immediate();
+      }
+    } finally {
+      db.pragma(`foreign_keys = ${foreignKeys ? "ON" : "OFF"}`);
     }
-  } finally {
-    db.pragma(`foreign_keys = ${foreignKeys ? "ON" : "OFF"}`);
   }
+  restoreLedgerRecordedColumns(db);
 }
 
 function applyPendingMigration(db: Database.Database, migrationsDir: string, file: string): void {
@@ -185,8 +222,10 @@ function applyPendingMigration(db: Database.Database, migrationsDir: string, fil
     db.prepare("INSERT OR IGNORE INTO schema_version(filename) VALUES (?)").run(file);
     return;
   }
-  const sql = readFileSync(join(migrationsDir, file), "utf8");
-  execPreservingRebuildColumns(db, file, sql);
+  if (!hasEveryAddedColumn(db, file)) {
+    const sql = readFileSync(join(migrationsDir, file), "utf8");
+    execPreservingRebuildColumns(db, file, sql);
+  }
   reconcilePythonBaselineSchema(db, file);
   db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
   for (const pythonMigration of TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES[file] ?? []) {

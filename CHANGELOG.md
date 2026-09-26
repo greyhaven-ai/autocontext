@@ -60,6 +60,18 @@ All notable changes to this project will be documented in this file.
   original file must now derive it from the emitted path; see
   [extensions](autocontext/docs/extensions.md).
 
+- `artifact_write` hooks can no longer move a write out of its managed root
+  through a symlink (AC-1038). Python picked the root after following symlinks,
+  so a write through a directory symlinked outside every root (for example
+  `knowledge/grid_ctf -> ../shared/grid_ctf`) had no root and a rewritten path
+  went unchecked. TypeScript checked rewritten paths without following symlinks,
+  so `runs/<run>/escape/x.md` passed when `escape` pointed outside. Both
+  runtimes now pick the root from the path as written, check a changed path with
+  symlinks followed, and reject a changed path for a write outside every managed
+  root. Unchanged paths still write through such symlinks. A hook that renamed
+  files inside a symlinked directory that leads outside the roots is now
+  rejected; see [extensions](autocontext/docs/extensions.md).
+
 - Python and TypeScript: starting several processes against the same new SQLite
   database (for example `autoctx serve` alongside an MCP server or task runner)
   no longer fails with `UNIQUE constraint failed` on the migration ledger or
@@ -99,6 +111,22 @@ packaged documentation and dependency metadata from that tag arrive here.
   list, and the later TypeScript migration that adds the column was skipped as
   already covered by Python, so Python run creation then failed. The runner now
   carries the column and its values across the rebuild.
+
+- Python and TypeScript: databases created by a Python install without
+  migration files (such as a pip install) keep their `runs.minimum_generations`
+  values when TypeScript migrates them. Python's bootstrap schema created the
+  column without recording the migration that adds it, so TypeScript re-added
+  it and reset every run to 1. Bootstrap now records every migration whose
+  schema it creates and adds the column's `CHECK (minimum_generations >= 1)`,
+  and TypeScript records a migration that only adds columns without running it
+  when those columns already exist.
+
+- Python and TypeScript: databases that already lost `runs.minimum_generations`
+  to the migration 013 bug above are repaired on the next migrate in either
+  runtime, including Python installs without migration files. When the ledger
+  records the migration that adds the column but the column is missing, it is
+  re-added with its default of 1. Values lost earlier cannot be recovered, so
+  existing runs read 1.
 
 - `npm publish` receives an explicit local path for the packed tarball. Without
   the leading `./`, npm read `dist/<file>.tgz` as a GitHub shorthand and tried

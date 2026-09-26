@@ -71,6 +71,17 @@ a bare `"renamed.md"` points at the working directory and is rejected as
 outside the managed root. The TypeScript runtime reads returned paths the same
 way.
 
+A write's managed root is the one its emitted path sits in as written, so a
+directory symlinked into a root (for example `knowledge/grid_ctf` pointing at a
+shared checkout) still belongs to that root. A changed path is checked with
+symlinks followed: it must land inside that root, or inside the managed root
+the emitted path itself resolves into (writes through the `.claude/skills/<name>`
+links land in `skills/<name>`). A hook therefore cannot rewrite a path through a
+symlink that leads outside the managed roots, not even to rename a file in
+place, and cannot change the path of a write that is outside every managed
+root. Returning the emitted path unchanged is always allowed. The TypeScript
+runtime applies the same rules to its `runs` and `knowledge` roots.
+
 ## Design Notes
 
 The hook bus follows the same spirit as Pi extensions: small contracts, ordered handlers, branch/run-safe payloads, and no hidden prompt parsing. Autocontext keeps its full control plane by default; use hooks for local policy, observability, context shaping, and Pi-like harness adaptation.
