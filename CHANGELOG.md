@@ -42,6 +42,24 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Python: with relative artifact roots (the default), per-generation run
+  artifacts (replays, `metrics.json`, `narrative.md` and, when enabled,
+  `consultation.md`, `exploration_collapse_guard.json` and Pi session traces)
+  and analytics traces no longer land at doubled paths such as
+  `runs/<run>/generations/gen_1/runs/<run>/generations/gen_1/metrics.json`,
+  including in MCP sandbox runs. The `artifact_write` hook path is now read in
+  the frame it is emitted in, as in the TypeScript runtime (AC-1033). In new
+  runs, replay (CLI, API and MCP), RLM context loading, trace-grounded weakness
+  reports and writeups, and `autoctx analytics trace-findings` and
+  `render-timeline` find these artifacts. Runs written by Python 0.4.7 through
+  0.18.0 keep them at the doubled paths, since this release does not move
+  existing files, and their weakness reports came from the fallback analyzer.
+  To move them back, see
+  [recovering doubled artifacts](autocontext/docs/recovering-doubled-artifacts.md).
+  Extensions that return a relative path expecting it to resolve next to the
+  original file must now derive it from the emitted path; see
+  [extensions](autocontext/docs/extensions.md).
+
 - Python and TypeScript: starting several processes against the same new SQLite
   database (for example `autoctx serve` alongside an MCP server or task runner)
   no longer fails with `UNIQUE constraint failed` on the migration ledger or
@@ -49,7 +67,7 @@ All notable changes to this project will be documented in this file.
   applies under the write lock after re-reading the ledger, and the WAL
   conversion is retried until the busy timeout. Importing
   `autocontext.server.app` no longer migrates the default database; the
-  module-level `app` is built on first access.
+  module-level `app` is built on first access (AC-1039).
 
 ## [Pi 0.11.0] - 2026-09-17
 
