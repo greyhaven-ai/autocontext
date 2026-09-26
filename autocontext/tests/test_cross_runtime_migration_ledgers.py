@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 
 import pytest
 
-from autocontext.storage.migration_ledgers import TYPESCRIPT_BASELINE_MIGRATIONS
+from autocontext.storage.migration_ledgers import TYPESCRIPT_BASELINE_MIGRATIONS, TYPESCRIPT_TO_PYTHON_BASELINES
 from autocontext.storage.sqlite_store import SQLiteStore
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parent
 PYTHON_MIGRATIONS_DIR = PACKAGE_ROOT / "migrations"
 TYPESCRIPT_MIGRATIONS_DIR = REPO_ROOT / "ts" / "migrations"
+TYPESCRIPT_MIGRATION_WORKFLOW = REPO_ROOT / "ts" / "src" / "storage" / "storage-migration-workflow.ts"
 
 
 def _apply_typescript_migrations(db_path: Path) -> None:
@@ -28,6 +30,16 @@ def _apply_typescript_migrations(db_path: Path) -> None:
         for migration in sorted(TYPESCRIPT_MIGRATIONS_DIR.glob("*.sql")):
             conn.executescript(migration.read_text(encoding="utf-8"))
             conn.execute("INSERT INTO schema_version(filename) VALUES (?)", (migration.name,))
+
+
+def _typescript_ledger_baselines() -> dict[str, tuple[str, ...]]:
+    source = TYPESCRIPT_MIGRATION_WORKFLOW.read_text(encoding="utf-8")
+    block = re.search(r"export const TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES[^=]*=\s*\{(.*?)\n\};", source, re.DOTALL)
+    assert block is not None, "TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES not found"
+    entries = re.findall(r'"([^"]+)":\s*\[([^\]]*)\]', block.group(1))
+    # Every key must parse, or a format change would silently shrink the map.
+    assert entries and len(entries) == len(re.findall(r'"[^"]+":', block.group(1)))
+    return {typescript: tuple(re.findall(r'"([^"]+)"', python)) for typescript, python in entries}
 
 
 def _ledger_values(db_path: Path, table: str, column: str) -> set[str]:
@@ -47,6 +59,10 @@ def test_python_migrations_can_follow_typescript_migrations(tmp_path: Path) -> N
 
     assert applied_python == {migration.name for migration in PYTHON_MIGRATIONS_DIR.glob("*.sql")}
     assert set(TYPESCRIPT_BASELINE_MIGRATIONS).issubset(applied_typescript)
+
+
+def test_python_ledger_map_matches_typescript() -> None:
+    assert TYPESCRIPT_TO_PYTHON_BASELINES == _typescript_ledger_baselines()
 
 
 def test_bootstrap_schema_seeds_typescript_ledger(tmp_path: Path) -> None:
