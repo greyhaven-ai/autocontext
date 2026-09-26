@@ -11002,19 +11002,23 @@
           "name": "scenario",
           "type": "string",
           "aliases": [],
-          "short_names": [],
+          "short_names": [
+            "s"
+          ],
           "required": false,
-          "description": "Scenario option.",
-          "default": "grid_ctf"
+          "description": "Scenario the run must belong to. Defaults to the run's stored scenario; a different value is rejected."
         },
         {
-          "name": "gens",
+          "name": "iterations",
           "type": "int",
-          "aliases": [],
-          "short_names": [],
+          "aliases": [
+            "gens"
+          ],
+          "short_names": [
+            "g"
+          ],
           "required": false,
-          "description": "Gens option.",
-          "default": 1
+          "description": "Generation target. Defaults to the run's stored target; a larger value extends it. --gens remains a compatibility alias."
         },
         {
           "name": "json",
@@ -11044,7 +11048,8 @@
         "execution": 1
       },
       "examples": [
-        "autoctx resume <run-id>"
+        "autoctx resume <run-id>",
+        "autoctx resume <run-id> --iterations 5 --json"
       ],
       "runtime_shapes": {
         "python": {
@@ -11061,19 +11066,29 @@
               "name": "scenario",
               "type": "string",
               "aliases": [],
+              "short_names": [
+                "s"
+              ],
+              "required": false,
+              "description": "Scenario the run must belong to. Defaults to the run's own scenario."
+            },
+            {
+              "name": "iterations",
+              "type": "int",
+              "aliases": [],
               "short_names": [],
               "required": false,
-              "description": "Scenario option.",
-              "default": "grid_ctf"
+              "description": "Generation target. Defaults to the run's stored target; a larger value extends it."
             },
             {
               "name": "gens",
               "type": "int",
               "aliases": [],
-              "short_names": [],
+              "short_names": [
+                "g"
+              ],
               "required": false,
-              "description": "Gens option.",
-              "default": 1
+              "description": "Deprecated alias for --iterations."
             },
             {
               "name": "json",

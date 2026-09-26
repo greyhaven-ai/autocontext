@@ -436,6 +436,16 @@ def test_iterations_is_the_canonical_iteration_flag(contract: Contract) -> None:
     assert iter_flag.default == 5
 
 
+def test_resume_takes_scenario_and_target_from_the_stored_run(contract: Contract) -> None:
+    """``resume`` must not advertise a fixed scenario or generation count."""
+    cmd = next(c for c in contract.commands if c.id == "resume")
+    flags = {f.name: f for f in cmd.flags}
+    assert sorted(flags) == ["iterations", "json", "scenario"]
+    assert (flags["scenario"].short_names, flags["scenario"].default) == (("s",), None)
+    assert (flags["iterations"].aliases, flags["iterations"].short_names) == (("gens",), ("g",))
+    assert flags["iterations"].default is None
+
+
 def test_queue_status_is_not_top_level_status(contract: Contract) -> None:
     """Per AC-697, queue status must live under its own path (e.g.
     ``task queue status`` or ``queue status``), never at the

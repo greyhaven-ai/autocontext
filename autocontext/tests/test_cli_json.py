@@ -130,9 +130,12 @@ class TestRunJson:
 
 
 class TestResumeJson:
-    def test_resume_json_success(self) -> None:
+    def test_resume_json_success(self, tmp_path: Path) -> None:
         """resume --json should output valid JSON with RunSummary fields."""
         from autocontext.loop.generation_runner import RunSummary
+
+        db, _ = _setup_db(tmp_path)
+        db.create_run("resume-001", "grid_ctf", 2, "local")
 
         mock_summary = RunSummary(
             run_id="resume-001",
@@ -144,7 +147,10 @@ class TestResumeJson:
         mock_runner_instance = MagicMock()
         mock_runner_instance.run.return_value = mock_summary
 
-        with patch("autocontext.cli._runner", return_value=mock_runner_instance):
+        with (
+            patch("autocontext.cli.load_settings", return_value=_make_settings(tmp_path)),
+            patch("autocontext.cli._runner", return_value=mock_runner_instance),
+        ):
             result = runner.invoke(app, ["resume", "resume-001", "--json", "--scenario", "grid_ctf"])
 
         assert result.exit_code == 0, result.output
@@ -153,12 +159,17 @@ class TestResumeJson:
         assert data["scenario"] == "grid_ctf"
         assert data["generations_executed"] == 2
 
-    def test_resume_json_error_writes_to_stderr(self) -> None:
+    def test_resume_json_error_writes_to_stderr(self, tmp_path: Path) -> None:
         """resume --json failures should emit structured stderr and exit 1."""
+        db, _ = _setup_db(tmp_path)
+        db.create_run("resume-001", "grid_ctf", 2, "local")
         mock_runner_instance = MagicMock()
         mock_runner_instance.run.side_effect = RuntimeError("resume exploded")
 
-        with patch("autocontext.cli._runner", return_value=mock_runner_instance):
+        with (
+            patch("autocontext.cli.load_settings", return_value=_make_settings(tmp_path)),
+            patch("autocontext.cli._runner", return_value=mock_runner_instance),
+        ):
             result = runner.invoke(app, ["resume", "resume-001", "--json"])
 
         assert result.exit_code == 1

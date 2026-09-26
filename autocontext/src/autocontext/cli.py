@@ -37,6 +37,7 @@ from autocontext.cli_package_commands import register_package_commands
 from autocontext.cli_probes import register_probes_command
 from autocontext.cli_queue import register_queue_command
 from autocontext.cli_rescore import rescore_command
+from autocontext.cli_resume import register_resume_command
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_run_inspect import (
     _lineage_cell,
@@ -521,23 +522,6 @@ def run(
                 f"{summary.current_elo:.2f}",
             )
             console.print(table)
-
-
-@app.command()
-def resume(
-    run_id: str = typer.Argument(...),
-    scenario: str = typer.Option("grid_ctf"),
-    gens: int = typer.Option(1),
-    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
-) -> None:
-    """Resume an existing run idempotently."""
-
-    with cli_error_boundary(json_output, action="resume"):
-        summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
-    if json_output:
-        _write_json_stdout(dataclasses.asdict(summary))
-    else:
-        console.print(f"Resumed {summary.run_id} with {summary.generations_executed} executed generation(s).")
 
 
 @app.command()
@@ -1280,6 +1264,7 @@ register_improve_command(app, console=console)
 register_mission_command(app, console=console)
 register_new_scenario_command(app, console=console)
 register_package_commands(app, console)
+register_resume_command(app, console=console)
 register_run_inspect_commands(app, console=console)
 register_solve_command(app, console=console)
 register_probes_command(app, console=console)

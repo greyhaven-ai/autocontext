@@ -69,6 +69,8 @@ from autocontext.storage import SQLiteStore, artifact_store_from_settings
 from autocontext.storage.run_paths import resolve_run_root
 
 logger = logging.getLogger(__name__)
+# Run rows the generation loop did not write: agent-task `run`, task-like `solve`, package import.
+NON_LOOP_EXECUTOR_MODES = frozenset({"agent_task", "artifact_editing", "import"})
 
 
 def _current_release_version() -> str:
@@ -1048,13 +1050,16 @@ class GenerationRunner:
             # 'completed' and overwrite the terminal outcome. Restart under a new id.
             if str(existing_run.get("status") or "") == "stopped":
                 raise ValueError(f"run '{active_run_id}' was stopped and is terminal; start a new run id to continue")
+            stored_scenario = existing_run.get("scenario")
+            if isinstance(stored_scenario, str) and stored_scenario != scenario_name:
+                raise ValueError(f"run '{active_run_id}' belongs to scenario '{stored_scenario}', not '{scenario_name}'")
+            if existing_run.get("executor_mode") in NON_LOOP_EXECUTOR_MODES:
+                raise ValueError(f"run '{active_run_id}' was not created by the generation loop and cannot be resumed")
             self._recover_stale_run_state(active_run_id)
             refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
-            target_generations = max(
-                self._int_value(refreshed_run.get("target_generations"), generations),
-                generations,
-            )
-            if str(refreshed_run.get("status") or "") not in ("completed", "stopped"):
+            target_generations = max(self._int_value(refreshed_run.get("target_generations"), generations), generations)
+            done = self._int_value(self.sqlite.count_completed_generations(active_run_id), 0)
+            if str(refreshed_run.get("status") or "") != "completed" or done < target_generations:
                 self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
         (
             previous_best,
@@ -1120,7 +1125,7 @@ class GenerationRunner:
 
         stopped = False
         try:
-            for generation in range(1, generations + 1):
+            for generation in range(1, target_generations + 1):
                 if self.controller:
                     self.controller.wait_if_paused()
                     if self.controller.stop_requested():

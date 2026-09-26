@@ -42,6 +42,19 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Python: `autoctx resume <run-id>` now continues a run with the scenario and
+  generation target stored on it, instead of running `grid_ctf` for one
+  generation inside it and marking it completed. An unknown run id exits 1.
+  `--scenario` is optional and must match the run (exit 2 otherwise), and
+  `--iterations` (with `--gens`/`-g` as a deprecated alias) may extend the
+  target but not lower it. Runs not created by the generation loop (agent-task
+  `run`, task-like `solve`, package import) cannot be resumed. The generation
+  loop itself now refuses to continue a run id that belongs to another scenario
+  or was not written by the loop, so `autoctx run --run-id` exits 1 there, and
+  it marks a run completed only once every generation up to its target has
+  completed. Data written under the wrong scenario by earlier releases is not
+  cleaned up (AC-1034).
+
 - Python: with relative artifact roots (the default), per-generation run
   artifacts (replays, `metrics.json`, `narrative.md` and, when enabled,
   `consultation.md`, `exploration_collapse_guard.json` and Pi session traces)
