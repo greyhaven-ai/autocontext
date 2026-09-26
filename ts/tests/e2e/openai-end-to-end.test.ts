@@ -35,25 +35,23 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runInstrumentCommand } from "../../src/control-plane/instrument/cli/runner.js";
 import { resetRegistryForTests } from "../../src/control-plane/instrument/registry/plugin-registry.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Absolute file:// URL to the fixture plugin source. The config file
 // dynamically imports this and calls registerDetectorPlugin at import time.
 const FIXTURE_PLUGIN_PATH = resolve(
-  __dirname,
-  "../_fixtures/plugins/mock-openai-python.js",
+  process.cwd(),
+  "tests/_fixtures/plugins/mock-openai-python.ts",
 );
 const FIXTURE_PLUGIN_URL = pathToFileURL(FIXTURE_PLUGIN_PATH).href;
 
 // Absolute file:// URL to the plugin registry source (for registerDetectorPlugin).
 const REGISTRY_PATH = resolve(
-  __dirname,
-  "../../src/control-plane/instrument/registry/plugin-registry.js",
+  process.cwd(),
+  "src/control-plane/instrument/registry/plugin-registry.ts",
 );
 const REGISTRY_URL = pathToFileURL(REGISTRY_PATH).href;
 
