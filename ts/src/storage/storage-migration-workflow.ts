@@ -50,24 +50,34 @@ const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[
   ],
 };
 
-type PreservedRebuildColumn = {
+type LedgerRecordedColumn = {
   readonly table: string;
-  readonly key: string;
   readonly column: string;
   readonly definition: string;
+};
+
+type PreservedRebuildColumn = LedgerRecordedColumn & {
+  readonly key: string;
+};
+
+const RUNS_MINIMUM_GENERATIONS: LedgerRecordedColumn = {
+  table: "runs",
+  column: "minimum_generations",
+  definition: "INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
 };
 
 // Table rebuilds copy a fixed column list, so they would drop columns that a
 // runtime added before the rebuild ran (for example Python 020 before TS 013).
 const TYPESCRIPT_REBUILD_PRESERVED_COLUMNS: Record<string, readonly PreservedRebuildColumn[]> = {
-  "013_runs_status_default_parity.sql": [
-    {
-      table: "runs",
-      key: "run_id",
-      column: "minimum_generations",
-      definition: "INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
-    },
-  ],
+  "013_runs_status_default_parity.sql": [{ ...RUNS_MINIMUM_GENERATIONS, key: "run_id" }],
+};
+
+// Columns that must exist once the ledger records the migration that adds them.
+// Before 013 preserved runs.minimum_generations, it dropped the column after
+// 019 was recorded as covered by Python 020, so neither runtime re-added it.
+// Python keeps the same repair in sqlite_migrations.py.
+const TYPESCRIPT_LEDGER_RECORDED_COLUMNS: Record<string, readonly LedgerRecordedColumn[]> = {
+  "019_run_minimum_generations.sql": [RUNS_MINIMUM_GENERATIONS],
 };
 
 function readAppliedSet(
@@ -137,6 +147,28 @@ function execPreservingRebuildColumns(db: Database.Database, file: string, sql: 
   }
 }
 
+function restoreLedgerRecordedColumns(db: Database.Database): void {
+  const appliedTypescript = readAppliedSet(db, "SELECT filename FROM schema_version", "filename");
+  for (const [file, columns] of Object.entries(TYPESCRIPT_LEDGER_RECORDED_COLUMNS)) {
+    if (!appliedTypescript.has(file)) {
+      continue;
+    }
+    for (const { table, column, definition } of columns) {
+      if (hasColumn(db, table, column)) {
+        continue;
+      }
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      } catch (error: unknown) {
+        // Another process may have restored the column since hasColumn ran.
+        if (!isDuplicateColumnError(error)) {
+          throw error;
+        }
+      }
+    }
+  }
+}
+
 export function migrateDatabase(db: Database.Database, migrationsDir: string): void {
   db.exec(
     `CREATE TABLE IF NOT EXISTS schema_version (
@@ -179,4 +211,5 @@ export function migrateDatabase(db: Database.Database, migrationsDir: string): v
       appliedPython.add(pythonMigration);
     }
   }
+  restoreLedgerRecordedColumns(db);
 }

@@ -64,6 +64,13 @@ packaged documentation and dependency metadata from that tag arrive here.
   already covered by Python, so Python run creation then failed. The runner now
   carries the column and its values across the rebuild.
 
+- Python and TypeScript: databases that already lost `runs.minimum_generations`
+  to that bug are repaired on the next migrate in either runtime, including
+  Python installs without migration files. When the ledger records the
+  migration that adds the column but the column is missing, it is re-added with
+  its default of 1. Values lost earlier cannot be recovered, so existing runs
+  read 1.
+
 - `npm publish` receives an explicit local path for the packed tarball. Without
   the leading `./`, npm read `dist/<file>.tgz` as a GitHub shorthand and tried
   to fetch it over SSH, which is why `pi-v0.10.0` and `pi-v0.10.1` both failed
