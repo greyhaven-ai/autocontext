@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { enableWal } from "../storage/sqlite-wal.js";
 
 import type {
   Campaign,
@@ -28,7 +29,7 @@ export class CampaignStore {
 
   constructor(dbPath: string) {
     this.#db = new Database(dbPath);
-    this.#db.pragma("journal_mode = WAL");
+    enableWal(this.#db);
     this.#db.pragma("foreign_keys = ON");
     createCampaignTables(this.#db);
   }

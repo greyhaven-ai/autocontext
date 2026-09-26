@@ -3,6 +3,7 @@
  */
 
 import Database from "better-sqlite3";
+import { enableWal } from "../storage/sqlite-wal.js";
 import { Session } from "./types.js";
 
 export class SessionStore {
@@ -10,7 +11,7 @@ export class SessionStore {
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
+    enableWal(this.db);
     this.ensureSchema();
   }
 

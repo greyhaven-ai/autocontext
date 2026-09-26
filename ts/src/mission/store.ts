@@ -6,6 +6,7 @@
  */
 
 import Database from "better-sqlite3";
+import { enableWal } from "../storage/sqlite-wal.js";
 import type {
   Mission,
   MissionBudget,
@@ -39,7 +40,7 @@ export class MissionStore {
   constructor(dbPath: string) {
     this.dbPath = dbPath;
     this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
+    enableWal(this.db);
     this.db.pragma("foreign_keys = ON");
     createMissionStoreTables(this.db);
   }

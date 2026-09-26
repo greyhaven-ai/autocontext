@@ -14,9 +14,11 @@ describe("storage database workflow", () => {
   });
 
   it("applies sqlite pragmas in the expected order", () => {
-    const pragma = vi.fn();
+    const pragma = vi.fn((source: string) =>
+      source.startsWith("journal_mode") ? "wal" : undefined,
+    );
     configureSqliteDatabase({ pragma } as never);
-    expect(pragma).toHaveBeenNthCalledWith(1, "journal_mode = WAL");
+    expect(pragma).toHaveBeenNthCalledWith(1, "journal_mode = WAL", { simple: true });
     expect(pragma).toHaveBeenNthCalledWith(2, "foreign_keys = ON");
   });
 });
