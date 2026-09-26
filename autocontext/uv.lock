@@ -410,7 +410,7 @@ provides-extras = ["browser", "primeintellect", "mcp", "agent-sdk", "monty", "ml
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "datamodel-code-generator", specifier = ">=0.64.0,<0.81.0" },
+    { name = "datamodel-code-generator", specifier = ">=0.64.0,<0.83.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "hypothesis", specifier = ">=6.151.12" },
     { name = "markdown-it-py", specifier = ">=4.0.0" },

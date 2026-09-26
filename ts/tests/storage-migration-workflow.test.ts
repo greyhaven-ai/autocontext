@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -93,6 +93,115 @@ describe("storage migration workflow", () => {
       insert.run(pythonMigration);
     }
   }
+
+  function applyPendingPythonMigrations(target: Database.Database): void {
+    const appliedPython = new Set(
+      (
+        target.prepare("SELECT version FROM schema_migrations").all() as Array<{ version: string }>
+      ).map((row) => row.version),
+    );
+    const insert = target.prepare("INSERT INTO schema_migrations(version) VALUES (?)");
+    const pythonFiles = readdirSync(PYTHON_MIGRATIONS_DIR)
+      .filter((file) => file.endsWith(".sql") && !appliedPython.has(file))
+      .sort();
+    for (const pythonMigration of pythonFiles) {
+      target.exec(readFileSync(join(PYTHON_MIGRATIONS_DIR, pythonMigration), "utf8"));
+      insert.run(pythonMigration);
+    }
+  }
+
+  function insertRunWithGeneration(target: Database.Database, minimumGenerations: number): void {
+    target
+      .prepare(
+        `INSERT INTO runs(
+           run_id,
+           scenario,
+           minimum_generations,
+           target_generations,
+           executor_mode,
+           status,
+           agent_provider
+         )
+         VALUES ('run-1', 'grid_ctf', ?, 5, 'local', 'running', 'claude')`,
+      )
+      .run(minimumGenerations);
+    target.exec(
+      `INSERT INTO generations(
+         run_id,
+         generation_index,
+         mean_score,
+         best_score,
+         gate_decision,
+         status
+       )
+       VALUES ('run-1', 0, 0.5, 0.6, 'advance', 'completed')`,
+    );
+  }
+
+  function expectRunsMinimumGenerationsPreserved(target: Database.Database): void {
+    expect(Array.from(columnNames(target, "runs"))).toContain("minimum_generations");
+    expect(columnDefault(target, "runs", "minimum_generations")).toBe("1");
+    expect(
+      target
+        .prepare("SELECT minimum_generations, agent_provider FROM runs WHERE run_id = ?")
+        .get("run-1"),
+    ).toEqual({ agent_provider: "claude", minimum_generations: 3 });
+    expect(
+      target.prepare("SELECT COUNT(*) AS count FROM generations WHERE run_id = ?").get("run-1"),
+    ).toEqual({ count: 1 });
+    expect(() =>
+      target
+        .prepare(
+          `INSERT INTO runs(
+             run_id,
+             scenario,
+             minimum_generations,
+             target_generations,
+             executor_mode,
+             status
+           )
+           VALUES ('run-2', 'grid_ctf', 0, 5, 'local', 'running')`,
+        )
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
+  }
+
+  it("keeps runs.minimum_generations when migration 013 rebuilds a Python-owned runs table", () => {
+    db.pragma("foreign_keys = ON");
+    applyEveryPythonMigration(db);
+    insertRunWithGeneration(db, 3);
+    const pythonRunColumns = columnNames(db, "runs");
+
+    migrateDatabase(db, MIGRATIONS_DIR);
+
+    expect(columnNames(db, "runs")).toEqual(pythonRunColumns);
+    expectRunsMinimumGenerationsPreserved(db);
+    expect(
+      db
+        .prepare("SELECT filename FROM schema_version WHERE filename = ?")
+        .get("019_run_minimum_generations.sql"),
+    ).toEqual({ filename: "019_run_minimum_generations.sql" });
+  });
+
+  it("keeps runs.minimum_generations that Python added before TypeScript applied migration 013", () => {
+    db.pragma("foreign_keys = ON");
+    const pre013MigrationsDir = join(dir, "pre-013-migrations");
+    mkdirSync(pre013MigrationsDir);
+    for (const file of readdirSync(MIGRATIONS_DIR).filter(
+      (name) => name.endsWith(".sql") && name < "013_",
+    )) {
+      copyFileSync(join(MIGRATIONS_DIR, file), join(pre013MigrationsDir, file));
+    }
+    migrateDatabase(db, pre013MigrationsDir);
+    expect(columnDefault(db, "runs", "status")).toBe("'running'");
+    applyPendingPythonMigrations(db);
+    insertRunWithGeneration(db, 3);
+
+    migrateDatabase(db, MIGRATIONS_DIR);
+
+    expect(columnDefault(db, "runs", "status")).toBeNull();
+    expectRunsMinimumGenerationsPreserved(db);
+  });
 
   it("migrates a fully Python-owned database without duplicating the evaluator epoch column", () => {
     applyEveryPythonMigration(db);
