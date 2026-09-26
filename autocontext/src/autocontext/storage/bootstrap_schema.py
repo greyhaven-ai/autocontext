@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from autocontext.storage.migration_ledgers import TYPESCRIPT_BASELINE_MIGRATIONS
+from autocontext.storage.sqlite_migrations import restore_ledger_recorded_columns
 
 _BOOTSTRAP_MIGRATIONS = (
     "001_initial.sql",
@@ -373,3 +374,4 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO schema_version(filename) VALUES (?)",
         [(version,) for version in TYPESCRIPT_BASELINE_MIGRATIONS],
     )
+    restore_ledger_recorded_columns(conn)

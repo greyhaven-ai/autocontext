@@ -228,6 +228,63 @@ describe("storage migration workflow", () => {
     ).toEqual({ version: "020_run_minimum_generations.sql" });
   });
 
+  it("restores runs.minimum_generations when both ledgers record it but an earlier 013 dropped it", () => {
+    db.pragma("foreign_keys = ON");
+    applyEveryPythonMigration(db);
+    insertRunWithGeneration(db, 3);
+    migrateDatabase(db, MIGRATIONS_DIR);
+    // Leave the database as the runner did before 013 preserved the column:
+    // 013 and 019 recorded, 020 recorded, and the column gone.
+    db.exec("ALTER TABLE runs DROP COLUMN minimum_generations");
+
+    migrateDatabase(db, MIGRATIONS_DIR);
+    migrateDatabase(db, MIGRATIONS_DIR);
+
+    expect(
+      (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).filter(
+        (column) => column.name === "minimum_generations",
+      ),
+    ).toHaveLength(1);
+    expect(columnDefault(db, "runs", "minimum_generations")).toBe("1");
+    expect(
+      db.prepare("SELECT minimum_generations FROM runs WHERE run_id = ?").get("run-1"),
+    ).toEqual({ minimum_generations: 1 });
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM generations WHERE run_id = ?").get("run-1"),
+    ).toEqual({ count: 1 });
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO runs(
+             run_id,
+             scenario,
+             minimum_generations,
+             target_generations,
+             executor_mode,
+             status
+           )
+           VALUES ('run-2', 'grid_ctf', 0, 5, 'local', 'running')`,
+        )
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
+  });
+
+  it("leaves runs.minimum_generations to migration 019 until a ledger records it", () => {
+    const pre019MigrationsDir = join(dir, "pre-019-migrations");
+    mkdirSync(pre019MigrationsDir);
+    for (const file of readdirSync(MIGRATIONS_DIR).filter(
+      (name) => name.endsWith(".sql") && name < "019_",
+    )) {
+      copyFileSync(join(MIGRATIONS_DIR, file), join(pre019MigrationsDir, file));
+    }
+
+    migrateDatabase(db, pre019MigrationsDir);
+
+    expect(Array.from(columnNames(db, "runs"))).not.toContain("minimum_generations");
+    expect(() => migrateDatabase(db, MIGRATIONS_DIR)).not.toThrow();
+    expect(columnDefault(db, "runs", "minimum_generations")).toBe("1");
+  });
+
   it("migrates a fully Python-owned database without duplicating the evaluator epoch column", () => {
     applyEveryPythonMigration(db);
     expect(
