@@ -209,6 +209,51 @@ def test_allowed_runtime_change_resumes_records_the_switch_and_keeps_the_stored_
 
 
 @pytest.mark.slow
+def test_allowed_provider_switch_is_refused_before_any_write_while_the_context_bundle_pins_the_old_provider(
+    tmp_path: Path,
+) -> None:
+    # Every generation serves the scenario's active context bundle, which pins the provider it was built for.
+    # The allowed switch reopened the run, announced itself and rolled the bundle's evaluator epoch, then failed
+    # mid-generation on that pin with an error that named neither the run nor the pin.
+    _runner(tmp_path).run(scenario_name="othello", generations=1, run_id="r")
+    active_bundle = tmp_path / "knowledge" / "othello" / "context_bundles" / "active.json"
+    events = tmp_path / "runs" / "events.ndjson"
+    before = (_state(tmp_path, "r"), _runtime(tmp_path, "r"), active_bundle.read_bytes(), events.read_bytes())
+    assert before[:2] == ((("othello", 1, "completed"), [(1, "completed")]), ("deterministic", "local"))
+
+    with pytest.raises(ValueError) as refused:
+        _switched_runner(tmp_path, "agent_provider", "openai-compatible").run(
+            scenario_name="othello", generations=2, run_id="r", allow_runtime_change=True
+        )
+
+    message = str(refused.value)
+    assert "run 'r' cannot switch to agent_provider 'openai-compatible'" in message
+    assert "the active context bundle of scenario 'othello' pins agent_provider 'deterministic'" in message
+    assert "AUTOCONTEXT_AGENT_PROVIDER=deterministic" in message
+    assert (_state(tmp_path, "r"), _runtime(tmp_path, "r"), active_bundle.read_bytes(), events.read_bytes()) == before
+
+
+@pytest.mark.slow
+def test_allowed_provider_switch_resumes_under_ablation_where_the_context_bundle_is_not_served(tmp_path: Path) -> None:
+    # Ablation never serves the bundle, so its provider pin cannot fail the run and must not refuse it.
+    runner = _runner(tmp_path)
+    runner.artifacts.ensure_context_bundle_baseline(
+        "othello", evaluator_epoch="seeded", routing_config={"agent_provider": "openai-compatible"}
+    )
+    runner.sqlite.create_run("r", "othello", 2, "local", agent_provider="openai-compatible")
+    _seed_generation(runner, "r", 1, "completed")
+    runner.sqlite.mark_run_failed("r")
+
+    summary = _runner(tmp_path, ablation_no_feedback=True).run(
+        scenario_name="othello", generations=2, run_id="r", allow_runtime_change=True
+    )
+
+    assert summary.generations_executed == 1
+    assert _state(tmp_path, "r") == (("othello", 2, "completed"), [(1, "completed"), (2, "completed")])
+    assert _runtime(tmp_path, "r") == ("openai-compatible", "local")
+
+
+@pytest.mark.slow
 def test_reentry_with_fewer_generations_finishes_the_stored_target(tmp_path: Path) -> None:
     runner = _runner(tmp_path)
     runner.run(scenario_name="othello", generations=2, run_id="r")

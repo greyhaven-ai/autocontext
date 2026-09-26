@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import typer
 
 from autocontext.loop.generation_runner import NON_LOOP_EXECUTOR_MODES
-from autocontext.loop.run_reentry import runtime_change_error, runtime_changes
+from autocontext.loop.run_reentry import runtime_refusal
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -40,7 +40,10 @@ def register_resume_command(
         allow_runtime_change: bool = typer.Option(
             False,
             "--allow-runtime-change",
-            help="Continue under a different agent provider or executor mode than the run was created with.",
+            help=(
+                "Continue under a different agent provider or executor mode than the run was created with. "
+                "A provider switch is still refused while the scenario's context bundle pins the old provider."
+            ),
         ),
         json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
     ) -> None:
@@ -68,8 +71,13 @@ def register_resume_command(
             fail(f"run {run_id!r} belongs to scenario {stored_scenario!r}, not {requested!r}", 2)
         if run.get("executor_mode") in NON_LOOP_EXECUTOR_MODES:
             fail(f"run {run_id!r} was not created by the generation loop and cannot be resumed", 2)
-        if not allow_runtime_change and (changes := runtime_changes(run, settings)):
-            fail(runtime_change_error(run_id, changes), 2)
+        # The runner refuses a stopped run as terminal, which no runtime setting or override could change.
+        if run.get("status") != "stopped" and (
+            refusal := runtime_refusal(
+                run, run_id=run_id, scenario_name=stored_scenario, settings=settings, allow_runtime_change=allow_runtime_change
+            )
+        ):
+            fail(refusal, 2)
         target = iterations if iterations is not None else gens if gens is not None else stored_target
         if target < stored_target:
             fail(f"run {run_id!r} targets {stored_target} generations; --iterations cannot lower it to {target}", 2)

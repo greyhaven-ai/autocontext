@@ -10,6 +10,8 @@ from collections import defaultdict
 from typing import Any, cast
 
 from autocontext.config.settings import AppSettings
+from autocontext.context_bundles.assembly import bundle_routing_config
+from autocontext.context_bundles.store import ContextBundleStore
 from autocontext.loop.events import EventStreamEmitter
 from autocontext.storage.sqlite_store import SQLiteStore
 
@@ -50,6 +52,46 @@ def runtime_change_error(run_id: str, changes: dict[str, tuple[str, str]]) -> st
     )
 
 
+def _pinned_provider(scenario_name: str, settings: AppSettings) -> object:
+    """The agent_provider the scenario's active context bundle pins, or None when no served bundle pins one.
+
+    Ablation never serves the bundle, and a damaged one is reported by the generation that serves it.
+    """
+    if settings.ablation_no_feedback:
+        return None
+    try:
+        bundle = ContextBundleStore(settings.knowledge_root).active_bundle(scenario_name)
+        return bundle_routing_config(bundle).get("agent_provider") if bundle is not None else None
+    except (KeyError, OSError, ValueError):
+        return None
+
+
+def runtime_refusal(
+    run_row: dict[str, Any],
+    *,
+    run_id: str,
+    scenario_name: str,
+    settings: AppSettings,
+    allow_runtime_change: bool,
+) -> str | None:
+    """Why the current runtime may not continue the run, or None; the runner and ``autoctx resume`` share it."""
+    # Only the provider name and executor mode are stored, so continuing under the stored values would pair
+    # them with this process's credentials and endpoints; refuse unless the switch is deliberate.
+    changes = runtime_changes(run_row, settings)
+    if changes and not allow_runtime_change:
+        return runtime_change_error(run_id, changes)
+    # Each generation serves the scenario's active context bundle and fails on a runtime built for another
+    # provider than the one it pins, so a deliberate provider switch cannot complete while that pin stands.
+    pinned = _pinned_provider(scenario_name, settings) if "agent_provider" in changes else None
+    if pinned is not None and pinned != settings.agent_provider:
+        return (
+            f"run '{run_id}' cannot switch to agent_provider '{settings.agent_provider}': the active context bundle "
+            f"of scenario '{scenario_name}' pins agent_provider '{pinned}'; set "
+            f"{RUNTIME_VARIABLES['agent_provider']}={pinned} to continue it"
+        )
+    return None
+
+
 def validate_reentry(
     run_row: dict[str, Any],
     *,
@@ -72,12 +114,12 @@ def validate_reentry(
         raise ValueError(f"run '{run_id}' belongs to scenario '{stored_scenario}', not '{scenario_name}'")
     if run_row.get("executor_mode") in NON_LOOP_EXECUTOR_MODES:
         raise ValueError(f"run '{run_id}' was not created by the generation loop and cannot be resumed")
-    # Only the provider name and executor mode are stored, so continuing under the stored values would pair
-    # them with this process's credentials and endpoints; refuse unless the switch is deliberate.
-    changes = runtime_changes(run_row, settings)
-    if changes and not allow_runtime_change:
-        raise ValueError(runtime_change_error(run_id, changes))
-    return bool(changes)
+    refusal = runtime_refusal(
+        run_row, run_id=run_id, scenario_name=scenario_name, settings=settings, allow_runtime_change=allow_runtime_change
+    )
+    if refusal:
+        raise ValueError(refusal)
+    return bool(runtime_changes(run_row, settings))
 
 
 def announce_runtime_change(

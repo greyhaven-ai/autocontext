@@ -15,6 +15,7 @@ from autocontext.cli import app
 from autocontext.config.settings import AppSettings
 from autocontext.loop.generation_pipeline import GenerationPipeline
 from autocontext.loop.generation_runner import RunSummary
+from autocontext.storage import artifact_store_from_settings
 from autocontext.storage.sqlite_store import SQLiteStore
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
@@ -170,6 +171,40 @@ def test_resume_allow_runtime_change_hands_the_switch_to_the_runner(tmp_path: Pa
     result, fake, _ = _invoke(tmp_path, ["r1", "--allow-runtime-change", "--json"])
     assert result.exit_code == 0, result.output
     assert fake.run.call_args.kwargs["allow_runtime_change"] is True
+
+
+def test_resume_refuses_an_allowed_provider_switch_while_the_context_bundle_pins_the_old_provider(tmp_path: Path) -> None:
+    # The runner reopened the run, announced the switch and then failed mid-generation on the scenario's
+    # context bundle, which pins the provider its generations were built for.
+    _seed(tmp_path, agent_provider="deterministic")
+    artifact_store_from_settings(_settings(tmp_path)).ensure_context_bundle_baseline(
+        "othello", evaluator_epoch="seeded", routing_config={"agent_provider": "deterministic"}
+    )
+    result, _, make_runner = _invoke(tmp_path, ["r1", "--allow-runtime-change", "--json"])
+    assert result.exit_code == 2
+    error = json.loads(result.stderr)["error"]
+    assert "run 'r1' cannot switch to agent_provider 'anthropic'" in error
+    assert "the active context bundle of scenario 'othello' pins agent_provider 'deterministic'" in error
+    assert "AUTOCONTEXT_AGENT_PROVIDER=deterministic" in error
+    make_runner.assert_not_called()
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_resume_of_a_stopped_run_reports_it_terminal_rather_than_its_runtime(tmp_path: Path, allow: bool) -> None:
+    # The runtime refusal came first and suggested a setting or --allow-runtime-change, and each of those then
+    # failed because a stopped run is terminal.
+    _seed(tmp_path, executor_mode="monty", agent_provider="openai-compatible")
+    store = SQLiteStore(tmp_path / "runs" / "autocontext.sqlite3")
+    store.mark_run_running("r1")
+    store.mark_run_stopped("r1")
+    settings = _settings(tmp_path).model_copy(update={"agent_provider": "deterministic"})
+    artifact_store_from_settings(settings).ensure_context_bundle_baseline(
+        "othello", evaluator_epoch="seeded", routing_config={"agent_provider": "openai-compatible"}
+    )
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = cli.invoke(app, ["resume", "r1", "--json", *(["--allow-runtime-change"] if allow else [])])
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.stderr) == {"error": "run 'r1' was stopped and is terminal; start a new run id to continue"}
 
 
 def test_resume_forwards_the_stored_minimum(tmp_path: Path) -> None:

@@ -11026,7 +11026,7 @@
           "aliases": [],
           "short_names": [],
           "required": false,
-          "description": "Continue under a different agent provider or executor mode than the run was created with. Without it such a resume is refused; the run keeps its recorded values.",
+          "description": "Continue under a different agent provider or executor mode than the run was created with. Without it such a resume is refused; the run keeps its recorded values. A provider switch is still refused while the scenario's context bundle pins the old provider.",
           "default": false
         },
         {
@@ -11105,7 +11105,7 @@
               "aliases": [],
               "short_names": [],
               "required": false,
-              "description": "Continue under a different agent provider or executor mode than the run was created with.",
+              "description": "Continue under a different agent provider or executor mode than the run was created with. A provider switch is still refused while the scenario's context bundle pins the old provider.",
               "default": false
             },
             {
