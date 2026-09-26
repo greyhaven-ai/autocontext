@@ -508,3 +508,107 @@ def test_artifact_write_hook_relative_rewrite_outside_managed_root_is_rejected(
 
     assert not (tmp_path / "outside.md").exists()
     assert not (tmp_path / "runs" / "run_a" / "outside.md").exists()
+
+
+def _redirect_hook_bus(redirect: str | None) -> Any:
+    """Build a bus whose artifact_write hook returns ``redirect``, or echoes the emitted path when it is None."""
+    from autocontext.extensions import HookBus, HookEvents, HookResult
+
+    bus = HookBus()
+
+    def rewrite(event: Any) -> HookResult:
+        return HookResult(payload={"path": redirect if redirect is not None else event.payload["path"]})
+
+    bus.on(HookEvents.ARTIFACT_WRITE, rewrite)
+    return bus
+
+
+def _link_scenario_dir_outside_roots(tmp_path: Path) -> Path:
+    """Symlink knowledge/grid_ctf to a directory outside every managed root, as a user sharing it might."""
+    shared = tmp_path / "shared" / "grid_ctf"
+    shared.mkdir(parents=True)
+    (tmp_path / "knowledge").mkdir()
+    (tmp_path / "knowledge" / "grid_ctf").symlink_to(Path("..") / "shared" / "grid_ctf", target_is_directory=True)
+    return shared
+
+
+@pytest.mark.parametrize(
+    "redirect",
+    [
+        lambda root: str(root / "victim" / "notes.md"),
+        lambda root: "victim/notes.md",
+        lambda root: "knowledge/grid_ctf/renamed.md",
+    ],
+    ids=["absolute", "relative", "renamed_through_link"],
+)
+def test_artifact_write_hook_cannot_redirect_through_a_symlinked_scenario_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, redirect: Any
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    shared = _link_scenario_dir_outside_roots(tmp_path)
+    destination = redirect(tmp_path)
+    store = _relative_root_artifact_store(_redirect_hook_bus(destination))
+
+    with pytest.raises(RuntimeError, match="outside managed root"):
+        store.write_markdown(Path("knowledge") / "grid_ctf" / "notes.md", "x")
+
+    assert not (tmp_path / "victim").exists()
+    assert list(shared.iterdir()) == []
+
+
+def test_artifact_write_through_a_symlinked_scenario_dir_keeps_unchanged_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    shared = _link_scenario_dir_outside_roots(tmp_path)
+    store = _relative_root_artifact_store(_redirect_hook_bus(None))
+
+    store.write_markdown(Path("knowledge") / "grid_ctf" / "notes.md", "x")
+
+    assert (shared / "notes.md").read_text(encoding="utf-8") == "x\n"
+
+
+def test_artifact_write_hook_cannot_redirect_a_path_outside_every_managed_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    store = _relative_root_artifact_store(_redirect_hook_bus(str(tmp_path / "victim" / "notes.md")))
+
+    with pytest.raises(RuntimeError, match="outside every managed root"):
+        store.write_markdown(tmp_path / "elsewhere" / "notes.md", "x")
+
+    assert not (tmp_path / "victim").exists()
+    assert not (tmp_path / "elsewhere").exists()
+
+
+@pytest.mark.parametrize("create_target", [True, False], ids=["existing_target", "missing_target"])
+def test_artifact_write_hook_cannot_redirect_through_a_symlink_inside_the_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, create_target: bool
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    victim = tmp_path / "victim"
+    if create_target:
+        victim.mkdir()
+    (tmp_path / "runs" / "run_a").mkdir(parents=True)
+    (tmp_path / "runs" / "run_a" / "escape").symlink_to(victim, target_is_directory=True)
+    store = _relative_root_artifact_store(_redirect_hook_bus("runs/run_a/escape/notes.md"))
+
+    with pytest.raises(RuntimeError, match="outside managed root"):
+        store.write_markdown(Path("runs") / "run_a" / "notes.md", "x")
+
+    assert not (victim / "notes.md").exists()
+
+
+def test_artifact_write_hook_can_rename_through_claude_skill_links(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    skill_dir = tmp_path / "skills" / "grid-ctf-ops"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("skill\n", encoding="utf-8")
+    _relative_root_artifact_store(None).sync_skills_to_claude()
+    linked_skill = Path(".claude") / "skills" / "grid-ctf-ops"
+    store = _relative_root_artifact_store(_redirect_hook_bus(str(linked_skill / "renamed.md")))
+
+    store.write_markdown(linked_skill / "SKILL.md", "x")
+
+    assert (skill_dir / "renamed.md").read_text(encoding="utf-8") == "x\n"
+    assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == "skill\n"

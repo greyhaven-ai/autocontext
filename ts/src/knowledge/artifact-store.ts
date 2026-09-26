@@ -9,11 +9,13 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
+  realpathSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { RunId, ScenarioName } from "../domain/ids.js";
 import { HookEvents, type HookBus } from "../extensions/index.js";
 import { PlaybookManager, EMPTY_PLAYBOOK_SENTINEL } from "./playbook.js";
@@ -356,19 +358,22 @@ export class ArtifactStore {
     if (resolve(originalPath) === resolve(nextPath)) {
       return;
     }
-    const originalRoot = this.managedRootForPath(originalPath);
-    if (!originalRoot || !pathIsInsideRoot(originalRoot, nextPath)) {
+    const roots = [this.runsRoot, this.knowledgeRoot];
+    // The original's root is chosen lexically, so a symlinked directory inside a managed root still belongs to it.
+    const originalRoot = managedRootForPath(roots, originalPath);
+    if (!originalRoot) {
       throw new Error("artifact_write path must stay within the original managed root");
     }
-  }
-
-  private managedRootForPath(path: string): string | null {
-    for (const root of [this.runsRoot, this.knowledgeRoot]) {
-      if (pathIsInsideRoot(root, path)) {
-        return resolve(root);
-      }
+    // The destination is checked with symlinks followed, so it cannot leave the root through a link. It may land
+    // in the root as written or in the managed root the original resolves into, as in the Python runtime.
+    const allowedRoots = [
+      realpathAllowingMissing(originalRoot),
+      managedRootForPath(roots.map(realpathAllowingMissing), realpathAllowingMissing(originalPath)),
+    ];
+    const destination = realpathAllowingMissing(nextPath);
+    if (!allowedRoots.some((root) => root !== null && pathIsInsideRoot(root, destination))) {
+      throw new Error("artifact_write path must stay within the original managed root");
     }
-    return null;
   }
 
   readSessionReports(scenarioName: ScenarioName, limit = 3): string {
@@ -456,4 +461,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function pathIsInsideRoot(root: string, path: string): boolean {
   const relativePath = relative(resolve(root), resolve(path));
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+}
+
+function managedRootForPath(roots: string[], path: string): string | null {
+  return roots.find((root) => pathIsInsideRoot(root, path)) ?? null;
+}
+
+/** Follows symlinks like Python's `Path.resolve(strict=False)`, keeping missing components as written. */
+function realpathAllowingMissing(path: string): string {
+  const absolute = resolve(path);
+  try {
+    return realpathSync.native(absolute);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") {
+      throw error;
+    }
+  }
+  const parent = dirname(absolute);
+  if (parent === absolute) {
+    return absolute;
+  }
+  const candidate = join(realpathAllowingMissing(parent), basename(absolute));
+  const target = readlinkOrNull(candidate);
+  return target === null ? candidate : realpathAllowingMissing(resolve(dirname(candidate), target));
+}
+
+function readlinkOrNull(path: string): string | null {
+  try {
+    return readlinkSync(path);
+  } catch {
+    return null;
+  }
 }
