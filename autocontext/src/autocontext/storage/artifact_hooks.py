@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -49,26 +50,30 @@ def emit_artifact_write(
 
 
 def _validate_redirect(original_path: Path, next_path: Path, managed_roots: tuple[Path, ...]) -> Path:
-    original_root = _find_containing_root(original_path, managed_roots)
+    if _absolute(next_path) == _absolute(original_path):
+        return original_path
+    # The original's root is chosen lexically, so a symlinked directory inside a managed root still belongs to it.
+    original_root = _find_containing_root(_absolute(original_path), tuple(_absolute(root) for root in managed_roots))
     if original_root is None:
-        return next_path
+        raise RuntimeError(f"artifact hook redirected {original_path}, which is outside every managed root: {next_path}")
+    # The destination is checked with symlinks followed, so it cannot leave the root through a link. It may land in the
+    # root as written or in the managed root the original resolves into (.claude/skills/<name> links into skills/<name>).
+    allowed_roots = [original_root.resolve()]
+    resolved_original_root = _find_containing_root(original_path.resolve(), tuple(root.resolve() for root in managed_roots))
+    if resolved_original_root is not None:
+        allowed_roots.append(resolved_original_root)
     resolved = next_path.resolve(strict=False)
-    try:
-        resolved.relative_to(original_root)
-    except ValueError as exc:
-        raise RuntimeError(
-            f"artifact hook redirected {original_path} outside managed root {original_root}: {next_path}"
-        ) from exc
+    if not any(resolved.is_relative_to(root) for root in allowed_roots):
+        raise RuntimeError(f"artifact hook redirected {original_path} outside managed root {original_root}: {next_path}")
     return resolved
 
 
+def _absolute(path: Path) -> Path:
+    return Path(os.path.abspath(path))
+
+
 def _find_containing_root(path: Path, roots: tuple[Path, ...]) -> Path | None:
-    resolved_path = path.resolve(strict=False)
     for root in roots:
-        resolved_root = root.resolve(strict=False)
-        try:
-            resolved_path.relative_to(resolved_root)
-        except ValueError:
-            continue
-        return resolved_root
+        if path.is_relative_to(root):
+            return root
     return None
