@@ -61,7 +61,15 @@ return HookResult(block=True, reason="extension policy rejected this artifact")
 
 `artifact_write` hooks may rewrite `path`, but ArtifactStore writes must stay
 inside the original managed root (`runs`, `knowledge`, `skills`, or
-`.claude/skills`).
+`.claude/skills`). A returned `path` is read the same way as the emitted one:
+absolute paths as-is, relative paths against the process working directory.
+Emitted paths can be relative (for example `runs/<run>/generations/...`) or
+absolute (for example `knowledge/<scenario>/...` writes), so derive a new path
+from the emitted value rather than assuming either form. For example, rename a
+file in place with `str(Path(event.payload["path"]).with_name("renamed.md"))`;
+a bare `"renamed.md"` points at the working directory and is rejected as
+outside the managed root. The TypeScript runtime reads returned paths the same
+way.
 
 ## Design Notes
 

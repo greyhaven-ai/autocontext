@@ -203,6 +203,31 @@ describe("storage migration workflow", () => {
     expectRunsMinimumGenerationsPreserved(db);
   });
 
+  it("records 019 without re-adding runs.minimum_generations that a Python bootstrap created", () => {
+    db.pragma("foreign_keys = ON");
+    applyEveryPythonMigration(db);
+    // Python bootstraps the schema when migration files are missing (pip
+    // installs), and its bootstrap created this column without recording 020.
+    db.prepare("DELETE FROM schema_migrations WHERE version = ?").run(
+      "020_run_minimum_generations.sql",
+    );
+    insertRunWithGeneration(db, 3);
+
+    migrateDatabase(db, MIGRATIONS_DIR);
+
+    expectRunsMinimumGenerationsPreserved(db);
+    expect(
+      db
+        .prepare("SELECT filename FROM schema_version WHERE filename = ?")
+        .get("019_run_minimum_generations.sql"),
+    ).toEqual({ filename: "019_run_minimum_generations.sql" });
+    expect(
+      db
+        .prepare("SELECT version FROM schema_migrations WHERE version = ?")
+        .get("020_run_minimum_generations.sql"),
+    ).toEqual({ version: "020_run_minimum_generations.sql" });
+  });
+
   it("restores runs.minimum_generations when both ledgers record it but an earlier 013 dropped it", () => {
     db.pragma("foreign_keys = ON");
     applyEveryPythonMigration(db);

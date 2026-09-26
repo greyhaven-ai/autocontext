@@ -59,6 +59,15 @@ def test_bootstrap_schema_seeds_typescript_ledger(tmp_path: Path) -> None:
     assert set(TYPESCRIPT_BASELINE_MIGRATIONS).issubset(applied_typescript)
 
 
+def test_bootstrap_schema_records_every_python_migration(tmp_path: Path) -> None:
+    db_path = tmp_path / "bootstrap.db"
+
+    SQLiteStore(db_path).migrate(tmp_path / "missing-migrations")
+
+    applied_python = _ledger_values(db_path, "schema_migrations", "version")
+    assert applied_python == {migration.name for migration in PYTHON_MIGRATIONS_DIR.glob("*.sql")}
+
+
 def _drop_minimum_generations_as_unfixed_typescript_013_did(db_path: Path) -> None:
     """Leave the state the TypeScript runner produced before 013 kept the column."""
     with closing(sqlite3.connect(db_path)) as conn, conn:

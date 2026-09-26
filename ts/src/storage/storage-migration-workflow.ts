@@ -50,17 +50,17 @@ const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[
   ],
 };
 
-type LedgerRecordedColumn = {
+type AddedColumn = {
   readonly table: string;
   readonly column: string;
   readonly definition: string;
 };
 
-type PreservedRebuildColumn = LedgerRecordedColumn & {
+type PreservedRebuildColumn = AddedColumn & {
   readonly key: string;
 };
 
-const RUNS_MINIMUM_GENERATIONS: LedgerRecordedColumn = {
+const RUNS_MINIMUM_GENERATIONS: AddedColumn = {
   table: "runs",
   column: "minimum_generations",
   definition: "INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
@@ -72,11 +72,12 @@ const TYPESCRIPT_REBUILD_PRESERVED_COLUMNS: Record<string, readonly PreservedReb
   "013_runs_status_default_parity.sql": [{ ...RUNS_MINIMUM_GENERATIONS, key: "run_id" }],
 };
 
-// Columns that must exist once the ledger records the migration that adds them.
-// Before 013 preserved runs.minimum_generations, it dropped the column after
-// 019 was recorded as covered by Python 020, so neither runtime re-added it.
+// Migrations whose only effect is adding these columns. The runner records one
+// without running it when its columns already exist (a Python bootstrap created
+// them before recording Python 020), and re-adds missing columns once one is
+// recorded (013 used to drop runs.minimum_generations after 019 was recorded).
 // Python keeps the same repair in sqlite_migrations.py.
-const TYPESCRIPT_LEDGER_RECORDED_COLUMNS: Record<string, readonly LedgerRecordedColumn[]> = {
+const TYPESCRIPT_COLUMN_ONLY_MIGRATIONS: Record<string, readonly AddedColumn[]> = {
   "019_run_minimum_generations.sql": [RUNS_MINIMUM_GENERATIONS],
 };
 
@@ -119,6 +120,11 @@ function hasColumn(db: Database.Database, table: string, column: string): boolea
   );
 }
 
+function hasEveryAddedColumn(db: Database.Database, file: string): boolean {
+  const columns = TYPESCRIPT_COLUMN_ONLY_MIGRATIONS[file] ?? [];
+  return columns.length > 0 && columns.every(({ table, column }) => hasColumn(db, table, column));
+}
+
 function preservedColumnStash({ table, column }: PreservedRebuildColumn): string {
   return `preserved_${table}_${column}`;
 }
@@ -149,7 +155,7 @@ function execPreservingRebuildColumns(db: Database.Database, file: string, sql: 
 
 function restoreLedgerRecordedColumns(db: Database.Database): void {
   const appliedTypescript = readAppliedSet(db, "SELECT filename FROM schema_version", "filename");
-  for (const [file, columns] of Object.entries(TYPESCRIPT_LEDGER_RECORDED_COLUMNS)) {
+  for (const [file, columns] of Object.entries(TYPESCRIPT_COLUMN_ONLY_MIGRATIONS)) {
     if (!appliedTypescript.has(file)) {
       continue;
     }
@@ -199,8 +205,10 @@ export function migrateDatabase(db: Database.Database, migrationsDir: string): v
       appliedTypescript.add(file);
       continue;
     }
-    const sql = readFileSync(join(migrationsDir, file), "utf8");
-    execPreservingRebuildColumns(db, file, sql);
+    if (!hasEveryAddedColumn(db, file)) {
+      const sql = readFileSync(join(migrationsDir, file), "utf8");
+      execPreservingRebuildColumns(db, file, sql);
+    }
     reconcilePythonBaselineSchema(db, file);
     db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
     appliedTypescript.add(file);

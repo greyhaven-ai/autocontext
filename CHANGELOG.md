@@ -40,6 +40,26 @@ All notable changes to this project will be documented in this file.
   leave-one-out calibration reports cannot authorize automatic promotion.
   See [migration and runtime scope](autocontext/docs/judge-serving-identity.md).
 
+### Fixed
+
+- Python: with relative artifact roots (the default), per-generation run
+  artifacts (replays, `metrics.json`, `narrative.md` and, when enabled,
+  `consultation.md`, `exploration_collapse_guard.json` and Pi session traces)
+  and analytics traces no longer land at doubled paths such as
+  `runs/<run>/generations/gen_1/runs/<run>/generations/gen_1/metrics.json`,
+  including in MCP sandbox runs. The `artifact_write` hook path is now read in
+  the frame it is emitted in, as in the TypeScript runtime (AC-1033). In new
+  runs, replay (CLI, API and MCP), RLM context loading, trace-grounded weakness
+  reports and writeups, and `autoctx analytics trace-findings` and
+  `render-timeline` find these artifacts. Runs written by Python 0.4.7 through
+  0.18.0 keep them at the doubled paths, since this release does not move
+  existing files, and their weakness reports came from the fallback analyzer.
+  To move them back, see
+  [recovering doubled artifacts](autocontext/docs/recovering-doubled-artifacts.md).
+  Extensions that return a relative path expecting it to resolve next to the
+  original file must now derive it from the emitted path; see
+  [extensions](autocontext/docs/extensions.md).
+
 ## [Pi 0.11.0] - 2026-09-17
 
 The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This
@@ -64,12 +84,21 @@ packaged documentation and dependency metadata from that tag arrive here.
   already covered by Python, so Python run creation then failed. The runner now
   carries the column and its values across the rebuild.
 
+- Python and TypeScript: databases created by a Python install without
+  migration files (such as a pip install) keep their `runs.minimum_generations`
+  values when TypeScript migrates them. Python's bootstrap schema created the
+  column without recording the migration that adds it, so TypeScript re-added
+  it and reset every run to 1. Bootstrap now records every migration whose
+  schema it creates and adds the column's `CHECK (minimum_generations >= 1)`,
+  and TypeScript records a migration that only adds columns without running it
+  when those columns already exist.
+
 - Python and TypeScript: databases that already lost `runs.minimum_generations`
-  to that bug are repaired on the next migrate in either runtime, including
-  Python installs without migration files. When the ledger records the
-  migration that adds the column but the column is missing, it is re-added with
-  its default of 1. Values lost earlier cannot be recovered, so existing runs
-  read 1.
+  to the migration 013 bug above are repaired on the next migrate in either
+  runtime, including Python installs without migration files. When the ledger
+  records the migration that adds the column but the column is missing, it is
+  re-added with its default of 1. Values lost earlier cannot be recovered, so
+  existing runs read 1.
 
 - `npm publish` receives an explicit local path for the packed tarball. Without
   the leading `./`, npm read `dist/<file>.tgz` as a GitHub shorthand and tried
