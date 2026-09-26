@@ -481,4 +481,41 @@ describe("storage migration workflow", () => {
         .get("013_runs_status_default_parity.sql"),
     ).toEqual({ filename: "013_runs_status_default_parity.sql" });
   });
+
+  it("keeps cascading child rows when rebuilding runs with foreign keys enabled", () => {
+    db.pragma("foreign_keys = ON");
+    db.exec(
+      `CREATE TABLE runs (
+         run_id TEXT PRIMARY KEY,
+         scenario TEXT NOT NULL,
+         target_generations INTEGER NOT NULL,
+         executor_mode TEXT NOT NULL,
+         status TEXT NOT NULL DEFAULT 'running',
+         agent_provider TEXT NOT NULL DEFAULT '',
+         created_at TEXT NOT NULL DEFAULT (datetime('now')),
+         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+       );
+       INSERT INTO runs(run_id, scenario, target_generations, executor_mode, status)
+       VALUES ('run-1', 'grid_ctf', 2, 'codex', 'running');
+       CREATE TABLE generations (
+         run_id TEXT NOT NULL,
+         generation_index INTEGER NOT NULL,
+         PRIMARY KEY (run_id, generation_index),
+         FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+       );
+       INSERT INTO generations(run_id, generation_index) VALUES ('run-1', 0);
+       CREATE TABLE schema_version (
+         filename TEXT PRIMARY KEY,
+         applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+       );
+       INSERT INTO schema_version(filename) VALUES ('009_generation_loop.sql');`,
+    );
+
+    migrateDatabase(db, MIGRATIONS_DIR);
+
+    expect(db.prepare("SELECT run_id, generation_index FROM generations").all()).toEqual([
+      { generation_index: 0, run_id: "run-1" },
+    ]);
+    expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
+  });
 });

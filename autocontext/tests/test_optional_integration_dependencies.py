@@ -72,7 +72,7 @@ def test_local_executor_imports_without_posix_resource_and_execution_fails_close
     _run_python_with_blocked_imports(
         ["resource"],
         """
-import autocontext.server.app
+from autocontext.server.app import app
 from autocontext.execution.executors.local import _execute_in_subprocess
 
 try:
