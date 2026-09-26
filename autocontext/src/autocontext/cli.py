@@ -373,7 +373,7 @@ def _run_agent_task(
         )
         sqlite.mark_run_completed(active_run_id)
     except BaseException:
-        logger.debug("cli: caught Exception", exc_info=True)
+        logger.debug("cli: agent-task run failed or was interrupted", exc_info=True)
         sqlite.upsert_generation(
             active_run_id,
             1,

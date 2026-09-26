@@ -193,7 +193,7 @@ class TestAgentTaskRunIdRefusal:
         result = _invoke(settings, _StubTask, provider, "imported_id")
 
         assert result.exit_code == 1, result.output
-        assert "agent-task" in _error(result)
+        assert "was not created by an agent-task run" in _error(result)
         assert _snapshot(store, "imported_id") == before
         assert provider.calls == 0
 
@@ -210,7 +210,7 @@ class TestAgentTaskRunIdRefusal:
         result = _invoke(settings, _StubTask, provider, "stopped_id")
 
         assert result.exit_code == 1, result.output
-        assert "stopped" in _error(result)
+        assert "was stopped and is terminal" in _error(result)
         assert _snapshot(store, "stopped_id") == before
         assert provider.calls == 0
 
