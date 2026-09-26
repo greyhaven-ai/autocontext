@@ -50,6 +50,26 @@ const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[
   ],
 };
 
+type PreservedRebuildColumn = {
+  readonly table: string;
+  readonly key: string;
+  readonly column: string;
+  readonly definition: string;
+};
+
+// Table rebuilds copy a fixed column list, so they would drop columns that a
+// runtime added before the rebuild ran (for example Python 020 before TS 013).
+const TYPESCRIPT_REBUILD_PRESERVED_COLUMNS: Record<string, readonly PreservedRebuildColumn[]> = {
+  "013_runs_status_default_parity.sql": [
+    {
+      table: "runs",
+      key: "run_id",
+      column: "minimum_generations",
+      definition: "INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
+    },
+  ],
+};
+
 function readAppliedSet(
   db: Database.Database,
   sql: string,
@@ -80,6 +100,40 @@ function reconcilePythonBaselineSchema(db: Database.Database, file: string): voi
         throw error;
       }
     }
+  }
+}
+
+function hasColumn(db: Database.Database, table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(
+    (row) => row.name === column,
+  );
+}
+
+function preservedColumnStash({ table, column }: PreservedRebuildColumn): string {
+  return `preserved_${table}_${column}`;
+}
+
+function execPreservingRebuildColumns(db: Database.Database, file: string, sql: string): void {
+  const preserved = (TYPESCRIPT_REBUILD_PRESERVED_COLUMNS[file] ?? []).filter(({ table, column }) =>
+    hasColumn(db, table, column),
+  );
+  for (const entry of preserved) {
+    db.exec(
+      `CREATE TEMP TABLE ${preservedColumnStash(entry)} AS
+         SELECT ${entry.key}, ${entry.column} FROM ${entry.table}`,
+    );
+  }
+  db.exec(sql);
+  for (const entry of preserved) {
+    const { table, key, column, definition } = entry;
+    const stash = preservedColumnStash(entry);
+    db.exec(
+      `ALTER TABLE ${table} ADD COLUMN ${column} ${definition};
+       UPDATE ${table} SET ${column} = stash.${column}
+         FROM ${stash} AS stash
+        WHERE stash.${key} = ${table}.${key};
+       DROP TABLE ${stash};`,
+    );
   }
 }
 
@@ -114,7 +168,7 @@ export function migrateDatabase(db: Database.Database, migrationsDir: string): v
       continue;
     }
     const sql = readFileSync(join(migrationsDir, file), "utf8");
-    db.exec(sql);
+    execPreservingRebuildColumns(db, file, sql);
     reconcilePythonBaselineSchema(db, file);
     db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
     appliedTypescript.add(file);
