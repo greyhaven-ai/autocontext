@@ -26,6 +26,8 @@ _BOOTSTRAP_MIGRATIONS = (
     "017_generation_quarantined.sql",
     "018_generation_score_revisions.sql",
     "019_task_queue_attempts.sql",
+    "020_run_minimum_generations.sql",
+    "021_human_feedback_acquisition.sql",
 )
 
 
@@ -56,7 +58,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS runs (
             run_id TEXT PRIMARY KEY,
             scenario TEXT NOT NULL,
-            minimum_generations INTEGER NOT NULL DEFAULT 1,
+            minimum_generations INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1),
             target_generations INTEGER NOT NULL,
             executor_mode TEXT NOT NULL,
             status TEXT NOT NULL,

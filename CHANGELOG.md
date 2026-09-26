@@ -84,6 +84,15 @@ packaged documentation and dependency metadata from that tag arrive here.
   already covered by Python, so Python run creation then failed. The runner now
   carries the column and its values across the rebuild.
 
+- Python and TypeScript: databases created by a Python install without
+  migration files (such as a pip install) keep their `runs.minimum_generations`
+  values when TypeScript migrates them. Python's bootstrap schema created the
+  column without recording the migration that adds it, so TypeScript re-added
+  it and reset every run to 1. Bootstrap now records every migration whose
+  schema it creates and adds the column's `CHECK (minimum_generations >= 1)`,
+  and TypeScript records a migration that only adds columns without running it
+  when those columns already exist.
+
 - `npm publish` receives an explicit local path for the packed tarball. Without
   the leading `./`, npm read `dist/<file>.tgz` as a GitHub shorthand and tried
   to fetch it over SSH, which is why `pi-v0.10.0` and `pi-v0.10.1` both failed
