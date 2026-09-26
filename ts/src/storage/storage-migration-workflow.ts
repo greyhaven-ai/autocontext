@@ -2,6 +2,8 @@ import type Database from "better-sqlite3";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+// Python keeps the same map as TYPESCRIPT_TO_PYTHON_BASELINES in
+// autocontext/storage/migration_ledgers.py, and a Python test fails when they differ.
 export const TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES: Record<string, readonly string[]> = {
   "007_task_queue.sql": ["007_task_queue.sql"],
   "008_human_feedback.sql": ["006_human_feedback.sql"],
