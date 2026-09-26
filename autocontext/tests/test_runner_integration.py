@@ -376,6 +376,10 @@ def _snapshot_rows(tmp_path: Path, run_id: str) -> int:
         conn.close()
 
 
+def _checkpoint_generations(runner: GenerationRunner) -> list[int]:
+    return [entry.generation for entry in runner.artifacts.mutation_log.read("grid_ctf", mutation_types=["checkpoint"])]
+
+
 @pytest.mark.slow
 def test_rerun_of_a_completed_run_leaves_its_knowledge_and_reports_untouched(tmp_path: Path) -> None:
     # A no-op re-entry reran the post-run tail: it re-snapshotted the scenario's current playbook under
@@ -393,6 +397,7 @@ def test_rerun_of_a_completed_run_leaves_its_knowledge_and_reports_untouched(tmp
             "drift_warnings": len(list((knowledge / "analytics" / "drift_warnings").glob("*.json"))),
             "session_report": (knowledge / "grid_ctf" / "reports" / f"{run_id}.md").read_text(encoding="utf-8"),
             "events": _event_names(tmp_path),
+            "checkpoints": _checkpoint_generations(runner),
         }
 
     before = observed()
@@ -402,7 +407,7 @@ def test_rerun_of_a_completed_run_leaves_its_knowledge_and_reports_untouched(tmp
     summary = runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
 
     assert (summary.generations_executed, summary.best_score, summary.current_elo) == (0, first.best_score, first.current_elo)
-    assert (before["snapshot_rows"], before["drift_snapshots"]) == (1, 1)
+    assert (before["snapshot_rows"], before["drift_snapshots"], before["checkpoints"]) == (1, 1, [1])
     assert observed() == before
     assert runner.sqlite.get_run(run_id)["status"] == "completed"
 
@@ -434,6 +439,8 @@ def test_reentry_that_extends_or_recovers_a_run_still_runs_the_tail_once(
     assert report.exists()
     assert _snapshot_rows(tmp_path, run_id) == 2
     assert _event_names(tmp_path).count("run_completed") == 2
+    # A checkpoint marks generations this invocation completed; a tail-only re-entry appends none.
+    assert _checkpoint_generations(runner) == ([1, 2] if executed else [1])
 
 
 @pytest.mark.slow
