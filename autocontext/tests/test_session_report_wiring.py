@@ -611,6 +611,8 @@ class TestMutationLogWiring:
         runner, mocks = _make_runner_with_mocks(settings)
         mocks["artifacts"].mutation_log = MagicMock()
         mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
+        # The checkpoint is labeled with the run's durable completed-generation count.
+        mocks["sqlite"].count_completed_generations.return_value = 1
 
         with patch("autocontext.loop.generation_pipeline.GenerationPipeline") as mock_pipeline_cls:
             mock_pipeline = MagicMock()

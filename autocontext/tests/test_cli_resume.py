@@ -40,10 +40,10 @@ def _seed(tmp_path: Path, *, scenario="othello", target=3, executor_mode="local"
     store.mark_run_failed("r1")
 
 
-def _invoke(tmp_path: Path, args: list[str]):
+def _invoke(tmp_path: Path, args: list[str], *, executed: int = 1):
     fake = MagicMock()
     fake.run.return_value = RunSummary(
-        run_id="r1", scenario="othello", generations_executed=1, best_score=0.5, current_elo=1000.0
+        run_id="r1", scenario="othello", generations_executed=executed, best_score=0.5, current_elo=1000.0
     )
     with (
         patch("autocontext.cli.load_settings", return_value=_settings(tmp_path)),
@@ -149,6 +149,25 @@ def test_resume_forwards_the_stored_minimum(tmp_path: Path) -> None:
     assert fake.run.call_args.kwargs["minimum_generations"] == 2
 
 
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [
+        ("failed", "Resumed r1 with 0 executed generation(s)."),
+        ("completed", "Run r1 is already completed; nothing to resume."),
+    ],
+)
+def test_resume_says_already_completed_only_for_a_run_that_was(tmp_path: Path, status: str, message: str) -> None:
+    # A failed run with every generation done also executes 0, but resuming it finishes the run; it was not completed.
+    _seed(tmp_path, target=1)
+    if status == "completed":
+        SQLiteStore(tmp_path / "runs" / "autocontext.sqlite3").mark_run_completed("r1")
+
+    result, _, _ = _invoke(tmp_path, ["r1"], executed=0)
+
+    assert result.exit_code == 0, result.output
+    assert message in result.stdout
+
+
 @pytest.mark.parametrize("variable", ["AUTOCONTEXT_MATCHES_PER_GENERATION", "AUTOCONTEXT_DB_PATH"])
 def test_resume_settings_and_database_errors_stay_structured(
     workspace: Path, monkeypatch: pytest.MonkeyPatch, variable: str
@@ -198,3 +217,18 @@ def test_resume_finishes_a_failed_run_end_to_end(workspace: Path, monkeypatch: p
     replay = cli.invoke(app, ["replay", "demo", "--generation", "2"])
     assert replay.exit_code == 0, replay.output
     assert json.loads(replay.stdout)["scenario"] == "othello"
+
+
+@pytest.mark.slow
+def test_resume_of_a_completed_run_leaves_it_unchanged(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Resuming a finished run reran its post-run tail and reported "Resumed ... with 0 executed generation(s)".
+    monkeypatch.setenv("AUTOCONTEXT_MATCHES_PER_GENERATION", "1")
+    first = cli.invoke(app, ["run", "othello", "--iterations", "1", "--run-id", "done", "--json", "--skip-preflight"])
+    assert first.exit_code == 0, first.output
+    events = (workspace / "runs" / "events.ndjson").read_text(encoding="utf-8")
+
+    resumed = cli.invoke(app, ["resume", "done"])
+
+    assert resumed.exit_code == 0, resumed.output
+    assert (workspace / "runs" / "events.ndjson").read_text(encoding="utf-8") == events
+    assert "Run done is already completed; nothing to resume." in resumed.stdout

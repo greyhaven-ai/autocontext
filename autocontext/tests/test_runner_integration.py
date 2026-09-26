@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from autocontext.config import AppSettings
 from autocontext.context_bundles import ComponentKind, ContextBundleStore
+from autocontext.extensions import HookEvents, HookResult
 from autocontext.loop import GenerationRunner
+from autocontext.loop.generation_pipeline import GenerationPipeline
 
 
 def test_single_generation_persists_metadata_and_artifacts(tmp_path: Path) -> None:
@@ -341,3 +344,214 @@ def test_resume_is_idempotent_for_existing_generation(tmp_path: Path) -> None:
     second = runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
     assert first.generations_executed == 1
     assert second.generations_executed == 0
+
+
+def _reentry_runner(tmp_path: Path) -> GenerationRunner:
+    settings = AppSettings(
+        db_path=tmp_path / "runs" / "autocontext.sqlite3",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+        event_stream_path=tmp_path / "runs" / "events.ndjson",
+        audit_log_path=tmp_path / "runs" / "audit.ndjson",
+        agent_provider="deterministic",
+        matches_per_generation=1,
+    )
+    runner = GenerationRunner(settings)
+    runner.migrate(Path(__file__).resolve().parents[1] / "migrations")
+    return runner
+
+
+def _event_names(tmp_path: Path) -> list[str]:
+    lines = (tmp_path / "runs" / "events.ndjson").read_text(encoding="utf-8").splitlines()
+    return [json.loads(line)["event"] for line in lines]
+
+
+def _snapshot_rows(tmp_path: Path, run_id: str) -> int:
+    conn = sqlite3.connect(tmp_path / "runs" / "autocontext.sqlite3")
+    try:
+        return int(conn.execute("SELECT COUNT(*) FROM knowledge_snapshots WHERE run_id = ?", (run_id,)).fetchone()[0])
+    finally:
+        conn.close()
+
+
+def _checkpoint_generations(runner: GenerationRunner) -> list[int]:
+    return [entry.generation for entry in runner.artifacts.mutation_log.read("grid_ctf", mutation_types=["checkpoint"])]
+
+
+@pytest.mark.slow
+def test_rerun_of_a_completed_run_leaves_its_knowledge_and_reports_untouched(tmp_path: Path) -> None:
+    # A no-op re-entry reran the post-run tail: it re-snapshotted the scenario's current playbook under
+    # this run, appended snapshot rows and drift output, and rewrote the session report.
+    runner = _reentry_runner(tmp_path)
+    run_id = "done_run"
+    first = runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    knowledge = tmp_path / "knowledge"
+
+    def observed() -> dict[str, object]:
+        return {
+            "snapshot_rows": _snapshot_rows(tmp_path, run_id),
+            "snapshot_playbook": (knowledge / "grid_ctf" / "snapshots" / run_id / "playbook.md").read_bytes(),
+            "drift_snapshots": len(list((knowledge / "analytics" / "drift_snapshots").glob("*.json"))),
+            "drift_warnings": len(list((knowledge / "analytics" / "drift_warnings").glob("*.json"))),
+            "session_report": (knowledge / "grid_ctf" / "reports" / f"{run_id}.md").read_text(encoding="utf-8"),
+            "events": _event_names(tmp_path),
+            "checkpoints": _checkpoint_generations(runner),
+        }
+
+    before = observed()
+    playbook = knowledge / "grid_ctf" / "playbook.md"
+    playbook.write_text(playbook.read_text(encoding="utf-8") + "\nA later run changed this playbook.\n", encoding="utf-8")
+
+    summary = runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+
+    assert (summary.generations_executed, summary.best_score, summary.current_elo) == (0, first.best_score, first.current_elo)
+    assert (before["snapshot_rows"], before["drift_snapshots"], before["checkpoints"]) == (1, 1, [1])
+    assert observed() == before
+    assert runner.sqlite.get_run(run_id)["status"] == "completed"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("status", "generations", "executed"),
+    [("completed", 2, 1), ("running", 1, 0), ("failed", 1, 0)],
+)
+def test_reentry_that_extends_or_recovers_a_run_still_runs_the_tail_once(
+    tmp_path: Path, status: str, generations: int, executed: int
+) -> None:
+    # Only a run completed at its target on entry skips the tail. One extended past its target, or left
+    # 'running' or 'failed' by a crash after its last generation, still needs its report, snapshot and receipt.
+    runner = _reentry_runner(tmp_path)
+    run_id = "tail_run"
+    runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    if status == "running":
+        runner.sqlite.mark_run_running(run_id)
+    elif status == "failed":
+        runner.sqlite.mark_run_failed(run_id)
+    report = tmp_path / "knowledge" / "grid_ctf" / "reports" / f"{run_id}.md"
+    report.unlink()
+
+    summary = runner.run(scenario_name="grid_ctf", generations=generations, run_id=run_id)
+
+    assert summary.generations_executed == executed
+    assert runner.sqlite.get_run(run_id)["status"] == "completed"
+    assert report.exists()
+    assert _snapshot_rows(tmp_path, run_id) == 2
+    assert _event_names(tmp_path).count("run_completed") == 2
+    # A checkpoint marks generations this invocation completed; a tail-only re-entry appends none.
+    assert _checkpoint_generations(runner) == ([1, 2] if executed else [1])
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("cut_short", ["blocked_resume", "interrupted"])
+def test_run_cut_short_after_its_last_generation_still_gets_its_tail_on_the_next_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cut_short: str
+) -> None:
+    # Recovery marked a 'running' run whose generations were all done 'completed' before its tail had run,
+    # so the next resume took it for finished and never wrote its report, snapshot or run_completed.
+    runner = _reentry_runner(tmp_path)
+    run_id = "cut_run"
+    report = tmp_path / "knowledge" / "grid_ctf" / "reports" / f"{run_id}.md"
+    if cut_short == "blocked_resume":
+        # A process killed after its last generation, then a resume that RUN_START refused.
+        runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+        report.unlink()
+        runner.sqlite.mark_run_running(run_id)
+        runner.hook_bus.on(HookEvents.RUN_START, lambda event: HookResult(block=True, reason="policy says no"))
+        with pytest.raises(RuntimeError, match="blocked run_start"):
+            runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    else:
+        # Interrupted after generation 1 was persisted, before the run was marked completed.
+        interrupts = [KeyboardInterrupt()]
+
+        def interrupt_once(*_args: object) -> None:
+            if interrupts:
+                raise interrupts.pop()
+
+        monkeypatch.setattr(runner, "_safe_generate_run_trace_artifacts", interrupt_once)
+        with pytest.raises(KeyboardInterrupt):
+            runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    assert runner.sqlite.get_run(run_id)["status"] == "failed"
+    receipts = _event_names(tmp_path).count("run_completed")
+
+    summary = _reentry_runner(tmp_path).run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+
+    assert summary.generations_executed == 0
+    assert runner.sqlite.get_run(run_id)["status"] == "completed"
+    assert report.exists()
+    assert _event_names(tmp_path).count("run_completed") == receipts + 1
+
+
+def _record_run_ends(runner: GenerationRunner) -> list[dict]:
+    ends: list[dict] = []
+    runner.hook_bus.on(HookEvents.RUN_END, lambda event: ends.append(dict(event.payload)))
+    return ends
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_resumed_run_reports_its_durable_generation_total(tmp_path: Path, interrupted: bool) -> None:
+    # run_completed, RUN_END and the checkpoint counted only this invocation's generations (2, not 3).
+    runner = _reentry_runner(tmp_path)
+    run_id = "total_run"
+    runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    if interrupted:
+        # A process killed during generation 2 of 3.
+        runner.sqlite.mark_run_running(run_id, target_generations=3)
+        runner.sqlite.upsert_generation(
+            run_id, 2, mean_score=0.0, best_score=0.0, elo=1000.0, wins=0, losses=0, gate_decision="running", status="running"
+        )
+    ends = _record_run_ends(runner)
+
+    summary = runner.run(scenario_name="grid_ctf", generations=3, run_id=run_id)
+
+    assert summary.generations_executed == 2
+    lines = (tmp_path / "runs" / "events.ndjson").read_text(encoding="utf-8").splitlines()
+    receipts = [event["payload"] for event in map(json.loads, lines) if event["event"] == "run_completed"]
+    assert receipts[-1]["completed_generations"] == 3
+    assert [(end["status"], end["completed_generations"]) for end in ends] == [("completed", 3)]
+    checkpoints = runner.artifacts.mutation_log.read("grid_ctf", mutation_types=["checkpoint"])
+    assert [checkpoint.generation for checkpoint in checkpoints] == [1, 3]
+
+
+@pytest.mark.slow
+def test_failed_extension_reports_its_durable_generation_total_on_run_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _reentry_runner(tmp_path)
+    run_id = "failing_run"
+    runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    original = GenerationPipeline.run_generation
+
+    def fail_generation_3(self, ctx):  # type: ignore[no-untyped-def]
+        if ctx.generation == 3:
+            raise RuntimeError("injected generation 3 failure")
+        return original(self, ctx)
+
+    monkeypatch.setattr(GenerationPipeline, "run_generation", fail_generation_3)
+    ends = _record_run_ends(runner)
+
+    with pytest.raises(RuntimeError, match="injected generation 3 failure"):
+        runner.run(scenario_name="grid_ctf", generations=3, run_id=run_id)
+
+    assert [(end["status"], end["completed_generations"]) for end in ends] == [("failed", 2)]
+
+
+def test_run_end_still_fires_when_the_durable_generation_count_cannot_be_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A run failing because SQLite fails cannot read its durable count either, and that read skipped RUN_END.
+    runner = _reentry_runner(tmp_path)
+
+    def disk_error(*_args: object) -> None:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(GenerationPipeline, "run_generation", disk_error)
+    monkeypatch.setattr(runner.sqlite, "count_completed_generations", disk_error)
+    ends = _record_run_ends(runner)
+
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+        runner.run(scenario_name="grid_ctf", generations=1, run_id="disk_run")
+
+    assert [(end["status"], end["completed_generations"], end["error"]) for end in ends] == [("failed", 0, "disk I/O error")]

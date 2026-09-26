@@ -42,6 +42,33 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Python: for a resumed or extended run, the `run_completed` event, the
+  `run_end` hook (completed or failed) and the mutation-log checkpoint now
+  report the run's total completed generations, as `run_stopped` already did,
+  instead of only the generations that invocation ran. `generations_executed`
+  (in the run summary and `autoctx resume --json`) still counts only the
+  invocation, and a failing run whose total cannot be read still fires
+  `run_end` with the invocation's count (AC-1045).
+
+- Python: re-entering a run that already completed its target
+  (`autoctx resume <run-id>`, or `autoctx run --run-id` at or below its
+  target) now leaves it unchanged, and `resume` says it is already completed.
+  It no longer reruns the post-run tail, which re-snapshotted the scenario's
+  current knowledge under the old run (so cross-run inheritance could restore
+  content that never earned the recorded score), appended duplicate snapshot
+  rows and drift output, rewrote the session report and emitted another
+  `run_completed`. Recovery now marks a run found `running` after its last
+  generation as failed rather than completed, so a run cut short before its
+  post-run tail (including by a blocked resume) no longer looks finished and
+  the next resume still writes its report, snapshot and receipt (AC-1044).
+
+- Python: a run no longer stays `running` with no process behind it when a
+  `run_start` extension hook blocks it or setup before its first generation
+  raises. The `run_start` hook now fires before the run is recorded or
+  reopened, so a blocked start records no new run and does not reopen an
+  existing one, including a completed run it refused to extend. A setup
+  failure marks the run failed and fires `run_end` (AC-1043).
+
 - Python: `autoctx resume <run-id>` now continues a run with the scenario and
   generation target stored on it, instead of running `grid_ctf` for one
   generation inside it and marking it completed. An unknown run id exits 1.

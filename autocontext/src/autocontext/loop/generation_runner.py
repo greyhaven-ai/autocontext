@@ -54,6 +54,8 @@ from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
 from autocontext.knowledge.weakness import WeaknessAnalyzer
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
+from autocontext.loop.run_reentry import NON_LOOP_EXECUTOR_MODES as NON_LOOP_EXECUTOR_MODES
+from autocontext.loop.run_reentry import recover_stale_run_state, validate_reentry
 from autocontext.loop.runner_hooks import (
     emit_generation_failed,
     emit_run_completed,
@@ -69,8 +71,6 @@ from autocontext.storage import SQLiteStore, artifact_store_from_settings
 from autocontext.storage.run_paths import resolve_run_root
 
 logger = logging.getLogger(__name__)
-# Run rows the generation loop did not write: agent-task `run`, task-like `solve`, package import.
-NON_LOOP_EXECUTOR_MODES = frozenset({"agent_task", "artifact_editing", "import"})
 
 
 def _current_release_version() -> str:
@@ -904,65 +904,6 @@ class GenerationRunner:
         except (TypeError, ValueError):
             return default
 
-    def _recover_stale_run_state(self, run_id: str) -> None:
-        """Repair an interrupted run before attempting a resume.
-
-        This handles the persisted broken state left behind after a prior process
-        died or was interrupted while a run still had `running` rows in SQLite.
-        """
-        run_row = self.sqlite.get_run(run_id)
-        if run_row is None or str(run_row.get("status") or "") != "running":
-            return
-
-        generation_rows = self.sqlite.get_generation_metrics(run_id)
-        running_generations = [
-            self._int_value(row.get("generation_index")) for row in generation_rows if str(row.get("status") or "") == "running"
-        ]
-        if running_generations:
-            recovery_markers = self.sqlite.get_recovery_markers_for_run(run_id)
-            retry_counts: dict[int, int] = defaultdict(int)
-            for marker in recovery_markers:
-                retry_counts[self._int_value(marker.get("generation_index"))] += 1
-            for generation_index in running_generations:
-                self.sqlite.update_generation_status(
-                    run_id,
-                    generation_index,
-                    status="failed",
-                    gate_decision="stalled",
-                )
-                self.sqlite.append_recovery_marker(
-                    run_id,
-                    generation_index,
-                    decision="mark_failed",
-                    reason="Recovered stale running generation from a prior interrupted run",
-                    retry_count=retry_counts[generation_index] + 1,
-                )
-            self.sqlite.mark_run_failed(run_id)
-            logger.warning(
-                "recovered stale running generations for run %s: %s",
-                run_id,
-                ", ".join(str(gen) for gen in running_generations),
-            )
-            return
-
-        completed_generations = sum(1 for row in generation_rows if str(row.get("status") or "") == "completed")
-        target_generations = self._int_value(run_row.get("target_generations"), 0)
-        if target_generations > 0 and completed_generations >= target_generations:
-            self.sqlite.mark_run_completed(run_id)
-            logger.info(
-                "marking run %s completed during recovery (%d/%d generations already completed)",
-                run_id,
-                completed_generations,
-                target_generations,
-            )
-            return
-
-        self.sqlite.mark_run_failed(run_id)
-        logger.warning(
-            "marking run %s failed during recovery; run was still 'running' without an active generation",
-            run_id,
-        )
-
     def _hydrate_run_state(
         self,
         run_id: str,
@@ -1034,7 +975,29 @@ class GenerationRunner:
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         run_start_time = time.monotonic()
         target_generations = generations
+        reopen = False
         existing_run = self.sqlite.get_run(active_run_id)
+        if existing_run is not None:
+            validate_reentry(existing_run, run_id=active_run_id, scenario_name=scenario_name)
+            recover_stale_run_state(self.sqlite, active_run_id)
+            refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
+            target_generations = max(self._int_value(refreshed_run.get("target_generations"), generations), generations)
+            done = self._int_value(self.sqlite.count_completed_generations(active_run_id), 0)
+            if str(existing_run.get("status") or "") == "completed" and done >= target_generations:
+                # Nothing to run. Rerunning the post-run tail would re-snapshot the scenario's current
+                # knowledge under this run and repeat its report, analytics and run_completed receipt.
+                logger.info("run %s already completed %d/%d generations; left unchanged", active_run_id, done, target_generations)
+                previous_best, challenger_elo, *_ = self._hydrate_run_state(active_run_id)
+                return RunSummary(active_run_id, scenario_name, 0, previous_best, challenger_elo)
+            reopen = str(refreshed_run.get("status") or "") != "completed" or done < target_generations
+        # RUN_START may refuse the run, so it fires before any run-state write.
+        emit_run_start(
+            self,
+            run_id=active_run_id,
+            scenario=scenario_name,
+            minimum_generations=minimum_generations,
+            target_generations=target_generations,
+        )
         if existing_run is None:
             self.sqlite.create_run(
                 active_run_id,
@@ -1044,87 +1007,67 @@ class GenerationRunner:
                 agent_provider=self.settings.agent_provider,
                 minimum_generations=minimum_generations,
             )
-        else:
-            # A stopped run is terminal (first-terminal-outcome-wins): refuse to
-            # resume it into 'running', which would let it later be marked
-            # 'completed' and overwrite the terminal outcome. Restart under a new id.
-            if str(existing_run.get("status") or "") == "stopped":
-                raise ValueError(f"run '{active_run_id}' was stopped and is terminal; start a new run id to continue")
-            stored_scenario = existing_run.get("scenario")
-            if isinstance(stored_scenario, str) and stored_scenario != scenario_name:
-                raise ValueError(f"run '{active_run_id}' belongs to scenario '{stored_scenario}', not '{scenario_name}'")
-            if existing_run.get("executor_mode") in NON_LOOP_EXECUTOR_MODES:
-                raise ValueError(f"run '{active_run_id}' was not created by the generation loop and cannot be resumed")
-            self._recover_stale_run_state(active_run_id)
-            refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
-            target_generations = max(self._int_value(refreshed_run.get("target_generations"), generations), generations)
-            done = self._int_value(self.sqlite.count_completed_generations(active_run_id), 0)
-            if str(refreshed_run.get("status") or "") != "completed" or done < target_generations:
-                self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
-        (
-            previous_best,
-            challenger_elo,
-            challenger_uncertainty,
-            score_history,
-            gate_decision_history,
-        ) = self._hydrate_run_state(active_run_id)
+        elif reopen:
+            self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
+        # Anything that raises from here on must leave the run failed, not 'running'.
+        previous_best, challenger_elo = 0.0, 1000.0
         completed = 0
-        run_started_payload: dict[str, Any] = {
-            "run_id": active_run_id,
-            "scenario": scenario_name,
-            "target_generations": target_generations,
-        }
-        if minimum_generations > 1:
-            run_started_payload["minimum_generations"] = minimum_generations
-        self.events.emit("run_started", run_started_payload)
-        emit_run_start(
-            self,
-            run_id=active_run_id,
-            scenario=scenario_name,
-            minimum_generations=minimum_generations,
-            target_generations=target_generations,
-        )
-
-        # Seed scenario-specific tools before first generation
-        if not self.artifacts.tools_dir(scenario_name).exists():
-            seed = scenario.seed_tools()
-            if seed:
-                seed_tool_list: list[dict[str, Any]] = [
-                    {"name": k, "code": v, "description": f"Seed tool: {k}"} for k, v in seed.items()
-                ]
-                self.artifacts.persist_tools(scenario_name, 0, seed_tool_list)
-
-        replay_narrative = ""
-        coach_competitor_hints = self.artifacts.read_hints(scenario_name)
-
-        # Cross-run knowledge inheritance: restore from best prior run if no playbook exists
-        if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
-            playbook_path = self.artifacts.knowledge_root / scenario_name / "playbook.md"
-            if not playbook_path.exists():
-                best_snapshot = self.sqlite.get_best_knowledge_snapshot(scenario_name)
-                if best_snapshot:
-                    restored = self.artifacts.restore_knowledge_snapshot(scenario_name, best_snapshot["run_id"])
-                    if restored:
-                        logger.info(
-                            "restored knowledge from run %s (score=%.4f) for scenario %s",
-                            best_snapshot["run_id"],
-                            best_snapshot["best_score"],
-                            scenario_name,
-                        )
-
-        # Harness inheritance: log existing harness files at run start
-        if self.settings.harness_validators_enabled and self.settings.harness_inheritance_enabled:
-            existing_harness = self.artifacts.list_harness(scenario_name)
-            if existing_harness:
-                logger.info(
-                    "inheriting %d harness file(s) for scenario %s: %s",
-                    len(existing_harness),
-                    scenario_name,
-                    ", ".join(existing_harness),
-                )
-
         stopped = False
         try:
+            (
+                previous_best,
+                challenger_elo,
+                challenger_uncertainty,
+                score_history,
+                gate_decision_history,
+            ) = self._hydrate_run_state(active_run_id)
+            run_started_payload: dict[str, Any] = {
+                "run_id": active_run_id,
+                "scenario": scenario_name,
+                "target_generations": target_generations,
+            }
+            if minimum_generations > 1:
+                run_started_payload["minimum_generations"] = minimum_generations
+            self.events.emit("run_started", run_started_payload)
+
+            # Seed scenario-specific tools before first generation
+            if not self.artifacts.tools_dir(scenario_name).exists():
+                seed = scenario.seed_tools()
+                if seed:
+                    seed_tool_list: list[dict[str, Any]] = [
+                        {"name": k, "code": v, "description": f"Seed tool: {k}"} for k, v in seed.items()
+                    ]
+                    self.artifacts.persist_tools(scenario_name, 0, seed_tool_list)
+
+            replay_narrative = ""
+            coach_competitor_hints = self.artifacts.read_hints(scenario_name)
+
+            # Cross-run knowledge inheritance: restore from best prior run if no playbook exists
+            if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
+                playbook_path = self.artifacts.knowledge_root / scenario_name / "playbook.md"
+                if not playbook_path.exists():
+                    best_snapshot = self.sqlite.get_best_knowledge_snapshot(scenario_name)
+                    if best_snapshot:
+                        restored = self.artifacts.restore_knowledge_snapshot(scenario_name, best_snapshot["run_id"])
+                        if restored:
+                            logger.info(
+                                "restored knowledge from run %s (score=%.4f) for scenario %s",
+                                best_snapshot["run_id"],
+                                best_snapshot["best_score"],
+                                scenario_name,
+                            )
+
+            # Harness inheritance: log existing harness files at run start
+            if self.settings.harness_validators_enabled and self.settings.harness_inheritance_enabled:
+                existing_harness = self.artifacts.list_harness(scenario_name)
+                if existing_harness:
+                    logger.info(
+                        "inheriting %d harness file(s) for scenario %s: %s",
+                        len(existing_harness),
+                        scenario_name,
+                        ", ".join(existing_harness),
+                    )
+
             for generation in range(1, target_generations + 1):
                 if self.controller:
                     self.controller.wait_if_paused()
@@ -1329,12 +1272,14 @@ class GenerationRunner:
                             )
                     except Exception:
                         logger.debug("loop.generation_runner: suppressed Exception", exc_info=True)
+            # Terminal receipts report the run's durable progress; RunSummary keeps this invocation's count.
+            total_completed = self.sqlite.count_completed_generations(active_run_id)
             if not stopped:
                 self.sqlite.mark_run_completed(active_run_id)
                 if completed > 0:
                     self.artifacts.mutation_log.create_checkpoint(
                         scenario_name,
-                        generation=completed,
+                        generation=total_completed,
                         run_id=active_run_id,
                     )
             self.artifacts.flush_writes()
@@ -1342,15 +1287,21 @@ class GenerationRunner:
             try:
                 run_row = self.sqlite.get_run(active_run_id)
                 if run_row is not None and str(run_row.get("status") or "") == "running":
-                    self._recover_stale_run_state(active_run_id)
+                    recover_stale_run_state(self.sqlite, active_run_id)
             except Exception:
                 logger.warning("failed to recover stale run state for %s", active_run_id, exc_info=True)
+            try:
+                total_completed = self.sqlite.count_completed_generations(active_run_id)
+            except Exception:
+                # The store may be what failed; RUN_END still fires, with this invocation's count.
+                logger.debug("failed to count completed generations for %s", active_run_id, exc_info=True)
+                total_completed = completed
             try:
                 emit_run_failed(
                     self,
                     run_id=active_run_id,
                     scenario=scenario_name,
-                    completed_generations=completed,
+                    completed_generations=total_completed,
                     best_score=previous_best,
                     elo=challenger_elo,
                     error=str(exc),
@@ -1413,7 +1364,7 @@ class GenerationRunner:
                 "run_completed",
                 {
                     "run_id": active_run_id,
-                    "completed_generations": completed,
+                    "completed_generations": total_completed,
                     "best_score": previous_best,
                     "elo": challenger_elo,
                     "session_report_path": session_report_path,
@@ -1424,7 +1375,7 @@ class GenerationRunner:
                 self,
                 run_id=active_run_id,
                 scenario=scenario_name,
-                completed_generations=completed,
+                completed_generations=total_completed,
                 best_score=previous_best,
                 elo=challenger_elo,
                 session_report_path=session_report_path,

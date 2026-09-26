@@ -38,7 +38,7 @@ def register_resume_command(
         gens: int | None = typer.Option(None, "--gens", "-g", min=1, help="Deprecated alias for --iterations."),
         json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
     ) -> None:
-        """Resume an existing run idempotently."""
+        """Continue an interrupted run or extend its target; a completed run is left unchanged."""
         error_boundary = _cli_attr(dependency_module, "cli_error_boundary")
 
         def fail(message: str, code: int) -> NoReturn:
@@ -72,5 +72,7 @@ def register_resume_command(
             summary = runner.run(scenario_name=stored_scenario, generations=target, run_id=run_id, minimum_generations=minimum)
         if json_output:
             _cli_attr(dependency_module, "_write_json_stdout")(dataclasses.asdict(summary))
+        elif run.get("status") == "completed" and summary.generations_executed == 0:
+            console.print(f"Run {summary.run_id} is already completed; nothing to resume.")
         else:
             console.print(f"Resumed {summary.run_id} with {summary.generations_executed} executed generation(s).")

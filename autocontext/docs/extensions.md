@@ -59,6 +59,9 @@ return HookResult(block=True, reason="extension policy rejected this artifact")
 | `after_judge` | Judge request and raw `response_text` before parsing |
 | `artifact_write` | Path, format, content or payload, append/buffered metadata |
 
+`run_start` fires before the run is recorded or reopened, so blocking it
+records no new run and does not reopen an existing one.
+
 `artifact_write` hooks may rewrite `path`, but ArtifactStore writes must stay
 inside the original managed root (`runs`, `knowledge`, `skills`, or
 `.claude/skills`). A returned `path` is read the same way as the emitted one:
