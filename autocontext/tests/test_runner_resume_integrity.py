@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from autocontext.config import AppSettings
+from autocontext.extensions import HookEvents, HookResult
 from autocontext.loop import GenerationRunner
 from autocontext.loop.generation_pipeline import GenerationPipeline
+from autocontext.scenarios import SCENARIO_REGISTRY
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
@@ -58,6 +60,16 @@ def _fail_generation(monkeypatch: pytest.MonkeyPatch, index: int) -> None:
         return original(self, ctx)
 
     monkeypatch.setattr(GenerationPipeline, "run_generation", failing)
+
+
+def _block_run_start(runner: GenerationRunner) -> None:
+    runner.hook_bus.on(HookEvents.RUN_START, lambda event: HookResult(block=True, reason="policy says no"))
+
+
+def _record_run_ends(runner: GenerationRunner) -> list[dict]:
+    ends: list[dict] = []
+    runner.hook_bus.on(HookEvents.RUN_END, lambda event: ends.append(dict(event.payload)))
+    return ends
 
 
 def test_reentry_with_another_scenario_is_rejected_before_any_write(tmp_path: Path) -> None:
@@ -155,3 +167,68 @@ def test_failed_retry_of_a_completed_run_with_a_failed_generation_marks_it_faile
         runner.run(scenario_name="othello", generations=2, run_id="r")
 
     assert _state(tmp_path, "r")[0] == ("othello", 2, "failed")
+
+
+def test_blocked_run_start_of_a_new_run_writes_no_row(tmp_path: Path) -> None:
+    # A refused start used to land after create_run: a 'running' row with no process and an unmatched run_started.
+    runner = _runner(tmp_path)
+    _block_run_start(runner)
+    events: list[str] = []
+    runner.events.subscribe(lambda event, _payload: events.append(event))
+
+    with pytest.raises(RuntimeError, match="blocked run_start: policy says no"):
+        runner.run(scenario_name="othello", generations=1, run_id="r")
+
+    assert runner.sqlite.get_run("r") is None
+    assert "run_started" not in events
+
+
+def test_blocked_extension_of_a_completed_run_keeps_it_completed_at_its_old_target(tmp_path: Path) -> None:
+    # The refused extension used to reopen the row with the new target, so the next plain resume ran it anyway.
+    runner = _runner(tmp_path)
+    runner.sqlite.create_run("r", "othello", 2, "local")
+    _seed_generation(runner, "r", 1, "completed")
+    _seed_generation(runner, "r", 2, "completed")
+    runner.sqlite.mark_run_completed("r")
+    _block_run_start(runner)
+
+    with pytest.raises(RuntimeError, match="blocked run_start"):
+        runner.run(scenario_name="othello", generations=3, run_id="r")
+
+    assert _state(tmp_path, "r") == (("othello", 2, "completed"), [(1, "completed"), (2, "completed")])
+
+
+def test_blocked_resume_of_an_interrupted_run_leaves_it_failed(tmp_path: Path) -> None:
+    # Recovery marked it failed, then mark_run_running flipped it back to 'running' before the hook refused.
+    runner = _runner(tmp_path)
+    runner.sqlite.create_run("r", "othello", 2, "local")
+    _seed_generation(runner, "r", 1, "completed")
+    _block_run_start(runner)
+
+    with pytest.raises(RuntimeError, match="blocked run_start"):
+        runner.run(scenario_name="othello", generations=2, run_id="r")
+
+    assert _state(tmp_path, "r") == (("othello", 2, "failed"), [(1, "completed")])
+
+
+@pytest.mark.parametrize("failing_step", ["hydrate", "seed_tools"])
+def test_setup_failure_after_the_row_is_written_fails_the_run_and_fires_run_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_step: str
+) -> None:
+    # Setup before the loop (hydration, tool seeding, knowledge restore) ran outside the recovery try.
+    runner = _runner(tmp_path)
+
+    def fail(*_args: object) -> None:
+        raise RuntimeError("injected setup failure")
+
+    if failing_step == "hydrate":
+        monkeypatch.setattr(runner, "_hydrate_run_state", fail)
+    else:
+        monkeypatch.setattr(SCENARIO_REGISTRY["othello"], "seed_tools", fail)
+    ends = _record_run_ends(runner)
+
+    with pytest.raises(RuntimeError, match="injected setup failure"):
+        runner.run(scenario_name="othello", generations=1, run_id="r")
+
+    assert _state(tmp_path, "r") == (("othello", 1, "failed"), [])
+    assert [(end["status"], end["error"]) for end in ends] == [("failed", "injected setup failure")]

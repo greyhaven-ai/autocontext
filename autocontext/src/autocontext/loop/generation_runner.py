@@ -975,7 +975,23 @@ class GenerationRunner:
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         run_start_time = time.monotonic()
         target_generations = generations
+        reopen = False
         existing_run = self.sqlite.get_run(active_run_id)
+        if existing_run is not None:
+            validate_reentry(existing_run, run_id=active_run_id, scenario_name=scenario_name)
+            recover_stale_run_state(self.sqlite, active_run_id)
+            refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
+            target_generations = max(self._int_value(refreshed_run.get("target_generations"), generations), generations)
+            done = self._int_value(self.sqlite.count_completed_generations(active_run_id), 0)
+            reopen = str(refreshed_run.get("status") or "") != "completed" or done < target_generations
+        # RUN_START may refuse the run, so it fires before any run-state write.
+        emit_run_start(
+            self,
+            run_id=active_run_id,
+            scenario=scenario_name,
+            minimum_generations=minimum_generations,
+            target_generations=target_generations,
+        )
         if existing_run is None:
             self.sqlite.create_run(
                 active_run_id,
@@ -985,78 +1001,67 @@ class GenerationRunner:
                 agent_provider=self.settings.agent_provider,
                 minimum_generations=minimum_generations,
             )
-        else:
-            validate_reentry(existing_run, run_id=active_run_id, scenario_name=scenario_name)
-            recover_stale_run_state(self.sqlite, active_run_id)
-            refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
-            target_generations = max(self._int_value(refreshed_run.get("target_generations"), generations), generations)
-            done = self._int_value(self.sqlite.count_completed_generations(active_run_id), 0)
-            if str(refreshed_run.get("status") or "") != "completed" or done < target_generations:
-                self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
-        (
-            previous_best,
-            challenger_elo,
-            challenger_uncertainty,
-            score_history,
-            gate_decision_history,
-        ) = self._hydrate_run_state(active_run_id)
+        elif reopen:
+            self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
+        # Anything that raises from here on must leave the run failed, not 'running'.
+        previous_best, challenger_elo = 0.0, 1000.0
         completed = 0
-        run_started_payload: dict[str, Any] = {
-            "run_id": active_run_id,
-            "scenario": scenario_name,
-            "target_generations": target_generations,
-        }
-        if minimum_generations > 1:
-            run_started_payload["minimum_generations"] = minimum_generations
-        self.events.emit("run_started", run_started_payload)
-        emit_run_start(
-            self,
-            run_id=active_run_id,
-            scenario=scenario_name,
-            minimum_generations=minimum_generations,
-            target_generations=target_generations,
-        )
-
-        # Seed scenario-specific tools before first generation
-        if not self.artifacts.tools_dir(scenario_name).exists():
-            seed = scenario.seed_tools()
-            if seed:
-                seed_tool_list: list[dict[str, Any]] = [
-                    {"name": k, "code": v, "description": f"Seed tool: {k}"} for k, v in seed.items()
-                ]
-                self.artifacts.persist_tools(scenario_name, 0, seed_tool_list)
-
-        replay_narrative = ""
-        coach_competitor_hints = self.artifacts.read_hints(scenario_name)
-
-        # Cross-run knowledge inheritance: restore from best prior run if no playbook exists
-        if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
-            playbook_path = self.artifacts.knowledge_root / scenario_name / "playbook.md"
-            if not playbook_path.exists():
-                best_snapshot = self.sqlite.get_best_knowledge_snapshot(scenario_name)
-                if best_snapshot:
-                    restored = self.artifacts.restore_knowledge_snapshot(scenario_name, best_snapshot["run_id"])
-                    if restored:
-                        logger.info(
-                            "restored knowledge from run %s (score=%.4f) for scenario %s",
-                            best_snapshot["run_id"],
-                            best_snapshot["best_score"],
-                            scenario_name,
-                        )
-
-        # Harness inheritance: log existing harness files at run start
-        if self.settings.harness_validators_enabled and self.settings.harness_inheritance_enabled:
-            existing_harness = self.artifacts.list_harness(scenario_name)
-            if existing_harness:
-                logger.info(
-                    "inheriting %d harness file(s) for scenario %s: %s",
-                    len(existing_harness),
-                    scenario_name,
-                    ", ".join(existing_harness),
-                )
-
         stopped = False
         try:
+            (
+                previous_best,
+                challenger_elo,
+                challenger_uncertainty,
+                score_history,
+                gate_decision_history,
+            ) = self._hydrate_run_state(active_run_id)
+            run_started_payload: dict[str, Any] = {
+                "run_id": active_run_id,
+                "scenario": scenario_name,
+                "target_generations": target_generations,
+            }
+            if minimum_generations > 1:
+                run_started_payload["minimum_generations"] = minimum_generations
+            self.events.emit("run_started", run_started_payload)
+
+            # Seed scenario-specific tools before first generation
+            if not self.artifacts.tools_dir(scenario_name).exists():
+                seed = scenario.seed_tools()
+                if seed:
+                    seed_tool_list: list[dict[str, Any]] = [
+                        {"name": k, "code": v, "description": f"Seed tool: {k}"} for k, v in seed.items()
+                    ]
+                    self.artifacts.persist_tools(scenario_name, 0, seed_tool_list)
+
+            replay_narrative = ""
+            coach_competitor_hints = self.artifacts.read_hints(scenario_name)
+
+            # Cross-run knowledge inheritance: restore from best prior run if no playbook exists
+            if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
+                playbook_path = self.artifacts.knowledge_root / scenario_name / "playbook.md"
+                if not playbook_path.exists():
+                    best_snapshot = self.sqlite.get_best_knowledge_snapshot(scenario_name)
+                    if best_snapshot:
+                        restored = self.artifacts.restore_knowledge_snapshot(scenario_name, best_snapshot["run_id"])
+                        if restored:
+                            logger.info(
+                                "restored knowledge from run %s (score=%.4f) for scenario %s",
+                                best_snapshot["run_id"],
+                                best_snapshot["best_score"],
+                                scenario_name,
+                            )
+
+            # Harness inheritance: log existing harness files at run start
+            if self.settings.harness_validators_enabled and self.settings.harness_inheritance_enabled:
+                existing_harness = self.artifacts.list_harness(scenario_name)
+                if existing_harness:
+                    logger.info(
+                        "inheriting %d harness file(s) for scenario %s: %s",
+                        len(existing_harness),
+                        scenario_name,
+                        ", ".join(existing_harness),
+                    )
+
             for generation in range(1, target_generations + 1):
                 if self.controller:
                     self.controller.wait_if_paused()
