@@ -32,7 +32,9 @@ it with `python relocate_doubled_artifacts.py`. It only prints what it would
 do. Run it again with `--apply` to move the files. It never overwrites an
 existing file and is safe to run more than once. If you set custom relative
 roots (for example `AUTOCONTEXT_RUNS_ROOT`), add their top-level directory names
-to `SCAN`.
+to `SCAN`, and add the runs root and the knowledge root's `analytics/` directory
+to `AUTO_MOVE` (for example `"myruns/"` and `"myknowledge/analytics/"`). Files
+under a root that is missing from `AUTO_MOVE` are only reported.
 
 ```python
 """Move artifacts written to doubled paths (AC-1033) back to their intended paths.
@@ -46,7 +48,7 @@ from pathlib import Path
 
 APPLY = "--apply" in sys.argv
 SCAN = ("runs", "knowledge", "sandboxes")  # add custom relative root directories here
-AUTO_MOVE = ("runs/", "sandboxes/", "knowledge/analytics/")  # other matches are only reported
+AUTO_MOVE = ("runs/", "sandboxes/", "knowledge/analytics/")  # add custom runs and analytics roots; others are only reported
 
 
 def intended_path(path):
