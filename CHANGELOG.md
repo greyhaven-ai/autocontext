@@ -42,6 +42,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Python: re-entering a run that already completed its target
+  (`autoctx resume <run-id>`, or `autoctx run --run-id` at or below its
+  target) now leaves it unchanged, and `resume` says it is already completed.
+  It no longer reruns the post-run tail, which re-snapshotted the scenario's
+  current knowledge under the old run (so cross-run inheritance could restore
+  content that never earned the recorded score), appended duplicate snapshot
+  rows and drift output, rewrote the session report and emitted another
+  `run_completed` (AC-1044).
+
 - Python: a run no longer stays `running` with no process behind it when a
   `run_start` extension hook blocks it or setup before its first generation
   raises. The `run_start` hook now fires before the run is recorded or

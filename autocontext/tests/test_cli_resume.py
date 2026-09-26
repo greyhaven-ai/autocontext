@@ -198,3 +198,18 @@ def test_resume_finishes_a_failed_run_end_to_end(workspace: Path, monkeypatch: p
     replay = cli.invoke(app, ["replay", "demo", "--generation", "2"])
     assert replay.exit_code == 0, replay.output
     assert json.loads(replay.stdout)["scenario"] == "othello"
+
+
+@pytest.mark.slow
+def test_resume_of_a_completed_run_leaves_it_unchanged(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Resuming a finished run reran its post-run tail and reported "Resumed ... with 0 executed generation(s)".
+    monkeypatch.setenv("AUTOCONTEXT_MATCHES_PER_GENERATION", "1")
+    first = cli.invoke(app, ["run", "othello", "--iterations", "1", "--run-id", "done", "--json", "--skip-preflight"])
+    assert first.exit_code == 0, first.output
+    events = (workspace / "runs" / "events.ndjson").read_text(encoding="utf-8")
+
+    resumed = cli.invoke(app, ["resume", "done"])
+
+    assert resumed.exit_code == 0, resumed.output
+    assert (workspace / "runs" / "events.ndjson").read_text(encoding="utf-8") == events
+    assert "Run done is already completed; nothing to resume." in resumed.stdout

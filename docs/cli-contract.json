@@ -10975,7 +10975,7 @@
       "path": [
         "resume"
       ],
-      "summary": "Resume an existing run idempotently.",
+      "summary": "Continue an interrupted run or extend its target; a completed run is left unchanged.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": "Run",

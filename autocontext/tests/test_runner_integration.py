@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -341,3 +342,93 @@ def test_resume_is_idempotent_for_existing_generation(tmp_path: Path) -> None:
     second = runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
     assert first.generations_executed == 1
     assert second.generations_executed == 0
+
+
+def _reentry_runner(tmp_path: Path) -> GenerationRunner:
+    settings = AppSettings(
+        db_path=tmp_path / "runs" / "autocontext.sqlite3",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+        event_stream_path=tmp_path / "runs" / "events.ndjson",
+        audit_log_path=tmp_path / "runs" / "audit.ndjson",
+        agent_provider="deterministic",
+        matches_per_generation=1,
+    )
+    runner = GenerationRunner(settings)
+    runner.migrate(Path(__file__).resolve().parents[1] / "migrations")
+    return runner
+
+
+def _event_names(tmp_path: Path) -> list[str]:
+    lines = (tmp_path / "runs" / "events.ndjson").read_text(encoding="utf-8").splitlines()
+    return [json.loads(line)["event"] for line in lines]
+
+
+def _snapshot_rows(tmp_path: Path, run_id: str) -> int:
+    conn = sqlite3.connect(tmp_path / "runs" / "autocontext.sqlite3")
+    try:
+        return int(conn.execute("SELECT COUNT(*) FROM knowledge_snapshots WHERE run_id = ?", (run_id,)).fetchone()[0])
+    finally:
+        conn.close()
+
+
+@pytest.mark.slow
+def test_rerun_of_a_completed_run_leaves_its_knowledge_and_reports_untouched(tmp_path: Path) -> None:
+    # A no-op re-entry reran the post-run tail: it re-snapshotted the scenario's current playbook under
+    # this run, appended snapshot rows and drift output, and rewrote the session report.
+    runner = _reentry_runner(tmp_path)
+    run_id = "done_run"
+    first = runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    knowledge = tmp_path / "knowledge"
+
+    def observed() -> dict[str, object]:
+        return {
+            "snapshot_rows": _snapshot_rows(tmp_path, run_id),
+            "snapshot_playbook": (knowledge / "grid_ctf" / "snapshots" / run_id / "playbook.md").read_bytes(),
+            "drift_snapshots": len(list((knowledge / "analytics" / "drift_snapshots").glob("*.json"))),
+            "drift_warnings": len(list((knowledge / "analytics" / "drift_warnings").glob("*.json"))),
+            "session_report": (knowledge / "grid_ctf" / "reports" / f"{run_id}.md").read_text(encoding="utf-8"),
+            "events": _event_names(tmp_path),
+        }
+
+    before = observed()
+    playbook = knowledge / "grid_ctf" / "playbook.md"
+    playbook.write_text(playbook.read_text(encoding="utf-8") + "\nA later run changed this playbook.\n", encoding="utf-8")
+
+    summary = runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+
+    assert (summary.generations_executed, summary.best_score, summary.current_elo) == (0, first.best_score, first.current_elo)
+    assert (before["snapshot_rows"], before["drift_snapshots"]) == (1, 1)
+    assert observed() == before
+    assert runner.sqlite.get_run(run_id)["status"] == "completed"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("status", "generations", "executed"),
+    [("completed", 2, 1), ("running", 1, 0), ("failed", 1, 0)],
+)
+def test_reentry_that_extends_or_recovers_a_run_still_runs_the_tail_once(
+    tmp_path: Path, status: str, generations: int, executed: int
+) -> None:
+    # Only a run completed at its target on entry skips the tail. One extended past its target, or left
+    # 'running' or 'failed' by a crash after its last generation, still needs its report, snapshot and receipt.
+    runner = _reentry_runner(tmp_path)
+    run_id = "tail_run"
+    runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+    if status == "running":
+        runner.sqlite.mark_run_running(run_id)
+    elif status == "failed":
+        runner.sqlite.mark_run_failed(run_id)
+    report = tmp_path / "knowledge" / "grid_ctf" / "reports" / f"{run_id}.md"
+    report.unlink()
+
+    summary = runner.run(scenario_name="grid_ctf", generations=generations, run_id=run_id)
+
+    assert summary.generations_executed == executed
+    assert runner.sqlite.get_run(run_id)["status"] == "completed"
+    assert report.exists()
+    assert _snapshot_rows(tmp_path, run_id) == 2
+    assert _event_names(tmp_path).count("run_completed") == 2

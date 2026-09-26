@@ -983,6 +983,12 @@ class GenerationRunner:
             refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
             target_generations = max(self._int_value(refreshed_run.get("target_generations"), generations), generations)
             done = self._int_value(self.sqlite.count_completed_generations(active_run_id), 0)
+            if str(existing_run.get("status") or "") == "completed" and done >= target_generations:
+                # Nothing to run. Rerunning the post-run tail would re-snapshot the scenario's current
+                # knowledge under this run and repeat its report, analytics and run_completed receipt.
+                logger.info("run %s already completed %d/%d generations; left unchanged", active_run_id, done, target_generations)
+                previous_best, challenger_elo, *_ = self._hydrate_run_state(active_run_id)
+                return RunSummary(active_run_id, scenario_name, 0, previous_best, challenger_elo)
             reopen = str(refreshed_run.get("status") or "") != "completed" or done < target_generations
         # RUN_START may refuse the run, so it fires before any run-state write.
         emit_run_start(
