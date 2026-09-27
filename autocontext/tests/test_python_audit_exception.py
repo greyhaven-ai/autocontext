@@ -69,9 +69,9 @@ def fixture_root(tmp_path: Path) -> Path:
 
 def test_reviewed_policy_passes_before_expiry_and_fails_at_expiry(tmp_path: Path) -> None:
     root = fixture_root(tmp_path)
-    assert AUDIT["validate_policy"](root, date(2026, 10, 7)) == POLICY
+    assert AUDIT["validate_policy"](root, date(2026, 10, 26)) == POLICY
     with pytest.raises(ValueError, match="expired"):
-        AUDIT["validate_policy"](root, date(2026, 10, 8))
+        AUDIT["validate_policy"](root, date(2026, 10, 27))
 
 
 @pytest.mark.parametrize("change", ["hash", "pin", "api"])
@@ -86,7 +86,7 @@ def test_source_or_graph_changes_require_review(tmp_path: Path, change: str) -> 
     else:
         (root / "autocontext/src/autocontext/new_loader.py").write_text("from accelerate import load_checkpoint_and_dispatch\n")
     with pytest.raises(ValueError, match="Review required"):
-        AUDIT["validate_policy"](root, date(2026, 10, 7))
+        AUDIT["validate_policy"](root, date(2026, 10, 26))
 
 
 @pytest.mark.parametrize("exit_code,output", [(2, "valid"), (1, "malformed"), (1, "clean")])

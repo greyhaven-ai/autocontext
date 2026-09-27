@@ -57,7 +57,7 @@ updates:
       # refuses the accelerate risk acceptance unless every one still matches.
       # Moving any of them alone therefore turns dependency-security red.
       # See docs/security/accelerate-risk-assessment.md; the graph is due for
-      # re-review before the acceptance expires on 2026-10-08, and all four
+      # re-review before the acceptance expires on 2026-10-27, and all four
       # should move together at that point.
       - dependency-name: accelerate
       - dependency-name: transformers

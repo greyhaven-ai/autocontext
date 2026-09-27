@@ -228,7 +228,7 @@ Mac, and is where a real efficiency-validation run belongs.
 The `cuda` extra pins its Hugging Face dependencies to the reviewed graph while
 the disputed Accelerate checkpoint advisory remains unresolved. Use only reviewed
 model/checkpoint sources and immutable reviewed revisions. The scoped audit
-acceptance expires October 8, 2026; it does not make untrusted model loading safe.
+acceptance expires October 27, 2026; it does not make untrusted model loading safe.
 See the [risk assessment and operational requirements](../../docs/security/accelerate-risk-assessment.md).
 
 > **Validated result:** on GSM8K this backend reproduced the on-policy-distillation result
