@@ -96,6 +96,11 @@ Documentation = "https://github.com/greyhaven-ai/autocontext/tree/main/autoconte
 [tool.hatch.build]
 exclude = [".claude", ".claude/**"]
 
+[tool.hatch.build.targets.sdist]
+# Archived benchmark runs stay in the repository but are not needed to build or
+# test the package, and they record local paths from the machine that ran them.
+exclude = [".claude", ".claude/**", "benchmarks/*/results"]
+
 [tool.hatch.build.targets.sdist.force-include]
 # Bundle the canonical CLI contract into the sdist so the
 # wheel-from-sdist branch of `uv build` (publish-python.yml) can find

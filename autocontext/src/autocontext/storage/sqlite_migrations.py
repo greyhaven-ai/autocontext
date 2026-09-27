@@ -30,6 +30,17 @@ _LEDGER_RECORDED_COLUMNS: dict[str, tuple[_LedgerRecordedColumn, ...]] = {
             definition="INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1)",
         ),
     ),
+    # A pip install bootstraps instead of running 021, so an existing human_feedback table
+    # would never gain these columns.
+    "021_human_feedback_acquisition.sql": (
+        _LedgerRecordedColumn(table="human_feedback", column="acquisition_id", definition="TEXT"),
+        _LedgerRecordedColumn(table="human_feedback", column="reviewer", definition="TEXT"),
+        _LedgerRecordedColumn(
+            table="human_feedback",
+            column="criterion_scores_json",
+            definition="TEXT NOT NULL DEFAULT '{}'",
+        ),
+    ),
 }
 
 
