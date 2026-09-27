@@ -69,6 +69,16 @@ All notable changes to this project will be documented in this file.
   existing one, including a completed run it refused to extend. A setup
   failure marks the run failed and fires `run_end` (AC-1043).
 
+- Python: the agent-task path of `autoctx run` now refuses a `--run-id` that
+  already exists, exiting 1 before any provider call or write. It used to
+  overwrite generation 1 of that run, even a completed generation-loop run of
+  another scenario, and exit 0. Agent-task runs are one-shot, so rerunning a
+  task under its own run id is refused too. Every agent-task run now ends
+  `completed` or `failed`, also when the evaluator guardrail raises or the run
+  is interrupted with Ctrl-C, instead of staying `running` in `status`, `list`
+  and the cockpit. Runs left `running` by earlier releases are not updated
+  (AC-1047).
+
 - Python: `autoctx resume <run-id>` now continues a run with the scenario and
   generation target stored on it, instead of running `grid_ctf` for one
   generation inside it and marking it completed. An unknown run id exits 1.
