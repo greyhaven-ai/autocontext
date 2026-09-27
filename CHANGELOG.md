@@ -92,6 +92,14 @@ All notable changes to this project will be documented in this file.
   completed. Data written under the wrong scenario by earlier releases is not
   cleaned up (AC-1034).
 
+- Python: `autoctx ab-test` records every invocation's arms as new runs named
+  `ab_<experiment-id>_<baseline|treatment>_<i>` and prints the experiment id.
+  It no longer reuses fixed `ab_baseline_<i>`/`ab_treatment_<i>` ids, which made
+  a rerun report the first test's scores or fail on another scenario, and it
+  refuses an arm whose run id already exists. It migrates the database first,
+  so a fresh workspace works, and a failed arm prints a one-line error and
+  exits 1 (AC-1049).
+
 - Python: with relative artifact roots (the default), per-generation run
   artifacts (replays, `metrics.json`, `narrative.md` and, when enabled,
   `consultation.md`, `exploration_collapse_guard.json` and Pi session traces)

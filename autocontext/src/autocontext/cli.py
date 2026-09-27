@@ -916,13 +916,15 @@ def ab_test(
     )
 
     console.print(f"[bold]A/B Test: {scenario}[/bold]")
+    console.print(f"  Experiment: {config.experiment_id}")
     console.print(f"  Baseline:  {baseline_env}")
     console.print(f"  Treatment: {treatment_env}")
     console.print(f"  Runs: {runs}, Gens: {gens}, Seed: {seed}")
     console.print()
 
     runner = ABTestRunner(config)
-    result = runner.run()
+    with cli_error_boundary(False, action="ab-test"):
+        result = runner.run()
 
     table = Table(title="A/B Test Results")
     table.add_column("Run", justify="right")

@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import os
 import random
+import uuid
 from dataclasses import dataclass, field
 
 from autocontext.config.settings import load_settings
 from autocontext.loop.generation_runner import GenerationRunner, RunSummary
+from autocontext.storage.bootstrap_schema import default_migrations_dir
 
 
 @dataclass(slots=True)
@@ -23,6 +25,8 @@ class ABTestConfig:
     runs_per_condition: int = 5
     generations_per_run: int = 3
     seed: int = 42
+    # Names this test's arm runs, so a rerun records new runs instead of re-entering old ones.
+    experiment_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
 
 @dataclass(slots=True)
@@ -66,11 +70,11 @@ class ABTestRunner:
             baseline_first = rng.random() < 0.5
 
             if baseline_first:
-                b_summary = self._run_condition(self._config.baseline_env, f"ab_baseline_{i}")
-                t_summary = self._run_condition(self._config.treatment_env, f"ab_treatment_{i}")
+                b_summary = self._run_condition(self._config.baseline_env, self._run_id("baseline", i))
+                t_summary = self._run_condition(self._config.treatment_env, self._run_id("treatment", i))
             else:
-                t_summary = self._run_condition(self._config.treatment_env, f"ab_treatment_{i}")
-                b_summary = self._run_condition(self._config.baseline_env, f"ab_baseline_{i}")
+                t_summary = self._run_condition(self._config.treatment_env, self._run_id("treatment", i))
+                b_summary = self._run_condition(self._config.baseline_env, self._run_id("baseline", i))
 
             result.baseline_scores.append(b_summary.best_score)
             result.treatment_scores.append(t_summary.best_score)
@@ -78,6 +82,9 @@ class ABTestRunner:
             result.treatment_elos.append(t_summary.current_elo)
 
         return result
+
+    def _run_id(self, condition: str, index: int) -> str:
+        return f"ab_{self._config.experiment_id}_{condition}_{index}"
 
     def _run_condition(self, env_overrides: dict[str, str], run_id: str) -> RunSummary:
         """Run a single condition with environment overrides.
@@ -102,6 +109,10 @@ class ABTestRunner:
                     os.environ[k] = orig
 
         runner = GenerationRunner(settings)
+        runner.migrate(default_migrations_dir())
+        # Running under an existing id would re-enter that run and report its old scores.
+        if runner.sqlite.get_run(run_id) is not None:
+            raise ValueError(f"run '{run_id}' already exists; an A/B test must record new runs, so use a new experiment id")
         return runner.run(
             scenario_name=self._config.scenario,
             generations=self._config.generations_per_run,
