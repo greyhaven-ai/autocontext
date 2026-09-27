@@ -27,9 +27,9 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.18.0` |
-| Python library/dev  | `uv pip install autocontext==0.18.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.18.0`           |
+| Python CLI          | `uv tool install autocontext==0.19.0` |
+| Python library/dev  | `uv pip install autocontext==0.19.0`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.19.0`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.11.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -148,14 +148,14 @@ Tokens in endpoint URLs are rejected. See the
 before exposing a server beyond one trusted operator.
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.18.0
+## What's New in 0.19.0
 
-- **TypeScript ships again:** autoctx 0.18.0 is the first npm release since 0.17.3. The 0.17.4 tag never reached npm, so its WebSocket credential hardening and dependency security updates first arrive here.
-- **OpenAI v7 support:** autoctx accepts openai ^4 || ^7, and the SDK matrix exercises the integration and instrument suites against both majors.
-- **Correct recent-feedback queries:** human feedback and calibration lookups return the newest records instead of the oldest when timestamps tie.
-- **More reliable Python runtimes:** the compaction ledger mirror records every append, and concurrent outbox initialization no longer fails on a locked database.
-- **Dependency security:** sharp and hono advisories are resolved, better-sqlite3 moves to 13, and the Bun lockfile audited in CI matches what ships again.
-- **Safer releases:** CI now builds the Pi package, catching emit-only compiler errors before release rather than during it.
+- **Safer run re-entry:** autoctx resume continues a run with its stored scenario and target, completed runs stay unchanged, and re-entering under a different provider or executor mode is refused unless resume gets --allow-runtime-change. Agent-task runs, A/B tests and TypeScript runs refuse run ids that already exist.
+- **Reliable shared databases:** several processes can start against one new SQLite database without migration-ledger or WAL lock failures, and cross-runtime migrations keep runs.minimum_generations, re-adding it where an earlier migration dropped it.
+- **Correct artifact paths:** Python run artifacts no longer land at doubled paths under relative artifact roots, and artifact_write hooks in either runtime cannot redirect a write out of its managed root through a symlink.
+- **Opt-in executable skills (Python):** for a schema-migration pilot, context bundles can carry Docker-isolated executable skills routed with verified model fallback, and a complete routed policy is promoted only through a fail-closed quality and cost gate. Nothing is enabled automatically.
+- **Evaluator provenance and human labels (Python):** judge epochs bind an immutable serving specification that includes calibration examples, and autoctx labels collects human-only judge labels with random audits and protected holdout splits.
+- **Measured reuse studies:** archived GridCTF policy-reuse and schema-migration reuse studies report quality, fallback and resource costs. Dollar costs remain unknown, and neither study authorizes production promotion.
 <!-- autocontext-whats-new:end -->
 
 ### npm 0.17.3 minimum iteration floors
