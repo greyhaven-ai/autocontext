@@ -4,6 +4,7 @@ import type { LLMProvider } from "../types/index.js";
 import { asRunId, asScenarioName, type ScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
+import { existingRunRefusal } from "../loop/run-id-availability.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import type { AgentOutputRow, GenerationRow, SQLiteStore } from "../storage/index.js";
@@ -236,6 +237,11 @@ export function registerRunManagementTools(
       }
 
       const runId = asRunId(args.runId ?? internals.createRunId());
+      // The runner below is fire-and-forget, so a refusal it threw would be lost.
+      const refusal = existingRunRefusal(opts.store, runId, args.scenario);
+      if (refusal) {
+        return jsonText({ error: refusal });
+      }
       const scenario = new ScenarioClass();
       internals.assertFamilyContract(scenario, "game", `scenario '${args.scenario}'`);
       const runner = internals.createRunner({

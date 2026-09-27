@@ -122,6 +122,17 @@ All notable changes to this project will be documented in this file.
   files inside a symlinked directory that leads outside the roots is now
   rejected; see [extensions](autocontext/docs/extensions.md).
 
+- TypeScript: `autoctx run --run-id`, the MCP `run_scenario` tool's `runId`
+  and the generation loop now refuse a run id that already exists, instead of
+  re-running generation 1 inside that run, replacing its generations, adding
+  duplicate matches and agent outputs, and marking it completed or failed. The
+  TypeScript runtime cannot resume a run, so every existing id is refused: a
+  stopped run, a run of another scenario, a run the loop did not write, and a
+  same-scenario loop run, which Python `autoctx resume` can continue.
+  `run_scenario` returns the refusal as an error instead of
+  `status: "started"`, and a refused agent-task `run` leaves the existing run's
+  status unchanged (AC-1048).
+
 - Python and TypeScript: starting several processes against the same new SQLite
   database (for example `autoctx serve` alongside an MCP server or task runner)
   no longer fails with `UNIQUE constraint failed` on the migration ledger or

@@ -84,6 +84,7 @@ import {
   type PlaybookUpdateSkippedPayload,
 } from "./playbook-update-events.js";
 import { hasRemainingGenerationCycles } from "./generation-cycle-state.js";
+import { assertRunIdAvailable } from "./run-id-availability.js";
 import type { GenerationAttempt } from "./generation-phase-state.js";
 import type { GenerationAttemptOrchestration } from "./generation-attempt-orchestrator.js";
 import type { GenerationLoopEventSequenceItem } from "./generation-side-effect-coordinator.js";
@@ -290,6 +291,8 @@ export class GenerationRunner {
     generations: number,
     minimumGenerations = 1,
   ): Promise<RunResult> {
+    // Refuse before the hook or any write, so a refusal never reaches handleRunFailure.
+    assertRunIdAvailable(this.#store, runId, this.#scenario.name);
     this.emitHook(HookEvents.RUN_START, {
       run_id: runId,
       scenario: this.#scenario.name,

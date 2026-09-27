@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { asDbPath } from "../src/domain/ids.js";
+import { SQLiteStore } from "../src/storage/index.js";
 import {
   createRunCommandEventEmitter,
   executeAgentTaskRunCommandWorkflow,
@@ -329,6 +331,7 @@ describe("run command workflow", () => {
       migrationsDir: "/tmp/migrations",
       createStore: vi.fn(() => ({
         migrate: vi.fn(),
+        getRun: vi.fn(() => null),
         createRun: vi.fn(),
         updateRunStatus: vi.fn(),
         upsertGeneration: vi.fn(),
@@ -390,6 +393,7 @@ describe("run command workflow", () => {
     const closeProviderBundle = vi.fn();
     const store = {
       migrate: vi.fn(),
+      getRun: vi.fn(() => null),
       createRun: vi.fn(),
       updateRunStatus: vi.fn(),
       upsertGeneration: vi.fn(),
@@ -443,6 +447,115 @@ describe("run command workflow", () => {
     expect(store.updateRunStatus).toHaveBeenCalledWith("run-task", "completed");
     expect(store.close).toHaveBeenCalledOnce();
     expect(closeProviderBundle).toHaveBeenCalledOnce();
+  });
+
+  // AC-1048: createRun is INSERT OR IGNORE, so an existing run id used to be
+  // rewritten with agent-task generations and then marked failed on error.
+  it.each([
+    ["agent_task", "saved_task", "run 'run-task' was not created by the generation loop and cannot be resumed"],
+    ["local", "grid_ctf", "run 'run-task' belongs to scenario 'grid_ctf', not 'saved_task'"],
+  ])("refuses an existing %s run id before creating or failing it", async (
+    executorMode,
+    storedScenario,
+    error,
+  ) => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-agent-task-existing-run-"));
+    const dbPath = join(root, "test.db");
+    const migrationsDir = join(import.meta.dirname, "..", "migrations");
+    const seed = new SQLiteStore(asDbPath(dbPath));
+    seed.migrate(migrationsDir);
+    seed.createRun("run-task", storedScenario, 2, executorMode, "deterministic");
+    seed.updateRunStatus("run-task", "completed");
+    const before = seed.getRun("run-task");
+    seed.close();
+    const executeAgentTaskSolve = vi.fn();
+    const closeProviderBundle = vi.fn();
+
+    try {
+      await expect(executeAgentTaskRunCommandWorkflow({
+        plan: {
+          scenarioName: "saved_task",
+          gens: 3,
+          runId: "run-task",
+          providerType: "deterministic",
+          matches: 1,
+          json: true,
+        },
+        providerBundle: {
+          defaultProvider: { name: "provider" },
+          defaultConfig: { providerType: "deterministic" },
+          close: closeProviderBundle,
+        },
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        executeAgentTaskSolve,
+        dbPath,
+        migrationsDir,
+        createStore: (path) => new SQLiteStore(asDbPath(path)),
+      })).rejects.toThrow(error);
+
+      expect(executeAgentTaskSolve).not.toHaveBeenCalled();
+      expect(closeProviderBundle).toHaveBeenCalledOnce();
+      const after = new SQLiteStore(asDbPath(dbPath));
+      try {
+        expect(after.getRun("run-task")).toEqual(before);
+        expect(after.getGenerations("run-task")).toEqual([]);
+      } finally {
+        after.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The existing-id check has to run before createRun inserts this call's own
+  // agent_task row; after it, every fresh agent-task run would be refused as
+  // "not created by the generation loop". The fake stores above never see that row.
+  it("runs a fresh agent-task run id on a real store and marks it completed", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-agent-task-fresh-run-"));
+    const dbPath = join(root, "test.db");
+    const migrationsDir = join(import.meta.dirname, "..", "migrations");
+    const executeAgentTaskSolve = vi.fn(async () => ({
+      progress: 2,
+      result: { scenario_name: "saved_task", best_score: 0.91 },
+    }));
+
+    try {
+      const result = await executeAgentTaskRunCommandWorkflow({
+        plan: {
+          scenarioName: "saved_task",
+          gens: 2,
+          runId: "run-fresh",
+          providerType: "deterministic",
+          matches: 1,
+          json: true,
+        },
+        providerBundle: {
+          defaultProvider: { name: "provider" },
+          defaultConfig: { providerType: "deterministic" },
+        },
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        executeAgentTaskSolve,
+        dbPath,
+        migrationsDir,
+        createStore: (path) => new SQLiteStore(asDbPath(path)),
+      });
+
+      expect(result).toMatchObject({ runId: "run-fresh", generationsCompleted: 2, bestScore: 0.91 });
+      expect(executeAgentTaskSolve).toHaveBeenCalledOnce();
+      const after = new SQLiteStore(asDbPath(dbPath));
+      try {
+        expect(after.getRun("run-fresh")).toMatchObject({
+          scenario: "saved_task",
+          executor_mode: "agent_task",
+          status: "completed",
+        });
+        expect(after.getGenerations("run-fresh")).toHaveLength(2);
+      } finally {
+        after.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("closes provider bundles when run execution fails", async () => {
