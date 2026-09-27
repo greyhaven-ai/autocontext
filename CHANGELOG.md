@@ -42,6 +42,17 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Python: re-entering a run (`autoctx resume`, `autoctx run --run-id`, the
+  interactive server, A/B tests) under a different agent provider or executor
+  mode than it was created with is now refused before anything is written
+  (`resume` exits 2). It used to continue on the current settings, so the
+  run's facets, trace and knowledge snapshot contradicted its row.
+  `resume --allow-runtime-change` permits the switch, logs it and emits
+  `run_runtime_changed`; the row keeps its values. A provider switch is still
+  refused up front while the scenario's active context bundle pins the old
+  provider, since every generation would fail on that pin. Runs with no stored
+  provider still resume (AC-1046).
+
 - Python: for a resumed or extended run, the `run_completed` event, the
   `run_end` hook (completed or failed) and the mutation-log checkpoint now
   report the run's total completed generations, as `run_stopped` already did,

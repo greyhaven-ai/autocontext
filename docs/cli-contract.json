@@ -11021,6 +11021,15 @@
           "description": "Generation target. Defaults to the run's stored target; a larger value extends it. --gens remains a compatibility alias."
         },
         {
+          "name": "allow-runtime-change",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Continue under a different agent provider or executor mode than the run was created with. Without it such a resume is refused; the run keeps its recorded values. A provider switch is still refused while the scenario's context bundle pins the old provider.",
+          "default": false
+        },
+        {
           "name": "json",
           "type": "bool",
           "aliases": [],
@@ -11089,6 +11098,15 @@
               ],
               "required": false,
               "description": "Deprecated alias for --iterations."
+            },
+            {
+              "name": "allow-runtime-change",
+              "type": "bool",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Continue under a different agent provider or executor mode than the run was created with. A provider switch is still refused while the scenario's context bundle pins the old provider.",
+              "default": false
             },
             {
               "name": "json",
