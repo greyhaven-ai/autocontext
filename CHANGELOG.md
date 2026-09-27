@@ -4,7 +4,49 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [Python 0.19.0 / TypeScript 0.19.0] - 2026-09-27
+
+`autocontext==0.19.0` and `autoctx@0.19.0` release together. Most fixes below
+apply to Python; TypeScript also gains the run id, SQLite migration and
+`artifact_write` symlink fixes, plus the `human_feedback` columns that label
+acquisition uses. The executable-skill, routing and human-label
+workflows added here are Python-only and opt-in, and none is wired into
+automatic production routing. The Pi extension is not part of this release:
+`pi-autocontext@0.11.0` depends on `autoctx@^0.18.0`, which does not accept
+0.19.0, so a Pi release that moves to `autoctx@^0.19.0` follows once
+`autoctx@0.19.0` is live.
+
 ### Added
+
+- Python: explicit context-bundle executable-skill eligibility and a bounded
+  schema-migration pilot, with Docker isolation, verified JSON proposals and
+  promotion-gated serving (AC-1028). Rejects output when Docker reports an OOM
+  event for any process in the skill's container or no matching exit event,
+  bounds input encoding/hashing and honors cancellation through final
+  verification. Includes
+  an end-to-end fixture; TypeScript parity and automatic routing remain deferred.
+
+- Python: opt-in applicability-aware routing for the profile schema-migration
+  pilot, with verified skill/registered-model/general-model fallback, explicit
+  abstention and overrides, shared request budgets, durable decisions and
+  cancellable single-dispatch provider workers (AC-1020). Semantic
+  classification and TypeScript parity remain deferred; complete route
+  promotion is the AC-1021 gate below.
+  HTTP usage is captured before SDK coercion; absolute deadlines cover
+  preflight and worker setup, and skipped model tiers do not suppress fallback.
+
+- Python: an opt-in promotion gate for complete routed execution policies
+  (AC-1021). Proposing a skill with a `routing_config` stores the whole route
+  (skill, fallback model, budget and evaluator) in the context bundle, and its
+  active pointer moves only when replayed held-out quality, route traces and
+  setup-inclusive cost per successful task meet predeclared thresholds; missing
+  or stale evidence fails closed. Serving a skill through the complete router
+  requires this policy promotion, not only a promotion of the skill. After
+  promotion, serving outcomes are recorded, and missing accounting or a breach
+  of the frozen quality, fallback or cost limits suspends the route, withholds
+  the triggering result and conditionally rolls the pointer back to its
+  predecessor. No route is enabled automatically, the AC-1029 synthetic run
+  cannot qualify, and TypeScript parity is deferred.
 
 - Python: AC-1029 schema-migration study protocol, isolated data splits, frozen
   four-arm comparison harness and lifecycle reporting. Reuses the existing
@@ -13,53 +55,54 @@ All notable changes to this project will be documented in this file.
   unknown and production promotion is separate.
   Absolute study deadlines also cover ledger persistence and router startup;
   unresolved call reservations invalidate affected cost totals and projections.
-
-- Python: opt-in applicability-aware routing for the profile schema-migration
-  pilot, with verified skill/registered-model/general-model fallback, explicit
-  abstention and overrides, shared request budgets, durable decisions and
-  cancellable single-dispatch provider workers (AC-1020). Complete route
-  promotion, semantic classification and TypeScript parity remain deferred.
-  HTTP usage is captured before SDK coercion; absolute deadlines cover
-  preflight and worker setup, and skipped model tiers do not suppress fallback.
-
-- Python: explicit context-bundle executable-skill eligibility and a bounded
-  schema-migration pilot, with Docker isolation, verified JSON proposals and
-  promotion-gated serving (AC-1028). Rejects child-process OOMs, bounds input
-  encoding/hashing and honors cancellation through final verification. Includes
-  an end-to-end fixture; TypeScript parity and automatic routing remain deferred.
+  A bounded live run on 24 synthetic held-out cases is archived with its
+  [report](autocontext/benchmarks/skill_reuse/results/2026-09-22-openrouter-frozen/heldout/REPORT.md):
+  the executable and matched textual arms each served 24/24, with no quality
+  gain over the textual control, and total lifecycle cost was not measured, so
+  the candidate stays inactive. Executable-skill invocations and route attempts
+  record the skill process's CPU time and peak memory, and routed OpenRouter
+  model targets must pin one upstream provider, with fallbacks disabled and a
+  price cap, and return a credit receipt.
 
 - Python: opt-in trace-derived GridCTF skill candidates with immutable manifests,
   typed action/abstention contracts, isolated evaluation and retained negative
   evidence in the existing candidate lifecycle (AC-1019). No automatic activation.
 
-### Changed
+- Python: a bounded GridCTF policy-reuse pilot with a predeclared protocol,
+  measurement harness and archived results (AC-1018); see the
+  [report](autocontext/benchmarks/policy_reuse/REPORT.md). In this one-step
+  simulator a frozen reusable policy met the predeclared quality and cost
+  criteria, and a hybrid arm fell back to the model on every changed-rule case.
+  Dollar costs are unknown, the result says nothing about general reasoning,
+  and it does not authorize production promotion.
 
-- Python judge epochs now bind an immutable serving specification, including
-  ordered human calibration examples, prompt versions, and scoring rules.
-  Historical rubric-only epochs remain distinct. Mixed-specification
-  leave-one-out calibration reports cannot authorize automatic promotion.
-  See [migration and runtime scope](autocontext/docs/judge-serving-identity.md).
+- Python: `autoctx labels` acquires human judge labels (AC-1023). `select`
+  freezes a reproducible queue that mixes uncertainty, boundary and
+  objective-conflict cases with random audits, and `pending`, `review` and
+  `export` record human-only label, skip, correct and disagree decisions with
+  reviewer and criterion scores, reconcile interrupted writes on resume, and
+  export only training and development labels. Candidates in protected holdout
+  groups or matching protected content or tasks, including simple
+  near-duplicates, are refused at selection, review and export, and unresolved
+  disagreements do not export. Acquired labels never become automatic
+  serving-calibration examples; Python and TypeScript both add the
+  `human_feedback` columns this needs. No label is model-authored and no
+  evaluator is activated. TypeScript workflow parity is deferred.
 
 ### Fixed
 
-- Python: re-entering a run (`autoctx resume`, `autoctx run --run-id`, the
-  interactive server, A/B tests) under a different agent provider or executor
-  mode than it was created with is now refused before anything is written
-  (`resume` exits 2). It used to continue on the current settings, so the
-  run's facets, trace and knowledge snapshot contradicted its row.
-  `resume --allow-runtime-change` permits the switch, logs it and emits
-  `run_runtime_changed`; the row keeps its values. A provider switch is still
-  refused up front while the scenario's active context bundle pins the old
-  provider, since every generation would fail on that pin. Runs with no stored
-  provider still resume (AC-1046).
-
-- Python: for a resumed or extended run, the `run_completed` event, the
-  `run_end` hook (completed or failed) and the mutation-log checkpoint now
-  report the run's total completed generations, as `run_stopped` already did,
-  instead of only the generations that invocation ran. `generations_executed`
-  (in the run summary and `autoctx resume --json`) still counts only the
-  invocation, and a failing run whose total cannot be read still fires
-  `run_end` with the invocation's count (AC-1045).
+- Python: `autoctx resume <run-id>` now continues a run with the scenario and
+  generation target stored on it, instead of running `grid_ctf` for one
+  generation inside it and marking it completed. An unknown run id exits 1.
+  `--scenario` is optional and must match the run (exit 2 otherwise), and
+  `--iterations` (with `--gens`/`-g` as a deprecated alias) may extend the
+  target but not lower it. Runs not created by the generation loop (agent-task
+  `run`, task-like `solve`, package import) cannot be resumed. The generation
+  loop itself now refuses to continue a run id that belongs to another scenario
+  or was not written by the loop, so `autoctx run --run-id` exits 1 there, and
+  it marks a run completed only once every generation up to its target has
+  completed. Data written under the wrong scenario by earlier releases is not
+  cleaned up (AC-1034).
 
 - Python: re-entering a run that already completed its target
   (`autoctx resume <run-id>`, or `autoctx run --run-id` at or below its
@@ -72,6 +115,25 @@ All notable changes to this project will be documented in this file.
   generation as failed rather than completed, so a run cut short before its
   post-run tail (including by a blocked resume) no longer looks finished and
   the next resume still writes its report, snapshot and receipt (AC-1044).
+
+- Python: for a resumed or extended run, the `run_completed` event, the
+  `run_end` hook (completed or failed) and the mutation-log checkpoint now
+  report the run's total completed generations, as `run_stopped` already did,
+  instead of only the generations that invocation ran. `generations_executed`
+  (in the run summary and `autoctx resume --json`) still counts only the
+  invocation, and a failing run whose total cannot be read still fires
+  `run_end` with the invocation's count (AC-1045).
+
+- Python: re-entering a run (`autoctx resume`, `autoctx run --run-id`, the
+  interactive server, A/B tests) under a different agent provider or executor
+  mode than it was created with is now refused before anything is written
+  (`resume` exits 2). It used to continue on the current settings, so the
+  run's facets, trace and knowledge snapshot contradicted its row.
+  `resume --allow-runtime-change` permits the switch, logs it and emits
+  `run_runtime_changed`; the row keeps its values. A provider switch is still
+  refused up front while the scenario's active context bundle pins the old
+  provider, since every generation would fail on that pin. Runs with no stored
+  provider still resume (AC-1046).
 
 - Python: a run no longer stays `running` with no process behind it when a
   `run_start` extension hook blocks it or setup before its first generation
@@ -90,18 +152,16 @@ All notable changes to this project will be documented in this file.
   and the cockpit. Runs left `running` by earlier releases are not updated
   (AC-1047).
 
-- Python: `autoctx resume <run-id>` now continues a run with the scenario and
-  generation target stored on it, instead of running `grid_ctf` for one
-  generation inside it and marking it completed. An unknown run id exits 1.
-  `--scenario` is optional and must match the run (exit 2 otherwise), and
-  `--iterations` (with `--gens`/`-g` as a deprecated alias) may extend the
-  target but not lower it. Runs not created by the generation loop (agent-task
-  `run`, task-like `solve`, package import) cannot be resumed. The generation
-  loop itself now refuses to continue a run id that belongs to another scenario
-  or was not written by the loop, so `autoctx run --run-id` exits 1 there, and
-  it marks a run completed only once every generation up to its target has
-  completed. Data written under the wrong scenario by earlier releases is not
-  cleaned up (AC-1034).
+- TypeScript: `autoctx run --run-id`, the MCP `run_scenario` tool's `runId`
+  and the generation loop now refuse a run id that already exists, instead of
+  re-running generation 1 inside that run, replacing its generations, adding
+  duplicate matches and agent outputs, and marking it completed or failed. The
+  TypeScript runtime cannot resume a run, so every existing id is refused: a
+  stopped run, a run of another scenario, a run the loop did not write, and a
+  same-scenario loop run, which Python `autoctx resume` can continue.
+  `run_scenario` returns the refusal as an error instead of
+  `status: "started"`, and a refused agent-task `run` leaves the existing run's
+  status unchanged (AC-1048).
 
 - Python: `autoctx ab-test` records every invocation's arms as new runs named
   `ab_<experiment-id>_<baseline|treatment>_<i>` and prints the experiment id.
@@ -141,17 +201,6 @@ All notable changes to this project will be documented in this file.
   files inside a symlinked directory that leads outside the roots is now
   rejected; see [extensions](autocontext/docs/extensions.md).
 
-- TypeScript: `autoctx run --run-id`, the MCP `run_scenario` tool's `runId`
-  and the generation loop now refuse a run id that already exists, instead of
-  re-running generation 1 inside that run, replacing its generations, adding
-  duplicate matches and agent outputs, and marking it completed or failed. The
-  TypeScript runtime cannot resume a run, so every existing id is refused: a
-  stopped run, a run of another scenario, a run the loop did not write, and a
-  same-scenario loop run, which Python `autoctx resume` can continue.
-  `run_scenario` returns the refusal as an error instead of
-  `status: "started"`, and a refused agent-task `run` leaves the existing run's
-  status unchanged (AC-1048).
-
 - Python and TypeScript: starting several processes against the same new SQLite
   database (for example `autoctx serve` alongside an MCP server or task runner)
   no longer fails with `UNIQUE constraint failed` on the migration ledger or
@@ -167,24 +216,6 @@ All notable changes to this project will be documented in this file.
   in-memory databases. Importing an `autocontext.storage` submodule no longer
   loads the artifact store and agent stack, which removes a circular import
   that fired when the working directory contained a `knowledge/` directory.
-
-## [Pi 0.11.0] - 2026-09-17
-
-The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This
-also ships `pi-autocontext` for the first time since 0.10.0: `pi-v0.10.1` was
-tagged on 2026-09-08 but its publish job failed before reaching npm, so the
-packaged documentation and dependency metadata from that tag arrive here.
-
-### Changed
-
-- The runtime dependency moves from `autoctx@^0.17.3` to `autoctx@^0.18.0`.
-  Because these are `0.x` versions, the previous caret range could not accept
-  0.18.0, so the extension needed this release to pick it up.
-- Development dependencies advance to the `@earendil-works` 0.85.1 line,
-  TypeScript 7, vitest 5 and typebox 1.3.30. `pi/tsconfig.json` gains an
-  explicit `rootDir`, which TypeScript 7 requires in order to emit.
-
-### Fixed
 
 - TypeScript: migrating a database that Python created no longer drops
   `runs.minimum_generations`. Migration 013 rebuilds `runs` from a fixed column
@@ -207,6 +238,57 @@ packaged documentation and dependency metadata from that tag arrive here.
   records the migration that adds the column but the column is missing, it is
   re-added with its default of 1. Values lost earlier cannot be recovered, so
   existing runs read 1.
+
+- Python: the map of TypeScript migrations that Python migrations cover now
+  matches TypeScript's own, so Python records the TypeScript ledger rows for
+  `010_session_notebook`, `011_monitors`, `012_consultation_log`,
+  `012_research_hub` and `019_run_minimum_generations` when it bootstraps a
+  database or applies the covering migration. A parity test keeps the two maps
+  equal (AC-1042).
+
+### Security
+
+- Python: the locked AnyIO advances from 4.14.0 to 4.14.2 in `uv.lock` and the
+  Docker requirements lock, resolving findings from the locked dependency
+  audit. It is set through a uv constraint, so the published package's
+  dependency requirements do not change.
+
+- Python: the scoped risk acceptance for `accelerate==1.14.0`
+  (CVE-2026-69112 / GHSA-4j2p-28q2-5m79, checkpoint `weight_map` path
+  traversal) in the optional CUDA extra was re-reviewed and renewed unchanged
+  until 2026-10-27 (AC-1037). The advisory still lists no patched version, and
+  Accelerate 1.15.0 keeps the same loader code, so upgrading would only hide
+  the finding. It stays visible in the dependency audit; see the
+  [risk assessment](docs/security/accelerate-risk-assessment.md).
+
+### Changed
+
+- Python judge epochs now bind an immutable serving specification, including
+  ordered human calibration examples, prompt versions, and scoring rules.
+  Historical rubric-only epochs remain distinct. Mixed-specification
+  leave-one-out calibration reports cannot authorize automatic promotion.
+  See [migration and runtime scope](autocontext/docs/judge-serving-identity.md).
+
+- Python development dependencies: `datamodel-code-generator` may resolve below
+  0.83.0 instead of below 0.81.0; the locked version stays 0.76.2.
+
+## [Pi 0.11.0] - 2026-09-17
+
+The Pi extension moves onto the newly published `autoctx@0.18.0` runtime. This
+also ships `pi-autocontext` for the first time since 0.10.0: `pi-v0.10.1` was
+tagged on 2026-09-08 but its publish job failed before reaching npm, so the
+packaged documentation and dependency metadata from that tag arrive here.
+
+### Changed
+
+- The runtime dependency moves from `autoctx@^0.17.3` to `autoctx@^0.18.0`.
+  Because these are `0.x` versions, the previous caret range could not accept
+  0.18.0, so the extension needed this release to pick it up.
+- Development dependencies advance to the `@earendil-works` 0.85.1 line,
+  TypeScript 7, vitest 5 and typebox 1.3.30. `pi/tsconfig.json` gains an
+  explicit `rootDir`, which TypeScript 7 requires in order to emit.
+
+### Fixed
 
 - `npm publish` receives an explicit local path for the packed tarball. Without
   the leading `./`, npm read `dist/<file>.tgz` as a GitHub shorthand and tried
@@ -1491,7 +1573,7 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.18.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.19.0...HEAD
 [0.17.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...py-v0.17.0
 [0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.1...py-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
