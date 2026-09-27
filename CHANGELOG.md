@@ -8,7 +8,8 @@ All notable changes to this project will be documented in this file.
 
 `autocontext==0.19.0` and `autoctx@0.19.0` release together. Most fixes below
 apply to Python; TypeScript also gains the run id, SQLite migration and
-`artifact_write` symlink fixes. The executable-skill, routing and human-label
+`artifact_write` symlink fixes, plus the `human_feedback` columns that label
+acquisition uses. The executable-skill, routing and human-label
 workflows added here are Python-only and opt-in, and none is wired into
 automatic production routing. The Pi extension is not part of this release:
 `pi-autocontext@0.11.0` depends on `autoctx@^0.18.0`, which does not accept
@@ -19,8 +20,10 @@ automatic production routing. The Pi extension is not part of this release:
 
 - Python: explicit context-bundle executable-skill eligibility and a bounded
   schema-migration pilot, with Docker isolation, verified JSON proposals and
-  promotion-gated serving (AC-1028). Rejects child-process OOMs, bounds input
-  encoding/hashing and honors cancellation through final verification. Includes
+  promotion-gated serving (AC-1028). Rejects output when Docker reports an OOM
+  event for any process in the skill's container or no matching exit event,
+  bounds input encoding/hashing and honors cancellation through final
+  verification. Includes
   an end-to-end fixture; TypeScript parity and automatic routing remain deferred.
 
 - Python: opt-in applicability-aware routing for the profile schema-migration
@@ -244,12 +247,6 @@ automatic production routing. The Pi extension is not part of this release:
   equal (AC-1042).
 
 ### Security
-
-- Python: executable-skill output is rejected when Docker reports an OOM event
-  for any process in the skill's container, even when the container's main
-  process exits zero and Docker's `OOMKilled` state is false. Output is
-  accepted only after a matching container exit event; missing or inconsistent
-  daemon event receipts return `resource_status_unverified`.
 
 - Python: the locked AnyIO advances from 4.14.0 to 4.14.2 in `uv.lock` and the
   Docker requirements lock, resolving findings from the locked dependency
