@@ -1,6 +1,6 @@
 # Accelerate checkpoint advisory: scoped risk acceptance
 
-Reviewed September 8, 2026. Expires October 8, 2026 at 00:00 UTC.
+Reviewed September 8, 2026 and re-reviewed September 26, 2026. Expires October 27, 2026 at 00:00 UTC.
 Scope: CVE-2026-69112 / GHSA-4j2p-28q2-5m79 in Accelerate 1.14.0, only
 with the exact CUDA dependency graph recorded in `scripts/python_audit_exception.json`.
 The repository owner authorized proceeding with a narrowly documented risk
@@ -38,6 +38,29 @@ This is static exposure analysis of these exact sources, not a formal
 non-reachability proof or a GPU integration test. Dynamically loaded extensions,
 user scripts directly invoking Accelerate, arbitrary installed dependency
 versions and untrusted artifact workflows are outside the acceptance.
+
+## Re-review (September 26, 2026)
+
+The acceptance is renewed unchanged for 30 days, for the same exact graph.
+
+- The advisory is unchanged: it still affects `<= 1.14.0`, lists no patched
+  version, has not been withdrawn and was last updated September 8.
+- The upstream fix was closed without merging
+  ([huggingface/accelerate#4214](https://github.com/huggingface/accelerate/pull/4214)).
+  Accelerate 1.15.0 (September 9) falls outside the advisory's range but is not
+  a fix: the `weight_map` handling in `load_checkpoint_in_model`
+  (`accelerate/utils/modeling.py`) is identical to 1.14.0, joining each entry
+  onto the checkpoint folder without a containment check. Upgrading would only
+  hide the finding from the audit, so it is not treated as remediation.
+- The four reviewed wheels were downloaded again and matched the recorded
+  SHA-256 hashes before reading. No package code was executed.
+- Transformers 5.12.1, PEFT 0.19.1 and TRL 1.6.0 still contain no references to
+  `load_checkpoint_in_model`, `load_checkpoint_and_dispatch` or
+  `load_and_quantize_model`. Inside Accelerate 1.14.0, `load_checkpoint_in_model`
+  is reached only through `load_checkpoint_and_dispatch` (`big_modeling.py`)
+  and `load_and_quantize_model` (`utils/bnb.py`).
+- The Python, TypeScript and Pi sources still reference none of the three APIs
+  and do not import Accelerate directly.
 
 ## Controls and limitations
 

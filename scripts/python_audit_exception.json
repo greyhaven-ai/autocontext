@@ -3,7 +3,7 @@
   "alias": "GHSA-4j2p-28q2-5m79",
   "package": "accelerate",
   "version": "1.14.0",
-  "expires": "2026-10-08",
+  "expires": "2026-10-27",
   "review": "docs/security/accelerate-risk-assessment.md",
   "reviewed_packages": {
     "accelerate": {"version": "1.14.0", "wheel_hash": "sha256:e94390c2863b873be18f623f9df48a0d8fe5eff13ea7f1a00092b0a7904888c6"},
