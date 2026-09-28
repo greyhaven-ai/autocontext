@@ -8,12 +8,16 @@ from typing import Any
 from autocontext.config import load_settings
 from autocontext.providers.registry import get_provider
 from autocontext.scenarios.agent_task import AgentTaskResult
+from autocontext.scenarios.custom.agent_task_evaluation import evaluate_generated_output
 
 _LEGACY_NOOP_REVISION_MARKER = (
     "# Default revision: return original (llm_fn must be injected at runtime)"
 )
 
 _LEGACY_EVALUATE_MARKER = 'raise NotImplementedError("llm_fn must be injected at runtime")'
+
+# Emitted in evaluate_output by every generated template that judged inline, before the shared runtime.
+_LEGACY_INLINE_EVALUATE_MARKER = "# Use passed-in context or fall back to class defaults"
 
 
 def build_revision_prompt(
@@ -129,9 +133,15 @@ def patch_legacy_generated_evaluate_output(
         def llm_fn(system, user):
             raise NotImplementedError("llm_fn must be injected at runtime")
     get their evaluate_output replaced with one that uses load_settings() + get_provider().
+
+    Generated classes that judge inline predate the shared runtime and drop the judge's serving
+    specification and provenance (AC-1022). They get the shared runtime, which builds the same
+    judge, so their scores keep the epoch that judge serves.
     """
     source = source_path.read_text(encoding="utf-8")
     if _LEGACY_EVALUATE_MARKER not in source:
+        if _LEGACY_INLINE_EVALUATE_MARKER in source:
+            cls.evaluate_output = evaluate_generated_output
         return cls
 
     def _patched_evaluate_output(
@@ -172,6 +182,9 @@ def patch_legacy_generated_evaluate_output(
             dimension_scores=result.dimension_scores,
             internal_retries=result.internal_retries,
             evaluator_epoch=result.evaluator_epoch,
+            evaluator_spec=result.evaluator_spec,
+            execution_provenance=result.execution_provenance,
+            fixture_provenance=result.fixture_provenance,
         )
 
     cls.evaluate_output = _patched_evaluate_output

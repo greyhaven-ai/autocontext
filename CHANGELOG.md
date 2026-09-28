@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Python: generated custom agent tasks now report the judge's serving
+  specification and execution and fixture provenance, not just its epoch
+  (AC-1022). Their score writes persist the specification instead of a
+  hash-only registry record, and each improvement round keeps its provenance.
+  Generated `evaluate_output` now calls a shared runtime, so later judge changes
+  reach tasks already on disk. Agent tasks generated earlier are upgraded when
+  their custom scenario loads: an epoch they already reported is unchanged, and
+  the next score write attaches the specification to its existing record. Agent
+  tasks scaffolded from templates before 0.19.0 are not upgraded and need
+  scaffolding again.
+
 ## [Python 0.19.0 / TypeScript 0.19.0] - 2026-09-27
 
 `autocontext==0.19.0` and `autoctx@0.19.0` release together. Most fixes below
