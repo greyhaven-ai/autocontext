@@ -197,18 +197,24 @@ and `pi/package-lock.json` with the pull request's merge base, and fails if the
 pull request newly locks a registry version younger than that. `autoctx`, which
 this repository publishes, is exempt. The failure lists each version with its
 publish time and the UTC time it clears the policy: re-run the job after the
-last of those times. To check a branch before pushing:
+last of those times. Newly locked packages that do not come from
+`https://registry.npmjs.org/` (git, a file, another host, or no `resolved` URL)
+cannot be dated, so the job lists them with a warning instead of failing.
+
+To check a branch before pushing:
 
 ```bash
-NPM_CONFIG_MIN_RELEASE_AGE=7 python3 scripts/check_npm_release_age.py --base origin/main --head HEAD
+cd autocontext
+NPM_CONFIG_MIN_RELEASE_AGE=7 uv run python ../scripts/check_npm_release_age.py --base origin/main --head HEAD
 ```
 
 With `min-release-age=7` in your npm config (npm 11.10 or newer), `npm install`
 resolves only versions that pass.
 
 For an urgent security fix that cannot wait, a maintainer can apply the
-`npm-release-age-override` label. The job then still lists the young versions,
-but passes. It reads labels from the event that started the run, and a re-run
-reuses that event, so after adding the label start a new run: push a commit,
-close and reopen the pull request, or comment `@dependabot recreate` on a
-Dependabot pull request.
+`npm-release-age-override` label. The job then still lists the young versions
+and warns, but passes. It reads labels from the event that started the run, and
+a re-run reuses that event, so after adding the label start a new run: push a
+commit, close and reopen the pull request, or comment `@dependabot recreate` on
+a Dependabot pull request. The label keeps applying to later runs on that pull
+request, so check its warning again if the lockfile changes after it is added.

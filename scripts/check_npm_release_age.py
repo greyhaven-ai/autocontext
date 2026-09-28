@@ -2,36 +2,43 @@
 """Fail when a pull request newly locks an npm version younger than the release-age policy.
 
 CI installs with `npm ci`, which does not enforce NPM_CONFIG_MIN_RELEASE_AGE
-(only `npm install` does), so a lockfile can carry a fresh release into every
-npm job. Dependabot's npm version updates already pass their cooldown to npm
-when they regenerate a lockfile. This check is the backstop for what that does
-not cover: lockfile changes Dependabot does not make, Dependabot security
-updates (which run with no cooldown), and regressions in Dependabot's
-undocumented transitive gate.
+(only `npm install` does). Dependabot's npm version updates pass their cooldown
+to npm when they regenerate a lockfile, so they skip versions inside it. This
+check is the backstop for what that does not cover: lockfile changes Dependabot
+does not make, Dependabot security updates (which run with no cooldown),
+versions a cooldown shorter than this policy lets through, and regressions in
+Dependabot's undocumented transitive gate. It runs alongside the other CI jobs,
+so it keeps young versions out of main, not out of the pull request's own
+installs.
 
 For ts/package-lock.json and pi/package-lock.json, it compares the pull request
 head with its merge base and collects every (name, version) pair the head newly
 locks from registry.npmjs.org. It looks up each version's publish time in the
 registry and fails if any is younger than NPM_CONFIG_MIN_RELEASE_AGE days, read
 from the environment so the policy has one source of truth. autoctx, which this
-repository publishes, is exempt.
+repository publishes, is exempt. Newly locked packages from anywhere else (git,
+a file, another host, or an entry without a `resolved` URL) cannot be dated
+here; they are listed with a warning but do not fail the check.
 
 Versions clear the policy as they age, so the remedy is to re-run the job after
 the time the failure prints. For an urgent security fix, a maintainer can apply
 the npm-release-age-override label instead: the check still lists the young
-versions, then passes. The label is read from the event payload, and a re-run
-reuses the payload of the run it repeats, so after adding the label start a new
-run: push a commit, close and reopen the pull request, or comment
-`@dependabot recreate` on a Dependabot pull request.
+versions and warns, then passes. The label is read from the event payload, and
+a re-run reuses the payload of the run it repeats, so after adding the label
+start a new run: push a commit, close and reopen the pull request, or comment
+`@dependabot recreate` on a Dependabot pull request. The label keeps applying to
+later runs on that pull request.
 
-To check a branch locally:
+To check a branch locally (Python 3.11 or newer):
 
-    NPM_CONFIG_MIN_RELEASE_AGE=7 python3 scripts/check_npm_release_age.py --base origin/main --head HEAD
+    cd autocontext
+    NPM_CONFIG_MIN_RELEASE_AGE=7 uv run python ../scripts/check_npm_release_age.py --base origin/main --head HEAD
 """
 
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import math
 import os
@@ -66,6 +73,15 @@ class CheckError(Exception):
     """The check could not establish what a pull request locks, or how old it is."""
 
 
+@dataclass(frozen=True, slots=True, order=True)
+class Unchecked:
+    """A package installed from somewhere other than registry.npmjs.org, so it has no publish time to check."""
+
+    name: str
+    version: str
+    source: str
+
+
 @dataclass(frozen=True, slots=True)
 class YoungVersion:
     name: str
@@ -74,33 +90,49 @@ class YoungVersion:
     clears: datetime
 
 
-def locked_versions(lockfile: Lockfile) -> set[Pair]:
-    """Return the (name, version) pairs a v2 or v3 lockfile installs from the npm registry."""
+def identify(path: str, entry: Mapping[str, Any]) -> Pair:
+    # An alias ("x": "npm:y@1") installs under its own path but records the real name.
+    name = entry.get("name") or path.rpartition("node_modules/")[2]
+    version = entry.get("version")
+    if not (isinstance(name, str) and name and isinstance(version, str) and version):
+        raise CheckError(f"lockfile entry {path!r} has no package name or version")
+    return name, version
+
+
+def locked_entries(lockfile: Lockfile) -> tuple[set[Pair], set[Unchecked]]:
+    """Split what a v2 or v3 lockfile installs into npm registry versions and packages from anywhere else."""
     packages = lockfile.get("packages")
     if not isinstance(packages, dict):
         raise CheckError("lockfile has no `packages` map; only lockfileVersion 2 and 3 are supported")
-    locked = set()
+    registry, unchecked = set(), set()
     for path, entry in packages.items():
         if not isinstance(entry, dict) or entry.get("link"):
             continue
         resolved = entry.get("resolved")
-        if not isinstance(resolved, str) or not resolved.startswith(REGISTRY):
-            continue
-        # An alias ("x": "npm:y@1") installs under its own path but records the real name.
-        name = entry.get("name") or path.rpartition("node_modules/")[2]
-        version = entry.get("version")
-        if not (isinstance(name, str) and name and isinstance(version, str) and version):
-            raise CheckError(f"lockfile entry {path!r} has no package name or version")
-        locked.add((name, version))
-    return locked
+        if isinstance(resolved, str) and resolved.startswith(REGISTRY):
+            registry.add(identify(path, entry))
+        # Skip the root and workspace folders (not under node_modules), and dependencies bundled in their
+        # parent's tarball. Anything else came from git, a file, another host, or an unrecorded registry.
+        elif "node_modules/" in path and not entry.get("inBundle"):
+            source = resolved if isinstance(resolved, str) else "no resolved URL"
+            unchecked.add(Unchecked(*identify(path, entry), source))
+    return registry, unchecked
 
 
 def newly_locked(base: Lockfile | None, head: Lockfile | None) -> set[Pair]:
     """Return registry versions locked at head but nowhere in base, except this repository's own package."""
     if head is None:
         return set()
-    before = locked_versions(base) if base is not None else set()
-    return {pair for pair in locked_versions(head) - before if pair[0] not in EXEMPT_PACKAGES}
+    before = locked_entries(base)[0] if base is not None else set()
+    return {pair for pair in locked_entries(head)[0] - before if pair[0] not in EXEMPT_PACKAGES}
+
+
+def newly_unchecked(base: Lockfile | None, head: Lockfile | None) -> set[Unchecked]:
+    """Return the packages head newly installs from somewhere other than registry.npmjs.org."""
+    if head is None:
+        return set()
+    before = locked_entries(base)[1] if base is not None else set()
+    return locked_entries(head)[1] - before
 
 
 def young_versions(pairs: Iterable[Pair], publish_times: Mapping[str, Mapping[str, Any]], *,
@@ -172,8 +204,8 @@ def registry_publish_times(name: str) -> Mapping[str, Any]:
             error = f"the npm registry returned HTTP {exc.code} for {name}"
             if exc.code < 500 and exc.code != 429:
                 break
-        except (OSError, ValueError) as exc:
-            error = f"cannot read {name} from the npm registry: {exc}"
+        except (OSError, http.client.HTTPException, ValueError) as exc:
+            error = f"cannot read {name} from the npm registry: {exc!r}"
         else:
             times = document.get("time") if isinstance(document, dict) else None
             if isinstance(times, dict):
@@ -209,6 +241,17 @@ def plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
+def specs(items: Iterable[YoungVersion | Unchecked]) -> str:
+    return ", ".join(f"{item.name}@{item.version}" for item in items)
+
+
+def annotate(level: str, message: str) -> None:
+    """Repeat a message as a GitHub Actions annotation, so it shows on the run's page even when the job passes."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::{level} title=npm release age::{escaped}")
+
+
 def main(argv: Sequence[str] | None = None, *, publish_times: PublishTimes = registry_publish_times,
          now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -224,7 +267,9 @@ def main(argv: Sequence[str] | None = None, *, publish_times: PublishTimes = reg
         if not (base and head):
             raise CheckError("the GitHub event has no pull request; pass --base and --head")
         fork = merge_base(base, head)
-        changes = {path: newly_locked(read_lockfile(fork, path), read_lockfile(head, path)) for path in LOCKFILES}
+        locks = {path: (read_lockfile(fork, path), read_lockfile(head, path)) for path in LOCKFILES}
+        changes = {path: newly_locked(*pair) for path, pair in locks.items()}
+        unchecked = {path: newly_unchecked(*pair) for path, pair in locks.items()}
         names = sorted({name for pairs in changes.values() for name, _ in pairs})
         with ThreadPoolExecutor(max_workers=8) as pool:
             times = dict(zip(names, pool.map(publish_times, names), strict=True))
@@ -235,9 +280,9 @@ def main(argv: Sequence[str] | None = None, *, publish_times: PublishTimes = reg
         return 1
 
     policy = f"the {min_age / timedelta(days=1):g}-day {AGE_VARIABLE}"
-    print(f"Registry packages that {head} newly locks since its merge base {fork}:")
-    for path, pairs in changes.items():
-        found = young[path]
+    print(f"Comparing the lockfiles at {head} with its merge base {fork}:")
+    for path in LOCKFILES:
+        pairs, found = changes[path], young[path]
         newly = plural(len(pairs), "newly locked registry package")
         if not pairs:
             print(f"{path}: no newly locked registry packages")
@@ -249,20 +294,29 @@ def main(argv: Sequence[str] | None = None, *, publish_times: PublishTimes = reg
             for item in found:
                 spec = f"{item.name}@{item.version}"
                 print(f"  {spec:<{width}}  published {utc(item.published)}  clears {utc(item.clears, round_up=True)}")
+        if unchecked[path]:
+            print(f"{path}: {plural(len(unchecked[path]), 'newly locked package')} not from {REGISTRY}, so not age-checked:")
+            for other in sorted(unchecked[path]):
+                print(f"  {other.name}@{other.version}  {other.source}")
+    elsewhere = sorted(other for others in unchecked.values() for other in others)
+    if elsewhere:
+        annotate("warning", f"Not age-checked, because they are not from {REGISTRY}: {specs(elsewhere)}")
     flagged = [item for found in young.values() for item in found]
     if not flagged:
         return 0
     last = utc(max(item.clears for item in flagged), round_up=True)
     if override_requested(event):
         print(f"Allowed by the {OVERRIDE_LABEL} label. The last of these versions clears {policy} at {last}.")
+        annotate("warning", f"The {OVERRIDE_LABEL} label allowed versions younger than {policy}: {specs(flagged)}")
         return 0
-    print(f"{len(flagged)} newly locked {'version is' if len(flagged) == 1 else 'versions are'} younger than {policy}.")
+    summary = f"{len(flagged)} newly locked {'version is' if len(flagged) == 1 else 'versions are'} younger than {policy}."
+    print(summary)
     print(f"Re-run this job after {last}, when the last of them clears it.")
     print(f"For an urgent security fix, a maintainer can apply the {OVERRIDE_LABEL} label instead. A re-run reuses")
     print("the labels of the event that started it, so after adding the label, push a commit, close and reopen the")
     print("pull request, or comment `@dependabot recreate` on a Dependabot pull request.")
+    annotate("error", f"{summary} Re-run this job after {last}.")
     return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

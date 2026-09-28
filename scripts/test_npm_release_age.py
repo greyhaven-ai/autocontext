@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import os
@@ -12,9 +13,18 @@ from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 import check_npm_release_age as checker
-from check_npm_release_age import OVERRIDE_LABEL, CheckError, YoungVersion, newly_locked, young_versions
+from check_npm_release_age import (
+    OVERRIDE_LABEL,
+    CheckError,
+    Unchecked,
+    YoungVersion,
+    newly_locked,
+    newly_unchecked,
+    young_versions,
+)
 
 REGISTRY = "https://registry.npmjs.org"
 NOW = datetime(2026, 9, 28, 12, 0, tzinfo=UTC)
@@ -101,6 +111,25 @@ class NewlyLockedTests(unittest.TestCase):
         base = lockfile({"node_modules/ws": registry_entry("ws", "8.21.3")})
         self.assertEqual(newly_locked(base, None), set())
 
+    def test_packages_installed_from_elsewhere_are_listed_as_unchecked(self):
+        git_url = "git+ssh://git@github.com/example/forked.git#" + "0" * 40
+        mirror_url = "https://registry.npmmirror.com/undici/-/undici-8.10.0.tgz"
+        head = lockfile({
+            "node_modules/ws": registry_entry("ws", "8.21.3"),
+            "node_modules/forked": {"version": "1.0.0", "resolved": git_url, "license": "MIT"},
+            "node_modules/undici": registry_entry("undici", "8.10.0", resolved=mirror_url),
+            # npm leaves `resolved` out under omit-lockfile-registry-resolved; npm ci then uses the configured registry.
+            "node_modules/ms": {"version": "2.1.3", "license": "MIT"},
+            "node_modules/local-sdk": {"resolved": "../sdk", "link": True},
+            "../sdk": {"name": "local-sdk", "version": "0.1.0", "license": "MIT"},
+            "node_modules/ws/node_modules/bundled": {"version": "1.0.0", "inBundle": True, "license": "MIT"},
+        })
+        self.assertEqual(newly_unchecked(lockfile({}), head), {
+            Unchecked("forked", "1.0.0", git_url), Unchecked("undici", "8.10.0", mirror_url),
+            Unchecked("ms", "2.1.3", "no resolved URL"),
+        })
+        self.assertEqual(newly_unchecked(head, head), set())
+
     def test_lockfile_without_a_packages_map_is_rejected(self):
         legacy = {"lockfileVersion": 1, "dependencies": {"ws": {"version": "8.21.3"}}}
         with self.assertRaises(CheckError):
@@ -129,6 +158,42 @@ class ReleaseAgeTests(unittest.TestCase):
             with self.subTest(versions=versions):
                 with self.assertRaises(CheckError):
                     young_versions({("ws", "8.21.3")}, {"ws": publish_times(versions)}, now=NOW, min_age=WEEK)
+
+
+class RegistryTests(unittest.TestCase):
+    def fetch(self, *outcomes):
+        """Call the registry client against scripted responses: a document to return or an exception to raise."""
+        attempts = []
+
+        def urlopen(request, timeout):
+            attempts.append(request.full_url)
+            outcome = outcomes[len(attempts) - 1]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return io.BytesIO(json.dumps(outcome).encode())
+
+        with patch.object(checker.urllib.request, "urlopen", urlopen), patch.object(checker.time, "sleep"):
+            try:
+                return checker.registry_publish_times("ws"), len(attempts)
+            except CheckError as exc:
+                return exc, len(attempts)
+
+    def test_transient_failures_are_retried(self):
+        times = publish_times({"8.21.3": "2026-08-18T10:02:11.523Z"})
+        unavailable = HTTPError(checker.REGISTRY + "ws", 503, "Service Unavailable", None, None)
+        result, attempts = self.fetch(unavailable, http.client.IncompleteRead(b"{"), {"name": "ws", "time": times})
+        self.assertEqual((result, attempts), (times, 3))
+
+    def test_missing_package_fails_without_retrying(self):
+        result, attempts = self.fetch(HTTPError(checker.REGISTRY + "ws", 404, "Not Found", None, None))
+        self.assertIsInstance(result, CheckError)
+        self.assertEqual(attempts, 1)
+
+    def test_persistent_failure_or_missing_publish_times_fail(self):
+        for outcomes in [[URLError("timed out")] * 3, [{"name": "ws", "versions": {}}]]:
+            with self.subTest(outcomes=outcomes):
+                result, _ = self.fetch(*outcomes)
+                self.assertIsInstance(result, CheckError)
 
 
 class PullRequestCheckTests(unittest.TestCase):
@@ -176,9 +241,10 @@ class PullRequestCheckTests(unittest.TestCase):
             "head": {"ref": "feature", "sha": head}, "labels": labels,
         }}
 
-    def run_check(self, event, *args, min_age="7"):
+    def run_check(self, event, *args, min_age="7", actions=False):
         self.event_path.write_text(json.dumps(event), encoding="utf-8")
-        env = {"GITHUB_EVENT_PATH": str(self.event_path), "NPM_CONFIG_MIN_RELEASE_AGE": min_age}
+        env = {"GITHUB_EVENT_PATH": str(self.event_path), "NPM_CONFIG_MIN_RELEASE_AGE": min_age,
+               "GITHUB_ACTIONS": "true" if actions else "false"}
         output = io.StringIO()
         with (patch.dict(os.environ, env), patch.object(checker, "REPO_ROOT", self.repo),
               redirect_stdout(output), redirect_stderr(output)):
@@ -228,6 +294,27 @@ class PullRequestCheckTests(unittest.TestCase):
         self.assertIn(OVERRIDE_LABEL, output)
         code, output = self.run_check(self.pull_request_event(head, labels=["dependencies", "security"]))
         self.assertEqual(code, 1, output)
+
+    def test_override_leaves_a_warning_naming_what_it_allowed(self):
+        self.write("ts/package-lock.json", {"node_modules/ws": registry_entry("ws", "8.21.3")})
+        event = self.pull_request_event(self.commit("security fix"), labels=[OVERRIDE_LABEL])
+        code, output = self.run_check(event, actions=True)
+        self.assertEqual(code, 0, output)
+        [warning] = [line for line in output.splitlines() if line.startswith("::warning")]
+        self.assertIn("ws@8.21.3", warning)
+
+    def test_packages_from_elsewhere_are_reported_but_do_not_fail(self):
+        git_url = "git+ssh://git@github.com/example/forked.git#" + "0" * 40
+        self.write("ts/package-lock.json", {
+            "node_modules/ws": registry_entry("ws", "8.21.0"),
+            "node_modules/forked": {"version": "1.0.0", "resolved": git_url, "license": "MIT"},
+        })
+        code, output = self.run_check(self.pull_request_event(self.commit("add a git dependency")), actions=True)
+        self.assertEqual(code, 0, output)
+        listed = next(line for line in output.splitlines() if "forked@1.0.0" in line and not line.startswith("::"))
+        self.assertIn(git_url, listed)
+        [warning] = [line for line in output.splitlines() if line.startswith("::warning")]
+        self.assertIn("forked@1.0.0", warning)
 
     def test_only_versions_new_since_the_merge_base_are_checked(self):
         # Main locked ws 8.21.3 early under the override, then moved on to 8.21.4.
