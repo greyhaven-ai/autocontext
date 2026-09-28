@@ -299,7 +299,6 @@ class ImprovementLoop:
                     output=current_output,
                     result=result,
                     judge_failed=failed,
-                    previous=last_good_result,
                     max_rounds=self.max_rounds,
                     quality_threshold=self.quality_threshold,
                     required_concepts=required_concepts,

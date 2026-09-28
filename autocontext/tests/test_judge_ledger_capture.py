@@ -103,20 +103,62 @@ def test_missing_target_rounds_are_not_recorded() -> None:
 
 
 def test_cache_replays_are_not_recorded() -> None:
-    class SameOutput(ScriptedTask):
+    class AlternatingTask(ScriptedTask):
+        """Always fails; from round 2 the output alternates A/B/A/B/... . Once dimension
+        pinning stabilizes (after round 1), a later round repeats an (output, cache
+        context) pair already judged under the pinned salt, so the loop's own verifier
+        cache replays it -- while consecutive outputs always differ, so the loop's
+        unchanged-output early exit never fires."""
+
+        def __init__(self) -> None:
+            # 3 distinct, always-failing scores: adjacent real rounds must differ enough
+            # to dodge plateau-stall, which would otherwise stop the loop before a repeat
+            # output is ever reached.
+            super().__init__([0.3, 0.5, 0.35])
+            self._revisions = 0
+
         def revise_output(self, output, judge_result, state):  # type: ignore[no-untyped-def]
-            return output  # byte-identical, so later rounds replay the cached verdict
+            text = "A" if self._revisions % 2 == 0 else "B"
+            self._revisions += 1
+            return text
 
     store = ListStore()
-    task = SameOutput([0.4])
-    # NOTE (deviation from brief, see task-2-report.md): dimension pinning (AC-902) changes the
-    # verifier-cache salt from round 1 (pinned_dimensions=None) to round 2 (pinned_dimensions=
-    # ["quality"]), so round 2 is also a real judge call before the loop's own unchanged-output
-    # guard stops it -- confirmed pre-existing on the pristine f5886c496 improvement_loop.py, with
-    # no judge_ledger involved. The invariant this test protects (ledger rows == real judge calls,
-    # so any cache replay is excluded) holds at 2, not the brief's literal 1.
-    ImprovementLoop(task, max_rounds=5, judge_ledger=_ledger(store)).run("draft", {})
-    assert len(store.rows) == task.evaluations == 2
+    task = AlternatingTask()
+    events: list[Any] = []
+    result = ImprovementLoop(task, max_rounds=8, judge_ledger=_ledger(store), on_event=events.append).run("draft", {})
+    assert any(e.event == "verifier_cache_hit" for e in events)
+    assert len(store.rows) == task.evaluations
+    assert len(store.rows) < result.total_rounds
+
+
+def test_previous_score_is_the_raw_judge_score_even_after_a_verifier_veto() -> None:
+    class VetoingVerifier:
+        enabled = True
+
+        def run(self, output_text: str) -> Any:
+            class Outcome:
+                ok = False
+                message = "nope"
+                exit_code = 1
+
+            return Outcome()
+
+    store = ListStore()
+    task = ScriptedTask([0.4, 0.5])
+    ImprovementLoop(
+        task,
+        max_rounds=5,
+        output_verifier=VetoingVerifier(),  # type: ignore[arg-type]
+        judge_ledger=_ledger(store),
+    ).run("draft", {})
+    assert len(store.rows) >= 2
+    # Round 1's own score is the raw judge verdict (0.4); the verifier veto (which
+    # forces round_result.score to 0.0) happens after the ledger records the round.
+    assert store.rows[0]["score"] == 0.4
+    # Round 2's previous_score must come from the ledger's own memory of round 1's
+    # raw score, not from the loop's last_good_result object, whose .score field the
+    # veto mutated to 0.0 after round 1 was recorded.
+    assert store.rows[1]["previous_score"] == 0.4
 
 
 def test_a_failing_store_never_breaks_the_loop(caplog: pytest.LogCaptureFixture) -> None:
@@ -137,7 +179,7 @@ def test_rows_land_in_sqlite(tmp_path: Path) -> None:
     assert [r["round_number"] for r in store.list_judge_ledger_rows()] == [1, 2]
 
 
-def test_ledger_for_requires_the_setting_to_be_exactly_true(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ledger_for_requires_the_setting_to_be_exactly_true() -> None:
     class Settings:
         judge_ledger_enabled: object = False
 

@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
-    from autocontext.execution.improvement_results import RoundResult
     from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 logger = logging.getLogger(__name__)
@@ -40,6 +39,11 @@ class JudgeLedger:
         self.scenario_family = scenario_family
         self.loop_id = uuid.uuid4().hex
         self._task_identity: tuple[str, str, str] | None = None
+        # (round_number, score, dimension_scores, output) of the last row this ledger
+        # successfully wrote -- the previous *real* judge verdict, always raw. Filled in
+        # only after a successful insert, so a failed write is never the "previous" of
+        # the next row.
+        self._last_recorded: tuple[int, float, dict[str, float], str] | None = None
 
     def _identity(self, task: AgentTaskInterface, state: dict) -> tuple[str, str, str]:
         # The prompt and rubric are fixed for one loop, so they are read and hashed once.
@@ -57,7 +61,6 @@ class JudgeLedger:
         output: str,
         result: AgentTaskResult,
         judge_failed: bool,
-        previous: RoundResult | None,
         max_rounds: int,
         quality_threshold: float,
         required_concepts: Sequence[str] | None,
@@ -66,6 +69,7 @@ class JudgeLedger:
         try:
             prompt, prompt_hash, rubric_hash = self._identity(task, state)
             guardrail = result.evaluator_guardrail
+            previous = self._last_recorded
             self.store.insert_judge_ledger_row(
                 {
                     "loop_id": self.loop_id,
@@ -87,18 +91,17 @@ class JudgeLedger:
                     "dimension_scores_json": json.dumps(dict(result.dimension_scores), sort_keys=True),
                     "internal_retries": result.internal_retries,
                     "judge_failed": int(judge_failed),
-                    "previous_round_number": previous.round_number if previous is not None else None,
-                    "previous_score": previous.score if previous is not None else None,
-                    "previous_dimension_scores_json": (
-                        json.dumps(dict(previous.dimension_scores), sort_keys=True) if previous is not None else None
-                    ),
-                    "previous_output_hash": text_hash(previous.output) if previous is not None else None,
+                    "previous_round_number": previous[0] if previous is not None else None,
+                    "previous_score": previous[1] if previous is not None else None,
+                    "previous_dimension_scores_json": (json.dumps(previous[2], sort_keys=True) if previous is not None else None),
+                    "previous_output_hash": text_hash(previous[3]) if previous is not None else None,
                     "fixture_provenance_json": json.dumps(dict(result.fixture_provenance), sort_keys=True),
                     "evaluator_guardrail_json": (
                         json.dumps(guardrail, sort_keys=True, default=str) if guardrail is not None else None
                     ),
                 }
             )
+            self._last_recorded = (round_num, float(result.score), dict(result.dimension_scores), output)
         except Exception:
             logger.warning("judge ledger write failed; the improvement loop continues", exc_info=True)
 
