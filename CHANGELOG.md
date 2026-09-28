@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- TypeScript: `ts/bun.lock` is regenerated from `ts/package-lock.json`, so the
+  two lockfiles lock identical versions again. They disagreed on 146 packages,
+  including the whole vitest 3 tree that vitest 5 replaced, because Dependabot
+  relocks only `package-lock.json` and the previous resync let bun resolve
+  versions itself, so `bun audit` was checking a dependency set that CI does
+  not install. The `lint` CI job now runs `scripts/check_bun_lock_sync.py`,
+  which fails when the lockfiles lock different versions of any package.
+
 ## [Pi 0.12.0] - 2026-09-28
 
 The Pi extension moves onto the newly published `autoctx@0.19.0` runtime. This
