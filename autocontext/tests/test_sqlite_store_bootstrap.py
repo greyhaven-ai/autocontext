@@ -9,6 +9,26 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _schema(path: Path) -> dict[str, object]:
+    import sqlite3
+
+    conn = sqlite3.connect(path)
+    try:
+        tables = [
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        ]
+        columns = {
+            table: {row[1]: (row[2], row[3], row[4], row[5]) for row in conn.execute(f"PRAGMA table_info({table})")}
+            for table in tables
+        }
+        indexes = sorted(
+            conn.execute("SELECT tbl_name, name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%'").fetchall()
+        )
+    finally:
+        conn.close()
+    return {"columns": columns, "indexes": indexes}
+
+
 class TestBootstrapSchema:
     """SQLiteStore should work on a fresh DB without external migration files."""
 
@@ -90,3 +110,19 @@ class TestBootstrapSchema:
         store.ensure_core_tables()
         rows = store.list_runs(limit=10)
         assert rows == []
+
+    def test_bootstrap_upgrades_a_database_bootstrapped_by_the_previous_release(self, tmp_path: Path) -> None:
+        """A pip upgrade from 0.18.0 gains every column and index a fresh bootstrap creates."""
+        import sqlite3
+
+        from autocontext.storage.sqlite_store import SQLiteStore
+
+        upgraded = tmp_path / "upgraded.db"
+        conn = sqlite3.connect(upgraded)
+        conn.executescript((Path(__file__).parent / "fixtures" / "bootstrap_schema_py_v0_18_0.sql").read_text(encoding="utf-8"))
+        conn.close()
+
+        SQLiteStore(upgraded).migrate(tmp_path / "missing-migrations")
+        SQLiteStore(tmp_path / "fresh.db").migrate(tmp_path / "missing-migrations")
+
+        assert _schema(upgraded) == _schema(tmp_path / "fresh.db")

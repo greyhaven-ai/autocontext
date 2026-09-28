@@ -39,11 +39,12 @@ automatic production routing. The Pi extension is not part of this release:
   (AC-1021). Proposing a skill with a `routing_config` stores the whole route
   (skill, fallback model, budget and evaluator) in the context bundle, and its
   active pointer moves only when replayed held-out quality, route traces and
-  setup-inclusive cost per successful task meet predeclared thresholds; missing
-  or stale evidence fails closed. Serving a skill through the complete router
+  setup-inclusive cost per successful task meet the operator-supplied
+  thresholds frozen when that evidence is recorded; missing or stale evidence
+  fails closed. Serving a skill through the complete router
   requires this policy promotion, not only a promotion of the skill. After
   promotion, serving outcomes are recorded, and missing accounting or a breach
-  of the frozen quality, fallback or cost limits suspends the route, withholds
+  of the frozen cumulative quality, fallback or cost limits suspends the route, withholds
   the triggering result and conditionally rolls the pointer back to its
   predecessor. No route is enabled automatically, the AC-1029 synthetic run
   cannot qualify, and TypeScript parity is deferred.

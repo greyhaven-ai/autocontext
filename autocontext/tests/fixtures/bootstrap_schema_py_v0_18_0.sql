@@ -1,65 +1,19 @@
-from __future__ import annotations
+-- Schema and migration ledger of a database bootstrapped by autocontext 0.18.0
+-- (py-v0.18.0), the path every pip install takes because the wheel ships no
+-- migrations directory. Used to check that later bootstraps upgrade it.
 
-import sqlite3
-from pathlib import Path
-
-from autocontext.storage.migration_ledgers import TYPESCRIPT_BASELINE_MIGRATIONS
-from autocontext.storage.sqlite_migrations import restore_ledger_recorded_columns
-
-_BOOTSTRAP_MIGRATIONS = (
-    "001_initial.sql",
-    "002_phase3_phase7.sql",
-    "003_agent_subagent_metadata.sql",
-    "004_knowledge_inheritance.sql",
-    "005_ecosystem_provider_tracking.sql",
-    "006_human_feedback.sql",
-    "007_task_queue.sql",
-    "008_staged_validation.sql",
-    "009_generation_timing.sql",
-    "010_consultation_log.sql",
-    "010_session_notebook.sql",
-    "011_monitors.sql",
-    "012_research_hub.sql",
-    "013_generation_dimension_summary.sql",
-    "014_scoring_backend_metadata.sql",
-    "015_match_replay.sql",
-    "016_generation_evaluator_epoch.sql",
-    "017_generation_quarantined.sql",
-    "018_generation_score_revisions.sql",
-    "019_task_queue_attempts.sql",
-    "020_run_minimum_generations.sql",
-    "021_human_feedback_acquisition.sql",
-)
-
-
-def default_migrations_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "migrations"
-
-
-def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
-    """Create the current storage schema when SQL migration files are unavailable."""
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS schema_migrations (
+CREATE TABLE schema_migrations (
             version TEXT PRIMARY KEY,
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS schema_version (
+CREATE TABLE schema_version (
             filename TEXT PRIMARY KEY,
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        """
-    )
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE runs (
             run_id TEXT PRIMARY KEY,
             scenario TEXT NOT NULL,
-            minimum_generations INTEGER NOT NULL DEFAULT 1 CHECK (minimum_generations >= 1),
+            minimum_generations INTEGER NOT NULL DEFAULT 1,
             target_generations INTEGER NOT NULL,
             executor_mode TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -67,8 +21,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-
-        CREATE TABLE IF NOT EXISTS generations (
+CREATE TABLE generations (
             run_id TEXT NOT NULL,
             generation_index INTEGER NOT NULL,
             mean_score REAL NOT NULL,
@@ -89,8 +42,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (run_id, generation_index),
             FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
         );
-
-        CREATE TABLE IF NOT EXISTS matches (
+CREATE TABLE matches (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT NOT NULL,
             generation_index INTEGER NOT NULL,
@@ -105,8 +57,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (run_id, generation_index)
                 REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
         );
-
-        CREATE TABLE IF NOT EXISTS agent_outputs (
+CREATE TABLE agent_outputs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT NOT NULL,
             generation_index INTEGER NOT NULL,
@@ -116,8 +67,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (run_id, generation_index)
                 REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
         );
-
-        CREATE TABLE IF NOT EXISTS generation_recovery (
+CREATE TABLE generation_recovery (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT NOT NULL,
             generation_index INTEGER NOT NULL,
@@ -128,8 +78,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (run_id, generation_index)
                 REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
         );
-
-        CREATE TABLE IF NOT EXISTS agent_role_metrics (
+CREATE TABLE agent_role_metrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT NOT NULL,
             generation_index INTEGER NOT NULL,
@@ -144,8 +93,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (run_id, generation_index)
                 REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
         );
-
-        CREATE TABLE IF NOT EXISTS knowledge_snapshots (
+CREATE TABLE knowledge_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             scenario TEXT NOT NULL,
             run_id TEXT NOT NULL,
@@ -159,24 +107,19 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
         );
-        CREATE INDEX IF NOT EXISTS idx_knowledge_snapshots_scenario
+CREATE INDEX idx_knowledge_snapshots_scenario
             ON knowledge_snapshots(scenario, best_score DESC);
-
-        CREATE TABLE IF NOT EXISTS human_feedback (
+CREATE TABLE human_feedback (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             scenario_name TEXT NOT NULL,
             generation_id TEXT,
             agent_output TEXT NOT NULL,
             human_score REAL,
             human_notes TEXT NOT NULL DEFAULT '',
-            acquisition_id TEXT,
-            reviewer TEXT,
-            criterion_scores_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_feedback_scenario ON human_feedback(scenario_name);
-
-        CREATE TABLE IF NOT EXISTS task_queue (
+CREATE INDEX idx_feedback_scenario ON human_feedback(scenario_name);
+CREATE TABLE task_queue (
             id TEXT PRIMARY KEY,
             spec_name TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
@@ -195,11 +138,10 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_task_queue_status ON task_queue(status);
-        CREATE INDEX IF NOT EXISTS idx_task_queue_priority ON task_queue(priority DESC, created_at ASC);
-        CREATE INDEX IF NOT EXISTS idx_task_queue_spec ON task_queue(spec_name);
-
-        CREATE TABLE IF NOT EXISTS staged_validation_results (
+CREATE INDEX idx_task_queue_status ON task_queue(status);
+CREATE INDEX idx_task_queue_priority ON task_queue(priority DESC, created_at ASC);
+CREATE INDEX idx_task_queue_spec ON task_queue(spec_name);
+CREATE TABLE staged_validation_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT NOT NULL,
             generation_index INTEGER NOT NULL,
@@ -213,8 +155,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (run_id, generation_index)
                 REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
         );
-
-        CREATE TABLE IF NOT EXISTS generation_score_revisions (
+CREATE TABLE generation_score_revisions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT NOT NULL,
             generation_index INTEGER NOT NULL,
@@ -228,10 +169,9 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (run_id, generation_index)
                 REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
         );
-        CREATE INDEX IF NOT EXISTS idx_generation_score_revisions_run_gen
+CREATE INDEX idx_generation_score_revisions_run_gen
             ON generation_score_revisions(run_id, generation_index);
-
-        CREATE TABLE IF NOT EXISTS consultation_log (
+CREATE TABLE consultation_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT NOT NULL,
             generation_index INTEGER NOT NULL,
@@ -247,9 +187,8 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
             FOREIGN KEY (run_id) REFERENCES runs(run_id)
         );
-        CREATE INDEX IF NOT EXISTS idx_consultation_log_run ON consultation_log(run_id);
-
-        CREATE TABLE IF NOT EXISTS session_notebooks (
+CREATE INDEX idx_consultation_log_run ON consultation_log(run_id);
+CREATE TABLE session_notebooks (
             session_id TEXT PRIMARY KEY,
             scenario_name TEXT NOT NULL,
             current_objective TEXT NOT NULL DEFAULT '',
@@ -263,9 +202,8 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_session_notebooks_scenario ON session_notebooks(scenario_name);
-
-        CREATE TABLE IF NOT EXISTS monitor_conditions (
+CREATE INDEX idx_session_notebooks_scenario ON session_notebooks(scenario_name);
+CREATE TABLE monitor_conditions (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             condition_type TEXT NOT NULL,
@@ -274,8 +212,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         );
-
-        CREATE TABLE IF NOT EXISTS monitor_alerts (
+CREATE TABLE monitor_alerts (
             id TEXT PRIMARY KEY,
             condition_id TEXT NOT NULL,
             condition_name TEXT NOT NULL,
@@ -286,11 +223,10 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             fired_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
             FOREIGN KEY (condition_id) REFERENCES monitor_conditions(id)
         );
-        CREATE INDEX IF NOT EXISTS idx_monitor_conditions_active ON monitor_conditions(active);
-        CREATE INDEX IF NOT EXISTS idx_monitor_alerts_condition ON monitor_alerts(condition_id);
-        CREATE INDEX IF NOT EXISTS idx_monitor_alerts_fired_at ON monitor_alerts(fired_at DESC);
-
-        CREATE TABLE IF NOT EXISTS hub_sessions (
+CREATE INDEX idx_monitor_conditions_active ON monitor_conditions(active);
+CREATE INDEX idx_monitor_alerts_condition ON monitor_alerts(condition_id);
+CREATE INDEX idx_monitor_alerts_fired_at ON monitor_alerts(fired_at DESC);
+CREATE TABLE hub_sessions (
             session_id TEXT PRIMARY KEY,
             owner TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'active',
@@ -303,11 +239,10 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
             FOREIGN KEY (session_id) REFERENCES session_notebooks(session_id) ON DELETE CASCADE
         );
-        CREATE INDEX IF NOT EXISTS idx_hub_sessions_status ON hub_sessions(status);
-        CREATE INDEX IF NOT EXISTS idx_hub_sessions_shared ON hub_sessions(shared);
-        CREATE INDEX IF NOT EXISTS idx_hub_sessions_heartbeat ON hub_sessions(last_heartbeat_at DESC);
-
-        CREATE TABLE IF NOT EXISTS hub_packages (
+CREATE INDEX idx_hub_sessions_status ON hub_sessions(status);
+CREATE INDEX idx_hub_sessions_shared ON hub_sessions(shared);
+CREATE INDEX idx_hub_sessions_heartbeat ON hub_sessions(last_heartbeat_at DESC);
+CREATE TABLE hub_packages (
             package_id TEXT PRIMARY KEY,
             scenario_name TEXT NOT NULL,
             scenario_family TEXT NOT NULL DEFAULT '',
@@ -325,12 +260,11 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_hub_packages_scenario ON hub_packages(scenario_name);
-        CREATE INDEX IF NOT EXISTS idx_hub_packages_family ON hub_packages(scenario_family);
-        CREATE INDEX IF NOT EXISTS idx_hub_packages_source_run ON hub_packages(source_run_id);
-        CREATE INDEX IF NOT EXISTS idx_hub_packages_created_at ON hub_packages(created_at DESC);
-
-        CREATE TABLE IF NOT EXISTS hub_results (
+CREATE INDEX idx_hub_packages_scenario ON hub_packages(scenario_name);
+CREATE INDEX idx_hub_packages_family ON hub_packages(scenario_family);
+CREATE INDEX idx_hub_packages_source_run ON hub_packages(source_run_id);
+CREATE INDEX idx_hub_packages_created_at ON hub_packages(created_at DESC);
+CREATE TABLE hub_results (
             result_id TEXT PRIMARY KEY,
             scenario_name TEXT NOT NULL,
             run_id TEXT NOT NULL DEFAULT '',
@@ -344,12 +278,11 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_hub_results_scenario ON hub_results(scenario_name);
-        CREATE INDEX IF NOT EXISTS idx_hub_results_run ON hub_results(run_id);
-        CREATE INDEX IF NOT EXISTS idx_hub_results_package ON hub_results(package_id);
-        CREATE INDEX IF NOT EXISTS idx_hub_results_created_at ON hub_results(created_at DESC);
-
-        CREATE TABLE IF NOT EXISTS hub_promotions (
+CREATE INDEX idx_hub_results_scenario ON hub_results(scenario_name);
+CREATE INDEX idx_hub_results_run ON hub_results(run_id);
+CREATE INDEX idx_hub_results_package ON hub_results(package_id);
+CREATE INDEX idx_hub_results_created_at ON hub_results(created_at DESC);
+CREATE TABLE hub_promotions (
             event_id TEXT PRIMARY KEY,
             package_id TEXT NOT NULL DEFAULT '',
             source_run_id TEXT NOT NULL DEFAULT '',
@@ -359,22 +292,33 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             metadata_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_hub_promotions_package ON hub_promotions(package_id);
-        CREATE INDEX IF NOT EXISTS idx_hub_promotions_source_run ON hub_promotions(source_run_id);
-        CREATE INDEX IF NOT EXISTS idx_hub_promotions_created_at ON hub_promotions(created_at DESC);
-        """
-    )
-    conn.executemany(
-        "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)",
-        [(version,) for version in _BOOTSTRAP_MIGRATIONS],
-    )
-    conn.executemany(
-        "INSERT OR IGNORE INTO schema_version(filename) VALUES (?)",
-        [(version,) for version in TYPESCRIPT_BASELINE_MIGRATIONS],
-    )
-    restore_ledger_recorded_columns(conn)
-    # After the restore, so a human_feedback table created by an older bootstrap has the column.
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_human_feedback_acquisition_id "
-        "ON human_feedback(acquisition_id) WHERE acquisition_id IS NOT NULL"
-    )
+CREATE INDEX idx_hub_promotions_package ON hub_promotions(package_id);
+CREATE INDEX idx_hub_promotions_source_run ON hub_promotions(source_run_id);
+CREATE INDEX idx_hub_promotions_created_at ON hub_promotions(created_at DESC);
+INSERT INTO schema_migrations(version) VALUES ('001_initial.sql');
+INSERT INTO schema_migrations(version) VALUES ('002_phase3_phase7.sql');
+INSERT INTO schema_migrations(version) VALUES ('003_agent_subagent_metadata.sql');
+INSERT INTO schema_migrations(version) VALUES ('004_knowledge_inheritance.sql');
+INSERT INTO schema_migrations(version) VALUES ('005_ecosystem_provider_tracking.sql');
+INSERT INTO schema_migrations(version) VALUES ('006_human_feedback.sql');
+INSERT INTO schema_migrations(version) VALUES ('007_task_queue.sql');
+INSERT INTO schema_migrations(version) VALUES ('008_staged_validation.sql');
+INSERT INTO schema_migrations(version) VALUES ('009_generation_timing.sql');
+INSERT INTO schema_migrations(version) VALUES ('010_consultation_log.sql');
+INSERT INTO schema_migrations(version) VALUES ('010_session_notebook.sql');
+INSERT INTO schema_migrations(version) VALUES ('011_monitors.sql');
+INSERT INTO schema_migrations(version) VALUES ('012_research_hub.sql');
+INSERT INTO schema_migrations(version) VALUES ('013_generation_dimension_summary.sql');
+INSERT INTO schema_migrations(version) VALUES ('014_scoring_backend_metadata.sql');
+INSERT INTO schema_migrations(version) VALUES ('015_match_replay.sql');
+INSERT INTO schema_migrations(version) VALUES ('016_generation_evaluator_epoch.sql');
+INSERT INTO schema_migrations(version) VALUES ('017_generation_quarantined.sql');
+INSERT INTO schema_migrations(version) VALUES ('018_generation_score_revisions.sql');
+INSERT INTO schema_migrations(version) VALUES ('019_task_queue_attempts.sql');
+INSERT INTO schema_version(filename) VALUES ('007_task_queue.sql');
+INSERT INTO schema_version(filename) VALUES ('008_human_feedback.sql');
+INSERT INTO schema_version(filename) VALUES ('009_generation_loop.sql');
+INSERT INTO schema_version(filename) VALUES ('014_generation_evaluator_epoch.sql');
+INSERT INTO schema_version(filename) VALUES ('015_generation_quarantined.sql');
+INSERT INTO schema_version(filename) VALUES ('016_generation_score_revisions.sql');
+INSERT INTO schema_version(filename) VALUES ('017_task_queue_attempts.sql');
