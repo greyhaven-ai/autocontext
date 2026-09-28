@@ -26,6 +26,7 @@ from autocontext.execution.improvement_results import (
 from autocontext.execution.output_cleaner import clean_revision_output
 from autocontext.execution.output_verifier import OutputVerifier
 from autocontext.execution.verifier_cache import CachedVerdict, EvaluationCache, content_fingerprint
+from autocontext.prescreen.ledger import JudgeLedger
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ class ImprovementLoop:
         on_event: Callable[[ImprovementLoopEvent], None] | None = None,
         metadata: dict[str, Any] | None = None,
         required_targets: Sequence[str] | None = None,
+        judge_ledger: JudgeLedger | None = None,
     ) -> None:
         self.task = task
         self.max_rounds = max(1, max_rounds)
@@ -99,6 +101,7 @@ class ImprovementLoop:
         # can stream progress without waiting for the final result blob.
         self._on_event: Callable[[ImprovementLoopEvent], None] = on_event or (lambda _e: None)
         self.metadata = dict(metadata or {})
+        self.judge_ledger = judge_ledger
         # AC-902: deterministic pre-judge guard. A required target string
         # missing from the artifact is the Navier-Stokes FALSE-PASS failure
         # (a truncated file compiles vacuously); it fails the round closed
@@ -164,9 +167,15 @@ class ImprovementLoop:
 
         def _evaluation_cache_context() -> str:
             return json.dumps(
-                {"rubric": self.task.get_rubric(), "reference_context": reference_context,
-                 "required_concepts": required_concepts, "calibration_examples": calibration_examples,
-                 "pinned_dimensions": pinned_dimensions}, sort_keys=True, ensure_ascii=False,
+                {
+                    "rubric": self.task.get_rubric(),
+                    "reference_context": reference_context,
+                    "required_concepts": required_concepts,
+                    "calibration_examples": calibration_examples,
+                    "pinned_dimensions": pinned_dimensions,
+                },
+                sort_keys=True,
+                ensure_ascii=False,
             )
 
         # Plateau detection state
@@ -281,6 +290,20 @@ class ImprovementLoop:
             # a cached round replays a real verdict; its embedded verifier
             # output must never be re-classified as a judge parse failure
             failed = False if from_cache else _is_parse_failure(result.score, result.reasoning)
+
+            if self.judge_ledger is not None and not from_cache and not missing_targets:
+                self.judge_ledger.record(
+                    self.task,
+                    state,
+                    round_num=round_num,
+                    output=current_output,
+                    result=result,
+                    judge_failed=failed,
+                    previous=last_good_result,
+                    max_rounds=self.max_rounds,
+                    quality_threshold=self.quality_threshold,
+                    required_concepts=required_concepts,
+                )
 
             round_result = RoundResult(
                 round_number=round_num,
