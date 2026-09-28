@@ -35,6 +35,7 @@ from autocontext.cli_investigate import run_investigate_command
 from autocontext.cli_mission import register_mission_command
 from autocontext.cli_new_scenario import register_new_scenario_command
 from autocontext.cli_package_commands import register_package_commands
+from autocontext.cli_prescreen import prescreen_app
 from autocontext.cli_probes import register_probes_command
 from autocontext.cli_queue import register_queue_command
 from autocontext.cli_rescore import rescore_command
@@ -780,6 +781,7 @@ app.add_typer(_serve_app, name="serve")
 app.add_typer(ambient_app, name="ambient")
 app.add_typer(epoch_app, name="epoch")
 app.add_typer(labels_app, name="labels")
+app.add_typer(prescreen_app, name="prescreen")
 
 
 @app.command()

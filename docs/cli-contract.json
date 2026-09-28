@@ -14601,6 +14601,32 @@
           {"name": "db-path", "type": "path", "description": "Human feedback database."}
         ]
       }}
+    },
+    {
+      "id": "prescreen.sufficiency",
+      "path": ["prescreen", "sufficiency"],
+      "summary": "Count eligible judged rounds and the value ceiling per evaluator epoch and scenario family (judge pre-screen Phase 0).",
+      "audience": "advanced",
+      "maturity": "beta",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {"status": "yes"},
+        "typescript": {"status": "intentional_gap", "reason": "The judge pre-screen is currently implemented only in Python."}
+      },
+      "positionals": [],
+      "flags": [],
+      "output_contract": "json",
+      "output": {"modes": ["json"], "streaming": "single", "success_stream": "stdout", "error_stream": "stderr", "schemas": {}, "fixtures": {}},
+      "exit_codes": {"success": 0, "usage": 2, "execution": 1},
+      "examples": ["autoctx prescreen sufficiency --db-path runs/autocontext.sqlite3 --out knowledge/analytics/prescreen"],
+      "runtime_shapes": {"python": {
+        "positionals": [],
+        "flags": [
+          {"name": "db-path", "type": "path", "description": "Judge ledger database."},
+          {"name": "out", "type": "path", "description": "Report directory."}
+        ]
+      }}
     }
   ]
 }
