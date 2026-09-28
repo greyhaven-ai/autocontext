@@ -111,24 +111,34 @@ class NewlyLockedTests(unittest.TestCase):
         base = lockfile({"node_modules/ws": registry_entry("ws", "8.21.3")})
         self.assertEqual(newly_locked(base, None), set())
 
+    def test_registry_entry_without_a_resolved_url_is_checked(self):
+        # npm leaves `resolved` out only for registry packages (omit-lockfile-registry-resolved),
+        # and npm ci then fetches them from the configured registry.
+        head = lockfile({"node_modules/ms": {"version": "2.1.3", "integrity": "sha512-" + "C" * 86 + "==", "license": "MIT"}})
+        self.assertEqual(newly_locked(lockfile({}), head), {("ms", "2.1.3")})
+        self.assertEqual(newly_unchecked(lockfile({}), head), set())
+
     def test_packages_installed_from_elsewhere_are_listed_as_unchecked(self):
         git_url = "git+ssh://git@github.com/example/forked.git#" + "0" * 40
+        unversioned_url = "git+ssh://git@github.com/example/unversioned.git#" + "1" * 40
         mirror_url = "https://registry.npmmirror.com/undici/-/undici-8.10.0.tgz"
         head = lockfile({
             "node_modules/ws": registry_entry("ws", "8.21.3"),
             "node_modules/forked": {"version": "1.0.0", "resolved": git_url, "license": "MIT"},
+            # npm records no version for a git dependency whose package.json has none.
+            "node_modules/unversioned": {"resolved": unversioned_url},
             "node_modules/undici": registry_entry("undici", "8.10.0", resolved=mirror_url),
-            # npm leaves `resolved` out under omit-lockfile-registry-resolved; npm ci then uses the configured registry.
-            "node_modules/ms": {"version": "2.1.3", "license": "MIT"},
             "node_modules/local-sdk": {"resolved": "../sdk", "link": True},
             "../sdk": {"name": "local-sdk", "version": "0.1.0", "license": "MIT"},
             "node_modules/ws/node_modules/bundled": {"version": "1.0.0", "inBundle": True, "license": "MIT"},
         })
         self.assertEqual(newly_unchecked(lockfile({}), head), {
-            Unchecked("forked", "1.0.0", git_url), Unchecked("undici", "8.10.0", mirror_url),
-            Unchecked("ms", "2.1.3", "no resolved URL"),
+            Unchecked("forked", "1.0.0", git_url), Unchecked("unversioned", "(no version)", unversioned_url),
+            Unchecked("undici", "8.10.0", mirror_url),
         })
+        # Already locked at the merge base, they are neither listed again nor an error.
         self.assertEqual(newly_unchecked(head, head), set())
+        self.assertEqual(newly_locked(head, head), set())
 
     def test_lockfile_without_a_packages_map_is_rejected(self):
         legacy = {"lockfileVersion": 1, "dependencies": {"ws": {"version": "8.21.3"}}}
@@ -344,9 +354,10 @@ class PullRequestCheckTests(unittest.TestCase):
         self.write("ts/package-lock.json", {
             "node_modules/ws": registry_entry("ws", "8.21.0"), "node_modules/left-pad": registry_entry("left-pad", "1.3.0"),
         })
-        code, output = self.run_check(self.pull_request_event(self.commit("add left-pad")))
+        code, output = self.run_check(self.pull_request_event(self.commit("add left-pad")), actions=True)
         self.assertEqual(code, 1, output)
-        self.assertIn("left-pad", output)
+        [error] = [line for line in output.splitlines() if line.startswith("::error")]
+        self.assertIn("left-pad", error)
 
     def test_unreadable_lockfile_fails_the_check(self):
         (self.repo / "ts/package-lock.json").write_text("<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> main\n", encoding="utf-8")

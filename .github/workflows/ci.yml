@@ -308,13 +308,12 @@ jobs:
 
   # `npm ci` does not enforce NPM_CONFIG_MIN_RELEASE_AGE, so this job fails a
   # pull request whose lockfiles newly pin an npm version younger than it. It
-  # runs alongside the other jobs, so it keeps such versions out of main rather
-  # than out of the pull request's own installs. Dependabot version updates
-  # already skip versions inside their `cooldown`; this also covers other
-  # lockfile changes, Dependabot security updates, and any shorter cooldown.
-  # A failure prints when each version clears the policy: re-run after that.
-  # Urgent security fixes can use the npm-release-age-override label; see
-  # "npm Release Age" in CONTRIBUTING.md.
+  # runs alongside the other jobs, so it can gate merging but not the pull
+  # request's own installs. Dependabot version updates already skip versions
+  # inside their `cooldown`; this also covers other lockfile changes, Dependabot
+  # security updates, and any shorter cooldown. A failure prints when each
+  # version clears the policy: re-run after that. Urgent security fixes can use
+  # the npm-release-age-override label; see "npm Release Age" in CONTRIBUTING.md.
   npm-release-age:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

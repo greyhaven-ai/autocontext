@@ -197,9 +197,10 @@ and `pi/package-lock.json` with the pull request's merge base, and fails if the
 pull request newly locks a registry version younger than that. `autoctx`, which
 this repository publishes, is exempt. The failure lists each version with its
 publish time and the UTC time it clears the policy: re-run the job after the
-last of those times. Newly locked packages that do not come from
-`https://registry.npmjs.org/` (git, a file, another host, or no `resolved` URL)
-cannot be dated, so the job lists them with a warning instead of failing.
+last of those times. Packages locked from git, a file or another host have no
+registry publish time, so the job lists them with a warning instead. Entries
+without a `resolved` URL, which npm writes under `omit-lockfile-registry-resolved`,
+come from the registry and are checked.
 
 To check a branch before pushing:
 

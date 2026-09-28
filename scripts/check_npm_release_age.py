@@ -8,17 +8,18 @@ check is the backstop for what that does not cover: lockfile changes Dependabot
 does not make, Dependabot security updates (which run with no cooldown),
 versions a cooldown shorter than this policy lets through, and regressions in
 Dependabot's undocumented transitive gate. It runs alongside the other CI jobs,
-so it keeps young versions out of main, not out of the pull request's own
-installs.
+so it can gate merging, not the pull request's own installs.
 
 For ts/package-lock.json and pi/package-lock.json, it compares the pull request
 head with its merge base and collects every (name, version) pair the head newly
-locks from registry.npmjs.org. It looks up each version's publish time in the
-registry and fails if any is younger than NPM_CONFIG_MIN_RELEASE_AGE days, read
-from the environment so the policy has one source of truth. autoctx, which this
-repository publishes, is exempt. Newly locked packages from anywhere else (git,
-a file, another host, or an entry without a `resolved` URL) cannot be dated
-here; they are listed with a warning but do not fail the check.
+locks from registry.npmjs.org, including entries without a `resolved` URL: npm
+leaves it out only for registry packages, and npm ci then fetches them from the
+configured registry. It looks up each version's publish time in the registry
+and fails if any is younger than NPM_CONFIG_MIN_RELEASE_AGE days, read from the
+environment so the policy has one source of truth. autoctx, which this
+repository publishes, is exempt. Newly locked packages from git, a file or
+another host have no registry publish time; they are listed with a warning but
+do not fail the check.
 
 Versions clear the policy as they age, so the remedy is to re-run the job after
 the time the failure prints. For an urgent security fix, a maintainer can apply
@@ -90,13 +91,10 @@ class YoungVersion:
     clears: datetime
 
 
-def identify(path: str, entry: Mapping[str, Any]) -> Pair:
+def package_name(path: str, entry: Mapping[str, Any]) -> str:
     # An alias ("x": "npm:y@1") installs under its own path but records the real name.
-    name = entry.get("name") or path.rpartition("node_modules/")[2]
-    version = entry.get("version")
-    if not (isinstance(name, str) and name and isinstance(version, str) and version):
-        raise CheckError(f"lockfile entry {path!r} has no package name or version")
-    return name, version
+    name = entry.get("name")
+    return name if isinstance(name, str) and name else path.rpartition("node_modules/")[2]
 
 
 def locked_entries(lockfile: Lockfile) -> tuple[set[Pair], set[Unchecked]]:
@@ -108,14 +106,20 @@ def locked_entries(lockfile: Lockfile) -> tuple[set[Pair], set[Unchecked]]:
     for path, entry in packages.items():
         if not isinstance(entry, dict) or entry.get("link"):
             continue
-        resolved = entry.get("resolved")
-        if isinstance(resolved, str) and resolved.startswith(REGISTRY):
-            registry.add(identify(path, entry))
-        # Skip the root and workspace folders (not under node_modules), and dependencies bundled in their
-        # parent's tarball. Anything else came from git, a file, another host, or an unrecorded registry.
-        elif "node_modules/" in path and not entry.get("inBundle"):
-            source = resolved if isinstance(resolved, str) else "no resolved URL"
-            unchecked.add(Unchecked(*identify(path, entry), source))
+        resolved, version = entry.get("resolved"), entry.get("version")
+        # The root and workspace folders are not under node_modules, and bundled dependencies arrive inside
+        # their parent's tarball.
+        installed = "node_modules/" in path and not entry.get("inBundle")
+        # npm leaves `resolved` out only for registry packages (omit-lockfile-registry-resolved), and npm ci
+        # then fetches them from the configured registry, which is registry.npmjs.org in CI.
+        if (isinstance(resolved, str) and resolved.startswith(REGISTRY)) or (resolved is None and installed):
+            if not (isinstance(version, str) and version):
+                raise CheckError(f"lockfile entry {path!r} has no version")
+            registry.add((package_name(path, entry), version))
+        elif installed:
+            # Git, a file or another host: there is no registry publish time to check.
+            shown = version if isinstance(version, str) and version else "(no version)"
+            unchecked.add(Unchecked(package_name(path, entry), shown, str(resolved)))
     return registry, unchecked
 
 
@@ -277,6 +281,7 @@ def main(argv: Sequence[str] | None = None, *, publish_times: PublishTimes = reg
         young = {path: young_versions(pairs, times, now=checked_at, min_age=min_age) for path, pairs in changes.items()}
     except CheckError as exc:
         print(f"npm release-age check failed: {exc}", file=sys.stderr)
+        annotate("error", f"npm release-age check failed: {exc}")
         return 1
 
     policy = f"the {min_age / timedelta(days=1):g}-day {AGE_VARIABLE}"
@@ -317,6 +322,7 @@ def main(argv: Sequence[str] | None = None, *, publish_times: PublishTimes = reg
     print("pull request, or comment `@dependabot recreate` on a Dependabot pull request.")
     annotate("error", f"{summary} Re-run this job after {last}.")
     return 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
