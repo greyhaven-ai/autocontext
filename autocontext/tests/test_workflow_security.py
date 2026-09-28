@@ -30,11 +30,13 @@ def test_third_party_actions_are_pinned_to_full_commit_shas() -> None:
 def test_container_build_uses_immutable_and_hash_verified_inputs() -> None:
     dockerfile = _DOCKERFILE.read_text(encoding="utf-8")
 
-    assert re.search(
-        r"^ARG PYTHON_IMAGE=python:3\.11-slim@sha256:[0-9a-f]{64}$",
-        dockerfile,
-        re.MULTILINE,
-    )
+    # Dependabot's Dockerfile parser skips FROM lines whose image is a build-arg
+    # reference such as ${PYTHON_IMAGE}, so every stage names the pinned image literally.
+    base_images = re.findall(r"^FROM\s+(\S+)", dockerfile, re.MULTILINE | re.IGNORECASE)
+    assert base_images
+    for image in base_images:
+        assert re.fullmatch(r"python:3\.11-slim@sha256:[0-9a-f]{64}", image), image
+    assert len(set(base_images)) == 1, "Every stage must use the same base image digest"
     assert dockerfile.count("--require-hashes") == 2
     assert "--no-build-isolation --no-deps" in dockerfile
     assert re.search(r"^USER [1-9][0-9]*:[1-9][0-9]*$", dockerfile, re.MULTILINE)
