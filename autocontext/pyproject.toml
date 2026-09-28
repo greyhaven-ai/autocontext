@@ -57,6 +57,7 @@ cuda = [
     "safetensors>=0.4.0",
 ]
 openai = ["openai>=1.0.0"]
+prescreen = ["scikit-learn>=1.5", "numpy>=1.24.0"]
 all = ["autocontext[mcp,agent-sdk,monty,openai,browser,primeintellect]"]
 
 [dependency-groups]
@@ -73,6 +74,7 @@ dev = [
   "pytest-asyncio>=1.3.0",
   "pytest-cov>=6.0.0",
   "ruff>=0.12.0",
+  "scikit-learn>=1.5",
   "websockets>=16.0",
 ]
 
@@ -155,5 +157,5 @@ warn_unused_configs = true
 exclude = "(^tests/)|(^migrations/)"
 
 [[tool.mypy.overrides]]
-module = ["pydantic_monty", "mcp.*", "claude_agent_sdk", "mlx", "mlx.*", "mlx_lm", "mlx_lm.*", "rustbpe", "tiktoken", "safetensors", "safetensors.*", "numpy", "numpy.*", "torch", "torch.*", "trl", "trl.*", "peft", "peft.*", "datasets", "datasets.*", "transformers", "transformers.*"]
+module = ["pydantic_monty", "mcp.*", "claude_agent_sdk", "mlx", "mlx.*", "mlx_lm", "mlx_lm.*", "rustbpe", "tiktoken", "safetensors", "safetensors.*", "numpy", "numpy.*", "torch", "torch.*", "trl", "trl.*", "peft", "peft.*", "datasets", "datasets.*", "transformers", "transformers.*", "sklearn", "sklearn.*", "scipy", "scipy.*"]
 ignore_missing_imports = true
