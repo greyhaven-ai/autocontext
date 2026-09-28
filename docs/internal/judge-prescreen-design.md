@@ -1,7 +1,7 @@
 # Judge pre-screen: skip confidently failing judge rounds
 
 Date: 2026-09-27
-Status: scope approved in brainstorming (through gated activation); pending written review. Plan 1 (Phases 0–1 tooling) is implemented and was amended on 2026-09-28 after the whole-branch review (see Amendments). The paid data-generation run has not been made.
+Status: scope approved in brainstorming (through gated activation); written spec approved on 2026-09-27. Plan 1 (Phases 0–1 tooling) is implemented and was amended on 2026-09-28 after the whole-branch review and the first CI run of its PR (see Amendments). The paid data-generation run has not been made.
 Linear: none yet (proposed as a new AC ticket)
 Scope: Python only. Covers capture, offline replay, shadow mode, and gated activation of one behavior: skipping the LLM judge on a later improvement-loop round when a calibrated fast model is confident the round will fail. TypeScript parity is deferred (see Non-goals).
 
@@ -61,7 +61,7 @@ The approach, and several of its constraints, come from the jev-experiments "Ref
 
    Decision-model (Jev) question answers are an optional feature block behind a flag, for later. They send output text to a third party, and in the Reflex learning curve they only paid off with a few hundred examples.
 
-6. **A new optional extra.** scikit-learn and numpy are not core dependencies (`autocontext/pyproject.toml`). The pre-screen ships as `autocontext[prescreen]`. Without the extra, the loop behaves exactly as it does today.
+6. **A new optional extra, for training only.** scikit-learn, numpy and scipy are not core dependencies (`autocontext/pyproject.toml`). They ship as `autocontext[prescreen]`, which training and replay need. The loop serves an exported model in pure Python and never imports them, because their thread pools would disable local execution isolation (Amendment CI1). With `prescreen_mode` off, the default, the loop behaves exactly as it does today.
 7. **Activation goes through the harness-optimization protocol, not a new gate.**
    - Turning the pre-screen on is a candidate of type `judge_policy` (`ts/src/harness-optimization/contract/json-schemas/candidate-evidence.schema.json`).
    - The candidate carries CandidateEvidence and IntegrityMetadata, with training and evaluation splits kept disjoint.
@@ -137,7 +137,8 @@ Confidence intervals come from a paired bootstrap that resamples whole tasks (`h
 
 A trained pre-screen is stored as a `DistilledModelRecord` (`training/model_registry.py`):
 
-- `backend="sklearn-logreg"` and `runtime_types=["prescreen"]`;
+- `backend="prescreen-linear"` and `runtime_types=["prescreen"]`: trained with scikit-learn, served without it;
+- the exported parameters the loop scores in pure Python (Amendment CI1): the scaler's means and scales, the TF-IDF vocabularies and idf weights, and the logistic coefficients and intercept;
 - a `metadata["prescreen"]` binding, like the existing skill-routing binding, holding:
   - the bound judge identity, scenario family and quality threshold;
   - the feature-spec hash;
@@ -152,6 +153,8 @@ The record is published inactive. The `auto_activate=True` path used by `autoctx
 
 - `ImprovementLoop` gains two optional constructor parameters, `judge_ledger` and `prescreen`. Both default to None.
 - A `prescreen_mode` setting takes `off` (the default), `shadow` or `active`.
+
+**Serving.** In both modes the pre-screen scores the exported model in pure Python. It never imports numpy, scipy or scikit-learn into the loop process (Amendment CI1).
 
 **Shadow mode.** The pre-screen predicts on every eligible round, the judge still runs, and the ledger records both.
 
@@ -242,13 +245,13 @@ The evidence artifacts are:
 Each phase gets its own implementation plan, written only after the previous phase's gate passes:
 
 - **Plan 1, Phases 0–1:** the ledger and migration, the sufficiency report, the pre-registered data-generation run, the dataset, the models, calibration, and replay. None of this changes loop behavior.
-- **Plan 2, Phase 2:** the `prescreen_mode` setting and shadow predictions in the loop.
+- **Plan 2, Phase 2:** the `prescreen_mode` setting, the model export and its pure-Python scorer, and shadow predictions in the loop.
 - **Plan 3, Phases 3–4:** active skipping, `RoundResult.judge_skipped` and its consumers, audit judging, the monitor, the harness-optimization evidence, and retraining.
 
 ## Error handling
 
 - **Pre-screen unavailable:** the loop judges the round and logs the reason once per loop. This covers:
-  - the extra not being installed;
+  - a model the pure-Python scorer cannot serve, such as one that is not linear;
   - no active model for the judge identity and family;
   - a load or feature error;
   - inference taking longer than 50 ms.
@@ -274,6 +277,7 @@ Each phase gets its own implementation plan, written only after the previous pha
   - reproducible sampling for the learning curve.
 - **Monitor:** it suspends on a precision breach, a judge identity change, and a success-rate breach.
 - **Fail closed:** each of the unavailable-pre-screen cases judges the round.
+- **Serving:** the pure-Python scorer matches the scikit-learn model's predicted-fail probabilities on held-out rows to within 1e-9, and loading and scoring a model leaves numpy, scipy and scikit-learn out of `sys.modules`.
 
 ## Risks
 
@@ -302,7 +306,7 @@ Each phase gets its own implementation plan, written only after the previous pha
 
 ## Amendments (2026-09-28)
 
-The whole-branch review of Plan 1 found three problems in this design. These amendments resolve them, and the sections above already reflect them.
+The whole-branch review of Plan 1 found three problems in this design, and the first CI run of its PR (greyhaven-ai/autocontext#1420) found a fourth. These amendments resolve them, and the sections above already reflect them.
 
 1. **C1. Certification is per (judge identity, scenario family), not per evaluator epoch.**
    - **Problem.** The evaluator epoch hashes the whole `JudgeServingSpec`, which includes the compiled rubric, the serving examples, the pinned dimensions and the evaluation context hash. So every task had its own epoch, and round 1, which has no pinned dimensions yet, had a different epoch from rounds 2 and later. A fake-provider run of the committed data-generation protocol spread 300 eligible rounds over 48 (epoch, family) cells, with at most 15 in any one. Phase 1 could never be reached.
@@ -316,6 +320,10 @@ The whole-branch review of Plan 1 found three problems in this design. These ame
    - **Problem.** The direct Anthropic and OpenAI-compatible providers report no `cost_usd`, so the first protocol's $25 dollar cap could never bind on them.
    - **Change.** The data-generation protocol has a mandatory cap on input plus output tokens, counted from the usage each completion reports, beside the cap on provider calls. The dollar cap is optional. When one is set and a completed call reports no cost, the run stops (`cost_not_reported`), so a protocol without a dollar cap is always a deliberate choice. The committed protocol (v2; v1 never ran) sets 3,000,000 tokens, 1,500 calls and no dollar cap.
    - **Reasoning.** Tokens are what every direct API provider reports, so a token cap bounds spend where a dollar cap cannot. A provider that reports neither tokens nor cost, such as a CLI runtime bridge, is bounded by the call cap alone.
+4. **CI1. The served pre-screen must not load numpy into the loop's process.**
+   - **Problem.** numpy and scipy start native BLAS worker threads as they load. On Linux their OpenBLAS builds start one per core: a 16-core container went from 1 native thread to 31. Local execution isolation (`local_isolation_available()` in `execution/isolated_python.py`) refuses to fork unless the process has exactly one native thread, counting threads Python does not know about. It backs generated-code execution across the codebase, for example `scenarios/custom/agent_task_validator.py`, `harness/repl/worker.py` and `security/outbound_url.py`. The loop runs in `autoctx run` and inside long-lived processes too: the MCP knowledge tools, the task runner and `solve`. Serving the scikit-learn model in the loop, as Plans 2 and 3 were first written, would load numpy into whichever of these processes enables the pre-screen, and every later isolated call in that process would be refused with "isolation is unavailable". The PR's first CI run showed the effect in the test suite: two test modules imported scikit-learn during collection, and ten isolation-dependent tests in one shard failed. Tests that check for isolation at run time skip instead, so the same effect can also pass silently.
+   - **Change.** scikit-learn, numpy and scipy are used only to train and replay. A trained model is exported as plain parameters, and the loop scores it in pure Python (Decision 6, sections 6 and 7). Plan 1 needed no change: capture, sufficiency and data generation never import numpy; only the offline `autoctx prescreen replay` does, and it runs no generated code. The test suite now defaults `OPENBLAS_NUM_THREADS` and `OMP_NUM_THREADS` to 1 in `autocontext/tests/conftest.py`.
+   - **Reasoning.** P0 to P3 are linear models over structural and TF-IDF features, so a served prediction is a sparse dot product that needs no numpy. Plan 2 measures its latency against the 50 ms inference budget, and a slow round fails closed like any other. Two alternatives were rejected. Setting those variables before numpy loads depends on import order, and on every library respecting them, in processes that also run generated code. Scoring in a separate process adds a process to supervise and its latency to every eligible round. If a nonlinear model ever wins Phase 1, it must be served out of process or not at all.
 
 ## Related
 
