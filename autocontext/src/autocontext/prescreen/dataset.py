@@ -1,4 +1,4 @@
-"""Examples for the pre-screen models (design section 2): eligible rounds of one family and epoch, time-ordered."""
+"""Examples for the pre-screen models (design section 2): eligible rounds of one family and judge identity, in time order."""
 
 from __future__ import annotations
 
@@ -67,9 +67,9 @@ def structural_features(current: LedgerRound, previous: LedgerRound) -> tuple[fl
     )
 
 
-def build_examples(eligible: Sequence[EligibleRound], *, family: str, epoch: str) -> list[Example]:
-    """Eligible rounds of one family whose own verdict came from `epoch`. The label is 'the judge failed it'."""
-    chosen = [e for e in eligible if e.round.scenario_family == family and e.round.evaluator_epoch == epoch]
+def build_examples(eligible: Sequence[EligibleRound], *, family: str, judge_identity: str) -> list[Example]:
+    """Eligible rounds of one family whose own verdict came from `judge_identity`. The label is 'the judge failed it'."""
+    chosen = [e for e in eligible if e.round.scenario_family == family and e.round.judge_identity == judge_identity]
     chosen.sort(key=lambda e: (e.round.created_at, e.round.row_id))
     return [
         Example(

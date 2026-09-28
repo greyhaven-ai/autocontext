@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -110,7 +111,7 @@ class _TargetReached(Exception):
 class CountingProvider(LLMProvider):
     """Forwards to a real provider and refuses any call past the pre-registered call or reported-cost cap.
 
-    It forwards `name` and the capability flags, so the judge's serving identity (evaluator epoch) is unchanged.
+    It forwards `name` and the capability flags, so the judge's serving spec, and so its judge identity, is unchanged.
     """
 
     def __init__(self, inner: LLMProvider, *, max_calls: int, max_cost_usd: float) -> None:
@@ -216,6 +217,7 @@ class DatagenSummary:
     reported_cost_usd: float
     judged_rounds: int
     eligible_rounds: int
+    judge_identities: int
     stop_reason: str
 
 
@@ -223,11 +225,20 @@ def _write(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _run_rounds(store: SQLiteStore, run_prefix: str) -> list[LedgerRound]:
+    rows = store.list_judge_ledger_rows(scenario_family=DATAGEN_FAMILY)
+    return [LedgerRound.from_row(r) for r in rows if (r["run_id"] or "").startswith(run_prefix)]
+
+
 def count_rounds(store: SQLiteStore, run_prefix: str) -> tuple[int, int]:
-    """(judged rounds, eligible rounds) recorded so far by this run."""
-    rows = [r for r in store.list_judge_ledger_rows(scenario_family=DATAGEN_FAMILY) if (r["run_id"] or "").startswith(run_prefix)]
-    rounds = [LedgerRound.from_row(r) for r in rows]
-    return len(rounds), len(eligible_rounds(rounds))
+    """(judged rounds, eligible rounds in this run's largest (judge identity, datagen) cell) recorded so far.
+
+    Phase 1 is certified per (judge identity, scenario family), so only one cell's eligible rounds count toward the
+    target; rounds under different judges never add up.
+    """
+    rounds = _run_rounds(store, run_prefix)
+    cells = Counter(e.round.judge_identity for e in eligible_rounds(rounds))
+    return len(rounds), max(cells.values(), default=0)
 
 
 def run_datagen(
@@ -294,6 +305,7 @@ def run_datagen(
         reported_cost_usd=round(capped.reported_cost_usd, 6),
         judged_rounds=judged,
         eligible_rounds=eligible,
+        judge_identities=len({r.judge_identity for r in _run_rounds(store, run_prefix) if r.judge_identity is not None}),
         stop_reason=stop,
     )
     _write(out_dir / "summary.json", asdict(summary))

@@ -9,19 +9,37 @@ import pytest
 
 from autocontext.config import load_settings
 from autocontext.execution.improvement_loop import ImprovementLoop
-from autocontext.prescreen.ledger import JudgeLedger, ledger_for, text_hash
+from autocontext.execution.judge_spec import JudgeServingSpec
+from autocontext.prescreen.ledger import TASK_SPECIFIC_SPEC_FIELDS, JudgeLedger, judge_identity, ledger_for, text_hash
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.storage.sqlite_store import SQLiteStore
 
 MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
 
 
+def serving_spec(**overrides: Any) -> JudgeServingSpec:
+    """A realistic LLMJudge serving spec (judge.py serving_spec), built without any provider call."""
+    fields: dict[str, Any] = {
+        "compiled_rubric": "Score 0-1 on accuracy and length.",
+        "judge_provider": "anthropic",
+        "judge_model": "claude-sonnet-5",
+        "prompt_template_version": "autocontext.python.llm-judge.v1",
+        "score_transformations": ("python.parse-markers-json-plaintext-clamp.v1", "mean-parseable-samples.v1"),
+    }
+    fields.update(overrides)
+    return JudgeServingSpec(**fields)
+
+
+SPEC = serving_spec()
+
+
 class ScriptedTask(AgentTaskInterface):
     """Scores follow a script; each revision appends a marker so outputs differ."""
 
-    def __init__(self, scores: list[float], revise_suffix: str = " v") -> None:
+    def __init__(self, scores: list[float], revise_suffix: str = " v", spec: JudgeServingSpec | None = SPEC) -> None:
         self.scores = scores
         self.revise_suffix = revise_suffix
+        self.spec = spec
         self.evaluations = 0
 
     def get_task_prompt(self, state: dict) -> str:
@@ -48,7 +66,12 @@ class ScriptedTask(AgentTaskInterface):
         score = self.scores[min(self.evaluations, len(self.scores) - 1)]
         self.evaluations += 1
         return AgentTaskResult(
-            score=score, reasoning=f"score {score}", dimension_scores={"quality": score}, evaluator_epoch="epoch-a"
+            score=score,
+            reasoning=f"score {score}",
+            dimension_scores={"quality": score},
+            evaluator_epoch="epoch-a",
+            evaluator_spec=self.spec.canonical_json() if self.spec is not None else None,
+            execution_provenance={"samples": 1, "max_tokens": 4096} if self.spec is not None else {},
         )
 
     def revise_output(self, output, judge_result, state):  # type: ignore[no-untyped-def]
@@ -87,6 +110,66 @@ def test_one_row_per_real_judge_call_with_previous_round_links() -> None:
     assert first["dimension_scores_json"] == '{"quality": 0.3}'
 
 
+def test_rows_carry_the_judge_identity_the_full_spec_and_the_execution_provenance() -> None:
+    store = ListStore()
+    ImprovementLoop(ScriptedTask([0.3, 0.95]), max_rounds=5, judge_ledger=_ledger(store)).run("draft", {})
+    first = store.rows[0]
+    assert first["judge_identity"] == judge_identity(SPEC.canonical_json()) and first["judge_identity"] is not None
+    assert first["evaluator_spec_json"] == SPEC.canonical_json()
+    assert first["execution_provenance_json"] == '{"max_tokens": 4096, "samples": 1}'
+
+
+def test_rows_without_a_serving_spec_have_no_judge_identity() -> None:
+    store = ListStore()
+    ImprovementLoop(ScriptedTask([0.3, 0.95], spec=None), max_rounds=5, judge_ledger=_ledger(store)).run("draft", {})
+    assert [(r["judge_identity"], r["evaluator_spec_json"], r["execution_provenance_json"]) for r in store.rows] == [
+        (None, None, "{}"),
+        (None, None, "{}"),
+    ]
+
+
+def test_judge_identity_ignores_task_specific_spec_fields() -> None:
+    # Two tasks with different rubrics; round 1 unpinned, later rounds pinned to the judge's dimension names;
+    # calibration examples and a private evaluation context: every one of them mints a new evaluator epoch.
+    specs = [
+        serving_spec(compiled_rubric="Task A rubric"),
+        serving_spec(compiled_rubric="Task A rubric", pinned_dimensions=("accuracy", "length")),
+        serving_spec(compiled_rubric="Task B rubric"),
+        serving_spec(compiled_rubric="Task B rubric", pinned_dimensions=("clarity",)),
+        serving_spec(compiled_rubric="Task B rubric", serving_examples=("**Example 1** Score: 0.4",)),
+        serving_spec(compiled_rubric="Task B rubric", evaluation_context_hash="private-contract"),
+    ]
+    assert len({s.epoch_id for s in specs}) == len(specs)
+    assert len({judge_identity(s.canonical_json()) for s in specs}) == 1
+    assert set(JudgeServingSpec.model_fields) - set(TASK_SPECIFIC_SPEC_FIELDS) == {
+        "schema_version",
+        "judge_provider",
+        "judge_model",
+        "prompt_template_version",
+        "score_transformations",
+        "extension_fingerprint",
+    }
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"judge_model": "claude-opus-5"},
+        {"judge_provider": "openai"},
+        {"prompt_template_version": "autocontext.python.llm-judge.v2"},
+        {"score_transformations": ("python.parse-markers-json-plaintext-clamp.v1",)},
+        {"extension_fingerprint": "handler-fingerprint"},
+    ],
+)
+def test_judge_identity_changes_with_the_judge_itself(change: dict[str, Any]) -> None:
+    assert judge_identity(serving_spec(**change).canonical_json()) != judge_identity(SPEC.canonical_json())
+
+
+@pytest.mark.parametrize("spec", [None, "", "not json", "{truncated", "[1, 2]", "42", "null", '"a string"'])
+def test_judge_identity_is_none_for_unknown_or_unparseable_specs(spec: str | None) -> None:
+    assert judge_identity(spec) is None
+
+
 def test_capture_does_not_change_the_loop_result() -> None:
     plain = ImprovementLoop(ScriptedTask([0.3, 0.5, 0.95]), max_rounds=5).run("draft", {})
     captured = ImprovementLoop(ScriptedTask([0.3, 0.5, 0.95]), max_rounds=5, judge_ledger=_ledger(ListStore())).run("draft", {})
@@ -113,8 +196,9 @@ def test_cache_replays_are_not_recorded() -> None:
         def __init__(self) -> None:
             # 3 distinct, always-failing scores: adjacent real rounds must differ enough
             # to dodge plateau-stall, which would otherwise stop the loop before a repeat
-            # output is ever reached.
-            super().__init__([0.3, 0.5, 0.35])
+            # output is ever reached. No serving spec: the verifier cache never replays a
+            # verdict that carries one (verifier_cache.py, until AC-1026).
+            super().__init__([0.3, 0.5, 0.35], spec=None)
             self._revisions = 0
 
         def revise_output(self, output, judge_result, state):  # type: ignore[no-untyped-def]

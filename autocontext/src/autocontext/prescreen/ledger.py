@@ -19,6 +19,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# JudgeServingSpec fields that vary with the task or the round rather than with the judge. They mint a new evaluator
+# epoch per task (compiled_rubric) and between round 1 and later rounds (pinned_dimensions), so the pre-screen is
+# certified per judge identity instead: the spec without these fields.
+TASK_SPECIFIC_SPEC_FIELDS = ("compiled_rubric", "serving_examples", "pinned_dimensions", "evaluation_context_hash")
+
 
 class JudgeLedgerStore(Protocol):
     def insert_judge_ledger_row(self, values: Mapping[str, Any]) -> int: ...
@@ -27,6 +32,25 @@ class JudgeLedgerStore(Protocol):
 def text_hash(text: str) -> str:
     """Stable content id for prompts, rubrics and outputs."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def judge_identity(evaluator_spec: str | None) -> str | None:
+    """The judge's serving configuration without task-specific inputs; None when the spec is unknown or unparseable.
+
+    `evaluator_spec` is JudgeServingSpec.canonical_json(). What remains after dropping TASK_SPECIFIC_SPEC_FIELDS is the
+    schema version, judge provider and model, prompt template version, score transformations and extension
+    fingerprint, so a change to any of those forces re-certification and a change of task or rubric does not.
+    """
+    if evaluator_spec is None:
+        return None
+    try:
+        spec = json.loads(evaluator_spec)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(spec, dict):
+        return None
+    rest = {key: value for key, value in spec.items() if key not in TASK_SPECIFIC_SPEC_FIELDS}
+    return text_hash(json.dumps(rest, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
 
 
 class JudgeLedger:
@@ -80,6 +104,8 @@ class JudgeLedger:
                     "max_rounds": max_rounds,
                     "quality_threshold": quality_threshold,
                     "evaluator_epoch": result.evaluator_epoch,
+                    "judge_identity": judge_identity(result.evaluator_spec),
+                    "evaluator_spec_json": result.evaluator_spec,
                     "rubric_hash": rubric_hash,
                     "task_prompt_hash": prompt_hash,
                     "task_prompt": prompt,
@@ -96,6 +122,7 @@ class JudgeLedger:
                     "previous_dimension_scores_json": (json.dumps(previous[2], sort_keys=True) if previous is not None else None),
                     "previous_output_hash": text_hash(previous[3]) if previous is not None else None,
                     "fixture_provenance_json": json.dumps(dict(result.fixture_provenance), sort_keys=True),
+                    "execution_provenance_json": json.dumps(dict(result.execution_provenance), sort_keys=True, default=str),
                     "evaluator_guardrail_json": (
                         json.dumps(guardrail, sort_keys=True, default=str) if guardrail is not None else None
                     ),

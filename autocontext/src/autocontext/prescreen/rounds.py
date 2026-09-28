@@ -20,6 +20,7 @@ class LedgerRound:
     max_rounds: int
     quality_threshold: float
     evaluator_epoch: str | None
+    judge_identity: str | None
     task_prompt: str
     output: str
     required_concepts: tuple[str, ...]
@@ -44,6 +45,7 @@ class LedgerRound:
             max_rounds=int(row["max_rounds"]),
             quality_threshold=float(row["quality_threshold"]),
             evaluator_epoch=row["evaluator_epoch"],
+            judge_identity=row["judge_identity"],
             task_prompt=str(row["task_prompt"]),
             output=str(row["output"]),
             required_concepts=tuple(json.loads(row["required_concepts_json"] or "[]")),
@@ -69,7 +71,8 @@ def eligible_rounds(rounds: Iterable[LedgerRound]) -> list[EligibleRound]:
 
     Eligible means: round 2 or later; the round just before it in the same loop has a row, parsed and did not pass
     (a round after a pass is a confirmation); it is not the last allowed round; its own verdict parsed; and its
-    evaluator epoch is known. Loops are judged whole, so an epoch change inside a loop does not hide a round.
+    judge identity is known (a row with no serving spec fails closed). Loops are judged whole, so a judge identity
+    change inside a loop does not hide a round.
     """
     ordered = sorted(rounds, key=lambda r: r.row_id)
     by_loop: dict[str, dict[int, LedgerRound]] = defaultdict(dict)
@@ -85,7 +88,7 @@ def eligible_rounds(rounds: Iterable[LedgerRound]) -> list[EligibleRound]:
             and not previous.passed
             and r.round_number < r.max_rounds
             and not r.judge_failed
-            and r.evaluator_epoch is not None
+            and r.judge_identity is not None
         ):
             eligible.append(EligibleRound(r, previous))
     return eligible

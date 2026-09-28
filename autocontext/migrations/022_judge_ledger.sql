@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS judge_ledger (
     max_rounds INTEGER NOT NULL,
     quality_threshold REAL NOT NULL,
     evaluator_epoch TEXT,
+    judge_identity TEXT,
+    evaluator_spec_json TEXT,
     rubric_hash TEXT NOT NULL,
     task_prompt_hash TEXT NOT NULL,
     task_prompt TEXT NOT NULL,
@@ -26,9 +28,11 @@ CREATE TABLE IF NOT EXISTS judge_ledger (
     previous_dimension_scores_json TEXT,
     previous_output_hash TEXT,
     fixture_provenance_json TEXT NOT NULL DEFAULT '{}',
+    execution_provenance_json TEXT NOT NULL DEFAULT '{}',
     evaluator_guardrail_json TEXT,
     prescreen_json TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_judge_ledger_epoch_family ON judge_ledger(evaluator_epoch, scenario_family);
+CREATE INDEX IF NOT EXISTS idx_judge_ledger_identity_family ON judge_ledger(judge_identity, scenario_family);
 CREATE INDEX IF NOT EXISTS idx_judge_ledger_loop ON judge_ledger(loop_id, round_number);

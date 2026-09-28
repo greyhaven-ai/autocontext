@@ -16,6 +16,8 @@ JUDGE_LEDGER_COLUMNS = (
     "max_rounds",
     "quality_threshold",
     "evaluator_epoch",
+    "judge_identity",
+    "evaluator_spec_json",
     "rubric_hash",
     "task_prompt_hash",
     "task_prompt",
@@ -32,6 +34,7 @@ JUDGE_LEDGER_COLUMNS = (
     "previous_dimension_scores_json",
     "previous_output_hash",
     "fixture_provenance_json",
+    "execution_provenance_json",
     "evaluator_guardrail_json",
     "prescreen_json",
 )
@@ -59,14 +62,18 @@ class SQLiteJudgeLedgerStoreMixin:
         self,
         *,
         evaluator_epoch: str | None = None,
+        judge_identity: str | None = None,
         scenario_family: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Rows in insertion order, optionally filtered by evaluator epoch and scenario family."""
+        """Rows in insertion order, optionally filtered by evaluator epoch, judge identity and scenario family."""
         clauses: list[str] = []
         params: list[Any] = []
         if evaluator_epoch is not None:
             clauses.append("evaluator_epoch = ?")
             params.append(evaluator_epoch)
+        if judge_identity is not None:
+            clauses.append("judge_identity = ?")
+            params.append(judge_identity)
         if scenario_family is not None:
             clauses.append("scenario_family = ?")
             params.append(scenario_family)

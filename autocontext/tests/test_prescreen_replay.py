@@ -88,7 +88,7 @@ def test_run_replay_report_shape_and_privacy() -> None:
     report = run_replay(
         data,
         family="fam",
-        epoch="e1",
+        judge_identity="j1",
         model_keys=("p0", "p1", "p3"),
         curve_model="p1",
         curve_halvings=1,
@@ -96,6 +96,7 @@ def test_run_replay_report_shape_and_privacy() -> None:
         resamples=200,
     )
     assert set(report) == {"meta", "summary", "comparisons", "gate", "learning_curve"}
+    assert report["meta"]["judge_identity"] == "j1" and "epoch" not in report["meta"]
     assert {r["model"] for r in report["summary"]} == {"p0-base-rate", "p1-structural", "p3-hybrid"}
     assert report["gate"]["go"] in (True, False)
     assert {r["scheme"] for r in report["learning_curve"]} >= {"all", "recent", "random"}
@@ -117,7 +118,8 @@ def _insert_loops(store: SQLiteStore, loops: int, seed: int = 0) -> None:
                     "round_number": n,
                     "max_rounds": 5,
                     "quality_threshold": 0.9,
-                    "evaluator_epoch": "e1",
+                    "evaluator_epoch": f"e{i % 3}",
+                    "judge_identity": "j1",
                     "rubric_hash": "h",
                     "task_prompt_hash": "h",
                     "task_prompt": "shared task prompt",
@@ -145,8 +147,8 @@ def test_cli_replay_writes_a_report(tmp_path: Path) -> None:
             "replay",
             "--family",
             "fam",
-            "--epoch",
-            "e1",
+            "--judge-identity",
+            "j1",
             "--models",
             "p0,p1",
             "--curve-model",
@@ -164,10 +166,13 @@ def test_cli_replay_writes_a_report(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     [path] = list(out.glob("replay-fam-*.json"))
     assert "shared task prompt" not in path.read_text()
+    meta = json.loads(path.read_text())["meta"]
+    # Every loop has an eligible round, and the three evaluator epochs are pooled under the one judge identity.
+    assert meta["judge_identity"] == "j1" and meta["examples"] >= 300
 
 
 def test_cli_replay_without_data_exits_1(tmp_path: Path) -> None:
     db = tmp_path / "ledger.db"
     SQLiteStore(db).migrate(MIGRATIONS)
-    result = CliRunner().invoke(app, ["prescreen", "replay", "--family", "fam", "--epoch", "e1", "--db-path", str(db)])
+    result = CliRunner().invoke(app, ["prescreen", "replay", "--family", "fam", "--judge-identity", "j1", "--db-path", str(db)])
     assert result.exit_code == 1

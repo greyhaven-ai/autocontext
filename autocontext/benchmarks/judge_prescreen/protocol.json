@@ -1,5 +1,5 @@
 {
-  "protocol_version": "judge-prescreen-datagen-v1",
+  "protocol_version": "judge-prescreen-datagen-v2",
   "purpose": "Phase 0 data generation for the judge pre-screen (docs/internal/judge-prescreen-design.md). Committed before any run; each run records this file's sha256.",
   "model": "claude-sonnet-5",
   "repetitions": 5,
@@ -10,7 +10,7 @@
   "max_reported_cost_usd": 25.0,
   "target_eligible_rounds": 300,
   "corpus": "tasks.jsonl",
-  "stop_rule": "Stop at the first of: target_eligible_rounds eligible rounds recorded; max_provider_calls calls; max_reported_cost_usd in provider-reported cost; the corpus exhausted after all repetitions.",
-  "go_rule": "Replay runs only if `autoctx prescreen sufficiency` shows the datagen family meeting both Phase 1 conditions for one evaluator epoch.",
+  "stop_rule": "Stop at the first of: target_eligible_rounds eligible rounds recorded under one judge identity (the largest (judge identity, datagen) cell); max_provider_calls calls; max_reported_cost_usd in provider-reported cost; the corpus exhausted after all repetitions.",
+  "go_rule": "Replay runs only if `autoctx prescreen sufficiency` shows the datagen family meeting both Phase 1 conditions for one judge identity (the judge's provider, model, prompt template and score transformations; rubrics and pinned dimensions are pooled).",
   "limitations": "One provider serves generation, revision and judging. The corpus was authored for this study, so results describe these tasks, not organic traffic. The call cap bounds calls, not dollars, when a provider reports no cost."
 }

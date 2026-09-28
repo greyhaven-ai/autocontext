@@ -17,6 +17,7 @@ def rnd(
     concepts: tuple[str, ...] = (),
     family: str = "fam",
     epoch: str = "e1",
+    identity: str | None = "j1",
     name: str = "task",
     created: str = "2026-09-27T00:00:00Z",
 ) -> LedgerRound:
@@ -30,6 +31,7 @@ def rnd(
         max_rounds=5,
         quality_threshold=0.9,
         evaluator_epoch=epoch,
+        judge_identity=identity,
         task_prompt="PROMPT",
         output=output,
         required_concepts=concepts,
@@ -71,12 +73,18 @@ def test_build_examples_filters_orders_and_labels() -> None:
             rnd(2, "A", 2, output="a2", score=0.5, created="2026-09-27T00:00:05Z"), rnd(1, "A", 1, output="a1", score=0.3)
         ),
         EligibleRound(rnd(6, "C", 2, output="c2", score=0.5, family="other"), rnd(5, "C", 1, output="c1", score=0.3)),
-        EligibleRound(rnd(8, "D", 2, output="d2", score=0.5, epoch="e2"), rnd(7, "D", 1, output="d1", score=0.3)),
+        EligibleRound(rnd(8, "D", 2, output="d2", score=0.5, identity="j2"), rnd(7, "D", 1, output="d1", score=0.3)),
+        # Another task's rubric, or pinned dimensions, give another evaluator epoch under the same judge identity.
+        EligibleRound(
+            rnd(10, "E", 2, output="e2", score=0.5, epoch="e2", created="2026-09-27T00:00:07Z"),
+            rnd(9, "E", 1, output="e1", score=0.3),
+        ),
     ]
-    examples = build_examples(eligible, family="fam", epoch="e1")
-    assert [e.row_id for e in examples] == [2, 4]
-    assert [e.failed for e in examples] == [True, False]
+    examples = build_examples(eligible, family="fam", judge_identity="j1")
+    assert [e.row_id for e in examples] == [2, 10, 4]
+    assert [e.failed for e in examples] == [True, True, False]
     assert examples[0].group == "task" and examples[0].text == "PROMPT\n\na2"
+    assert [e.row_id for e in build_examples(eligible, family="fam", judge_identity="j2")] == [8]
 
 
 def test_feature_spec_hash_is_stable() -> None:

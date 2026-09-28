@@ -234,7 +234,7 @@ def run_replay(
     examples: Sequence[Example],
     *,
     family: str,
-    epoch: str,
+    judge_identity: str,
     model_keys: Sequence[str] = ("p0", "p1", "p2", "p3"),
     curve_model: str | None = "p3",
     blocks: int = 5,
@@ -265,7 +265,7 @@ def run_replay(
     return {
         "meta": {
             "family": family,
-            "epoch": epoch,
+            "judge_identity": judge_identity,
             "examples": len(examples),
             "groups": len({e.group for e in examples}),
             "from": examples[0].created_at if examples else None,

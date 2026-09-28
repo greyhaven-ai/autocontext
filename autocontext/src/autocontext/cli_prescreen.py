@@ -39,7 +39,7 @@ def sufficiency(
     db_path: Annotated[Path | None, typer.Option("--db-path")] = None,
     out: Annotated[Path | None, typer.Option("--out", help="Report directory")] = None,
 ) -> None:
-    """Count eligible judged rounds per evaluator epoch and scenario family, and the value ceiling."""
+    """Count eligible judged rounds per judge identity and scenario family, and the value ceiling."""
     rows = [asdict(row) for row in sufficiency_report(_rounds(_store(db_path)))]
     path = write_json_report(_report_dir(out), "sufficiency", {"generated_at": datetime.now(UTC).isoformat(), "rows": rows})
     typer.echo(json.dumps(rows, indent=2))
@@ -53,7 +53,9 @@ def _slug(text: str) -> str:
 @prescreen_app.command("replay")
 def replay(
     family: Annotated[str, typer.Option("--family", help="Scenario family, for example datagen or agent_task")],
-    epoch: Annotated[str, typer.Option("--epoch", help="Evaluator epoch whose verdicts are replayed")],
+    judge_identity: Annotated[
+        str, typer.Option("--judge-identity", help="Judge identity whose verdicts are replayed (from the sufficiency report)")
+    ],
     models: Annotated[str, typer.Option("--models")] = "p0,p1,p2,p3",
     curve_model: Annotated[str, typer.Option("--curve-model", help="Model for the learning curve; 'none' skips it")] = "p3",
     curve_halvings: Annotated[int, typer.Option("--curve-halvings")] = 3,
@@ -65,20 +67,20 @@ def replay(
     db_path: Annotated[Path | None, typer.Option("--db-path")] = None,
     out: Annotated[Path | None, typer.Option("--out", help="Report directory")] = None,
 ) -> None:
-    """Replay the model ladder offline on one family and epoch, and evaluate the Phase 1 gate."""
+    """Replay the model ladder offline on one family and judge identity, and evaluate the Phase 1 gate."""
     try:
         from autocontext.prescreen.replay import run_replay
     except ImportError:
         typer.echo("autoctx prescreen replay needs the prescreen extra: pip install 'autocontext[prescreen]'", err=True)
         raise typer.Exit(2) from None
-    examples = build_examples(eligible_rounds(_rounds(_store(db_path))), family=family, epoch=epoch)
+    examples = build_examples(eligible_rounds(_rounds(_store(db_path))), family=family, judge_identity=judge_identity)
     if not examples:
-        typer.echo(f"no eligible rounds for family {family!r} and epoch {epoch!r}", err=True)
+        typer.echo(f"no eligible rounds for family {family!r} and judge identity {judge_identity!r}", err=True)
         raise typer.Exit(1)
     report = run_replay(
         examples,
         family=family,
-        epoch=epoch,
+        judge_identity=judge_identity,
         model_keys=[m.strip() for m in models.split(",") if m.strip()],
         curve_model=None if curve_model == "none" else curve_model,
         blocks=blocks,

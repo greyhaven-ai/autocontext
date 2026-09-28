@@ -20,6 +20,8 @@ def _row(**overrides: object) -> dict[str, object]:
         "max_rounds": 5,
         "quality_threshold": 0.9,
         "evaluator_epoch": "epoch-a",
+        "judge_identity": "judge-a",
+        "evaluator_spec_json": '{"judge_model":"m"}',
         "rubric_hash": "r",
         "task_prompt_hash": "p",
         "task_prompt": "prompt",
@@ -32,20 +34,54 @@ def _row(**overrides: object) -> dict[str, object]:
     return base
 
 
+def _store(tmp_path: Path, use_migrations: bool) -> SQLiteStore:
+    store = SQLiteStore(tmp_path / f"ledger-{use_migrations}.db")
+    store.migrate(MIGRATIONS if use_migrations else tmp_path / "missing-migrations")
+    return store
+
+
 @pytest.mark.parametrize("use_migrations", [True, False])
 def test_ledger_round_trips_on_migrated_and_bootstrapped_databases(tmp_path: Path, use_migrations: bool) -> None:
-    store = SQLiteStore(tmp_path / "ledger.db")
-    store.migrate(MIGRATIONS if use_migrations else tmp_path / "missing-migrations")
+    store = _store(tmp_path, use_migrations)
     first = store.insert_judge_ledger_row(_row())
-    second = store.insert_judge_ledger_row(_row(round_number=2, score=0.95, passed=1, evaluator_epoch="epoch-b"))
+    second = store.insert_judge_ledger_row(
+        _row(
+            round_number=2,
+            score=0.95,
+            passed=1,
+            evaluator_epoch="epoch-b",
+            judge_identity="judge-b",
+            execution_provenance_json='{"samples": 3}',
+        )
+    )
     assert second > first
     rows = store.list_judge_ledger_rows()
     assert [r["round_number"] for r in rows] == [1, 2]
     assert rows[0]["required_concepts_json"] == "[]"
+    assert rows[0]["execution_provenance_json"] == "{}"
+    assert rows[1]["execution_provenance_json"] == '{"samples": 3}'
+    assert rows[0]["evaluator_spec_json"] == '{"judge_model":"m"}'
     assert rows[0]["prescreen_json"] is None
     assert rows[0]["created_at"]
     assert [r["round_number"] for r in store.list_judge_ledger_rows(evaluator_epoch="epoch-b")] == [2]
+    assert [r["round_number"] for r in store.list_judge_ledger_rows(judge_identity="judge-a")] == [1]
+    assert store.list_judge_ledger_rows(judge_identity="judge-a", scenario_family="other") == []
     assert store.list_judge_ledger_rows(scenario_family="other") == []
+
+
+def test_migration_and_bootstrap_create_the_same_ledger_schema(tmp_path: Path) -> None:
+    def schema(store: SQLiteStore) -> tuple[list[tuple[object, ...]], dict[str, list[str]]]:
+        with store.connection() as conn:
+            columns = [tuple(row) for row in conn.execute("PRAGMA table_info(judge_ledger)")]
+            indexes = {
+                row[1]: [column[2] for column in conn.execute(f"PRAGMA index_info({row[1]})")]
+                for row in conn.execute("PRAGMA index_list(judge_ledger)")
+            }
+        return columns, indexes
+
+    migrated, bootstrapped = schema(_store(tmp_path, True)), schema(_store(tmp_path, False))
+    assert migrated == bootstrapped
+    assert migrated[1]["idx_judge_ledger_identity_family"] == ["judge_identity", "scenario_family"]
 
 
 def test_ledger_rejects_unknown_columns(tmp_path: Path) -> None:

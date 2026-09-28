@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 from pathlib import Path
 
 import pytest
 
+from autocontext.execution.judge_spec import JudgeServingSpec
 from autocontext.prescreen.datagen import (
     CallBudgetExhausted,
     CountingProvider,
@@ -44,11 +46,25 @@ class FakeProvider(LLMProvider):
 
 
 class ScriptedTask(AgentTaskInterface):
-    """Fails rounds 1 and 2, passes round 3; each revision spends one provider call."""
+    """Fails rounds 1 and 2, passes round 3; each revision spends one provider call.
 
-    def __init__(self, provider: LLMProvider) -> None:
+    The verdicts carry a serving spec from `judge_model`, as LLMJudge's do; None records no spec (no judge identity).
+    """
+
+    def __init__(self, provider: LLMProvider, judge_model: str | None = "fake-judge") -> None:
         self.provider = provider
         self.evaluations = 0
+        self.spec = (
+            JudgeServingSpec(
+                compiled_rubric="rubric",
+                judge_provider="fake",
+                judge_model=judge_model,
+                prompt_template_version="test-template",
+                score_transformations=("clamp",),
+            )
+            if judge_model is not None
+            else None
+        )
 
     def get_task_prompt(self, state: dict) -> str:
         return "prompt"
@@ -73,7 +89,13 @@ class ScriptedTask(AgentTaskInterface):
     ):
         self.evaluations += 1
         score = 0.95 if self.evaluations >= 3 else 0.3 + 0.1 * self.evaluations
-        return AgentTaskResult(score=score, reasoning="ok", dimension_scores={"q": score}, evaluator_epoch="epoch-fake")
+        return AgentTaskResult(
+            score=score,
+            reasoning="ok",
+            dimension_scores={"q": score},
+            evaluator_epoch=self.spec.epoch_id if self.spec is not None else None,
+            evaluator_spec=self.spec.canonical_json() if self.spec is not None else None,
+        )
 
     def revise_output(self, output, judge_result, state):  # type: ignore[no-untyped-def]
         return self.provider.complete("revise", output).text
@@ -113,7 +135,7 @@ def store_for(tmp_path: Path) -> SQLiteStore:
 
 def test_committed_protocol_loads_with_24_unique_tasks() -> None:
     spec, raw = load_protocol(BENCH / "protocol.json")
-    assert isinstance(spec, DatagenProtocol) and spec.protocol_version == "judge-prescreen-datagen-v1"
+    assert isinstance(spec, DatagenProtocol) and spec.protocol_version == "judge-prescreen-datagen-v2"
     assert len(spec.corpus) == 24 and len({t.task_id for t in spec.corpus}) == 24
     assert {t.category for t in spec.corpus} == {"writing", "code", "analysis", "planning"}
     assert raw == (BENCH / "protocol.json").read_bytes()
@@ -159,6 +181,7 @@ def test_run_stops_at_the_eligible_target_and_records_identity(tmp_path: Path) -
     out = tmp_path / "run"
     summary = run_datagen(spec, raw, out_dir=out, store=store, provider=FakeProvider(), task_factory=factory, log=lambda _: None)
     assert summary.stop_reason == "target_reached" and summary.loops == 2 and summary.eligible_rounds == 4
+    assert summary.judge_identities == 1
     identity = json.loads((out / "identity.json").read_text())
     assert identity["protocol_sha256"] == hashlib.sha256(raw).hexdigest()
     assert (out / "protocol.json").read_bytes() == raw
@@ -195,3 +218,40 @@ def test_run_refuses_an_existing_output_directory(tmp_path: Path) -> None:
             task_factory=factory,
             log=lambda _: None,
         )
+
+
+def test_the_target_counts_the_largest_judge_identity_cell(tmp_path: Path) -> None:
+    loops = itertools.count()
+
+    def alternating(task, provider, protocol):  # type: ignore[no-untyped-def]
+        return ScriptedTask(provider, judge_model=f"judge-{next(loops) % 2}")
+
+    spec, raw = load_protocol(write_protocol(tmp_path))
+    summary = run_datagen(
+        spec,
+        raw,
+        out_dir=tmp_path / "run",
+        store=store_for(tmp_path),
+        provider=FakeProvider(),
+        task_factory=alternating,
+        log=lambda _: None,
+    )
+    # Each loop records 2 eligible rounds and the judges alternate, so one cell holds 4 only after the third loop.
+    assert summary.stop_reason == "target_reached" and summary.loops == 3
+    assert (summary.judged_rounds, summary.eligible_rounds, summary.judge_identities) == (9, 4, 2)
+    assert json.loads((tmp_path / "run" / "summary.json").read_text())["judge_identities"] == 2
+
+
+def test_rounds_without_a_serving_spec_never_count_toward_the_target(tmp_path: Path) -> None:
+    spec, raw = load_protocol(write_protocol(tmp_path, repetitions=1))
+    summary = run_datagen(
+        spec,
+        raw,
+        out_dir=tmp_path / "run",
+        store=store_for(tmp_path),
+        provider=FakeProvider(),
+        task_factory=lambda task, provider, protocol: ScriptedTask(provider, judge_model=None),
+        log=lambda _: None,
+    )
+    assert summary.stop_reason == "corpus_exhausted" and summary.loops == 2
+    assert (summary.judged_rounds, summary.eligible_rounds, summary.judge_identities) == (6, 0, 0)

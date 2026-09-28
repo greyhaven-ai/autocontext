@@ -1,4 +1,4 @@
-"""Phase 0 sufficiency report (design 'Phases and gates'): eligible data per (evaluator epoch, scenario family)."""
+"""Phase 0 sufficiency report (design 'Phases and gates'): eligible data per (judge identity, scenario family)."""
 
 from __future__ import annotations
 
@@ -18,8 +18,10 @@ PHASE1_MIN_VALUE_CEILING = 0.15
 
 @dataclass(frozen=True)
 class SufficiencyRow:
-    evaluator_epoch: str | None
+    judge_identity: str | None
     scenario_family: str
+    epochs: int
+    tasks: int
     loops: int
     judged_rounds: int
     parse_failures: int
@@ -31,13 +33,18 @@ class SufficiencyRow:
 
 
 def sufficiency_report(rounds: Sequence[LedgerRound]) -> list[SufficiencyRow]:
-    """One row per (epoch, family). Eligibility is decided on whole loops, then counted under each round's own epoch."""
+    """One row per (judge identity, family), the certification unit.
+
+    Eligibility is decided on whole loops, then counted under each round's own judge identity. Rows with no identity
+    (no serving spec) form their own cell, which is reported but never eligible. `epochs` counts the distinct evaluator
+    epochs pooled in the cell (for information), and `tasks` the distinct task groups (scenario name, else loop id).
+    """
     judged: dict[tuple[str | None, str], list[LedgerRound]] = defaultdict(list)
     for r in rounds:
-        judged[(r.evaluator_epoch, r.scenario_family)].append(r)
+        judged[(r.judge_identity, r.scenario_family)].append(r)
     eligible: dict[tuple[str | None, str], list[LedgerRound]] = defaultdict(list)
     for e in eligible_rounds(rounds):
-        eligible[(e.round.evaluator_epoch, e.round.scenario_family)].append(e.round)
+        eligible[(e.round.judge_identity, e.round.scenario_family)].append(e.round)
     rows: list[SufficiencyRow] = []
     for key in sorted(judged, key=lambda k: (k[1], k[0] or "")):
         group = judged[key]
@@ -46,8 +53,10 @@ def sufficiency_report(rounds: Sequence[LedgerRound]) -> list[SufficiencyRow]:
         ceiling = failing / len(group)
         rows.append(
             SufficiencyRow(
-                evaluator_epoch=key[0],
+                judge_identity=key[0],
                 scenario_family=key[1],
+                epochs=len({r.evaluator_epoch for r in group if r.evaluator_epoch is not None}),
+                tasks=len({r.scenario_name or r.loop_id for r in group}),
                 loops=len({r.loop_id for r in group}),
                 judged_rounds=len(group),
                 parse_failures=len(group) - len(parsed),
