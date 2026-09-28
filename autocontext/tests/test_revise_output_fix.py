@@ -325,6 +325,8 @@ class TestPatchLegacyEvaluateOutput:
             _task_prompt = "Do the task."
             _rubric = "test rubric"
             _judge_model = ""
+            _reference_context = None
+            _required_concepts = None
 
             def get_task_prompt(self, state: dict) -> str:
                 return self._task_prompt
@@ -365,14 +367,8 @@ class TestPatchLegacyEvaluateOutput:
 
         task = patched_cls()
         with (
-            patch(
-                "autocontext.scenarios.custom.agent_task_revision.load_settings",
-                return_value=mock_settings,
-            ),
-            patch(
-                "autocontext.scenarios.custom.agent_task_revision.get_provider",
-                return_value=mock_provider,
-            ),
+            patch("autocontext.config.load_settings", return_value=mock_settings),
+            patch("autocontext.providers.registry.get_provider", return_value=mock_provider),
             patch("autocontext.execution.judge.LLMJudge.evaluate", return_value=mock_result),
         ):
             result = task.evaluate_output("test output", {})

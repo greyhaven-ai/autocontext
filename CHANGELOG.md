@@ -29,8 +29,25 @@ All notable changes to this project will be documented in this file.
   pinned, the loop keeps its baseline if both serving specifications reproduce
   their epochs and differ only by those pins; any other difference, or an
   unverifiable specification, still re-baselines. Each round keeps the epoch
-  that scored it. Tasks that report an epoch without its specification, such
-  as generated custom agent tasks, still re-baseline.
+  that scored it. Tasks that report an epoch without its specification still
+  re-baseline.
+
+- Python: generated custom agent tasks, and agent tasks scaffolded from
+  templates before 0.19.0, now report the judge's serving specification and
+  execution and fixture provenance, not just its epoch (AC-1022). Their score
+  writes persist the specification instead of a hash-only registry record, and
+  each improvement round keeps its provenance. Generated and scaffolded
+  `evaluate_output` now calls a shared runtime, so later judge changes reach
+  tasks already on disk. Agent tasks generated or scaffolded earlier are
+  upgraded when their custom scenario loads: an epoch they already reported is
+  unchanged, and the next score write attaches the specification to its
+  existing record.
+
+- Python: agent tasks generated with the old `llm_fn` placeholder, which the
+  loader has replaced at load since AC-310, now evaluate through the same shared
+  runtime. Like other generated tasks, they honor the judge sampling,
+  temperature, disagreement-threshold and bias-probe settings and run the
+  evaluator guardrail. Their epochs are unchanged.
 
 ## [Python 0.19.0 / TypeScript 0.19.0] - 2026-09-27
 

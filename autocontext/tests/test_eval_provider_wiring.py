@@ -29,23 +29,12 @@ class TestCodegenNoPlaceholder:
         source = generate_agent_task_class(SAMPLE_SPEC, name="haiku_task")
         assert "llm_fn must be injected at runtime" not in source
 
-    def test_generated_code_uses_provider(self) -> None:
-        """Generated evaluate_output should use get_provider / load_settings."""
+    def test_generated_evaluate_output_delegates_to_shared_runtime(self) -> None:
+        """Provider, settings and model resolution live in the shared runtime that
+        TestGeneratedEvaluateOutput exercises; generated code builds no judge of its own."""
         source = generate_agent_task_class(SAMPLE_SPEC, name="haiku_task")
-        assert "get_provider" in source
-        assert "load_settings" in source
-
-    def test_generated_code_passes_provider_to_judge(self) -> None:
-        """LLMJudge should receive provider=, not llm_fn=."""
-        source = generate_agent_task_class(SAMPLE_SPEC, name="haiku_task")
-        assert "provider=provider" in source
-        assert "llm_fn=" not in source
-
-    def test_generated_code_resolves_model_from_settings_when_empty(self) -> None:
-        """Generated evaluate_output should fall back to runtime judge model resolution."""
-        source = generate_agent_task_class(SAMPLE_SPEC, name="haiku_task")
-        assert "settings.judge_model" in source
-        assert "provider.default_model()" in source
+        assert "evaluate_generated_output" in source
+        assert "LLMJudge" not in source
 
     def test_generated_code_syntax_valid(self) -> None:
         source = generate_agent_task_class(SAMPLE_SPEC, name="haiku_task")

@@ -8,12 +8,18 @@ from typing import Any
 from autocontext.config import load_settings
 from autocontext.providers.registry import get_provider
 from autocontext.scenarios.agent_task import AgentTaskResult
+from autocontext.scenarios.custom.agent_task_evaluation import evaluate_generated_output
 
 _LEGACY_NOOP_REVISION_MARKER = (
     "# Default revision: return original (llm_fn must be injected at runtime)"
 )
 
 _LEGACY_EVALUATE_MARKER = 'raise NotImplementedError("llm_fn must be injected at runtime")'
+
+# Emitted in evaluate_output by every generated template that judged inline, before the shared runtime.
+_LEGACY_INLINE_EVALUATE_MARKER = "# Use passed-in context or fall back to class defaults"
+# Emitted in evaluate_output by every scaffolded template task that judged inline.
+_LEGACY_SCAFFOLD_EVALUATE_MARKER = "reference_context=reference_context or (self._reference_context or None)"
 
 
 def build_revision_prompt(
@@ -123,56 +129,18 @@ def patch_legacy_generated_evaluate_output(
     cls: type[Any],
     source_path: Path,
 ) -> type[Any]:
-    """Upgrade legacy generated agent_task classes with llm_fn placeholder in evaluate_output.
+    """Upgrade legacy generated agent_task classes to the shared evaluate_output runtime.
 
     AC-310: Generated scenarios that still use the broken pattern:
         def llm_fn(system, user):
             raise NotImplementedError("llm_fn must be injected at runtime")
-    get their evaluate_output replaced with one that uses load_settings() + get_provider().
+    crash when evaluated. Generated and scaffolded classes that judge inline predate the shared
+    runtime and may drop the judge's serving specification and provenance (AC-1022). All of them get
+    the runtime newly generated classes call. It serves the same specification, so their scores keep
+    their epoch.
     """
     source = source_path.read_text(encoding="utf-8")
-    if _LEGACY_EVALUATE_MARKER not in source:
-        return cls
-
-    def _patched_evaluate_output(
-        self: Any,
-        output: str,
-        state: dict[str, Any],
-        reference_context: str | None = None,
-        required_concepts: list[str] | None = None,
-        calibration_examples: list[dict[str, Any]] | None = None,
-        pinned_dimensions: list[str] | None = None,
-    ) -> AgentTaskResult:
-        from autocontext.execution.judge import LLMJudge
-
-        settings = load_settings()
-        provider = get_provider(settings)
-        model = getattr(self, "_judge_model", "") or settings.judge_model or provider.default_model()
-        rubric = getattr(self, "_rubric", "") or ""
-        judge = LLMJudge(
-            model=model,
-            rubric=rubric,
-            provider=provider,
-            max_tokens=settings.judge_max_tokens,
-        )
-        task_prompt = self.get_task_prompt(state)
-        ref_ctx = reference_context or getattr(self, "_reference_context", None)
-        req_con = required_concepts or getattr(self, "_required_concepts", None)
-        result = judge.evaluate(
-            task_prompt,
-            output,
-            reference_context=ref_ctx,
-            required_concepts=req_con,
-            calibration_examples=calibration_examples,
-            pinned_dimensions=pinned_dimensions,
-        )
-        return AgentTaskResult(
-            score=result.score,
-            reasoning=result.reasoning,
-            dimension_scores=result.dimension_scores,
-            internal_retries=result.internal_retries,
-            evaluator_epoch=result.evaluator_epoch,
-        )
-
-    cls.evaluate_output = _patched_evaluate_output
+    legacy_markers = (_LEGACY_EVALUATE_MARKER, _LEGACY_INLINE_EVALUATE_MARKER, _LEGACY_SCAFFOLD_EVALUATE_MARKER)
+    if any(marker in source for marker in legacy_markers):
+        cls.evaluate_output = evaluate_generated_output
     return cls
