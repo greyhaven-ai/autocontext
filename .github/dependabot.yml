@@ -5,6 +5,13 @@ version: 2
 # dependency-security job audits the full graph on every pull request and on
 # main (pip-audit over --all-groups --all-extras, plus npm and bun audit), so a
 # new advisory against any pinned package still fails CI.
+#
+# Cooldowns hold version updates until a release is seven days old, the age
+# NPM_CONFIG_MIN_RELEASE_AGE sets in ci.yml and the npm publish workflows;
+# change them together. The github-actions and pip entries use the same age.
+# For npm, Dependabot also passes the cooldown to npm as --min-release-age when
+# it regenerates a lockfile, which holds newly locked transitive packages to
+# the same age. Cooldowns never apply to security updates.
 
 updates:
   - package-ecosystem: github-actions
@@ -12,12 +19,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: npm
     directory: /ts
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     ignore:
       # tree-sitter is capped at 0.21.x by upstream, not by choice.
       # tree-sitter-typescript's newest release (0.23.2) still peers
@@ -44,12 +55,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: pip
     directory: /autocontext
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     ignore:
       # The cuda extra pins accelerate, transformers, peft and trl to an exact
       # reviewed graph. scripts/python_audit_exception.json records a version
@@ -69,3 +84,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # No cooldown override: Dependabot's three-day default applies. Docker gets
+    # no Dependabot security updates, so version updates are the only automated
+    # route for base-image fixes, and a digest refresh waits until the tag's
+    # newest digest is older than the window. A tag rebuilt more often than
+    # every seven days would never refresh under a seven-day cooldown.
