@@ -1,16 +1,18 @@
 {
   "protocol_version": "judge-prescreen-datagen-v2",
-  "purpose": "Phase 0 data generation for the judge pre-screen (docs/internal/judge-prescreen-design.md). Committed before any run; each run records this file's sha256.",
+  "purpose": "Phase 0 data generation for the judge pre-screen (docs/internal/judge-prescreen-design.md). Committed before any run; each run records this file's sha256, the corpus sha256 pinned below and the git commit.",
   "model": "claude-sonnet-5",
   "repetitions": 5,
   "max_rounds": 5,
   "quality_threshold": 0.9,
   "judge_samples": 1,
   "max_provider_calls": 1500,
-  "max_reported_cost_usd": 25.0,
+  "max_total_tokens": 3000000,
+  "max_reported_cost_usd": null,
   "target_eligible_rounds": 300,
   "corpus": "tasks.jsonl",
-  "stop_rule": "Stop at the first of: target_eligible_rounds eligible rounds recorded under one judge identity (the largest (judge identity, datagen) cell); max_provider_calls calls; max_reported_cost_usd in provider-reported cost; the corpus exhausted after all repetitions.",
+  "corpus_sha256": "3efd31107c0036d062e28014c9f9dcdb7a383cc27b9bb0498e117230f9bba3a0",
+  "stop_rule": "Stop at the first of: target_eligible_rounds eligible rounds recorded under one judge identity (the largest (judge identity, datagen) cell); max_provider_calls calls; max_total_tokens input plus output tokens reported by the provider; max_reported_cost_usd in provider-reported cost, when it is set (null here), in which case a completed call that reports no cost stops the run as cost_not_reported; the corpus exhausted after all repetitions.",
   "go_rule": "Replay runs only if `autoctx prescreen sufficiency` shows the datagen family meeting both Phase 1 conditions for one judge identity (the judge's provider, model, prompt template and score transformations; rubrics and pinned dimensions are pooled).",
-  "limitations": "One provider serves generation, revision and judging. The corpus was authored for this study, so results describe these tasks, not organic traffic. The call cap bounds calls, not dollars, when a provider reports no cost."
+  "limitations": "One provider serves generation, revision and judging. The corpus was authored for this study, so results describe these tasks, not organic traffic. The call cap binds on every provider, and the token cap on every provider that reports token usage (the Anthropic and OpenAI-compatible API providers do; the CLI runtime bridges report none, which leaves the call cap); the dollar cap binds only where providers report cost, so it is null here and spend is bounded by calls and tokens, not dollars. Caps are checked before each call, so a run can overshoot the token cap by one call's tokens. Sampling is not pinned: the protocol fixes no temperature or seed and the code defaults apply (temperature 0 for drafting, revision and judging), so on a provider that honours temperature 0 the repetitions of a task may be near-copies that add rounds but little independent evidence."
 }

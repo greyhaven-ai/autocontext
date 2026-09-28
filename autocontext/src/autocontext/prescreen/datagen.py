@@ -1,17 +1,19 @@
 """Pre-registered data generation for the judge pre-screen (design Phase 0).
 
-Runs a committed task corpus through the improvement loop with the judge ledger on, under hard caps on provider calls
-and provider-reported cost. The output directory holds the protocol copy, its sha256, progress and a summary: counts
-only, never prompt or output text.
+Runs a committed task corpus, pinned by its sha256, through the improvement loop with the judge ledger on, under hard
+caps on provider calls, input plus output tokens and, when the protocol sets one, provider-reported cost. The output
+directory holds the protocol copy, the run's identity (protocol and corpus sha256, git commit), progress and a summary:
+counts only, never prompt or output text.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import uuid
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,9 +35,11 @@ _REQUIRED = (
     "quality_threshold",
     "judge_samples",
     "max_provider_calls",
+    "max_total_tokens",
     "max_reported_cost_usd",
     "target_eligible_rounds",
     "corpus",
+    "corpus_sha256",
 )
 
 
@@ -56,30 +60,41 @@ class DatagenProtocol:
     quality_threshold: float
     judge_samples: int
     max_provider_calls: int
-    max_reported_cost_usd: float
+    max_total_tokens: int
+    max_reported_cost_usd: float | None
     target_eligible_rounds: int
+    corpus_sha256: str
     corpus: tuple[DatagenTask, ...]
 
 
 def load_protocol(path: Path) -> tuple[DatagenProtocol, bytes]:
-    """Parse and validate a committed protocol; the raw bytes are returned so a run can record their sha256."""
+    """Parse and validate a committed protocol; the raw bytes are returned so a run can record their sha256.
+
+    `max_reported_cost_usd` must be present but may be null, so a protocol without a dollar cap is chosen on purpose.
+    The corpus file must hash to `corpus_sha256`, which binds the pre-registration to the exact tasks it runs.
+    """
     raw = path.read_bytes()
     spec = json.loads(raw)
     missing = [key for key in _REQUIRED if key not in spec]
     if missing:
         raise ValueError(f"missing protocol keys: {missing}")
-    for key in ("repetitions", "judge_samples", "max_provider_calls", "target_eligible_rounds"):
+    for key in ("repetitions", "judge_samples", "max_provider_calls", "max_total_tokens", "target_eligible_rounds"):
         if int(spec[key]) < 1:
             raise ValueError(f"{key} must be at least 1")
     if int(spec["max_rounds"]) < 2:
         raise ValueError("max_rounds must be at least 2, or no round can ever be eligible")
-    if not 0 < float(spec["quality_threshold"]) <= 1 or float(spec["max_reported_cost_usd"]) <= 0:
-        raise ValueError("quality_threshold must be in (0, 1] and max_reported_cost_usd positive")
+    if not 0 < float(spec["quality_threshold"]) <= 1:
+        raise ValueError("quality_threshold must be in (0, 1]")
+    cost_cap = spec["max_reported_cost_usd"]
+    if cost_cap is not None and float(cost_cap) <= 0:
+        raise ValueError("max_reported_cost_usd must be positive, or null for no dollar cap")
+    corpus = (path.parent / spec["corpus"]).read_bytes()
+    corpus_sha256 = hashlib.sha256(corpus).hexdigest()
+    if corpus_sha256 != spec["corpus_sha256"]:
+        raise ValueError(f"the corpus hashes to {corpus_sha256}, not to the protocol's corpus_sha256 {spec['corpus_sha256']}")
     tasks = [
         DatagenTask(str(t["task_id"]), str(t["category"]), str(t["prompt"]), str(t["rubric"]))
-        for t in (
-            json.loads(line) for line in (path.parent / spec["corpus"]).read_text(encoding="utf-8").splitlines() if line.strip()
-        )
+        for t in (json.loads(line) for line in corpus.decode("utf-8").splitlines() if line.strip())
     ]
     if not tasks:
         raise ValueError("empty corpus")
@@ -93,44 +108,87 @@ def load_protocol(path: Path) -> tuple[DatagenProtocol, bytes]:
         quality_threshold=float(spec["quality_threshold"]),
         judge_samples=int(spec["judge_samples"]),
         max_provider_calls=int(spec["max_provider_calls"]),
-        max_reported_cost_usd=float(spec["max_reported_cost_usd"]),
+        max_total_tokens=int(spec["max_total_tokens"]),
+        max_reported_cost_usd=float(cost_cap) if cost_cap is not None else None,
         target_eligible_rounds=int(spec["target_eligible_rounds"]),
+        corpus_sha256=corpus_sha256,
         corpus=tuple(tasks),
     )
     return protocol, raw
 
 
 class CallBudgetExhausted(RuntimeError):
-    pass
+    """A pre-registered cap refused the next provider call; `cap` is "call", "token" or "cost"."""
+
+    def __init__(self, message: str, *, cap: str = "call") -> None:
+        super().__init__(message)
+        self.cap = cap
+
+    @property
+    def stop_reason(self) -> str:
+        return f"{self.cap}_budget_exhausted"
+
+
+class CostNotReported(RuntimeError):
+    """A dollar cap is set but a completed call reported no cost, so the cap could never bind: the run fails closed."""
 
 
 class _TargetReached(Exception):
     """Internal: the eligible-round target is met, so the run stops early."""
 
 
-class CountingProvider(LLMProvider):
-    """Forwards to a real provider and refuses any call past the pre-registered call or reported-cost cap.
+def _usage_tokens(usage: Mapping[str, Any]) -> int:
+    """Input plus output tokens of one completion.
 
+    The providers report `input_tokens` and `output_tokens` (providers/anthropic.py, openai_compat.py and
+    usage_receipt.exact_directional_usage); `prompt_tokens` and `completion_tokens` are the OpenAI wire names.
+    """
+    total = 0
+    for key, alias in (("input_tokens", "prompt_tokens"), ("output_tokens", "completion_tokens")):
+        value = usage.get(key, usage.get(alias))
+        if isinstance(value, int) and not isinstance(value, bool):
+            total += value
+    return total
+
+
+class CountingProvider(LLMProvider):
+    """Forwards to a real provider and refuses any call once a pre-registered cap is reached.
+
+    The caps are the number of calls, the input plus output tokens the provider reports, and, when set, the cost it
+    reports. Each is checked before a call, so a call can overshoot the token or dollar cap by its own usage. A dollar
+    cap cannot bind on a provider that reports no cost, so while one is set such a call raises CostNotReported.
     It forwards `name` and the capability flags, so the judge's serving spec, and so its judge identity, is unchanged.
     """
 
-    def __init__(self, inner: LLMProvider, *, max_calls: int, max_cost_usd: float) -> None:
+    def __init__(self, inner: LLMProvider, *, max_calls: int, max_total_tokens: int, max_cost_usd: float | None) -> None:
         self.inner = inner
         self.max_calls = max_calls
+        self.max_total_tokens = max_total_tokens
         self.max_cost_usd = max_cost_usd
         self.calls = 0
+        self.total_tokens = 0
         self.reported_cost_usd = 0.0
+        self.served_model: str | None = None
 
     def _spend(self) -> None:
         if self.calls >= self.max_calls:
-            raise CallBudgetExhausted(f"pre-registered cap of {self.max_calls} provider calls reached")
-        if self.reported_cost_usd >= self.max_cost_usd:
-            raise CallBudgetExhausted(f"pre-registered cost cap of ${self.max_cost_usd:.2f} reached")
+            raise CallBudgetExhausted(f"pre-registered cap of {self.max_calls} provider calls reached", cap="call")
+        if self.total_tokens >= self.max_total_tokens:
+            raise CallBudgetExhausted(f"pre-registered cap of {self.max_total_tokens} total tokens reached", cap="token")
+        if self.max_cost_usd is not None and self.reported_cost_usd >= self.max_cost_usd:
+            raise CallBudgetExhausted(f"pre-registered cost cap of ${self.max_cost_usd:.2f} reached", cap="cost")
         self.calls += 1
 
     def _account(self, result: CompletionResult) -> CompletionResult:
+        self.total_tokens += _usage_tokens(result.usage)
+        if self.served_model is None:
+            self.served_model = result.served_model or result.model
         if result.cost_usd is not None:
             self.reported_cost_usd += result.cost_usd
+        elif self.max_cost_usd is not None:
+            raise CostNotReported(
+                f"the protocol sets a ${self.max_cost_usd:.2f} cost cap, but the provider reported no cost for a call"
+            )
         return result
 
     def complete(
@@ -214,7 +272,9 @@ class DatagenSummary:
     run_prefix: str
     loops: int
     provider_calls: int
+    total_tokens: int
     reported_cost_usd: float
+    served_model: str | None
     judged_rounds: int
     eligible_rounds: int
     judge_identities: int
@@ -223,6 +283,18 @@ class DatagenSummary:
 
 def _write(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _git_sha() -> str | None:
+    """HEAD of the git checkout this code runs from; None outside one (an installed package) or without git."""
+    try:
+        done = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent, capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    sha = done.stdout.strip()
+    return sha if done.returncode == 0 and sha else None
 
 
 def _run_rounds(store: SQLiteStore, run_prefix: str) -> list[LedgerRound]:
@@ -251,7 +323,10 @@ def run_datagen(
     task_factory: TaskFactory = simple_task_factory,
     log: Callable[[str], None] = print,
 ) -> DatagenSummary:
-    """Run the corpus repetitions until the eligible target, a cap, or the end of the corpus."""
+    """Run the corpus repetitions until the eligible target, a cap, or the end of the corpus.
+
+    summary.json is written however the run ends; an unexpected error is recorded as "error:<type>" and re-raised.
+    """
     out_dir.mkdir(parents=True, exist_ok=False)
     (out_dir / "protocol.json").write_bytes(raw_protocol)
     run_prefix = f"datagen_{uuid.uuid4().hex[:10]}"
@@ -260,11 +335,18 @@ def run_datagen(
         {
             "protocol_version": protocol.protocol_version,
             "protocol_sha256": hashlib.sha256(raw_protocol).hexdigest(),
+            "corpus_sha256": protocol.corpus_sha256,
+            "git_sha": _git_sha(),
             "run_prefix": run_prefix,
             "started_at": datetime.now(UTC).isoformat(),
         },
     )
-    capped = CountingProvider(provider, max_calls=protocol.max_provider_calls, max_cost_usd=protocol.max_reported_cost_usd)
+    capped = CountingProvider(
+        provider,
+        max_calls=protocol.max_provider_calls,
+        max_total_tokens=protocol.max_total_tokens,
+        max_cost_usd=protocol.max_reported_cost_usd,
+    )
     loops, stop = 0, "corpus_exhausted"
     try:
         for repetition in range(protocol.repetitions):
@@ -289,24 +371,40 @@ def run_datagen(
                 loops += 1
                 _write(
                     out_dir / "progress.json",
-                    {"loops": loops, "provider_calls": capped.calls, "reported_cost_usd": capped.reported_cost_usd},
+                    {
+                        "loops": loops,
+                        "provider_calls": capped.calls,
+                        "total_tokens": capped.total_tokens,
+                        "reported_cost_usd": capped.reported_cost_usd,
+                    },
                 )
-                log(f"datagen: loop {loops} ({task.category}/{task.task_id}, repetition {repetition}) calls={capped.calls}")
-    except CallBudgetExhausted:
-        stop = "call_budget_exhausted"
+                log(
+                    f"datagen: loop {loops} ({task.category}/{task.task_id}, repetition {repetition}) "
+                    f"calls={capped.calls} tokens={capped.total_tokens}"
+                )
     except _TargetReached:
         pass
-    judged, eligible = count_rounds(store, run_prefix)
-    summary = DatagenSummary(
-        protocol_version=protocol.protocol_version,
-        run_prefix=run_prefix,
-        loops=loops,
-        provider_calls=capped.calls,
-        reported_cost_usd=round(capped.reported_cost_usd, 6),
-        judged_rounds=judged,
-        eligible_rounds=eligible,
-        judge_identities=len({r.judge_identity for r in _run_rounds(store, run_prefix) if r.judge_identity is not None}),
-        stop_reason=stop,
-    )
-    _write(out_dir / "summary.json", asdict(summary))
+    except CallBudgetExhausted as exc:
+        stop = exc.stop_reason
+    except CostNotReported:
+        stop = "cost_not_reported"
+    except BaseException as exc:
+        stop = f"error:{type(exc).__name__}"
+        raise
+    finally:
+        judged, eligible = count_rounds(store, run_prefix)
+        summary = DatagenSummary(
+            protocol_version=protocol.protocol_version,
+            run_prefix=run_prefix,
+            loops=loops,
+            provider_calls=capped.calls,
+            total_tokens=capped.total_tokens,
+            reported_cost_usd=round(capped.reported_cost_usd, 6),
+            served_model=capped.served_model,
+            judged_rounds=judged,
+            eligible_rounds=eligible,
+            judge_identities=len({r.judge_identity for r in _run_rounds(store, run_prefix) if r.judge_identity is not None}),
+            stop_reason=stop,
+        )
+        _write(out_dir / "summary.json", asdict(summary))
     return summary
