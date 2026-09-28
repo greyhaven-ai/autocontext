@@ -1,0 +1,13 @@
+{
+  "eligible_rounds": 37,
+  "judge_identities": 1,
+  "judged_rounds": 144,
+  "loops": 97,
+  "protocol_version": "judge-prescreen-datagen-v2",
+  "provider_calls": 295,
+  "reported_cost_usd": 0.0,
+  "run_prefix": "datagen_d478b1111a",
+  "served_model": "anthropic/claude-sonnet-5",
+  "stop_reason": "error:ProviderError",
+  "total_tokens": 572528
+}

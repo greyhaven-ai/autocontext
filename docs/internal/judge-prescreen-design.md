@@ -1,7 +1,7 @@
 # Judge pre-screen: skip confidently failing judge rounds
 
 Date: 2026-09-27
-Status: scope approved in brainstorming (through gated activation); written spec approved on 2026-09-27. Plan 1 (Phases 0–1 tooling) is implemented and was amended on 2026-09-28 after the whole-branch review and the first CI run of its PR (see Amendments). The paid data-generation run has not been made.
+Status: scope approved in brainstorming (through gated activation); written spec approved on 2026-09-27. Plan 1 (Phases 0–1 tooling) is implemented and was amended on 2026-09-28 after the whole-branch review and the first CI run of its PR (see Amendments). The data-generation protocol ran on 2026-09-28 and Phase 0 ended in a no-go: the value ceiling was 3.9% against the 15% gate, with 41 eligible rounds against 300 (`autocontext/benchmarks/judge_prescreen/REPORT.md`).
 Linear: none yet (proposed as a new AC ticket)
 Scope: Python only. Covers capture, offline replay, shadow mode, and gated activation of one behavior: skipping the LLM judge on a later improvement-loop round when a calibrated fast model is confident the round will fail. TypeScript parity is deferred (see Non-goals).
 

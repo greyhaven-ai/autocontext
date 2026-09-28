@@ -1,0 +1,8 @@
+{
+  "corpus_sha256": "3efd31107c0036d062e28014c9f9dcdb7a383cc27b9bb0498e117230f9bba3a0",
+  "git_sha": "4103e48fe16f0d4ab34d9cc158b249220c668ff9",
+  "protocol_sha256": "001f2e67b78b3adc8f48912700ba6898b5a823b71195eeb364ce204170d35301",
+  "protocol_version": "judge-prescreen-datagen-v2",
+  "run_prefix": "datagen_d478b1111a",
+  "started_at": "2026-09-28T16:54:21.664924+00:00"
+}
