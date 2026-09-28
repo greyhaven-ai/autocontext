@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 import uuid
 from collections import Counter
 from collections.abc import Callable, Mapping
@@ -281,6 +282,10 @@ class DatagenSummary:
     stop_reason: str
 
 
+def _to_stderr(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
 def _write(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -321,7 +326,7 @@ def run_datagen(
     store: SQLiteStore,
     provider: LLMProvider,
     task_factory: TaskFactory = simple_task_factory,
-    log: Callable[[str], None] = print,
+    log: Callable[[str], None] = _to_stderr,
 ) -> DatagenSummary:
     """Run the corpus repetitions until the eligible target, a cap, or the end of the corpus.
 

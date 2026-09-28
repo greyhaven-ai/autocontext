@@ -19,6 +19,13 @@ from autocontext.storage.sqlite_store import SQLiteStore
 
 prescreen_app = typer.Typer(help="Judge pre-screen: capture sufficiency, offline replay and pre-registered data generation.")
 
+# The replay ladder's keys (prescreen.models.MODEL_FACTORIES), listed here so that validating them needs no scikit-learn.
+MODEL_KEYS = ("p0", "p1", "p2", "p3")
+
+
+def _to_stderr(message: str) -> None:
+    typer.echo(message, err=True)
+
 
 def _store(db_path: Path | None) -> SQLiteStore:
     store = SQLiteStore(db_path if db_path is not None else load_settings().db_path)
@@ -42,12 +49,19 @@ def sufficiency(
     """Count eligible judged rounds per judge identity and scenario family, and the value ceiling."""
     rows = [asdict(row) for row in sufficiency_report(_rounds(_store(db_path)))]
     path = write_json_report(_report_dir(out), "sufficiency", {"generated_at": datetime.now(UTC).isoformat(), "rows": rows})
-    typer.echo(json.dumps(rows, indent=2))
-    typer.echo(f"wrote {path}")
+    typer.echo(json.dumps({"report_path": str(path), "rows": rows}, indent=2))
+    _to_stderr(f"wrote {path}")
 
 
 def _slug(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-") or "family"
+
+
+def _model_keys(models: str) -> list[str]:
+    keys = [key.strip() for key in models.split(",") if key.strip()]
+    if not keys or any(key not in MODEL_KEYS for key in keys):
+        raise typer.BadParameter(f"give comma-separated keys from {', '.join(MODEL_KEYS)}; got {models!r}", param_hint="--models")
+    return keys
 
 
 @prescreen_app.command("replay")
@@ -68,6 +82,11 @@ def replay(
     out: Annotated[Path | None, typer.Option("--out", help="Report directory")] = None,
 ) -> None:
     """Replay the model ladder offline on one family and judge identity, and evaluate the Phase 1 gate."""
+    model_keys = _model_keys(models)
+    if curve_model != "none" and curve_model not in MODEL_KEYS:
+        raise typer.BadParameter(
+            f"give one key from {', '.join(MODEL_KEYS)}, or 'none'; got {curve_model!r}", param_hint="--curve-model"
+        )
     try:
         from autocontext.prescreen.replay import run_replay
     except ImportError:
@@ -81,7 +100,7 @@ def replay(
         examples,
         family=family,
         judge_identity=judge_identity,
-        model_keys=[m.strip() for m in models.split(",") if m.strip()],
+        model_keys=model_keys,
         curve_model=None if curve_model == "none" else curve_model,
         blocks=blocks,
         min_train=min_train,
@@ -91,8 +110,9 @@ def replay(
         resamples=resamples,
     )
     path = write_json_report(_report_dir(out), f"replay-{_slug(family)}", report)
-    typer.echo(json.dumps({"gate": report["gate"], "summary": report["summary"]}, indent=2, default=str))
-    typer.echo(f"wrote {path}")
+    document = {"report_path": str(path), "gate": report["gate"], "summary": report["summary"]}
+    typer.echo(json.dumps(document, indent=2, default=str))
+    _to_stderr(f"wrote {path}")
 
 
 @prescreen_app.command("datagen")
@@ -101,10 +121,18 @@ def datagen(
     out: Annotated[Path, typer.Option("--out", help="New output directory; it must not exist")],
     db_path: Annotated[Path | None, typer.Option("--db-path")] = None,
 ) -> None:
-    """Run the pre-registered data-generation protocol with the judge ledger on, under its call and cost caps."""
+    """Run the pre-registered data-generation protocol with the judge ledger on, under its call, token and cost caps.
+
+    The summary is the one JSON document on stdout; progress goes to stderr.
+    """
     from autocontext.prescreen.datagen import load_protocol, run_datagen
     from autocontext.providers.registry import get_provider
 
-    spec, raw = load_protocol(protocol)
-    summary = run_datagen(spec, raw, out_dir=out, store=_store(db_path), provider=get_provider(load_settings()))
+    try:
+        spec, raw = load_protocol(protocol)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="PROTOCOL") from None
+    summary = run_datagen(
+        spec, raw, out_dir=out, store=_store(db_path), provider=get_provider(load_settings()), log=_to_stderr
+    )
     typer.echo(json.dumps(asdict(summary), indent=2))

@@ -255,6 +255,21 @@ def test_cli_replay_writes_a_report(tmp_path: Path) -> None:
     meta = json.loads(path.read_text())["meta"]
     # Every loop has an eligible round, and the three evaluator epochs are pooled under the one judge identity.
     assert meta["judge_identity"] == "j1" and meta["examples"] >= 300
+    document = json.loads(result.stdout)
+    assert set(document) == {"report_path", "gate", "summary"} and document["report_path"] == str(path)
+    assert f"wrote {path}" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"), [("--models", "p0,p9"), ("--models", " , "), ("--curve-model", "p7"), ("--curve-model", "p1,p3")]
+)
+def test_cli_replay_rejects_unknown_model_keys_as_a_usage_error(tmp_path: Path, flag: str, value: str) -> None:
+    db = tmp_path / "ledger.db"
+    SQLiteStore(db).migrate(MIGRATIONS)
+    args = ["prescreen", "replay", "--family", "fam", "--judge-identity", "j1", flag, value, "--db-path", str(db)]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 2 and isinstance(result.exception, SystemExit), result.output
+    assert "Invalid value" in result.stderr and flag in result.stderr and result.stdout == ""
 
 
 def test_cli_replay_without_data_exits_1(tmp_path: Path) -> None:

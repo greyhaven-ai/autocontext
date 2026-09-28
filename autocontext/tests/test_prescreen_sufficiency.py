@@ -193,3 +193,5 @@ def test_cli_sufficiency_writes_an_aggregate_report(tmp_path: Path) -> None:
     assert "SECRET" not in text
     rows = json.loads(text)["rows"]
     assert rows[0]["eligible_rounds"] == 1 and rows[0]["scenario_family"] == "fam" and rows[0]["judge_identity"] == "j1"
+    assert json.loads(result.stdout) == {"report_path": str(path), "rows": rows}
+    assert f"wrote {path}" in result.stderr

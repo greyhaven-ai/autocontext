@@ -7,9 +7,8 @@ import pytest
 pytest.importorskip("sklearn")
 
 from autocontext.prescreen.calibrate import inner_skip_threshold, skip_threshold  # noqa: E402
-from autocontext.prescreen.models import MODEL_FACTORIES, build_model, log_loss  # noqa: E402
-
 from autocontext.prescreen.dataset import Example  # noqa: E402
+from autocontext.prescreen.models import MODEL_FACTORIES, build_model, log_loss  # noqa: E402
 
 
 def synthetic(n: int, seed: int = 0) -> list[Example]:
@@ -89,6 +88,12 @@ def test_single_class_training_falls_back_to_the_base_rate() -> None:
 def test_unknown_model_key() -> None:
     with pytest.raises(ValueError, match="unknown pre-screen model"):
         build_model("p9")
+
+
+def test_the_cli_validates_model_keys_against_the_ladder() -> None:
+    from autocontext.cli_prescreen import MODEL_KEYS
+
+    assert MODEL_KEYS == tuple(MODEL_FACTORIES)
 
 
 def test_log_loss_is_finite_for_confident_misses() -> None:

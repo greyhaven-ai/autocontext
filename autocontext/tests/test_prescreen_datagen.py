@@ -8,7 +8,9 @@ import re
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
+from autocontext.cli import app
 from autocontext.execution.judge_spec import JudgeServingSpec
 from autocontext.prescreen import datagen
 from autocontext.prescreen.datagen import (
@@ -413,3 +415,41 @@ def test_identity_records_no_git_sha_outside_a_git_checkout(tmp_path: Path, monk
         log=lambda _: None,
     )
     assert json.loads((out / "identity.json").read_text())["git_sha"] is None
+
+
+
+class JudgingProvider(LLMProvider):
+    """A fake provider for the default SimpleAgentTask: every judge call passes the output."""
+
+    def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096, output_schema=None):  # type: ignore[no-untyped-def]
+        if '"score"' in system_prompt or '"score"' in user_prompt:
+            return CompletionResult(text=json.dumps({"score": 0.95, "reasoning": "ok", "dimensions": {"q": 0.95}}), model="fake")
+        return CompletionResult(text="draft", model="fake")
+
+    def default_model(self) -> str:
+        return "fake"
+
+
+def test_cli_datagen_prints_one_json_document_and_logs_progress_to_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("autocontext.providers.registry.get_provider", lambda settings: JudgingProvider())
+    protocol = write_protocol(tmp_path, repetitions=1)
+    out = tmp_path / "run"
+    args = ["prescreen", "datagen", str(protocol), "--out", str(out), "--db-path", str(tmp_path / "ledger.db")]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 0, result.output
+    summary = json.loads(result.stdout)
+    assert summary == json.loads((out / "summary.json").read_text())
+    assert (summary["loops"], summary["judged_rounds"], summary["stop_reason"]) == (2, 2, "corpus_exhausted")
+    assert "datagen: loop 1" in result.stderr and "datagen: loop 2" in result.stderr
+
+
+def test_cli_datagen_rejects_a_protocol_whose_corpus_changed_as_a_usage_error(tmp_path: Path) -> None:
+    protocol = write_protocol(tmp_path)
+    (tmp_path / "tasks.jsonl").write_text(json.dumps({"task_id": "t9", "category": "writing", "prompt": "p", "rubric": "r"}))
+    out = tmp_path / "run"
+    args = ["prescreen", "datagen", str(protocol), "--out", str(out), "--db-path", str(tmp_path / "ledger.db")]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 2 and isinstance(result.exception, SystemExit), result.output
+    assert "corpus_sha256" in result.stderr and result.stdout == "" and not out.exists()

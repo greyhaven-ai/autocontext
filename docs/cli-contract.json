@@ -14605,7 +14605,7 @@
     {
       "id": "prescreen.sufficiency",
       "path": ["prescreen", "sufficiency"],
-      "summary": "Count eligible judged rounds and the value ceiling per judge identity and scenario family (judge pre-screen Phase 0).",
+      "summary": "Count eligible judged rounds and the value ceiling per judge identity and scenario family (judge pre-screen Phase 0). Prints one JSON document, {report_path, rows}, on stdout; the report path is also noted on stderr.",
       "audience": "advanced",
       "maturity": "beta",
       "domain_concept": null,
@@ -14631,7 +14631,7 @@
     {
       "id": "prescreen.replay",
       "path": ["prescreen", "replay"],
-      "summary": "Replay the pre-screen model ladder offline on one family and judge identity, score time-ordered folds, and evaluate the Phase 1 skip-rate gate.",
+      "summary": "Replay the pre-screen model ladder offline on one family and judge identity, score time-ordered folds, and evaluate the Phase 1 skip-rate gate. Prints one JSON document, {report_path, gate, summary}, on stdout; the report path is also noted on stderr.",
       "audience": "advanced",
       "maturity": "beta",
       "domain_concept": null,
@@ -14667,7 +14667,7 @@
     {
       "id": "prescreen.datagen",
       "path": ["prescreen", "datagen"],
-      "summary": "Run the pre-registered judge pre-screen data-generation protocol (Phase 0), recording real judge verdicts to the local ledger under its call and cost caps.",
+      "summary": "Run the pre-registered judge pre-screen data-generation protocol (Phase 0), recording real judge verdicts to the local ledger under its call, token and optional dollar caps. Prints the run summary as one JSON document on stdout; progress goes to stderr.",
       "audience": "advanced",
       "maturity": "beta",
       "domain_concept": null,
