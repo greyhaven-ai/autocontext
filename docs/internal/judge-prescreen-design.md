@@ -1,7 +1,7 @@
 # Judge pre-screen: skip confidently failing judge rounds
 
 Date: 2026-09-27
-Status: scope approved in brainstorming (through gated activation); pending written review
+Status: scope approved in brainstorming (through gated activation); pending written review. Plan 1 (Phases 0–1 tooling) is implemented and was amended on 2026-09-28 after the whole-branch review (see Amendments). The paid data-generation run has not been made.
 Linear: none yet (proposed as a new AC ticket)
 Scope: Python only. Covers capture, offline replay, shadow mode, and gated activation of one behavior: skipping the LLM judge on a later improvement-loop round when a calibrated fast model is confident the round will fail. TypeScript parity is deferred (see Non-goals).
 
@@ -17,7 +17,7 @@ This design adds a **pre-screen**: a small, local, calibrated classifier that pr
 
 - On a later round where it is confident the revision will still fail, the loop skips the judge and revises from the last judged feedback. The loop already does this after a judge parse failure (`improvement_loop.py:322-331`).
 - The pre-screen never accepts an output and never produces a score.
-- It is certified only against the evaluator epoch it was trained on.
+- It is certified only against the judge identity it was trained on: the judge's provider, model, prompt template and score transformations (Decision 4).
 
 The approach, and several of its constraints, come from the jev-experiments "Reflex" work (`greyhaven-ai/jev-experiments`: `results/headroom-notes.md`, PR #12). That work learned Claude Code's skill routing from Claude Code's own history, and found four things that shape this design:
 
@@ -30,7 +30,7 @@ The approach, and several of its constraints, come from the jev-experiments "Ref
 
   So this design measures volume and the learning curve before anything else.
 
-- **The target drifts.** Recent examples taught the router 12–14 points more than older ones. Here the judge's identity (its evaluator epoch) changes whenever its spec changes. Certification is therefore per epoch, and retraining is routine.
+- **The target drifts.** Recent examples taught the router 12–14 points more than older ones. Here the judge changes whenever its provider, model, prompt template or score transformations change. Certification is therefore per judge identity, and retraining is routine.
 - **Shadow before steering.** The router ran in a no-effect shadow trial before activation was considered. Skipped decisions need audits, because a skipped round has no ground truth.
 
 ## Decisions of record
@@ -46,12 +46,14 @@ The approach, and several of its constraints, come from the jev-experiments "Ref
    - it is not the last allowed round (`round_num < max_rounds`);
    - it is not a confirmation round following a judged pass;
    - neither the required-targets check nor a verifier-cache replay has already decided it (those paths already cost nothing);
-   - the loop's current evaluator epoch is not None and equals the pre-screen's bound epoch.
-4. **Certification is per evaluator epoch; training may span epochs.**
-   - Labels from older epochs may be used as training data, because a predictor is not evidence.
-   - The skip threshold and every gate below use verdicts from the current epoch only.
-   - When the epoch changes, the pre-screen drops to shadow mode until it is re-certified.
-   - This follows `autocontext/docs/judge-serving-identity.md`: scores from different epochs are never compared.
+   - the round's judge identity is known (not None) and equals the pre-screen's bound judge identity.
+4. **Certification is per (judge identity, scenario family); training may span identities.** Amended on 2026-09-28; see Amendments.
+   - The judge identity is the sha256 of the judge's canonical serving spec (`JudgeServingSpec`) without its task-specific fields: `compiled_rubric`, `serving_examples`, `pinned_dimensions` and `evaluation_context_hash`. What remains is the schema version, the judge provider and model, the prompt template version, the score transformations and the extension fingerprint.
+   - The evaluator epoch hashes the whole spec, so it differs per task and between round 1 and the pinned rounds after it. It is still recorded on every ledger row for audit, together with the full spec, so rows can be regrouped later.
+   - Labels from older judge identities may be used as training data, because a predictor is not evidence.
+   - The skip threshold and every gate below use verdicts under the bound judge identity only.
+   - When the judge identity changes, the pre-screen drops to shadow mode until it is re-certified. A new rubric, calibration example or pinned dimension does not change it.
+   - This keeps to `autocontext/docs/judge-serving-identity.md`: no score is compared with a score from another epoch. The pre-screen predicts one judge's pass/fail verdict on each round, against that round's own threshold, and it is certified on those verdicts, pooled across the rubrics that judge serves.
 5. **Local features first.** The model uses only local features:
 
    - **Structural:** round number, the previous judged score and dimension scores, output length, edit size against the previous output, and required-concept coverage.
@@ -65,7 +67,7 @@ The approach, and several of its constraints, come from the jev-experiments "Ref
    - The candidate carries CandidateEvidence and IntegrityMetadata, with training and evaluation splits kept disjoint.
    - It is scored with a PromotionScore, and its margin is set by noise calibration (AC-881; `docs/internal/harness-optimization-protocol.md`).
    - Guards specific to the pre-screen, listed under Phase 3, are hard preconditions on top.
-8. **Fail closed means "judge".** Any pre-screen problem makes the loop judge the round normally. That includes an error, a missing model, a feature failure, an epoch mismatch, or a timeout.
+8. **Fail closed means "judge".** Any pre-screen problem makes the loop judge the round normally. That includes an error, a missing model, a feature failure, a judge identity mismatch, or a timeout.
 9. **Data stays local.** The capture ledger stores output text in the local run database, inside the same trust boundary as `agent_outputs`. Reports and evidence artifacts carry only ids, hashes and aggregates.
 
 ## System overview
@@ -86,7 +88,7 @@ New code lives under `autocontext/src/autocontext/prescreen/`, plus small change
 
 The ledger writes one row per real judge evaluation inside the loop, right after `task.evaluate_output` returns. Cache replays and missing-target rounds get no row. Each row holds:
 
-- **Identity:** run id, task or scenario id, scenario family, round number, `evaluator_epoch`, rubric hash, task prompt hash, and `fixture_provenance`.
+- **Identity:** run id, task or scenario id, scenario family, round number, `judge_identity`, `evaluator_epoch` (for audit), the full evaluator spec, rubric hash, task prompt hash, `fixture_provenance`, and the judge's `execution_provenance`, which carries `judge_samples`.
 - **The item:** the task prompt text, or a pointer to where it can be rebuilt; the output text; and the output hash.
 - **The verdict:** score, dimension scores, `disagreement`, `internal_retries`, parse method, the threshold used, and `passed = score >= quality_threshold`.
 - **Context:** the previous judged round's score and dimension scores, plus the loop settings (`max_rounds`, `judge_samples`).
@@ -114,7 +116,7 @@ The models form a ladder, as in the Reflex work:
 
 ### 4. Calibration and the skip rule (`prescreen/calibrate.py`)
 
-- Calibration uses the last 30% of the training window, and only eligible rounds count.
+- Calibration uses the last 30% of the training window, and only eligible rounds under the bound judge identity count.
 - The skip threshold is the lowest predicted-fail probability at which the judge actually failed at least 95% of those rounds.
 - At least 20 rounds must fall at or above the threshold. If that can't be met, there is no threshold and nothing is skipped.
 - The target precision is a parameter with a default of 0.95.
@@ -125,7 +127,7 @@ The replay evaluates each model offline over expanding folds, ordered in time by
 
 - agreement and log-loss on `passed`, and AUROC;
 - the **skip rate**: the share of eligible judge calls that would be skipped;
-- the **skip precision**: the share of skipped rounds that the judge failed, with Wilson intervals;
+- the **skip precision**: the share of skipped rounds that the judge failed, with Wilson and task-clustered intervals, and the number of distinct tasks among the skipped rounds;
 - a **learning curve** on a fixed recent holdout, halving the training window each step and comparing random samples with the most recent ones;
 - the **value ceiling**: eligible failing rounds as a share of all judge calls. No pre-screen could save more than this.
 
@@ -137,7 +139,7 @@ A trained pre-screen is stored as a `DistilledModelRecord` (`training/model_regi
 
 - `backend="sklearn-logreg"` and `runtime_types=["prescreen"]`;
 - a `metadata["prescreen"]` binding, like the existing skill-routing binding, holding:
-  - the bound evaluator epoch, scenario family and quality threshold;
+  - the bound judge identity, scenario family and quality threshold;
   - the feature-spec hash;
   - the skip threshold and target precision;
   - the training manifest: ledger row ids and their date range.
@@ -169,10 +171,10 @@ Once the pre-screen is active, a skipped round has no ground truth. So a random 
 The monitor suspends the pre-screen, returning the loop to judging every round, if any of these happens:
 
 - over a rolling window of at least 30 audited rounds, the Wilson lower bound on skip precision falls below 0.90;
-- the evaluator epoch changes;
+- the judge identity changes;
 - over at least 12 tasks, the loop's success rate (tasks reaching the threshold) falls below the lower bound of the cohort that earned promotion.
 
-When a suspension comes from a breach, the monitor writes a `negative_result.json` entry (`docs/negative-result-ledger.md`). When it comes from an epoch change, the entry is marked `retest_due`.
+When a suspension comes from a breach, the monitor writes a `negative_result.json` entry (`docs/negative-result-ledger.md`). When it comes from a judge identity change, the entry is marked `retest_due`.
 
 ### 9. Retraining
 
@@ -182,28 +184,29 @@ When a suspension comes from a breach, the monitor writes a `negative_result.jso
 
 ## Phases and gates
 
-**Phase 0: capture and sufficiency.** Ship the ledger and its migration, with no change in behavior. The phase ends with a sufficiency report for each (evaluator epoch, scenario family) pair, covering:
+**Phase 0: capture and sufficiency.** Ship the ledger and its migration, with no change in behavior. The phase ends with a sufficiency report for each (judge identity, scenario family) pair, covering:
 
-- judged rounds, eligible rounds and eligible failing rounds;
+- judged rounds, eligible rounds and eligible failing rounds, and the number of tasks and evaluator epochs they span;
 - the pass rate;
 - the value ceiling.
 
-Move to Phase 1 once one family meets both conditions:
+Move to Phase 1 once one (judge identity, scenario family) pair meets both conditions:
 
-- at least 300 eligible judged rounds under a single epoch;
+- at least 300 eligible judged rounds;
 - a value ceiling of at least 15% of its judge calls.
 
-The development machine is far below that today: its `runs/autocontext.sqlite3` holds 24 runs and 39 generations. So Phase 0 includes a pre-registered data-generation run over existing agent-task scenarios, following the `protocol.json` pattern. The sufficiency report sets its size, and its model spend is capped before it starts.
+The development machine is far below that today: its `runs/autocontext.sqlite3` holds 24 runs and 39 generations. So Phase 0 includes a pre-registered data-generation run over existing agent-task scenarios, following the `protocol.json` pattern. The sufficiency report sets its size, and its model spend is capped before it starts: by provider calls and by input plus output tokens, and by reported cost only where the provider reports it (see Amendments).
 
 **Phase 1: offline replay.** Move to Phase 2 when the best model, on held-out folds:
 
 - skips at least 20% of eligible judge calls;
-- achieves a skip precision of at least 0.95, with a Wilson lower bound of at least 0.90;
-- beats P1 (structural features only) on log-loss. Otherwise P1 is carried forward as the simpler model.
+- achieves a skip precision of at least 0.95, with both the Wilson lower bound and the task-clustered bootstrap lower bound at least 0.90;
+- has at least 12 distinct tasks among its skipped rounds (the AC-1021 minimum);
+- beats P1 (structural features only) on log-loss. Otherwise P1 is carried forward as the simpler model when it qualifies too; when it does not, the best qualifying model goes forward and the report records how it compares with P1.
 
 The learning curve decides how often to retrain, and whether P4 is worth testing. A no-go writes a negative-result ledger entry and stops the work.
 
-**Phase 2: shadow.** Move to Phase 3 after at least 150 eligible live rounds under the current epoch, if:
+**Phase 2: shadow.** Move to Phase 3 after at least 150 eligible live rounds under the current judge identity, if:
 
 - the Wilson lower bound on live skip precision is at least 0.90;
 - the live skip rate falls within the Phase 1 interval.
@@ -246,10 +249,10 @@ Each phase gets its own implementation plan, written only after the previous pha
 
 - **Pre-screen unavailable:** the loop judges the round and logs the reason once per loop. This covers:
   - the extra not being installed;
-  - no active model for the epoch and family;
+  - no active model for the judge identity and family;
   - a load or feature error;
   - inference taking longer than 50 ms.
-- **Epoch is None:** never skip. This happens when a hook rewrote the prompt or the response (`judge.py:457-477`).
+- **Judge identity is None:** never skip. This happens when the verdict carries no serving spec, for example when a hook rewrote the prompt or the response, or when the samples came from more than one model (`judge.py:457-477`).
 - **Ledger write failure:** log it and continue. Capture must never break a run.
 - **A skipped round's output is vetoed by the verifier:** the veto message joins the feedback, and the round stays unscored.
 
@@ -262,22 +265,23 @@ Each phase gets its own implementation plan, written only after the previous pha
   - the last round;
   - a confirmation round;
   - precedence of the cache and of missing targets;
-  - epoch mismatch;
-  - epoch None.
+  - judge identity mismatch;
+  - judge identity None.
 - **Skipped rounds stay unscored:** they are left out of best-output selection, plateau detection, rebaseline and confirmation. They serialize as `score: null` with `judge_skipped: true`.
 - **Calibration and replay:**
   - synthetic data with a known skip precision;
   - bootstrap intervals;
   - reproducible sampling for the learning curve.
-- **Monitor:** it suspends on a precision breach, an epoch change, and a success-rate breach.
+- **Monitor:** it suspends on a precision breach, a judge identity change, and a success-rate breach.
 - **Fail closed:** each of the unavailable-pre-screen cases judges the round.
 
 ## Risks
 
-1. **Too little volume per epoch.**
-   - Any change to the judge's spec mints a new epoch and resets certification, even adding one calibration example.
-   - Mitigation: training may reuse older epochs' verdicts (Decision 4), and re-certification only needs the Phase 2 volume under the new epoch.
-   - If epochs change faster than 150 eligible rounds can accumulate, the pre-screen will rarely be active. Phase 0's report will show this.
+1. **Too little volume per judge identity.** Much weaker since the 2026-09-28 amendment.
+   - Only a change to the judge itself resets certification: its provider, its model (including the served model version), its prompt template or its score transformations. Rubric edits, calibration examples and pinned dimensions no longer do. Before the amendment each of them minted a new certification unit, and no unit could reach the Phase 1 volume.
+   - Mitigation: training may reuse older identities' verdicts (Decision 4), and re-certification only needs the Phase 2 volume under the new identity.
+   - If the judge changes faster than 150 eligible rounds can accumulate, the pre-screen will rarely be active. Phase 0's report will show this.
+   - Pooling has a cost: one identity spans many rubrics, so a pre-screen could be calibrated on average and miscalibrated on one rubric. The ledger keeps `rubric_hash` and the full spec, so a later replay can be stratified by rubric; meanwhile the task-clustered bound and the 12-task minimum limit how far a few tasks can carry the gate.
 2. **Stale feedback degrades revisions.** Staleness is limited by allowing only one skip in a row, and Phase 3's final-score and success-rate guards measure the effect.
 3. **A skipped round might have passed.** Its output is revised instead, and it can never become the best output. The precision target limits how often this happens, and Phase 3 measures it.
 4. **Label noise near the threshold.** The judge's pass/fail call near 0.9 is noisy, which is why the loop already asks a second round to confirm scores of 0.90–0.92. Confident-fail predictions sit far from that boundary by construction.
@@ -295,6 +299,23 @@ Each phase gets its own implementation plan, written only after the previous pha
 - **TypeScript parity.** Python ships first, per the "Parity-Last Changes" section of AGENTS.md. The TypeScript loop keeps judging every round, and the PR must say so.
 - **Cost claims beyond what Phase 3 measures,** in line with the "no economic claims" language in `autocontext/benchmarks/skill_reuse/`.
 - **GPU training or the ambient trainer.** A small logistic model on CPU is enough. The ambient trainer (`docs/internal/ambient-trainer-design.md`) could host retraining later.
+
+## Amendments (2026-09-28)
+
+The whole-branch review of Plan 1 found three problems in this design. These amendments resolve them, and the sections above already reflect them.
+
+1. **C1. Certification is per (judge identity, scenario family), not per evaluator epoch.**
+   - **Problem.** The evaluator epoch hashes the whole `JudgeServingSpec`, which includes the compiled rubric, the serving examples, the pinned dimensions and the evaluation context hash. So every task had its own epoch, and round 1, which has no pinned dimensions yet, had a different epoch from rounds 2 and later. A fake-provider run of the committed data-generation protocol spread 300 eligible rounds over 48 (epoch, family) cells, with at most 15 in any one. Phase 1 could never be reached.
+   - **Change.** The judge identity is the spec without those four task-specific fields (Decision 4). The ledger stores it, the full spec and the judge's execution provenance. A round is eligible only if its judge identity is known, so a row without a spec fails closed. The sufficiency report, the dataset, the replay and data generation all work per (judge identity, family). The evaluator epoch stays on each row for audit. Rerun after the change, with a fake judge whose dimension names differ in every loop, the same protocol put all 300 eligible rounds in one cell, pooling 124 evaluator epochs.
+   - **Reasoning.** What makes a judge's verdicts consistent is its provider, model, prompt template and score transformations; the rubric belongs to the task. Pooling round 1 with the rounds after it also corrects the value ceiling, whose denominator had left out the round-1 judge calls. The cost is Risk 1's rubric-level miscalibration, which the stored rubric hash lets a later replay check.
+2. **I1. The Phase 1 gate uses the task-clustered bound and needs 12 distinct tasks.**
+   - **Problem.** The Wilson interval treats skipped rounds as independent. Rounds of one task are not, so a handful of tasks could carry the gate.
+   - **Change.** A model also needs a task-clustered bootstrap lower bound on skip precision of at least 0.90, and at least 12 distinct tasks among its skipped rounds, the AC-1021 minimum.
+   - **Reasoning.** Section 5 already specified task-clustered intervals, but the gate used only Wilson's. The two bounds must now agree.
+3. **I2. Spend caps bind on providers that report no cost.**
+   - **Problem.** The direct Anthropic and OpenAI-compatible providers report no `cost_usd`, so the first protocol's $25 dollar cap could never bind on them.
+   - **Change.** The data-generation protocol has a mandatory cap on input plus output tokens, counted from the usage each completion reports, beside the cap on provider calls. The dollar cap is optional. When one is set and a completed call reports no cost, the run stops (`cost_not_reported`), so a protocol without a dollar cap is always a deliberate choice. The committed protocol (v2; v1 never ran) sets 3,000,000 tokens, 1,500 calls and no dollar cap.
+   - **Reasoning.** Tokens are what every direct API provider reports, so a token cap bounds spend where a dollar cap cannot. A provider that reports neither tokens nor cost, such as a CLI runtime bridge, is bounded by the call cap alone.
 
 ## Related
 
