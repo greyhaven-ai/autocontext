@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [Pi 0.12.0] - 2026-09-28
+
+The Pi extension moves onto the newly published `autoctx@0.19.0` runtime. This
+also ships `pi-autocontext` for the first time since 0.10.0: `pi-v0.11.0` was
+tagged on 2026-09-17, but its publish job never received environment approval
+and its build artifact expired, so the changes listed under Pi 0.11.0 and
+Pi 0.10.1 arrive here. No Pi source changed since the `pi-v0.11.0` tag: against
+that tag, this release changes only the package version and the runtime
+dependency, and because `autoctx@0.19.0` declares the same dependencies as
+0.18.0, no other locked package changes.
+
+### Changed
+
+- The runtime dependency moves to `autoctx@^0.19.0`. The unpublished 0.11.0
+  declared `autoctx@^0.18.0`, and 0.10.0, the previous release on npm, declares
+  `autoctx@^0.15.0`. Because these are `0.x` versions, neither earlier caret
+  range could accept 0.19.0, so the extension needed this release to pick it
+  up. Installs from npm move from the `autoctx` 0.15 line straight to 0.19.0,
+  so the TypeScript changes listed under 0.16.0 through 0.19.0 all reach them
+  here.
+- Compared with 0.10.0 on npm, the extension's tools, prompts and type
+  declarations are unchanged. The packaged skill's standalone example uses the
+  current `autoctx solve "your problem" --iterations 5` form instead of the
+  deprecated `--gens` alias, and the README documents the runtime compatibility
+  check.
+- `autocontext_status`, `autocontext_queue` and `autocontext_runtime_snapshot`
+  open the autocontext database through the runtime's `SQLiteStore`, which in
+  0.19.0 retries the switch to WAL until the busy timeout, as does the
+  `SessionStore` that `autocontext_runtime_snapshot` reads session branch
+  lineage through. Opening a new database while another process, such as
+  `autoctx serve`, an MCP server or a task runner, is switching it to WAL no
+  longer fails with `database is locked`, which these tools reported as
+  "No autocontext database found".
+- The other TypeScript fixes in 0.19.0 ship in the same runtime but sit outside
+  the extension's tools, which neither start nor resume runs and do not migrate
+  the database: `autoctx run --run-id` and the MCP `run_scenario` tool refuse
+  run ids that already exist, concurrent startup no longer fails on the
+  migration ledger, migrating a database that Python created keeps
+  `runs.minimum_generations` (and re-adds it where an earlier migration dropped
+  it), and `artifact_write` hooks cannot move a write out of its managed root
+  through a symlink. Relative to 0.18.0, nothing in 0.19.0 changes the
+  TypeScript judge or improvement loop behind `autocontext_judge` and
+  `autocontext_improve`.
+
 ## [Python 0.19.1] - 2026-09-28
 
 `autocontext==0.19.1` is the first Python release of the 0.19 line, so
@@ -309,6 +353,9 @@ also ships `pi-autocontext` for the first time since 0.10.0: `pi-v0.10.1` was
 tagged on 2026-09-08 but its publish job failed before reaching npm, so the
 packaged documentation and dependency metadata from that tag arrive here.
 
+> `pi-autocontext@0.11.0` was tagged but never reached npm.
+> Its changes first ship in `pi-autocontext@0.12.0`.
+
 ### Changed
 
 - The runtime dependency moves from `autoctx@^0.17.3` to `autoctx@^0.18.0`.
@@ -397,7 +444,7 @@ with refreshed packaged documentation and dependency metadata, retaining its
 existing `autoctx@^0.15.0` runtime dependency.
 
 > `autoctx@0.17.4` and `pi-autocontext@0.10.1` were tagged but never reached npm.
-> Their changes first ship in `autoctx@0.18.0` and `pi-autocontext@0.11.0`.
+> Their changes first ship in `autoctx@0.18.0` and `pi-autocontext@0.12.0`.
 
 ### Performance
 
