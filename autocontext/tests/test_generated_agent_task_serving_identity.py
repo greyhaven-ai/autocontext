@@ -7,6 +7,7 @@ provenance. These tests drive the real judge through a fake provider; no model i
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,9 +15,12 @@ from typing import Any
 from unittest.mock import patch
 
 from autocontext.config.settings import AppSettings
+from autocontext.execution.evaluator_epoch import EVALUATOR_EPOCH_REBASELINE
 from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry, observe_epoch_quarantined
+from autocontext.execution.improvement_events import ImprovementLoopEvent
 from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.execution.judge_spec import JudgeServingSpec, fixture_provenance
+from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.providers.callable_wrapper import CallableProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
@@ -49,11 +53,12 @@ RAG_DIMENSIONS = (
 
 
 @contextmanager
-def _fake_judge(**settings: Any) -> Iterator[None]:
+def _fake_judge(provider: LLMProvider | None = None, **settings: Any) -> Iterator[None]:
     # The shared runtime resolves settings and the provider at call time through these names, which
     # the execution validator patches too. A provider default distinct from the configured judge
     # model makes model resolution observable.
-    provider = CallableProvider(lambda *_: '{"score": 0.8, "reasoning": "ok"}', model_name="provider-default")
+    if provider is None:
+        provider = CallableProvider(lambda *_: '{"score": 0.8, "reasoning": "ok"}', model_name="provider-default")
     with (
         patch("autocontext.config.load_settings", return_value=AppSettings(judge_model=JUDGE_MODEL, **settings)),
         patch("autocontext.providers.registry.get_provider", return_value=provider),
@@ -241,3 +246,47 @@ def test_scaffolded_task_reports_the_judges_serving_identity(tmp_path: Path) -> 
     assert spec.pinned_dimensions == tuple(dimension.name for dimension in template_dimensions)
     assert result.execution_provenance.get("identity_status") == "verified"
     assert result.fixture_provenance == fixture_provenance(task.get_task_prompt({}), OUTPUT, None, [])
+
+
+class _ScriptedJudge(LLMProvider):
+    """Judge calls return the next scripted score with an ``accuracy`` dimension; revisions return a new draft."""
+
+    def __init__(self, scores: list[float]) -> None:
+        self._scores = iter(scores)
+        self._revisions = 0
+
+    def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096, output_schema=None):
+        if "expert judge" in system_prompt:
+            score = next(self._scores)
+            verdict = {"score": score, "reasoning": "scripted", "dimensions": {"accuracy": score}}
+            return CompletionResult(text=json.dumps(verdict), model=model)
+        self._revisions += 1
+        return CompletionResult(text=f"revision {self._revisions}", model=model)
+
+    def default_model(self) -> str:
+        return "provider-default"
+
+
+def test_generated_task_keeps_its_loop_baseline_when_the_loop_pins_dimensions(tmp_path: Path) -> None:
+    """The loop pins the judge's dimension names after round 1, which changes the served specification.
+    It keeps its baseline only when rounds report their specification (#1421), so a generated task
+    must not discard a better first round."""
+    spec = AgentTaskSpec(task_prompt=TASK_PROMPT, judge_rubric=RUBRIC, revision_prompt="Tighten the summary.")
+    task = _load_persisted(tmp_path, generate_agent_task_class(spec, name="release_notes"))()
+    judge = _ScriptedJudge([0.85, 0.60, 0.70])
+    events: list[ImprovementLoopEvent] = []
+    # Generated revisions resolve settings and the provider through agent_task_revision's imports.
+    with (
+        _fake_judge(provider=judge),
+        patch(
+            "autocontext.scenarios.custom.agent_task_revision.load_settings",
+            return_value=AppSettings(judge_model=JUDGE_MODEL),
+        ),
+        patch("autocontext.scenarios.custom.agent_task_revision.get_provider", return_value=judge),
+    ):
+        result = ImprovementLoop(task, max_rounds=3, on_event=events.append).run("draft", {})
+
+    assert [event.round for event in events if event.event == EVALUATOR_EPOCH_REBASELINE] == []
+    assert (result.best_round, result.best_score, result.best_output) == (1, 0.85, "draft")
+    served_pins = [JudgeServingSpec.model_validate_json(r.evaluator_spec).pinned_dimensions for r in result.rounds]
+    assert served_pins == [(), ("accuracy",), ("accuracy",)]
