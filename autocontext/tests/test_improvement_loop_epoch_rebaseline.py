@@ -1,8 +1,39 @@
 from __future__ import annotations
 
+import json
+
+from autocontext.execution.evaluator_epoch import EVALUATOR_EPOCH_REBASELINE
 from autocontext.execution.improvement_events import ImprovementLoopEvent
 from autocontext.execution.improvement_loop import ImprovementLoop
+from autocontext.execution.judge import LLMJudge
+from autocontext.execution.judge_spec import JudgeServingSpec
+from autocontext.execution.task_runner import SimpleAgentTask
+from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskResult
+
+
+class _ScriptedJudgeProvider(LLMProvider):
+    """Fake provider: judge calls return the next scripted score (with an ``accuracy`` dimension)
+    served by the next scripted model; revision calls return a fresh draft. No network."""
+
+    def __init__(self, scores: list[float], served_models: list[str]) -> None:
+        self._scores = scores
+        self._served_models = served_models
+        self._judge_calls = 0
+        self._revisions = 0
+
+    def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096, output_schema=None):
+        if "expert judge" in system_prompt:
+            score = self._scores[self._judge_calls]
+            served_model = self._served_models[self._judge_calls]
+            self._judge_calls += 1
+            verdict = {"score": score, "reasoning": "scripted", "dimensions": {"accuracy": score}}
+            return CompletionResult(text=json.dumps(verdict), model=served_model)
+        self._revisions += 1
+        return CompletionResult(text=f"revision {self._revisions}", model=model)
+
+    def default_model(self) -> str:
+        return "judge-a"
 
 
 class _EpochSwapTask:
@@ -110,3 +141,96 @@ def test_epoch_change_rebaselines_and_flags_stale() -> None:
     assert result.evaluator_epoch == "e2"
     # the round records carry their epochs
     assert [r.evaluator_epoch for r in result.rounds] == ["e1", "e2"]
+
+
+def test_loop_dimension_pinning_does_not_rebaseline_or_discard_a_better_first_round() -> None:
+    """Pinning the judge's own dimension names after round 1 (AC-48) changes the served
+    specification, and so the epoch, but it is not an evaluator change: round 1 stays comparable."""
+    events: list[ImprovementLoopEvent] = []
+    provider = _ScriptedJudgeProvider([0.85, 0.60, 0.70], served_models=["judge-a"] * 3)
+    task = SimpleAgentTask("write it", "Score 0-1 on accuracy.", provider, model="judge-a")
+
+    result = ImprovementLoop(task, max_rounds=3, on_event=events.append).run("draft", {})
+
+    served_pins = [JudgeServingSpec.model_validate_json(r.evaluator_spec).pinned_dimensions for r in result.rounds]
+    assert served_pins == [(), ("accuracy",), ("accuracy",)]
+    assert [e.round for e in events if e.event == EVALUATOR_EPOCH_REBASELINE] == []
+    assert (result.best_round, result.best_score, result.best_output) == (1, 0.85, "draft")
+    # lineage stays honest: the best score is attributed to the unpinned specification that served it
+    assert result.evaluator_epoch == result.rounds[0].evaluator_epoch != result.rounds[1].evaluator_epoch
+
+
+def test_evaluator_change_at_the_pinning_round_still_rebaselines() -> None:
+    """The pinning exemption must not mask a real evaluator change that lands on the same round."""
+    events: list[ImprovementLoopEvent] = []
+    provider = _ScriptedJudgeProvider([0.85, 0.60, 0.70], served_models=["judge-a", "judge-b", "judge-b"])
+    task = SimpleAgentTask("write it", "Score 0-1 on accuracy.", provider, model="judge-a")
+
+    result = ImprovementLoop(task, max_rounds=3, on_event=events.append).run("draft", {})
+
+    rebaselines = [e for e in events if e.event == EVALUATOR_EPOCH_REBASELINE]
+    assert [(e.round, e.stale_epoch) for e in rebaselines] == [(2, result.rounds[0].evaluator_epoch)]
+    assert (result.best_round, result.best_score) == (3, 0.70)
+
+
+# Criteria deliberately declared out of sorted order.
+_DECLARED_ORDER_RUBRIC = {
+    "rubric_id": "declared-order",
+    "goal": "Score the draft.",
+    "criteria": [
+        {"id": "clarity", "description": "Is it clear?", "scale_id": "unit"},
+        {"id": "accuracy", "description": "Is it accurate?", "scale_id": "unit"},
+    ],
+    "scales": [{"id": "unit", "kind": "numeric"}],
+}
+
+
+class _DeclaredDimensionsTask:
+    """A real LLMJudge on a typed rubric: it serves the declared dimension ids as pins from round 1."""
+
+    def __init__(self, scores: list[float]) -> None:
+        verdicts = iter(scores)
+
+        def judge_llm(system: str, user: str) -> str:
+            score = next(verdicts)
+            return json.dumps({"score": score, "reasoning": "scripted", "dimensions": {"clarity": score, "accuracy": score}})
+
+        self._judge = LLMJudge(model="judge-a", rubric=_DECLARED_ORDER_RUBRIC, llm_fn=judge_llm)
+        self._revisions = 0
+
+    def get_rubric(self) -> str:
+        return self._judge.rubric
+
+    def get_task_prompt(self, state: dict) -> str:
+        return "write it"
+
+    def evaluate_output(self, output, state, **kwargs) -> AgentTaskResult:
+        verdict = self._judge.evaluate("write it", output, **kwargs)
+        return AgentTaskResult(
+            score=verdict.score,
+            reasoning=verdict.reasoning,
+            dimension_scores=verdict.dimension_scores,
+            evaluator_epoch=verdict.evaluator_epoch,
+            evaluator_spec=verdict.evaluator_spec,
+        )
+
+    def revise_output(self, output, feedback, state) -> str:
+        self._revisions += 1
+        return f"revision {self._revisions}"
+
+    def verify_facts(self, output, state):
+        return None
+
+
+def test_loop_pins_declared_dimensions_in_their_served_order_and_keeps_one_epoch() -> None:
+    """Re-pinning dimensions the judge was already served, in another order, would change the
+    served specification for no evaluator reason."""
+    events: list[ImprovementLoopEvent] = []
+
+    result = ImprovementLoop(_DeclaredDimensionsTask([0.85, 0.60, 0.70]), max_rounds=3, on_event=events.append).run("draft", {})
+
+    served_pins = [JudgeServingSpec.model_validate_json(r.evaluator_spec).pinned_dimensions for r in result.rounds]
+    assert served_pins == [("clarity", "accuracy")] * 3
+    assert len({r.evaluator_epoch for r in result.rounds}) == 1
+    assert [e.round for e in events if e.event == EVALUATOR_EPOCH_REBASELINE] == []
+    assert (result.best_round, result.best_score) == (1, 0.85)

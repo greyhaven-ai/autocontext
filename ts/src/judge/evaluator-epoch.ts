@@ -62,7 +62,8 @@ export interface EpochBaselineDecision {
 
 /**
  * Decide whether a round's epoch forces the improve loop to re-baseline.
- * Parity with Python resolve_epoch_rebaseline.
+ * Parity with Python resolve_epoch_rebaseline called without serving specifications. Python also
+ * exempts its loop's own dimension pinning, which this judge's legacy epochs do not bind.
  *
  * The first round (hasBaseline false) establishes the baseline and never re-baselines. When a
  * baseline exists and the round's epoch is not comparable to it, the prior baseline is stale and is

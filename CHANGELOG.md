@@ -43,6 +43,18 @@ pre-screen tooling. `autoctx@0.19.0` on npm is unaffected and unchanged.
   package and record local paths from the machine that ran them. The wheel is
   unchanged.
 
+- Python: the improvement loop no longer discards a better earlier round when
+  it pins dimension names (AC-48). Since serving specifications bind pinned
+  dimensions (AC-1022), pinning minted a new epoch mid-loop and re-baselined
+  it, for example returning a 0.70 round 3 over a 0.85 round 1. Names the judge
+  was already served, such as a typed rubric's declared dimensions, now keep
+  their served order, so those runs keep one epoch. When an unpinned judge is
+  pinned, the loop keeps its baseline if both serving specifications reproduce
+  their epochs and differ only by those pins; any other difference, or an
+  unverifiable specification, still re-baselines. Each round keeps the epoch
+  that scored it. Tasks that report an epoch without its specification, such
+  as generated custom agent tasks, still re-baseline.
+
 ## [Python 0.19.0 / TypeScript 0.19.0] - 2026-09-27
 
 > Python 0.19.0 was tagged but never published to PyPI; `autocontext==0.19.1`
