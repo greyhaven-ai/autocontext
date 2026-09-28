@@ -20,6 +20,7 @@ from autocontext.prescreen.stats import cluster_mean_difference_interval, cluste
 GATE_MIN_SKIP_RATE = 0.20
 GATE_MIN_PRECISION = 0.95
 GATE_MIN_PRECISION_LOW = 0.90
+GATE_MIN_SKIPPED_GROUPS = 12
 BASELINE = "p1-structural"
 
 
@@ -96,6 +97,7 @@ def summarize(scored: Sequence[Scored], *, seed: int, resamples: int) -> list[di
                 "log_loss": log_loss(p, failed),
                 "auroc": float(roc_auc_score(failed, p)) if both else None,
                 "skipped": len(skipped),
+                "skipped_groups": len({s.group for s in skipped}),
                 "skip_rate": len(skipped) / len(mine),
                 "skip_rate_interval": cluster_ratio_interval(
                     [float(s.skipped) for s in mine], [1.0] * len(mine), groups, seed=seed, resamples=resamples
@@ -143,40 +145,61 @@ def compare_to_baseline(scored: Sequence[Scored], *, seed: int, resamples: int) 
 
 
 def _qualifies(row: dict[str, Any]) -> bool:
+    """The skip bar. Both lower bounds must clear it: Wilson treats skipped rounds as independent, and the
+    task-clustered bootstrap does not; the skips must also span enough distinct tasks for that bootstrap to mean much."""
     wilson = row["skip_precision_wilson"]
+    clustered = row["skip_precision_interval"]
     return (
         row["skip_rate"] >= GATE_MIN_SKIP_RATE
         and row["skip_precision"] is not None
         and row["skip_precision"] >= GATE_MIN_PRECISION
         and wilson is not None
         and wilson[0] >= GATE_MIN_PRECISION_LOW
+        and clustered is not None
+        and clustered[0] >= GATE_MIN_PRECISION_LOW
+        and row["skipped_groups"] >= GATE_MIN_SKIPPED_GROUPS
     )
 
 
 def phase1_gate(summary: Sequence[dict[str, Any]], comparisons: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    """Design Phase 1: skip >= 20% of eligible calls at precision >= 0.95 (Wilson low >= 0.90); prefer P1 unless beaten."""
+    """Design Phase 1 (amended 2026-09-28): a model qualifies when it skips >= 20% of eligible calls at precision >= 0.95,
+    with Wilson and task-clustered lower bounds >= 0.90, over >= 12 distinct skipped tasks. P1 is preferred unless beaten.
+    """
     if not any(r["model"] == BASELINE for r in summary):
         return {"go": False, "model": None, "reason": "the Phase 1 gate needs P1 (structural) in the ladder"}
     candidates = sorted((r for r in summary if _qualifies(r)), key=lambda r: (-r["skip_rate"], r["log_loss"]))
     if not candidates:
-        return {"go": False, "model": None, "reason": "no model skips at least 20% of eligible calls at the precision bar"}
+        return {
+            "go": False,
+            "model": None,
+            "reason": (
+                f"no model skips at least {GATE_MIN_SKIP_RATE:.0%} of eligible calls at precision >= {GATE_MIN_PRECISION}, "
+                f"with Wilson and task-clustered lower bounds >= {GATE_MIN_PRECISION_LOW}, "
+                f"across at least {GATE_MIN_SKIPPED_GROUPS} distinct skipped tasks"
+            ),
+        }
     best = candidates[0]
-    if best["model"] == BASELINE:
+    name = best["model"]
+    if name == BASELINE:
         return {"go": True, "model": BASELINE, "reason": "P1 meets the skip bar"}
-    comparison = next((c for c in comparisons if c["model"] == best["model"]), None)
-    if comparison is not None and comparison["interval"] is not None and comparison["interval"][1] < 0:
-        return {"go": True, "model": best["model"], "reason": f"{best['model']} meets the skip bar and beats P1 on log-loss"}
+    comparison = next((c for c in comparisons if c["model"] == name), None)
+    interval = comparison["interval"] if comparison is not None else None
+    if interval is not None and interval[1] < 0:
+        return {"go": True, "model": name, "reason": f"{name} meets the skip bar and beats P1 on log-loss"}
     if any(c["model"] == BASELINE for c in candidates):
         return {
             "go": True,
             "model": BASELINE,
-            "reason": f"{best['model']} does not beat P1 on log-loss; P1 is carried forward as the simpler model",
+            "reason": f"{name} does not beat P1 on log-loss; P1 is carried forward as the simpler model",
         }
-    return {
-        "go": True,
-        "model": best["model"],
-        "reason": f"{best['model']} meets the skip bar; P1 does not, and the log-loss comparison is inconclusive",
-    }
+    # P1 misses the skip bar, so the best qualifying model goes forward; the reason records how it compares with P1.
+    if interval is None:
+        reason = f"{name} meets the skip bar and P1 does not; no log-loss comparison with P1 is available"
+    elif interval[0] > 0:
+        reason = f"{name} is significantly worse than P1 on log-loss, but P1 does not meet the skip bar and {name} does"
+    else:
+        reason = f"{name} meets the skip bar; P1 does not, and the log-loss comparison is inconclusive"
+    return {"go": True, "model": name, "reason": reason}
 
 
 def learning_curve(

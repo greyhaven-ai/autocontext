@@ -14,8 +14,11 @@ from typer.testing import CliRunner  # noqa: E402
 from autocontext.cli import app  # noqa: E402
 from autocontext.prescreen.dataset import Example  # noqa: E402
 from autocontext.prescreen.replay import (  # noqa: E402
+    GATE_MIN_SKIPPED_GROUPS,
     Scored,
+    compare_to_baseline,
     expanding_folds,
+    learning_curve,
     phase1_gate,
     run_replay,
     summarize,
@@ -60,20 +63,33 @@ def test_summary_counts_skips_and_precision() -> None:
     scored = [Scored("m", 1, i, f"g{i % 3}", failed=i < 8, p_fail=0.9 if i < 10 else 0.1, threshold=0.5) for i in range(20)]
     [row] = summarize(scored, seed=0, resamples=200)
     assert row["skipped"] == 10 and row["skip_rate"] == 0.5
-    assert row["skip_precision"] == 0.8
+    assert row["skip_precision"] == 0.8 and row["skipped_groups"] == 3
     assert row["skip_precision_wilson"] is not None and row["skip_precision_interval"] is not None
 
 
-def test_gate_prefers_p1_unless_beaten() -> None:
-    def row(model: str, rate: float, precision: float, low: float, loss: float) -> dict:
-        return {
-            "model": model,
-            "skip_rate": rate,
-            "skip_precision": precision,
-            "skip_precision_wilson": (low, 1.0),
-            "log_loss": loss,
-        }
+def row(
+    model: str,
+    rate: float,
+    precision: float,
+    low: float,
+    loss: float,
+    *,
+    clustered_low: float | None = None,
+    skipped_groups: int = GATE_MIN_SKIPPED_GROUPS,
+) -> dict:
+    """A summary row; the task-clustered lower bound defaults to the Wilson one."""
+    return {
+        "model": model,
+        "skip_rate": rate,
+        "skip_precision": precision,
+        "skip_precision_wilson": (low, 1.0),
+        "skip_precision_interval": (low if clustered_low is None else clustered_low, 1.0),
+        "skipped_groups": skipped_groups,
+        "log_loss": loss,
+    }
 
+
+def test_gate_prefers_p1_unless_beaten() -> None:
     summary = [row("p1-structural", 0.25, 0.97, 0.92, 0.40), row("p3-hybrid", 0.30, 0.97, 0.92, 0.35)]
     beaten = [{"model": "p3-hybrid", "interval": (-0.08, -0.01)}]
     not_beaten = [{"model": "p3-hybrid", "interval": (-0.05, 0.02)}]
@@ -81,6 +97,76 @@ def test_gate_prefers_p1_unless_beaten() -> None:
     assert phase1_gate(summary, not_beaten)["model"] == "p1-structural"
     assert phase1_gate([row("p1-structural", 0.1, 0.97, 0.92, 0.4)], [])["go"] is False
     assert phase1_gate([row("p3-hybrid", 0.3, 0.97, 0.92, 0.4)], [])["go"] is False  # P1 missing from the ladder
+
+
+def test_gate_needs_the_task_clustered_lower_bound() -> None:
+    # Wilson treats the skipped rounds as independent; rounds of one task are not.
+    passes_wilson_only = row("p1-structural", 0.3, 0.96, 0.92, 0.4, clustered_low=0.86)
+    gate = phase1_gate([passes_wilson_only], [])
+    assert gate["go"] is False and gate["model"] is None
+    assert phase1_gate([row("p1-structural", 0.3, 0.96, 0.92, 0.4, clustered_low=0.90)], [])["go"] is True
+    no_interval = row("p1-structural", 0.3, 0.96, 0.92, 0.4)
+    no_interval["skip_precision_interval"] = None
+    assert phase1_gate([no_interval], [])["go"] is False
+
+
+def test_gate_needs_enough_distinct_skipped_tasks() -> None:
+    few = row("p1-structural", 0.3, 0.97, 0.92, 0.4, skipped_groups=GATE_MIN_SKIPPED_GROUPS - 1)
+    assert GATE_MIN_SKIPPED_GROUPS == 12
+    assert phase1_gate([few], [])["go"] is False
+    assert phase1_gate([row("p1-structural", 0.3, 0.97, 0.92, 0.4, skipped_groups=12)], [])["go"] is True
+
+
+def test_summary_clustered_bound_falls_below_wilson_when_misses_concentrate_in_one_task() -> None:
+    # 200 skipped rounds over 12 tasks at precision 0.96: all 8 misses belong to one task.
+    scored = []
+    for i in range(200):
+        group = "bad" if i < 16 else f"g{i % 11}"
+        scored.append(Scored("p1-structural", 1, i, group, failed=not (i < 8), p_fail=0.9, threshold=0.5))
+    scored += [Scored("p1-structural", 1, 200 + i, f"g{i % 11}", failed=False, p_fail=0.1, threshold=0.5) for i in range(200)]
+    [summary] = summarize(scored, seed=0, resamples=2000)
+    assert summary["skip_precision"] == 0.96 and summary["skipped_groups"] == 12 and summary["skip_rate"] == 0.5
+    assert summary["skip_precision_wilson"][0] >= 0.90 > summary["skip_precision_interval"][0]
+    assert phase1_gate([summary], [])["go"] is False
+
+
+def test_gate_reason_when_p1_fails_the_bar_and_another_model_qualifies() -> None:
+    summary = [row("p1-structural", 0.10, 0.97, 0.92, 0.40), row("p3-hybrid", 0.30, 0.97, 0.92, 0.45)]
+    reasons = {}
+    for case, comparisons in (
+        ("none", []),
+        ("no interval", [{"model": "p3-hybrid", "interval": None}]),
+        ("worse", [{"model": "p3-hybrid", "interval": (0.01, 0.09)}]),
+        ("inconclusive", [{"model": "p3-hybrid", "interval": (-0.05, 0.02)}]),
+    ):
+        gate = phase1_gate(summary, comparisons)
+        assert (gate["go"], gate["model"]) == (True, "p3-hybrid"), case
+        reasons[case] = gate["reason"]
+    assert "no log-loss comparison" in reasons["none"] and reasons["none"] == reasons["no interval"]
+    assert "significantly worse than P1 on log-loss" in reasons["worse"]
+    assert "inconclusive" in reasons["inconclusive"]
+    assert len({reasons["none"], reasons["worse"], reasons["inconclusive"]}) == 3
+
+
+def test_compare_to_baseline_pairs_by_fold_and_row() -> None:
+    # Row 10 is scored in two folds with different predictions, and row 11 has no baseline score.
+    base = [Scored("p1-structural", 1, 10, "g", True, 0.9, None), Scored("p1-structural", 2, 10, "g", True, 0.5, None)]
+    model = [
+        Scored("p3-hybrid", 2, 10, "g", True, 0.5, None),
+        Scored("p3-hybrid", 1, 10, "g", True, 0.9, None),
+        Scored("p3-hybrid", 3, 11, "h", False, 0.2, None),
+    ]
+    [comparison] = compare_to_baseline(base + model, seed=0, resamples=50)
+    assert (comparison["model"], comparison["n"]) == ("p3-hybrid", 2)
+    assert comparison["log_loss_difference"] == 0.0 and comparison["interval"] == (0.0, 0.0)
+
+
+def test_learning_curve_is_reproducible_for_a_seed() -> None:
+    data = synthetic(400, seed=5)
+    first = learning_curve(data, "p1", halvings=2, repeats=3, seed=11)
+    again = learning_curve(data, "p1", halvings=2, repeats=3, seed=11)
+    assert first and first == again
+    assert {r["scheme"] for r in first} == {"all", "random", "recent"}
 
 
 def test_run_replay_report_shape_and_privacy() -> None:
