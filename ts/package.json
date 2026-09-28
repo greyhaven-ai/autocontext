@@ -236,7 +236,7 @@
     "json-schema-to-typescript": "^15.0.4",
     "openai": "^7",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^5.0.1"
   },
   "dependencies": {
     "@earendil-works/pi-tui": "0.85.1",

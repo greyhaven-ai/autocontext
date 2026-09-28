@@ -33,30 +33,28 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runInstrumentCommand } from "../../src/control-plane/instrument/cli/runner.js";
 import { resetRegistryForTests } from "../../src/control-plane/instrument/registry/plugin-registry.js";
 import { __resetForTests as resetTreeSitterCache } from "../../src/control-plane/instrument/scanner/tree-sitter-loader.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
 // Absolute file:// URL to the real plugin sources.
 const OPENAI_PYTHON_PLUGIN_PATH = resolve(
-  __dirname,
-  "../../src/control-plane/instrument/detectors/openai-python/index.js",
+  process.cwd(),
+  "src/control-plane/instrument/detectors/openai-python/index.ts",
 );
 const OPENAI_TS_PLUGIN_PATH = resolve(
-  __dirname,
-  "../../src/control-plane/instrument/detectors/openai-ts/index.js",
+  process.cwd(),
+  "src/control-plane/instrument/detectors/openai-ts/index.ts",
 );
 const OPENAI_PYTHON_PLUGIN_URL = pathToFileURL(OPENAI_PYTHON_PLUGIN_PATH).href;
 const OPENAI_TS_PLUGIN_URL = pathToFileURL(OPENAI_TS_PLUGIN_PATH).href;
 
 // Absolute file:// URL to the plugin registry.
 const REGISTRY_PATH = resolve(
-  __dirname,
-  "../../src/control-plane/instrument/registry/plugin-registry.js",
+  process.cwd(),
+  "src/control-plane/instrument/registry/plugin-registry.ts",
 );
 const REGISTRY_URL = pathToFileURL(REGISTRY_PATH).href;
 

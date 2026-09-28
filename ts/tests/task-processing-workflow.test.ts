@@ -61,7 +61,7 @@ describe("task processing workflow", () => {
             revisionPrompt: "Saved revision",
           },
         }),
-        createDelegatedJudge: vi.fn(() => ({ tag: "judge" })) as never,
+        createDelegatedJudge: vi.fn(function () { return { tag: "judge" }; }) as never,
       },
     });
 
