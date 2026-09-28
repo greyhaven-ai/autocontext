@@ -36,13 +36,6 @@ pre-screen tooling. `autoctx@0.19.0` on npm is unaffected and unchanged.
   `no such column: acquisition_id`. The bootstrap now adds those columns before
   creating the index.
 
-### Changed
-
-- Python: the source distribution no longer includes the archived benchmark
-  runs under `benchmarks/*/results`, which are not needed to build or test the
-  package and record local paths from the machine that ran them. The wheel is
-  unchanged.
-
 - Python: the improvement loop no longer discards a better earlier round when
   it pins dimension names (AC-48). Since serving specifications bind pinned
   dimensions (AC-1022), pinning minted a new epoch mid-loop and re-baselined
@@ -54,6 +47,13 @@ pre-screen tooling. `autoctx@0.19.0` on npm is unaffected and unchanged.
   unverifiable specification, still re-baselines. Each round keeps the epoch
   that scored it. Tasks that report an epoch without its specification, such
   as generated custom agent tasks, still re-baseline.
+
+### Changed
+
+- Python: the source distribution no longer includes the archived benchmark
+  runs under `benchmarks/*/results`, which are not needed to build or test the
+  package and record local paths from the machine that ran them. The wheel is
+  unchanged.
 
 ## [Python 0.19.0 / TypeScript 0.19.0] - 2026-09-27
 
