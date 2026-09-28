@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Python: judge pre-screen Phase 0–1 tooling
+  ([design](docs/internal/judge-prescreen-design.md),
+  [guide](autocontext/docs/judge-prescreen.md)). Opt-in judge ledger capture
+  (`AUTOCONTEXT_JUDGE_LEDGER_ENABLED`, off by default) records every real
+  improvement-loop judge verdict of `autoctx run` in the local run database.
+  `autoctx prescreen sufficiency | replay | datagen` reports eligible rounds per
+  judge identity and scenario family, replays a ladder of fast pass/fail
+  predictors offline against the Phase 1 gate, and runs a pre-registered
+  data-generation protocol under call and token caps. The replay needs the new
+  `prescreen` extra (scikit-learn, numpy and scipy). Nothing skips a judge call
+  yet, and TypeScript parity is deferred.
+
 ### Fixed
 
 - Python: the improvement loop no longer discards a better earlier round when
