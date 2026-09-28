@@ -31,6 +31,12 @@ All notable changes to this project will be documented in this file.
   tasks scaffolded from templates before 0.19.0 are not upgraded and need
   scaffolding again.
 
+- Python: agent tasks generated with the old `llm_fn` placeholder, which the
+  loader has replaced at load since AC-310, now evaluate through the same shared
+  runtime. Like other generated tasks, they honor the judge sampling,
+  temperature, disagreement-threshold and bias-probe settings and run the
+  evaluator guardrail. Their epochs are unchanged.
+
 ## [Python 0.19.0 / TypeScript 0.19.0] - 2026-09-27
 
 `autocontext==0.19.0` and `autoctx@0.19.0` release together. Most fixes below

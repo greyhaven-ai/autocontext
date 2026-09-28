@@ -127,65 +127,16 @@ def patch_legacy_generated_evaluate_output(
     cls: type[Any],
     source_path: Path,
 ) -> type[Any]:
-    """Upgrade legacy generated agent_task classes with llm_fn placeholder in evaluate_output.
+    """Upgrade legacy generated agent_task classes to the shared evaluate_output runtime.
 
     AC-310: Generated scenarios that still use the broken pattern:
         def llm_fn(system, user):
             raise NotImplementedError("llm_fn must be injected at runtime")
-    get their evaluate_output replaced with one that uses load_settings() + get_provider().
-
-    Generated classes that judge inline predate the shared runtime and drop the judge's serving
-    specification and provenance (AC-1022). They get the shared runtime, which builds the same
-    judge, so their scores keep the epoch that judge serves.
+    crash when evaluated. Generated classes that judge inline predate the shared runtime and drop
+    the judge's serving specification and provenance (AC-1022). Both get the runtime newly generated
+    classes call. It serves the same specification, so their scores keep their epoch.
     """
     source = source_path.read_text(encoding="utf-8")
-    if _LEGACY_EVALUATE_MARKER not in source:
-        if _LEGACY_INLINE_EVALUATE_MARKER in source:
-            cls.evaluate_output = evaluate_generated_output
-        return cls
-
-    def _patched_evaluate_output(
-        self: Any,
-        output: str,
-        state: dict[str, Any],
-        reference_context: str | None = None,
-        required_concepts: list[str] | None = None,
-        calibration_examples: list[dict[str, Any]] | None = None,
-        pinned_dimensions: list[str] | None = None,
-    ) -> AgentTaskResult:
-        from autocontext.execution.judge import LLMJudge
-
-        settings = load_settings()
-        provider = get_provider(settings)
-        model = getattr(self, "_judge_model", "") or settings.judge_model or provider.default_model()
-        rubric = getattr(self, "_rubric", "") or ""
-        judge = LLMJudge(
-            model=model,
-            rubric=rubric,
-            provider=provider,
-            max_tokens=settings.judge_max_tokens,
-        )
-        task_prompt = self.get_task_prompt(state)
-        ref_ctx = reference_context or getattr(self, "_reference_context", None)
-        req_con = required_concepts or getattr(self, "_required_concepts", None)
-        result = judge.evaluate(
-            task_prompt,
-            output,
-            reference_context=ref_ctx,
-            required_concepts=req_con,
-            calibration_examples=calibration_examples,
-            pinned_dimensions=pinned_dimensions,
-        )
-        return AgentTaskResult(
-            score=result.score,
-            reasoning=result.reasoning,
-            dimension_scores=result.dimension_scores,
-            internal_retries=result.internal_retries,
-            evaluator_epoch=result.evaluator_epoch,
-            evaluator_spec=result.evaluator_spec,
-            execution_provenance=result.execution_provenance,
-            fixture_provenance=result.fixture_provenance,
-        )
-
-    cls.evaluate_output = _patched_evaluate_output
+    if _LEGACY_EVALUATE_MARKER in source or _LEGACY_INLINE_EVALUATE_MARKER in source:
+        cls.evaluate_output = evaluate_generated_output
     return cls

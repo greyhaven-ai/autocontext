@@ -35,24 +35,16 @@ JUDGE_MODEL = "fake-judge"
 # generated from the constants above.
 LEGACY_SOURCE = Path(__file__).parent / "fixtures" / "legacy_generated_agent_task.py"
 
-# Generated evaluate_output resolves settings and the provider at call time through these modules;
-# the execution validator patches the same names.
-GENERATED_SEAMS = ("autocontext.config.load_settings", "autocontext.providers.registry.get_provider")
-# The AC-310 upgrade resolves them through agent_task_revision's imports.
-LLM_FN_UPGRADE_SEAMS = (
-    "autocontext.scenarios.custom.agent_task_revision.load_settings",
-    "autocontext.scenarios.custom.agent_task_revision.get_provider",
-)
-
 
 @contextmanager
-def _fake_judge(seams: tuple[str, str]) -> Iterator[None]:
-    settings_seam, provider_seam = seams
-    # A provider default distinct from the configured judge model makes model resolution observable.
+def _fake_judge(**settings: Any) -> Iterator[None]:
+    # The shared runtime resolves settings and the provider at call time through these names, which
+    # the execution validator patches too. A provider default distinct from the configured judge
+    # model makes model resolution observable.
     provider = CallableProvider(lambda *_: '{"score": 0.8, "reasoning": "ok"}', model_name="provider-default")
     with (
-        patch(settings_seam, return_value=AppSettings(judge_model=JUDGE_MODEL)),
-        patch(provider_seam, return_value=provider),
+        patch("autocontext.config.load_settings", return_value=AppSettings(judge_model=JUDGE_MODEL, **settings)),
+        patch("autocontext.providers.registry.get_provider", return_value=provider),
     ):
         yield
 
@@ -76,22 +68,7 @@ def _load_persisted(knowledge_root: Path, source: str) -> type[AgentTaskInterfac
     return load_all_custom_scenarios(knowledge_root)["release_notes"]
 
 
-def test_generated_task_reports_the_judges_serving_identity(tmp_path: Path) -> None:
-    spec = AgentTaskSpec(
-        task_prompt=TASK_PROMPT,
-        judge_rubric=RUBRIC,
-        reference_context=REFERENCE,
-        required_concepts=CONCEPTS,
-    )
-    task = _load_persisted(tmp_path, generate_agent_task_class(spec, name="release_notes"))()
-
-    with _fake_judge(GENERATED_SEAMS):
-        result = task.evaluate_output(OUTPUT, {})
-
-    _assert_reports_serving_identity(result)
-
-
-def test_llm_fn_placeholder_upgrade_reports_the_judges_serving_identity(tmp_path: Path) -> None:
+def _upgraded_llm_fn_placeholder_task(tmp_path: Path) -> AgentTaskInterface:
     class _PlaceholderTask(AgentTaskInterface):
         """The pre-AC-241 generated shape, which AC-310 upgrades at load."""
 
@@ -118,18 +95,48 @@ def test_llm_fn_placeholder_upgrade_reports_the_judges_serving_identity(tmp_path
 
     source_path = tmp_path / "agent_task.py"
     source_path.write_text('raise NotImplementedError("llm_fn must be injected at runtime")', encoding="utf-8")
-    task = patch_legacy_generated_evaluate_output(_PlaceholderTask, source_path)()
+    return patch_legacy_generated_evaluate_output(_PlaceholderTask, source_path)()
 
-    with _fake_judge(LLM_FN_UPGRADE_SEAMS):
+
+def test_generated_task_reports_the_judges_serving_identity(tmp_path: Path) -> None:
+    spec = AgentTaskSpec(
+        task_prompt=TASK_PROMPT,
+        judge_rubric=RUBRIC,
+        reference_context=REFERENCE,
+        required_concepts=CONCEPTS,
+    )
+    task = _load_persisted(tmp_path, generate_agent_task_class(spec, name="release_notes"))()
+
+    with _fake_judge():
         result = task.evaluate_output(OUTPUT, {})
 
     _assert_reports_serving_identity(result)
 
 
+def test_llm_fn_placeholder_upgrade_reports_the_judges_serving_identity(tmp_path: Path) -> None:
+    task = _upgraded_llm_fn_placeholder_task(tmp_path)
+
+    with _fake_judge():
+        result = task.evaluate_output(OUTPUT, {})
+
+    _assert_reports_serving_identity(result)
+
+
+def test_llm_fn_placeholder_upgrade_judges_with_the_configured_settings(tmp_path: Path) -> None:
+    task = _upgraded_llm_fn_placeholder_task(tmp_path)
+
+    with _fake_judge(judge_samples=2):
+        result = task.evaluate_output(OUTPUT, {})
+
+    assert result.execution_provenance["samples"] == 2
+    # Two samples give the evaluator guardrail a disagreement check to run.
+    assert result.evaluator_guardrail is not None
+
+
 def test_persisted_inline_task_is_upgraded_to_report_the_judges_serving_identity(tmp_path: Path) -> None:
     task = _load_persisted(tmp_path, LEGACY_SOURCE.read_text(encoding="utf-8"))()
 
-    with _fake_judge(GENERATED_SEAMS):
+    with _fake_judge():
         result = task.evaluate_output(OUTPUT, {})
 
     _assert_reports_serving_identity(result)
@@ -140,13 +147,13 @@ def test_upgrade_keeps_the_epoch_and_backfills_its_hash_only_record(tmp_path: Pa
     epochs_root = tmp_path / "_evaluator_epochs"
     legacy: dict[str, Any] = {}
     exec(compile(LEGACY_SOURCE.read_text(encoding="utf-8"), str(LEGACY_SOURCE), "exec"), legacy)  # noqa: S102
-    with _fake_judge(GENERATED_SEAMS):
+    with _fake_judge():
         earlier = legacy["ReleaseNotesAgentTask"]().evaluate_output(OUTPUT, {})
     assert earlier.evaluator_spec is None
     assert observe_epoch_quarantined(epochs_root, "release_notes", earlier.evaluator_epoch) is False
 
     task = _load_persisted(tmp_path, LEGACY_SOURCE.read_text(encoding="utf-8"))()
-    with _fake_judge(GENERATED_SEAMS):
+    with _fake_judge():
         result = ImprovementLoop(task, max_rounds=1).run(OUTPUT, {})
 
     assert result.evaluator_spec is not None
