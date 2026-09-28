@@ -14663,6 +14663,32 @@
           {"name": "out", "type": "path", "description": "Report directory."}
         ]
       }}
+    },
+    {
+      "id": "prescreen.datagen",
+      "path": ["prescreen", "datagen"],
+      "summary": "Run the pre-registered judge pre-screen data-generation protocol (Phase 0), recording real judge verdicts to the local ledger under its call and cost caps.",
+      "audience": "advanced",
+      "maturity": "beta",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {"status": "yes"},
+        "typescript": {"status": "intentional_gap", "reason": "The judge pre-screen is currently implemented only in Python."}
+      },
+      "positionals": [{"name": "protocol", "type": "path", "required": true, "description": "Committed protocol.json (the pre-registration)."}],
+      "flags": [],
+      "output_contract": "json",
+      "output": {"modes": ["json"], "streaming": "single", "success_stream": "stdout", "error_stream": "stderr", "schemas": {}, "fixtures": {}},
+      "exit_codes": {"success": 0, "usage": 2, "execution": 1},
+      "examples": ["autoctx prescreen datagen benchmarks/judge_prescreen/protocol.json --out runs/datagen-001 --db-path runs/autocontext.sqlite3"],
+      "runtime_shapes": {"python": {
+        "positionals": [{"name": "protocol", "type": "path", "required": true, "description": "Committed protocol.json (the pre-registration)."}],
+        "flags": [
+          {"name": "out", "type": "path", "required": true, "description": "New output directory; it must not exist."},
+          {"name": "db-path", "type": "path", "description": "Judge ledger database."}
+        ]
+      }}
     }
   ]
 }

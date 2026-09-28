@@ -91,3 +91,18 @@ def replay(
     path = write_json_report(_report_dir(out), f"replay-{_slug(family)}", report)
     typer.echo(json.dumps({"gate": report["gate"], "summary": report["summary"]}, indent=2, default=str))
     typer.echo(f"wrote {path}")
+
+
+@prescreen_app.command("datagen")
+def datagen(
+    protocol: Annotated[Path, typer.Argument(help="Committed protocol.json (the pre-registration)")],
+    out: Annotated[Path, typer.Option("--out", help="New output directory; it must not exist")],
+    db_path: Annotated[Path | None, typer.Option("--db-path")] = None,
+) -> None:
+    """Run the pre-registered data-generation protocol with the judge ledger on, under its call and cost caps."""
+    from autocontext.prescreen.datagen import load_protocol, run_datagen
+    from autocontext.providers.registry import get_provider
+
+    spec, raw = load_protocol(protocol)
+    summary = run_datagen(spec, raw, out_dir=out, store=_store(db_path), provider=get_provider(load_settings()))
+    typer.echo(json.dumps(asdict(summary), indent=2))
