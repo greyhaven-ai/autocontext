@@ -41,6 +41,13 @@ jobs:
           uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file ../infra/docker/requirements.lock
           uv pip compile ../infra/docker/build-requirements.in --generate-hashes --exclude-newer 2026-06-20T00:00:00Z --output-file ../infra/docker/build-requirements.lock
           git diff --exit-code -- ../infra/docker/requirements.lock ../infra/docker/build-requirements.lock
+      # CI installs ts/ with npm ci from package-lock.json. ts/bun.lock feeds only
+      # bun audit and local bun installs, and Dependabot never updates it.
+      - name: Verify ts/bun.lock matches package-lock.json
+        working-directory: .
+        run: |
+          python -m unittest discover -s scripts -p "test_bun_lock_sync.py"
+          python scripts/check_bun_lock_sync.py
       - name: Ruff
         run: uv run ruff check src tests benchmarks/skill_reuse benchmarks/policy_reuse/run.py
       - name: Mypy
