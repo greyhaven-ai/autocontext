@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from pathlib import Path
 
 import pytest
@@ -260,6 +261,11 @@ def test_cli_replay_writes_a_report(tmp_path: Path) -> None:
     assert f"wrote {path}" in result.stderr
 
 
+def _strip_ansi_and_collapse(text: str) -> str:
+    # Typer forces a colour terminal under GITHUB_ACTIONS, and Rich styles "--models" as overlapping spans.
+    return re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;]*m", "", text))
+
+
 @pytest.mark.parametrize(
     ("flag", "value"), [("--models", "p0,p9"), ("--models", " , "), ("--curve-model", "p7"), ("--curve-model", "p1,p3")]
 )
@@ -269,7 +275,8 @@ def test_cli_replay_rejects_unknown_model_keys_as_a_usage_error(tmp_path: Path, 
     args = ["prescreen", "replay", "--family", "fam", "--judge-identity", "j1", flag, value, "--db-path", str(db)]
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 2 and isinstance(result.exception, SystemExit), result.output
-    assert "Invalid value" in result.stderr and flag in result.stderr and result.stdout == ""
+    stderr = _strip_ansi_and_collapse(result.stderr)
+    assert "Invalid value" in stderr and flag in stderr and result.stdout == ""
 
 
 def test_cli_replay_without_data_exits_1(tmp_path: Path) -> None:
