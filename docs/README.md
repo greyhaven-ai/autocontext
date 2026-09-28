@@ -17,6 +17,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Recovering artifacts written to doubled paths (Python 0.4.7 to 0.18.0)](../autocontext/docs/recovering-doubled-artifacts.md)
 - [GridCTF policy reuse pilot and reproducible measurements](../autocontext/benchmarks/policy_reuse/REPORT.md)
 - [Schema-migration reuse study protocol and four-arm harness](../autocontext/benchmarks/skill_reuse/README.md)
+- [Judge pre-screen: capture, sufficiency and offline replay](../autocontext/docs/judge-prescreen.md)
 
 Public examples use the canonical nested CLI paths: `autoctx scenario create`
 for scenario authoring and `autoctx serve mcp` for MCP clients.
