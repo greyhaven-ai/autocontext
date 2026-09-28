@@ -74,6 +74,7 @@ from autocontext.extensions import active_hook_bus
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.loop.runner_hooks import initialize_hook_bus
 from autocontext.preflight import PreflightBlocked, run_preflight
+from autocontext.prescreen.ledger import ledger_for
 from autocontext.providers.base import ProviderError
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
@@ -89,9 +90,12 @@ if TYPE_CHECKING:
     from autocontext.providers.base import LLMProvider
 
 
-app = typer.Typer(cls=StructuredUsageGroup, help="Run, inspect, and export agent-evaluation workflows.",
-    epilog="Start with `autoctx solve \"your goal\"`. Run `autoctx commands --all` for the full catalog.",
-    invoke_without_command=True)
+app = typer.Typer(
+    cls=StructuredUsageGroup,
+    help="Run, inspect, and export agent-evaluation workflows.",
+    epilog='Start with `autoctx solve "your goal"`. Run `autoctx commands --all` for the full catalog.',
+    invoke_without_command=True,
+)
 console = Console()
 _PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides AUTOCONTEXT_PRESET env var."
 
@@ -281,12 +285,13 @@ def _run_agent_task(
             model=provider_model,
         ).text
 
+    active_run_id = run_id or f"task_{uuid.uuid4().hex[:12]}"
     loop = ImprovementLoop(
         task=task,
         max_rounds=max_rounds,
         metadata=(simplicity_mode_metadata(settings.simplicity_mode) if settings.simplicity_mode != "off" else None),
+        judge_ledger=ledger_for(settings, sqlite, run_id=active_run_id, scenario_name=scenario_name),
     )
-    active_run_id = run_id or f"task_{uuid.uuid4().hex[:12]}"
     sqlite.create_run(
         active_run_id,
         scenario_name,
@@ -350,7 +355,9 @@ def _run_agent_task(
 
         epoch_id = getattr(result, "evaluator_epoch", None)
         quarantined = observe_epoch_quarantined(
-            settings.knowledge_root / "_evaluator_epochs", scenario_name, epoch_id,
+            settings.knowledge_root / "_evaluator_epochs",
+            scenario_name,
+            epoch_id,
             serving_spec=getattr(result, "evaluator_spec", None),
         )
         sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
@@ -487,6 +494,7 @@ def run(
     if serve:
         from autocontext.loop.controller import LoopController
         from autocontext.server.app import create_app
+
         runner = _runner(preset)
         controller = LoopController()
         runner.controller = controller
@@ -1204,6 +1212,7 @@ def wait(
 
 
 # Backported from TS package (AC-382)
+
 
 @app.command()
 def judge(
