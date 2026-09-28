@@ -27,8 +27,8 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.19.0` |
-| Python library/dev  | `uv pip install autocontext==0.19.0`  |
+| Python CLI          | `uv tool install autocontext==0.19.1` |
+| Python library/dev  | `uv pip install autocontext==0.19.1`  |
 | TypeScript/Node CLI | `bun add -g autoctx@0.19.0`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.11.0` |
 

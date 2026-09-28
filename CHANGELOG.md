@@ -4,7 +4,36 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [Python 0.19.1] - 2026-09-28
+
+`autocontext==0.19.1` is the first Python release of the 0.19 line, so
+everything listed under Python 0.19.0 below first ships here. `py-v0.19.0` was
+tagged but not published: pre-publish testing found that it could not open a
+database created by an earlier pip install. `autoctx@0.19.0` on npm is
+unaffected and unchanged.
+
+### Fixed
+
+- Python: upgrading a pip install from 0.18.0 keeps working with an existing
+  database. Pip installs always build their schema from the bootstrap, because
+  the wheel ships no migration files, and the 0.19.0 bootstrap created an index
+  on the new `human_feedback.acquisition_id` column without adding the
+  label-acquisition columns to an existing table, so every command failed with
+  `no such column: acquisition_id`. The bootstrap now adds those columns before
+  creating the index.
+
+### Changed
+
+- Python: the source distribution no longer includes the archived benchmark
+  runs under `benchmarks/*/results`, which are not needed to build or test the
+  package and record local paths from the machine that ran them. The wheel is
+  unchanged.
+
 ## [Python 0.19.0 / TypeScript 0.19.0] - 2026-09-27
+
+> Python 0.19.0 was tagged but never published to PyPI; `autocontext==0.19.1`
+> is the first Python release of the 0.19 line. `autoctx@0.19.0` is published
+> on npm.
 
 `autocontext==0.19.0` and `autoctx@0.19.0` release together. Most fixes below
 apply to Python; TypeScript also gains the run id, SQLite migration and
@@ -1574,7 +1603,7 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.19.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.19.1...HEAD
 [0.17.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...py-v0.17.0
 [0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.1...py-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
