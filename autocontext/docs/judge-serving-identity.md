@@ -75,6 +75,16 @@ trusted, pre-evaluation expected specification. AC-1026 owns that pinning seam;
 until then these verdicts are rejudged conservatively. Changing the examples can
 also require rejudging an unchanged output.
 
+Within one improvement loop, the loop pins the dimension names from the first
+successfully judged round that reports dimension scores, so later rounds score
+the same dimensions. When the judge was already served pinned names (a typed
+rubric's declared dimensions), the loop keeps them in the served order and the
+specification does not change. When the judge was unpinned, the new pins mint a
+new epoch, but every other serving field is unchanged, so by policy the loop
+keeps its baseline instead of re-baselining. Both specifications must reproduce
+their epochs; any other difference, or an unverifiable specification, still
+re-baselines. Each round records the epoch that scored it.
+
 Leave-one-out calibration serves a different example set for each anchor. Such
 reports now retain per-anchor epoch identities and carry no single aggregate
 epoch when identities differ or are unknown. They remain diagnostic alignment
