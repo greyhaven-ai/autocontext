@@ -311,7 +311,7 @@ The whole-branch review of Plan 1 found three problems in this design. These ame
 2. **I1. The Phase 1 gate uses the task-clustered bound and needs 12 distinct tasks.**
    - **Problem.** The Wilson interval treats skipped rounds as independent. Rounds of one task are not, so a handful of tasks could carry the gate.
    - **Change.** A model also needs a task-clustered bootstrap lower bound on skip precision of at least 0.90, and at least 12 distinct tasks among its skipped rounds, the AC-1021 minimum.
-   - **Reasoning.** Section 5 already specified task-clustered intervals, but the gate used only Wilson's. The two bounds must now agree.
+   - **Reasoning.** Section 5 already specified task-clustered intervals, but the gate used only Wilson's. Now both lower bounds must clear 0.90.
 3. **I2. Spend caps bind on providers that report no cost.**
    - **Problem.** The direct Anthropic and OpenAI-compatible providers report no `cost_usd`, so the first protocol's $25 dollar cap could never bind on them.
    - **Change.** The data-generation protocol has a mandatory cap on input plus output tokens, counted from the usage each completion reports, beside the cap on provider calls. The dollar cap is optional. When one is set and a completed call reports no cost, the run stops (`cost_not_reported`), so a protocol without a dollar cap is always a deliberate choice. The committed protocol (v2; v1 never ran) sets 3,000,000 tokens, 1,500 calls and no dollar cap.
