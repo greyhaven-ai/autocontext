@@ -204,7 +204,9 @@ class TestTemplateLoader:
         assert (target / "agent_task.py").is_file()
         assert (target / "scenario_type.txt").read_text().strip() == "agent_task"
         source = (target / "agent_task.py").read_text(encoding="utf-8")
-        assert "LLMJudge" in source
+        # Judging lives in the shared runtime, so judge changes reach scaffolds already on disk.
+        assert "evaluate_generated_output" in source
+        assert "LLMJudge" not in source
         assert "get_provider" in source
 
 
