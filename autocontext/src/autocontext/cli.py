@@ -90,12 +90,9 @@ if TYPE_CHECKING:
     from autocontext.providers.base import LLMProvider
 
 
-app = typer.Typer(
-    cls=StructuredUsageGroup,
-    help="Run, inspect, and export agent-evaluation workflows.",
-    epilog='Start with `autoctx solve "your goal"`. Run `autoctx commands --all` for the full catalog.',
-    invoke_without_command=True,
-)
+app = typer.Typer(cls=StructuredUsageGroup, help="Run, inspect, and export agent-evaluation workflows.",
+    epilog="Start with `autoctx solve \"your goal\"`. Run `autoctx commands --all` for the full catalog.",
+    invoke_without_command=True)
 console = Console()
 _PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides AUTOCONTEXT_PRESET env var."
 
@@ -355,9 +352,7 @@ def _run_agent_task(
 
         epoch_id = getattr(result, "evaluator_epoch", None)
         quarantined = observe_epoch_quarantined(
-            settings.knowledge_root / "_evaluator_epochs",
-            scenario_name,
-            epoch_id,
+            settings.knowledge_root / "_evaluator_epochs", scenario_name, epoch_id,
             serving_spec=getattr(result, "evaluator_spec", None),
         )
         sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
@@ -494,7 +489,6 @@ def run(
     if serve:
         from autocontext.loop.controller import LoopController
         from autocontext.server.app import create_app
-
         runner = _runner(preset)
         controller = LoopController()
         runner.controller = controller
@@ -1212,7 +1206,6 @@ def wait(
 
 
 # Backported from TS package (AC-382)
-
 
 @app.command()
 def judge(
