@@ -187,3 +187,28 @@ background processes.
 - Keep changes scoped to one feature or cleanup theme.
 - Update docs and examples when renaming commands, env vars, or package paths.
 - Include verification notes for the checks you ran.
+
+### npm Release Age
+
+CI installs npm dependencies with `npm ci`, which does not enforce the
+`NPM_CONFIG_MIN_RELEASE_AGE` that `.github/workflows/ci.yml` sets (currently
+seven days). The `npm-release-age` job therefore compares `ts/package-lock.json`
+and `pi/package-lock.json` with the pull request's merge base, and fails if the
+pull request newly locks a registry version younger than that. `autoctx`, which
+this repository publishes, is exempt. The failure lists each version with its
+publish time and the UTC time it clears the policy: re-run the job after the
+last of those times. To check a branch before pushing:
+
+```bash
+NPM_CONFIG_MIN_RELEASE_AGE=7 python3 scripts/check_npm_release_age.py --base origin/main --head HEAD
+```
+
+With `min-release-age=7` in your npm config (npm 11.10 or newer), `npm install`
+resolves only versions that pass.
+
+For an urgent security fix that cannot wait, a maintainer can apply the
+`npm-release-age-override` label. The job then still lists the young versions,
+but passes. It reads labels from the event that started the run, and a re-run
+reuses that event, so after adding the label start a new run: push a commit,
+close and reopen the pull request, or comment `@dependabot recreate` on a
+Dependabot pull request.

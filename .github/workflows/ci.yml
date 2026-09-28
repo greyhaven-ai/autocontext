@@ -48,6 +48,9 @@ jobs:
       - name: Release source guard tests
         working-directory: .
         run: python -m unittest discover -s scripts -p "test_release_source.py"
+      - name: npm release-age check tests
+        working-directory: .
+        run: python -m unittest discover -s scripts -p "test_npm_release_age.py"
       - name: Protocol parity check
         run: uv run python ../scripts/generate_protocol.py --check
       - name: Markdown link integrity
@@ -302,6 +305,31 @@ jobs:
       - name: Audit Pi npm lock
         working-directory: pi
         run: npm audit --omit=dev --audit-level=moderate
+
+  # `npm ci` does not enforce NPM_CONFIG_MIN_RELEASE_AGE, so a pull request can
+  # lock a fresh npm release that the npm jobs then install. Dependabot's
+  # version updates honour the cooldown when they regenerate a lockfile; this
+  # job is the backstop for other lockfile changes, Dependabot security updates
+  # and regressions in that gate. A failure prints when each version clears the
+  # policy, so re-run the job after that time. Urgent security fixes can use the
+  # npm-release-age-override label; see "npm Release Age" in CONTRIBUTING.md.
+  npm-release-age:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The check compares each lockfile with the pull request's merge base.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Check release age of newly locked npm packages
+        run: python scripts/check_npm_release_age.py
 
   # AC-909: the TypeScript type gate. Without this the 833-file clean test
   # suite has no ratchet: tsconfig.json excludes tests/, so a drifting test
