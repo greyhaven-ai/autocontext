@@ -18,6 +18,8 @@ _LEGACY_EVALUATE_MARKER = 'raise NotImplementedError("llm_fn must be injected at
 
 # Emitted in evaluate_output by every generated template that judged inline, before the shared runtime.
 _LEGACY_INLINE_EVALUATE_MARKER = "# Use passed-in context or fall back to class defaults"
+# Emitted in evaluate_output by every scaffolded template task that judged inline.
+_LEGACY_SCAFFOLD_EVALUATE_MARKER = "reference_context=reference_context or (self._reference_context or None)"
 
 
 def build_revision_prompt(
@@ -132,11 +134,13 @@ def patch_legacy_generated_evaluate_output(
     AC-310: Generated scenarios that still use the broken pattern:
         def llm_fn(system, user):
             raise NotImplementedError("llm_fn must be injected at runtime")
-    crash when evaluated. Generated classes that judge inline predate the shared runtime and drop
-    the judge's serving specification and provenance (AC-1022). Both get the runtime newly generated
-    classes call. It serves the same specification, so their scores keep their epoch.
+    crash when evaluated. Generated and scaffolded classes that judge inline predate the shared
+    runtime and may drop the judge's serving specification and provenance (AC-1022). All of them get
+    the runtime newly generated classes call. It serves the same specification, so their scores keep
+    their epoch.
     """
     source = source_path.read_text(encoding="utf-8")
-    if _LEGACY_EVALUATE_MARKER in source or _LEGACY_INLINE_EVALUATE_MARKER in source:
+    legacy_markers = (_LEGACY_EVALUATE_MARKER, _LEGACY_INLINE_EVALUATE_MARKER, _LEGACY_SCAFFOLD_EVALUATE_MARKER)
+    if any(marker in source for marker in legacy_markers):
         cls.evaluate_output = evaluate_generated_output
     return cls

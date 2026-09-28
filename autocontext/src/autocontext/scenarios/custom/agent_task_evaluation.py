@@ -18,8 +18,8 @@ def evaluate_generated_output(
 ) -> AgentTaskResult:
     """Shared evaluate_output runtime for generated agent tasks.
 
-    Returns the judge's full serving identity (AC-1022). Generated classes delegate here so judge
-    changes reach tasks already persisted as source. Settings and the provider resolve at call time
+    Returns the judge's full serving identity (AC-1022). Generated and scaffolded classes delegate here
+    so judge changes reach tasks already persisted as source. Settings and the provider resolve at call time
     through ``autocontext.config`` and ``autocontext.providers.registry``, as generated code always
     did; the execution validator patches those names.
     """
@@ -65,16 +65,18 @@ def evaluate_generated_output(
         temperature=judge_temperature,
         disagreement_threshold=judge_disagreement_threshold,
     )
-    # Context passed by the caller wins over the task's generated defaults.
-    ref_ctx = reference_context or task._reference_context
+    # Context passed by the caller wins over the task's generated defaults. Scaffolded template tasks
+    # also default their calibration examples and pinned dimensions, and store an absent reference
+    # context as "".
+    ref_ctx = reference_context or task._reference_context or None
     req_con = required_concepts or task._required_concepts
     result = judge.evaluate(
         task.get_task_prompt(state),
         output,
         reference_context=ref_ctx,
         required_concepts=req_con,
-        calibration_examples=calibration_examples,
-        pinned_dimensions=pinned_dimensions,
+        calibration_examples=calibration_examples or getattr(task, "_calibration_examples", None),
+        pinned_dimensions=pinned_dimensions or getattr(task, "_pinned_dimensions", None),
     )
     evaluator_guardrail = evaluate_evaluator_guardrail(
         result,

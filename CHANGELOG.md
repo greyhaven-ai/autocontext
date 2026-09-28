@@ -20,16 +20,16 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Python: generated custom agent tasks now report the judge's serving
-  specification and execution and fixture provenance, not just its epoch
-  (AC-1022). Their score writes persist the specification instead of a
-  hash-only registry record, and each improvement round keeps its provenance.
-  Generated `evaluate_output` now calls a shared runtime, so later judge changes
-  reach tasks already on disk. Agent tasks generated earlier are upgraded when
-  their custom scenario loads: an epoch they already reported is unchanged, and
-  the next score write attaches the specification to its existing record. Agent
-  tasks scaffolded from templates before 0.19.0 are not upgraded and need
-  scaffolding again.
+- Python: generated custom agent tasks, and agent tasks scaffolded from
+  templates before 0.19.0, now report the judge's serving specification and
+  execution and fixture provenance, not just its epoch (AC-1022). Their score
+  writes persist the specification instead of a hash-only registry record, and
+  each improvement round keeps its provenance. Generated and scaffolded
+  `evaluate_output` now calls a shared runtime, so later judge changes reach
+  tasks already on disk. Agent tasks generated or scaffolded earlier are
+  upgraded when their custom scenario loads: an epoch they already reported is
+  unchanged, and the next score write attaches the specification to its
+  existing record.
 
 - Python: agent tasks generated with the old `llm_fn` placeholder, which the
   loader has replaced at load since AC-310, now evaluate through the same shared

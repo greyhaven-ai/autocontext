@@ -1,8 +1,8 @@
-"""Generated agent tasks report the judge's full serving identity (AC-1022).
+"""Generated and scaffolded agent tasks report the judge's full serving identity (AC-1022).
 
-Generated ``evaluate_output`` copied only ``evaluator_epoch`` from ``LLMJudge.evaluate()``, so
-scores wrote hash-only registry records and empty per-round provenance. These tests drive the real
-judge through a fake provider; no model is called.
+Generated ``evaluate_output``, and template scaffolds before 0.19.0, copied only ``evaluator_epoch``
+from ``LLMJudge.evaluate()``, so scores wrote hash-only registry records and empty per-round
+provenance. These tests drive the real judge through a fake provider; no model is called.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_
 from autocontext.scenarios.custom.agent_task_revision import patch_legacy_generated_evaluate_output
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 from autocontext.scenarios.custom.registry import load_all_custom_scenarios
+from autocontext.scenarios.templates import TemplateLoader
 
 TASK_PROMPT = "Summarize the release notes for operators."
 RUBRIC = "Score accuracy and operator usefulness."
@@ -34,6 +35,17 @@ JUDGE_MODEL = "fake-judge"
 # An agent_task.py persisted by the 0.19.0 template, whose evaluate_output judged inline. It was
 # generated from the constants above.
 LEGACY_SOURCE = Path(__file__).parent / "fixtures" / "legacy_generated_agent_task.py"
+# An agent_task.py scaffolded by 0.18.0 from the rag-accuracy template. Its evaluate_output judged
+# inline and fell back to the template's calibration examples and rubric dimensions. The module
+# binds load_settings and get_provider at import, so tests load it inside _fake_judge.
+LEGACY_SCAFFOLD = Path(__file__).parent / "fixtures" / "legacy_scaffolded_agent_task.py"
+RAG_DIMENSIONS = (
+    "retrieval_relevance",
+    "answer_grounding",
+    "citation_accuracy",
+    "hallucination_detection",
+    "parameter_justification",
+)
 
 
 @contextmanager
@@ -59,13 +71,13 @@ def _assert_reports_serving_identity(result: AgentTaskResult) -> None:
     assert result.fixture_provenance == fixture_provenance(TASK_PROMPT, OUTPUT, REFERENCE, CONCEPTS)
 
 
-def _load_persisted(knowledge_root: Path, source: str) -> type[AgentTaskInterface]:
+def _load_persisted(knowledge_root: Path, source: str, name: str = "release_notes") -> type[AgentTaskInterface]:
     """Load ``source`` the way a custom agent task loads from ``knowledge/_custom_scenarios``."""
-    scenario_dir = knowledge_root / "_custom_scenarios" / "release_notes"
+    scenario_dir = knowledge_root / "_custom_scenarios" / name
     scenario_dir.mkdir(parents=True)
     (scenario_dir / "agent_task.py").write_text(source, encoding="utf-8")
     (scenario_dir / "scenario_type.txt").write_text("agent_task", encoding="utf-8")
-    return load_all_custom_scenarios(knowledge_root)["release_notes"]
+    return load_all_custom_scenarios(knowledge_root)[name]
 
 
 def _upgraded_llm_fn_placeholder_task(tmp_path: Path) -> AgentTaskInterface:
@@ -171,3 +183,61 @@ def test_upgrade_keeps_the_epoch_and_backfills_its_hash_only_record(tmp_path: Pa
     assert [entry["fixture_provenance"] for entry in result.evaluation_provenance] == [
         fixture_provenance(TASK_PROMPT, OUTPUT, REFERENCE, CONCEPTS),
     ]
+
+
+def test_persisted_scaffolded_task_is_upgraded_to_report_the_judges_serving_identity(tmp_path: Path) -> None:
+    with _fake_judge():
+        task = _load_persisted(tmp_path, LEGACY_SCAFFOLD.read_text(encoding="utf-8"), name="policy_answers")()
+        result = task.evaluate_output(OUTPUT, {})
+
+    assert result.evaluator_spec is not None
+    spec = JudgeServingSpec.model_validate_json(result.evaluator_spec)
+    spec.require_epoch(result.evaluator_epoch)
+    # The template's rubric dimensions and calibration examples are served when the caller passes none.
+    assert spec.pinned_dimensions == RAG_DIMENSIONS
+    assert len(spec.serving_examples) == 2
+    assert result.execution_provenance.get("identity_status") == "verified"
+    # The template's empty reference context reaches the judge as no reference context.
+    assert result.fixture_provenance == fixture_provenance(task.get_task_prompt({}), OUTPUT, None, [])
+
+
+def test_scaffold_upgrade_keeps_the_epoch_and_backfills_its_hash_only_record(tmp_path: Path) -> None:
+    epochs_root = tmp_path / "_evaluator_epochs"
+    legacy: dict[str, Any] = {}
+    with _fake_judge():
+        exec(compile(LEGACY_SCAFFOLD.read_text(encoding="utf-8"), str(LEGACY_SCAFFOLD), "exec"), legacy)  # noqa: S102
+        earlier = legacy["TemplateAgentTask"]().evaluate_output(OUTPUT, {})
+    assert earlier.evaluator_spec is None
+    assert observe_epoch_quarantined(epochs_root, "policy_answers", earlier.evaluator_epoch) is False
+
+    with _fake_judge():
+        task = _load_persisted(tmp_path, LEGACY_SCAFFOLD.read_text(encoding="utf-8"), name="policy_answers")()
+        result = ImprovementLoop(task, max_rounds=1).run(OUTPUT, {})
+
+    assert result.evaluator_spec is not None
+    assert result.evaluator_epoch == earlier.evaluator_epoch
+    quarantined = observe_epoch_quarantined(
+        epochs_root,
+        "policy_answers",
+        result.evaluator_epoch,
+        serving_spec=result.evaluator_spec,
+    )
+    assert quarantined is False
+    record = EvaluatorEpochRegistry(epochs_root).load("policy_answers", earlier.evaluator_epoch)
+    assert record.serving_spec == result.evaluator_spec
+
+
+def test_scaffolded_task_reports_the_judges_serving_identity(tmp_path: Path) -> None:
+    loader = TemplateLoader()
+    loader.scaffold("rag-accuracy", tmp_path / "_custom_scenarios" / "policy_answers")
+    with _fake_judge():
+        task = load_all_custom_scenarios(tmp_path)["policy_answers"]()
+        result = task.evaluate_output(OUTPUT, {})
+
+    assert result.evaluator_spec is not None
+    spec = JudgeServingSpec.model_validate_json(result.evaluator_spec)
+    spec.require_epoch(result.evaluator_epoch)
+    template_dimensions = loader.get_template("rag-accuracy").rubric_dimensions or []
+    assert spec.pinned_dimensions == tuple(dimension.name for dimension in template_dimensions)
+    assert result.execution_provenance.get("identity_status") == "verified"
+    assert result.fixture_provenance == fixture_provenance(task.get_task_prompt({}), OUTPUT, None, [])
