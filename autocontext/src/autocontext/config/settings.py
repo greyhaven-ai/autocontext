@@ -804,7 +804,6 @@ class AppSettings(
     def _blank_agent_provider_uses_default(cls, v: object) -> object:
         return _DEFAULT_AGENT_PROVIDER if isinstance(v, str) and not v.strip() else v
 
-
 def load_settings() -> AppSettings:
     """Load settings from env vars and preset overrides.
 
@@ -819,9 +818,8 @@ def load_settings() -> AppSettings:
         env_keys = setting_env_keys(field_name)
         env_val = next(
             (
-                value
-                for key in env_keys
-                if (value := os.getenv(key)) is not None and (field_name != "agent_provider" or bool(value.strip()))
+                value for key in env_keys if (value := os.getenv(key)) is not None
+                and (field_name != "agent_provider" or bool(value.strip()))
             ),
             None,
         )

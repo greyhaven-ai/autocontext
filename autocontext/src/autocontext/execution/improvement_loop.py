@@ -167,15 +167,9 @@ class ImprovementLoop:
 
         def _evaluation_cache_context() -> str:
             return json.dumps(
-                {
-                    "rubric": self.task.get_rubric(),
-                    "reference_context": reference_context,
-                    "required_concepts": required_concepts,
-                    "calibration_examples": calibration_examples,
-                    "pinned_dimensions": pinned_dimensions,
-                },
-                sort_keys=True,
-                ensure_ascii=False,
+                {"rubric": self.task.get_rubric(), "reference_context": reference_context,
+                 "required_concepts": required_concepts, "calibration_examples": calibration_examples,
+                 "pinned_dimensions": pinned_dimensions}, sort_keys=True, ensure_ascii=False,
             )
 
         # Plateau detection state
