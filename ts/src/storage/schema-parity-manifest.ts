@@ -24,6 +24,11 @@ export const SCHEMA_PARITY_PYTHON_ONLY_TABLES = [
     table: "staged_validation_results",
     reason: "Python-only staged validation metadata until TypeScript staged validation is ported.",
   },
+  {
+    table: "judge_ledger",
+    reason:
+      "Python-only judge pre-screen capture (docs/internal/judge-prescreen-design.md); TypeScript parity is deferred.",
+  },
 ] as const;
 
 export const SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES = [

@@ -35,6 +35,7 @@ from autocontext.cli_investigate import run_investigate_command
 from autocontext.cli_mission import register_mission_command
 from autocontext.cli_new_scenario import register_new_scenario_command
 from autocontext.cli_package_commands import register_package_commands
+from autocontext.cli_prescreen import prescreen_app
 from autocontext.cli_probes import register_probes_command
 from autocontext.cli_queue import register_queue_command
 from autocontext.cli_rescore import rescore_command
@@ -74,6 +75,7 @@ from autocontext.extensions import active_hook_bus
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.loop.runner_hooks import initialize_hook_bus
 from autocontext.preflight import PreflightBlocked, run_preflight
+from autocontext.prescreen.ledger import ledger_for
 from autocontext.providers.base import ProviderError
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
@@ -281,12 +283,13 @@ def _run_agent_task(
             model=provider_model,
         ).text
 
+    active_run_id = run_id or f"task_{uuid.uuid4().hex[:12]}"
     loop = ImprovementLoop(
         task=task,
         max_rounds=max_rounds,
         metadata=(simplicity_mode_metadata(settings.simplicity_mode) if settings.simplicity_mode != "off" else None),
+        judge_ledger=ledger_for(settings, sqlite, run_id=active_run_id, scenario_name=scenario_name),
     )
-    active_run_id = run_id or f"task_{uuid.uuid4().hex[:12]}"
     sqlite.create_run(
         active_run_id,
         scenario_name,
@@ -778,6 +781,7 @@ app.add_typer(_serve_app, name="serve")
 app.add_typer(ambient_app, name="ambient")
 app.add_typer(epoch_app, name="epoch")
 app.add_typer(labels_app, name="labels")
+app.add_typer(prescreen_app, name="prescreen")
 
 
 @app.command()
