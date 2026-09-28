@@ -14627,6 +14627,42 @@
           {"name": "out", "type": "path", "description": "Report directory."}
         ]
       }}
+    },
+    {
+      "id": "prescreen.replay",
+      "path": ["prescreen", "replay"],
+      "summary": "Replay the pre-screen model ladder offline on one family and epoch, score time-ordered folds, and evaluate the Phase 1 skip-rate gate.",
+      "audience": "advanced",
+      "maturity": "beta",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {"status": "yes"},
+        "typescript": {"status": "intentional_gap", "reason": "The judge pre-screen is currently implemented only in Python."}
+      },
+      "positionals": [],
+      "flags": [],
+      "output_contract": "json",
+      "output": {"modes": ["json"], "streaming": "single", "success_stream": "stdout", "error_stream": "stderr", "schemas": {}, "fixtures": {}},
+      "exit_codes": {"success": 0, "usage": 2, "execution": 1},
+      "examples": ["autoctx prescreen replay --family datagen --epoch e1 --db-path runs/autocontext.sqlite3 --out knowledge/analytics/prescreen"],
+      "runtime_shapes": {"python": {
+        "positionals": [],
+        "flags": [
+          {"name": "family", "type": "string", "required": true, "description": "Scenario family, for example datagen or agent_task."},
+          {"name": "epoch", "type": "string", "required": true, "description": "Evaluator epoch whose verdicts are replayed."},
+          {"name": "models", "type": "string", "default": "p0,p1,p2,p3", "description": "Comma-separated pre-screen model keys to score (p0..p3)."},
+          {"name": "curve-model", "type": "string", "default": "p3", "description": "Model key for the learning curve; 'none' skips it."},
+          {"name": "curve-halvings", "type": "int", "default": 3, "description": "Number of halvings of the training pool for the learning curve."},
+          {"name": "curve-repeats", "type": "int", "default": 5, "description": "Random-sample repeats per learning-curve training size."},
+          {"name": "blocks", "type": "int", "default": 5, "description": "Number of expanding, time-ordered folds."},
+          {"name": "min-train", "type": "int", "default": 100, "description": "Minimum training rounds for a fold to be scored."},
+          {"name": "seed", "type": "int", "default": 0, "description": "Random seed for the clustered bootstrap intervals and the learning curve."},
+          {"name": "resamples", "type": "int", "default": 2000, "description": "Bootstrap resamples for the clustered intervals."},
+          {"name": "db-path", "type": "path", "description": "Judge ledger database."},
+          {"name": "out", "type": "path", "description": "Report directory."}
+        ]
+      }}
     }
   ]
 }
