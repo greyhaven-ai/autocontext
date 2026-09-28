@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator  # type: ignore[import-not-found]
 
 from autocontext.config.output_budgets import OutputBudgetFields
+from autocontext.config.prescreen_fields import PrescreenFields
 from autocontext.config.presets import apply_preset
 from autocontext.config.production_execution import ProductionExecutionFields
 from autocontext.config.role_routing import RoleRoutingFields
@@ -53,6 +54,7 @@ class AppSettings(
     WorkspaceInterpreterFields,
     OutputBudgetFields,
     ProductionExecutionFields,
+    PrescreenFields,
     BaseModel,
 ):
     db_path: Path = Field(default=Path("runs/autocontext.sqlite3"))

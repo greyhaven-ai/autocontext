@@ -9,8 +9,22 @@ All notable changes to this project will be documented in this file.
 `autocontext==0.19.1` is the first Python release of the 0.19 line, so
 everything listed under Python 0.19.0 below first ships here. `py-v0.19.0` was
 tagged but not published: pre-publish testing found that it could not open a
-database created by an earlier pip install. `autoctx@0.19.0` on npm is
-unaffected and unchanged.
+database created by an earlier pip install. It also adds the opt-in judge
+pre-screen tooling. `autoctx@0.19.0` on npm is unaffected and unchanged.
+
+### Added
+
+- Python: judge pre-screen Phase 0–1 tooling
+  ([design](docs/internal/judge-prescreen-design.md),
+  [guide](autocontext/docs/judge-prescreen.md)). Opt-in judge ledger capture
+  (`AUTOCONTEXT_JUDGE_LEDGER_ENABLED`, off by default) records every real
+  improvement-loop judge verdict of `autoctx run` in the local run database.
+  `autoctx prescreen sufficiency | replay | datagen` reports eligible rounds per
+  judge identity and scenario family, replays a ladder of fast pass/fail
+  predictors offline against the Phase 1 gate, and runs a pre-registered
+  data-generation protocol under call and token caps. The replay needs the new
+  `prescreen` extra (scikit-learn, numpy and scipy). Nothing skips a judge call
+  yet, and TypeScript parity is deferred.
 
 ### Fixed
 

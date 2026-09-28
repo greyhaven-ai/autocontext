@@ -13,6 +13,7 @@ from autocontext.storage.sqlite_migrations import apply_python_migration_files
 from autocontext.storage.sqlite_store_consultations import SQLiteConsultationStoreMixin
 from autocontext.storage.sqlite_store_hub import SQLiteHubStoreMixin
 from autocontext.storage.sqlite_store_human_feedback import SQLiteHumanFeedbackStoreMixin
+from autocontext.storage.sqlite_store_judge_ledger import SQLiteJudgeLedgerStoreMixin
 from autocontext.storage.sqlite_store_monitoring import SQLiteMonitorStoreMixin
 from autocontext.storage.sqlite_store_notebooks import SQLiteNotebookStoreMixin
 from autocontext.storage.sqlite_store_task_queue import SQLiteTaskQueueStoreMixin
@@ -29,6 +30,7 @@ class SQLiteStore(
     SQLiteTaskQueueStoreMixin,
     SQLiteConsultationStoreMixin,
     SQLiteHumanFeedbackStoreMixin,
+    SQLiteJudgeLedgerStoreMixin,
     SQLiteNotebookStoreMixin,
 ):
     def __init__(self, db_path: Path) -> None:
