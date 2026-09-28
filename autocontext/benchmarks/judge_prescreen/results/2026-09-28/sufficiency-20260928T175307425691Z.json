@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-09-28T17:53:07.425461+00:00",
+  "rows": [
+    {
+      "eligible_failing_rounds": 6,
+      "eligible_rounds": 37,
+      "epochs": 53,
+      "judge_identity": "fd1ba53a6172e72ebb2c4a12a061fe3055a347e4e75fcaa0804d977755233cfc",
+      "judged_rounds": 144,
+      "loops": 97,
+      "meets_phase1": false,
+      "parse_failures": 2,
+      "pass_rate": 0.7323943661971831,
+      "scenario_family": "datagen",
+      "tasks": 24,
+      "value_ceiling": 0.041666666666666664
+    }
+  ]
+}
