@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 
 from autocontext.prescreen.dataset import STRUCTURAL_FEATURES, build_examples, feature_spec_hash, structural_features
-
 from autocontext.prescreen.rounds import EligibleRound, LedgerRound
 
 
@@ -82,3 +81,11 @@ def test_build_examples_filters_orders_and_labels() -> None:
 
 def test_feature_spec_hash_is_stable() -> None:
     assert feature_spec_hash() == feature_spec_hash() and len(feature_spec_hash()) == 64
+
+
+def test_structural_features_token_jaccard_fallback_when_both_outputs_empty() -> None:
+    # When both outputs tokenize to nothing (only special characters), token_jaccard should be 1.0
+    current = rnd(2, "L", 2, output="!!", score=0.5)
+    previous = rnd(1, "L", 1, output="??", score=0.3)
+    values = structural_features(current, previous)
+    assert values[6] == 1.0  # token_jaccard_with_previous
