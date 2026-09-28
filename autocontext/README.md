@@ -35,6 +35,7 @@ Optional extras:
 pip install 'autocontext[browser]'          # Chrome/CDP capture
 pip install 'autocontext[primeintellect]'   # PrimeIntellect sandbox backend
 pip install 'autocontext[mcp]'              # MCP server dependencies
+pip install 'autocontext[prescreen]'        # Judge pre-screen offline replay (scikit-learn, numpy, scipy)
 ```
 
 The CLI entrypoint is `autoctx`. Provider env vars are listed in the repo-level [`.env.example`](../.env.example).
@@ -213,6 +214,9 @@ prompt-derived data and should be redacted before persistence or export.
 | `uv run autoctx train --scenario <name> --data data.jsonl --time-budget 300`           | Run the local training hook                                                                            |
 | `uv run autoctx epoch list [--scenario <name>]`                                        | List evaluator-epoch registry records (candidate/active)                                               |
 | `uv run autoctx epoch approve <scenario> <epoch_id> --charter ambient-charter.yaml`    | Approve a candidate evaluator epoch and clear its quarantine                                           |
+| `uv run autoctx prescreen sufficiency`                                                 | Count eligible judged rounds per judge identity and scenario family (judge pre-screen)                 |
+| `uv run autoctx prescreen replay --family datagen --judge-identity <id>`               | Replay the judge pre-screen model ladder offline against its Phase 1 gate (`prescreen` extra)          |
+| `uv run autoctx prescreen datagen <protocol.json> --out <new dir>`                     | Run the pre-registered judge pre-screen data generation under its call and token caps                  |
 | `uv run autoctx hermes inspect --json`                                                 | Inspect Hermes Curator state                                                                           |
 
 Saved custom scenarios under `knowledge/_custom_scenarios/` can be rerun and benchmarked by name after their `spec.json` is persisted.
