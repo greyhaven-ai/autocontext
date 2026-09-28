@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from autocontext.config import AppSettings
+from autocontext.execution.isolated_python import local_isolation_available
 from autocontext.extensions import HookEvents, HookResult
 from autocontext.loop import GenerationRunner
 from autocontext.loop.generation_pipeline import GenerationPipeline
@@ -121,8 +122,22 @@ RUNTIME_CHANGES = [
 
 
 def _switched_runner(tmp_path: Path, field: str, current: str) -> GenerationRunner:
-    # A closed local port, so a re-entry the guard misses cannot reach a real endpoint.
-    return _runner(tmp_path, **{field: current}, agent_base_url="http://127.0.0.1:9/v1")
+    # A closed local port, so a re-entry the guard misses cannot reach a real endpoint. Building the SDK client with no
+    # proxy variables set makes macOS read proxies from System Configuration, which leaves a native thread running for the
+    # rest of the process and closes the fork isolation boundary to every later test.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("no_proxy", "*")
+        return _runner(tmp_path, **{field: current}, agent_base_url="http://127.0.0.1:9/v1")
+
+
+def test_building_the_switched_provider_runner_keeps_local_isolation_available(tmp_path: Path) -> None:
+    # The fork isolation boundary refuses to start once the process has a second native thread. On macOS the SDK client's
+    # proxy lookup can leave one behind, which fails every later test that runs generated code in isolation.
+    available = local_isolation_available()
+
+    _switched_runner(tmp_path, "agent_provider", "openai-compatible")
+
+    assert local_isolation_available() == available
 
 
 @pytest.mark.slow
