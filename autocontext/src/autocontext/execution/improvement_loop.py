@@ -12,7 +12,11 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from autocontext.execution.evaluator_epoch import EVALUATOR_EPOCH_REBASELINE, resolve_epoch_rebaseline
+from autocontext.execution.evaluator_epoch import (
+    EVALUATOR_EPOCH_REBASELINE,
+    resolve_epoch_rebaseline,
+    served_pinned_dimensions,
+)
 from autocontext.execution.improvement_events import ImprovementLoopEvent
 from autocontext.execution.improvement_results import (
     ImprovementResult as ImprovementResult,
@@ -135,6 +139,7 @@ class ImprovementLoop:
         # AC-885: the evaluator epoch of the running baseline. When a later round's
         # epoch is not comparable, the prior baseline is stale and the loop re-baselines.
         baseline_epoch: str | None = None
+        baseline_spec: str | None = None
         has_baseline = False
         # AC-756 (reviewer P2): track whether the round that produced
         # best_score also satisfied dimension_threshold, so the fallthrough
@@ -376,7 +381,10 @@ class ImprovementLoop:
             # the epoch boundary; best_score is reset so a stale-epoch best cannot win. The
             # near-threshold/plateau stability state (threshold_met_round, prev_valid_score,
             # plateau_count) is also reset so a prior-epoch threshold-met round cannot confirm a
-            # new-epoch round as "confirmed stable" and stop the loop early.
+            # new-epoch round as "confirmed stable" and stop the loop early. The one exempt change
+            # is this loop pinning an unpinned judge to the dimension names it scored (AC-48): the
+            # pins are served, so they change the epoch, but when the serving specifications prove
+            # they are the only difference the baseline stays comparable.
             round_result.evaluator_epoch = result.evaluator_epoch
             round_result.evaluator_spec = result.evaluator_spec
             round_result.execution_provenance = result.execution_provenance
@@ -387,7 +395,14 @@ class ImprovementLoop:
             if missing_targets:
                 _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, baseline_epoch, False)
             else:
-                _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, result.evaluator_epoch, has_baseline)
+                _epoch_decision = resolve_epoch_rebaseline(
+                    baseline_epoch,
+                    result.evaluator_epoch,
+                    has_baseline,
+                    baseline_spec=baseline_spec,
+                    round_spec=result.evaluator_spec,
+                    loop_pinned_dimensions=pinned_dimensions,
+                )
             if _epoch_decision.rebaseline:
                 self._on_event(
                     ImprovementLoopEvent(
@@ -402,8 +417,11 @@ class ImprovementLoop:
                 threshold_met_round = None
                 prev_valid_score = None
                 plateau_count = 0
+            elif has_baseline and not missing_targets and result.evaluator_epoch != baseline_epoch:
+                logger.info("round %d: epoch changed only by the loop's dimension pinning; baseline kept", round_num)
             if not missing_targets:
                 baseline_epoch = result.evaluator_epoch
+                baseline_spec = result.evaluator_spec
                 has_baseline = True
 
             # Compute worst dimension for this round
@@ -412,9 +430,15 @@ class ImprovementLoop:
                 round_result.worst_dimension = worst_dim
                 round_result.worst_dimension_score = result.dimension_scores[worst_dim]
 
-            # Pin dimension names after first successful evaluation
+            # Pin dimension names after first successful evaluation. Names the judge was already
+            # served (a typed rubric's declared dimensions) keep their served order, so pinning
+            # leaves its serving specification, and so its epoch, unchanged.
             if pinned_dimensions is None and result.dimension_scores:
-                pinned_dimensions = sorted(result.dimension_scores.keys())
+                served = served_pinned_dimensions(result.evaluator_spec, result.evaluator_epoch)
+                if sorted(served) == sorted(result.dimension_scores):
+                    pinned_dimensions = list(served)
+                else:
+                    pinned_dimensions = sorted(result.dimension_scores.keys())
 
             # Build dimension trajectory from valid rounds
             for dim, dim_score in result.dimension_scores.items():
