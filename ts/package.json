@@ -240,7 +240,7 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "0.85.1",
+    "@earendil-works/pi-tui": "0.87.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
