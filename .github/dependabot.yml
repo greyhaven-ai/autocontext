@@ -89,3 +89,12 @@ updates:
     # route for base-image fixes, and a digest refresh waits until the tag's
     # newest digest is older than the window. A tag rebuilt more often than
     # every seven days would never refresh under a seven-day cooldown.
+    ignore:
+      # Keep the image on Python 3.11, which every workflow runs and
+      # test_container_build_uses_immutable_and_hash_verified_inputs requires.
+      # For a tag like 3.11-slim, Dependabot proposes the newest X.Y-slim tag
+      # (3.14-slim in #1429) before a digest refresh, so ignoring minor and major
+      # updates leaves only python:3.11-slim digest refreshes, which carry the
+      # base image's OS fixes. Moving to a newer Python is a separate change.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
