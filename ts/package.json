@@ -233,7 +233,7 @@
     "@types/ws": "^8.5.13",
     "esbuild": "^0.28.2",
     "fast-check": "^4.7.0",
-    "json-schema-to-typescript": "^15.0.4",
+    "json-schema-to-typescript": "^16.0.0",
     "openai": "^7",
     "typescript": "^7.0.2",
     "typescript-6": "npm:typescript@^6.0.3",
