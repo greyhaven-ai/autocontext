@@ -215,9 +215,9 @@
   },
   "overrides": {
     "@hono/node-server": "1.19.15",
-    "fast-uri": "3.1.6",
+    "fast-uri": "3.1.8",
     "hono": "4.13.7",
-    "ip-address": "10.3.1",
+    "ip-address": "10.7.2",
     "js-yaml": "4.3.1",
     "@apidevtools/json-schema-ref-parser@^16.0.1": {
       "js-yaml": "5.2.3",
