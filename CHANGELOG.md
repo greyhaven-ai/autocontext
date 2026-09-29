@@ -14,6 +14,15 @@ All notable changes to this project will be documented in this file.
   not install. The `lint` CI job now runs `scripts/check_bun_lock_sync.py`,
   which fails when the lockfiles lock different versions of any package.
 
+- TypeScript and Pi: the `fast-uri` override moves from 3.1.6 to 3.1.8
+  (GHSA-qw65-cvwx-89v3 and GHSA-58mr-gqgx-xq4g, high) and the `ip-address`
+  override from 10.3.1 to 10.7.2 (GHSA-rpw4-54j3-4h4q and GHSA-2vr4-cq9g-pvrc,
+  moderate), and Pi's `undici` override moves from 8.9.0 to 8.10.2
+  (GHSA-3wwx-pv8p-q78v, moderate), the version `ts/` already locks. These
+  overrides govern this repository's own installs and CI audits; they do not
+  reach packages installed from npm, and `autoctx@0.19.0` on npm still pins
+  `undici` 8.9.0 until the next `autoctx` release.
+
 ## [Pi 0.12.0] - 2026-09-28
 
 The Pi extension moves onto the newly published `autoctx@0.19.0` runtime. This
