@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import ts from "typescript";
+// TypeScript 7 exposes no compiler API from its main export, so this AST walk
+// uses the TypeScript 6 API through the typescript-6 alias; tsc is TypeScript 7.
+import ts from "typescript-6";
 
 const SRC_DIR = join(__dirname, "..", "src");
 

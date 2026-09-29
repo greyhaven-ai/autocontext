@@ -8,13 +8,15 @@ const requireFromTypeScriptPackage = createRequire(
   new URL("../ts/package.json", import.meta.url),
 );
 
+// TypeScript 7 exposes no compiler API from its main export, so the scanner
+// uses the TypeScript 6 API that ts/ installs as the typescript-6 alias.
 let ts;
 try {
-  ts = requireFromTypeScriptPackage("typescript");
+  ts = requireFromTypeScriptPackage("typescript-6");
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(
-    `Unable to load the TypeScript compiler from ts/node_modules. Run npm install in ts first.\n${message}\n`,
+    `Unable to load the TypeScript 6 compiler API (typescript-6) from ts/node_modules. Run npm install in ts first.\n${message}\n`,
   );
   process.exit(2);
 }
