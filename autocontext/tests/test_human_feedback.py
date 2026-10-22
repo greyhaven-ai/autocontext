@@ -18,6 +18,16 @@ def store(tmp_path: Path) -> SQLiteStore:
     return db
 
 
+def _pin_created_at(store: SQLiteStore, created_at: str) -> None:
+    """Pin every feedback row to one ``created_at``, the tie that same-second writes produce.
+
+    The column defaults to ``datetime('now')``, which has one-second resolution. Pinning it
+    reproduces the tie without depending on how quickly the inserts run.
+    """
+    with store.connection() as conn:
+        conn.execute("UPDATE human_feedback SET created_at = ?", (created_at,))
+
+
 class TestFeedbackStorage:
     def test_insert_and_get(self, store: SQLiteStore) -> None:
         row_id = store.insert_human_feedback(
@@ -73,6 +83,22 @@ class TestFeedbackStorage:
             store.insert_human_feedback("s1", f"out{i}", human_score=0.5, human_notes=f"note{i}")
         items = store.get_human_feedback("s1", limit=5)
         assert len(items) == 5
+
+    def test_feedback_limit_returns_newest_rows_when_created_at_ties(self, store: SQLiteStore) -> None:
+        ids = [store.insert_human_feedback("s1", f"out{i}", human_score=0.5, human_notes="notes") for i in range(12)]
+        _pin_created_at(store, "2026-01-01 00:00:00")
+
+        items = store.get_human_feedback("s1", limit=10)
+
+        assert [item["id"] for item in items] == ids[::-1][:10]
+
+    def test_calibration_examples_return_newest_rows_when_created_at_ties(self, store: SQLiteStore) -> None:
+        ids = [store.insert_human_feedback("s1", f"cal{i}", human_score=0.7, human_notes="scored and noted") for i in range(8)]
+        _pin_created_at(store, "2026-01-01 00:00:00")
+
+        calibration = store.get_calibration_examples("s1", limit=5)
+
+        assert [row["id"] for row in calibration] == ids[::-1][:5]
 
     def test_rejects_score_above_one(self, store: SQLiteStore) -> None:
         with pytest.raises(ValueError, match="must be in"):

@@ -99,7 +99,7 @@ class SQLiteHumanFeedbackStoreMixin:
                        acquisition_id, reviewer, criterion_scores_json, created_at
                 FROM human_feedback
                 WHERE scenario_name = ?
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (scenario_name, limit),
@@ -116,7 +116,7 @@ class SQLiteHumanFeedbackStoreMixin:
                 FROM human_feedback
                 WHERE scenario_name = ? AND human_score IS NOT NULL AND human_notes != ''
                   AND acquisition_id IS NULL
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (scenario_name, limit),
