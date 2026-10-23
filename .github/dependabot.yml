@@ -12,13 +12,25 @@ version: 2
 # For npm, Dependabot also passes the cooldown to npm as --min-release-age when
 # it regenerates a lockfile, which holds newly locked transitive packages to
 # the same age. Cooldowns never apply to security updates.
+#
+# Batch all eligible version updates per ecosystem and directory, including
+# major versions, so merging a batch does not refill five individual PR slots.
+# Keep security updates in their own groups; the version PR limit does not
+# limit security updates. Every batch still requires review and passing CI.
 
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    groups:
+      actions-versions:
+        applies-to: version-updates
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
     cooldown:
       default-days: 7
 
@@ -26,7 +38,14 @@ updates:
     directory: /ts
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    groups:
+      typescript-versions:
+        applies-to: version-updates
+        patterns: ["*"]
+      typescript-security:
+        applies-to: security-updates
+        patterns: ["*"]
     cooldown:
       default-days: 7
     ignore:
@@ -54,7 +73,14 @@ updates:
     directory: /pi
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    groups:
+      pi-versions:
+        applies-to: version-updates
+        patterns: ["*"]
+      pi-security:
+        applies-to: security-updates
+        patterns: ["*"]
     cooldown:
       default-days: 7
 
@@ -62,7 +88,14 @@ updates:
     directory: /autocontext
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    groups:
+      python-versions:
+        applies-to: version-updates
+        patterns: ["*"]
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
     cooldown:
       default-days: 7
     ignore:
@@ -83,7 +116,11 @@ updates:
     directory: /infra/docker
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    groups:
+      docker-versions:
+        applies-to: version-updates
+        patterns: ["*"]
     # No cooldown override: Dependabot's three-day default applies. Docker gets
     # no Dependabot security updates, so version updates are the only automated
     # route for base-image fixes, and a digest refresh waits until the tag's

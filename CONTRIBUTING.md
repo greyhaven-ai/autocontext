@@ -188,6 +188,26 @@ background processes.
 - Update docs and examples when renaming commands, env vars, or package paths.
 - Include verification notes for the checks you ran.
 
+### Dependabot Updates
+
+Dependabot batches eligible version updates weekly into one PR per ecosystem
+and directory: GitHub Actions, `ts/`, `pi/`, Python, and Docker. Each has a limit
+of one open version-update PR, for five across the repository instead of 25
+individual updates. Groups include major versions, so review breaking changes
+and make any needed adaptations before merging. The Pi SDK packages move in the
+same batch rather than separate, potentially incompatible upgrades.
+
+Security updates have separate groups and are not capped by the version-update
+limit or delayed by the version cooldown. Existing dependency pins, ignore
+rules, release-age checks, and required CI still apply. A grouped PR must keep
+the npm and Bun locks synchronized, and Python manifest updates must include
+the matching uv lock and any derived container requirements.
+
+The new policy takes effect after `.github/dependabot.yml` reaches `main`.
+Retire superseded individual PRs after it is active, then let Dependabot create
+the replacement batches on its next scheduled run. Closing an old PR does not
+mean its dependency was updated or its vulnerability fixed.
+
 ### npm Release Age
 
 CI installs npm dependencies with `npm ci`, which does not enforce the
