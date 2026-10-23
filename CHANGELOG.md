@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - Python grouped dependency updates retain the compatible Anthropic, MCP and
   Monty execution APIs, refresh the derived Docker lock, and repair SDK-version
   exception fixtures and MCP tool-name tests for the current public API.
+  Keep Prime's VM-capable request model and recognize Typer's numeric-range
+  types in the shared CLI contract checks.
 
 - Python: `get_human_feedback` and `get_calibration_examples` returned the
   oldest matching rows instead of the newest whenever timestamps tied, as the

@@ -219,6 +219,10 @@ constructor. Repair that integration separately while revalidating execution
 limits and external-call handling. These version deferrals do not change the
 full dependency-security audit.
 
+Prime Sandboxes stays on its compatible 0.2 SDK line because newer lines remove
+the VM request field used by accelerator isolation checks. Migrate that request
+contract before allowing routine minor or major updates.
+
 The new policy takes effect after `.github/dependabot.yml` reaches `main`.
 Retire superseded individual PRs after it is active, then let Dependabot create
 the replacement batches on its next scheduled run. Closing an old PR does not

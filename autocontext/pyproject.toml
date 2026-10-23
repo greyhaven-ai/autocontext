@@ -35,7 +35,7 @@ dependencies = [
 
 [project.optional-dependencies]
 browser = ["httpx>=0.28.1"]
-primeintellect = ["prime-sandboxes>=0.2.27"]
+primeintellect = ["prime-sandboxes>=0.2.27,<0.3"]
 mcp = ["mcp>=1.30.0,<2"]
 agent-sdk = ["claude-agent-sdk>=0.2.121"]
 monty = ["pydantic-monty>=0.0.7,<0.0.19"]
@@ -69,7 +69,7 @@ dev = [
   "mypy>=1.16.0",
   "openai>=1.0.0,<4.0",
   "pip-audit==2.10.1",
-  "prime-sandboxes>=0.2.27",
+  "prime-sandboxes>=0.2.27,<0.3",
   "pytest>=8.4.0",
   "pytest-asyncio>=1.3.0",
   "pytest-cov>=6.0.0",
