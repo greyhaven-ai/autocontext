@@ -105,6 +105,21 @@ updates:
     cooldown:
       default-days: 7
     ignore:
+      # Anthropic 1.x replaces HTTPX with HTTPX2. Our instrumented clients,
+      # routed wire receipts and parity fixtures require a dedicated migration.
+      - dependency-name: anthropic
+        update-types: ["version-update:semver-major"]
+      # MCP 2 removes FastMCP. Migrate the server API in a dedicated PR.
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
+      # Keep the existing 0.0.18 lock. Both 0.0.23 and 1.1 reject the
+      # current constructor; migrate and verify execution limits separately.
+      - dependency-name: pydantic-monty
+        versions: [">=0.0.19"]
+      # Newer Prime SDK lines remove the VM request field used to guarantee
+      # accelerator isolation. Migrate that request contract separately.
+      - dependency-name: prime-sandboxes
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # The cuda extra pins accelerate, transformers, peft and trl to an exact
       # reviewed graph. scripts/python_audit_exception.json records a version
       # and a wheel hash for each, and scripts/audit_python_dependencies.py

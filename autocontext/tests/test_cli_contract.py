@@ -276,7 +276,7 @@ def _python_click_commands() -> dict[tuple[str, ...], Any]:
 
 
 def _click_type_name(raw: str) -> str:
-    if "integer" in raw:
+    if "integer" in raw or raw == "int" or raw.startswith("int "):
         return "int"
     if "float" in raw:
         return "float"
