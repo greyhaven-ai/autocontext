@@ -644,7 +644,16 @@ jobs:
       - name: Install base deps
         run: npm ci --ignore-scripts
       - name: Pin openai to matrix version
-        run: npm install --ignore-scripts --no-save "openai@$OPENAI_VERSION"
+        # The adapters use completion/response APIs; SDK v4's optional Zod 3
+        # helper peer is unused. Resolve the SDK in a separate fixture so the
+        # application keeps its patched Zod 4 graph throughout the matrix.
+        run: |
+          sdk_root="$RUNNER_TEMP/openai-sdk"
+          npm install --prefix "$sdk_root" --ignore-scripts --no-save "openai@$OPENAI_VERSION"
+          rm -rf node_modules/openai
+          ln -s "$sdk_root/node_modules/openai" node_modules/openai
+          actual="$(node -p "require('./node_modules/openai/package.json').version")"
+          test "$actual" = "$OPENAI_VERSION"
       - name: Run OpenAI integration tests
         run: npm test -- --run --reporter=verbose tests/integrations/ tests/control-plane/instrument/
 
