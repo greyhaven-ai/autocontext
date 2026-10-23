@@ -38,7 +38,7 @@ browser = ["httpx>=0.28.1"]
 primeintellect = ["prime-sandboxes>=0.2.27,<0.3"]
 mcp = ["mcp>=1.30.0,<2"]
 agent-sdk = ["claude-agent-sdk>=0.2.121"]
-monty = ["pydantic-monty>=0.0.7,<0.0.19"]
+monty = ["pydantic-monty>=0.0.18,<0.0.19"]
 mlx = ["mlx>=0.30.0", "rustbpe>=0.1.0", "tiktoken>=0.11.0", "safetensors>=0.4.0", "numpy>=1.24.0"]
 mlxlm = ["mlx-lm>=0.20.0"]
 # The linux/cuda path for sft: BOTH the TRL SFT training backend (_SFT_RUNTIME_DEPS in
@@ -48,10 +48,10 @@ mlxlm = ["mlx-lm>=0.20.0"]
 # and silently fell back to the frontier client.
 cuda = [
     "torch>=2.13.0",
-    # Exact reviewed graph for the expiring Accelerate risk acceptance.
+    # Compatible CUDA stack with the maintained checkpoint security patch.
     "transformers==5.12.1",
     "peft==0.19.1",
-    "accelerate==1.14.0",
+    "accelerate==1.15.0+autocontext.1",
     "trl==1.6.0",
     "datasets>=5.0.1",
     "safetensors>=0.4.0",
@@ -167,3 +167,6 @@ exclude = "(^tests/)|(^migrations/)"
 [[tool.mypy.overrides]]
 module = ["pydantic_monty", "mcp.*", "claude_agent_sdk", "mlx", "mlx.*", "mlx_lm", "mlx_lm.*", "rustbpe", "tiktoken", "safetensors", "safetensors.*", "numpy", "numpy.*", "torch", "torch.*", "trl", "trl.*", "peft", "peft.*", "datasets", "datasets.*", "transformers", "transformers.*", "sklearn", "sklearn.*", "scipy", "scipy.*"]
 ignore_missing_imports = true
+
+[tool.uv.sources]
+accelerate = { path = "src/autocontext/_vendor/accelerate/accelerate-1.15.0+autocontext.1-py3-none-any.whl" }

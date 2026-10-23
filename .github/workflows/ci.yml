@@ -105,6 +105,43 @@ jobs:
             autocontext/junit-shard-${{ matrix.shard }}.xml
           retention-days: 14
 
+  optional-runtime-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: autocontext
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.7"
+          enable-cache: false
+      - name: Install locked development dependencies and real Monty runtime
+        run: uv sync --locked --group dev --extra monty
+      - name: Reproduce maintained Accelerate build from the verified upstream wheel
+        run: .venv/bin/python ../scripts/build_patched_accelerate.py --check
+      - name: Install locked CPU security-test dependencies
+        run: .venv/bin/python ../scripts/install_optional_runtime_test_deps.py
+      - name: Verify clean installation from the built distribution
+        run: |
+          uv build --out-dir "$RUNNER_TEMP/security-dist"
+          .venv/bin/python ../scripts/verify_cuda_distribution.py "$RUNNER_TEMP"/security-dist/*.whl
+      - name: Exercise real optional runtimes and fail-closed installation
+        run: >-
+          .venv/bin/python -m pytest
+          tests/test_monty_live.py tests/test_monty_repl_live.py
+          tests/test_monty_executor.py tests/test_monty_repl_worker.py
+          tests/test_monty_repl_integration.py tests/test_monty_e2e.py
+          tests/test_monty_repl_wiring.py tests/test_monty_settings.py tests/test_monty_repl_settings.py
+          tests/test_accelerate_checkpoint_patch.py tests/test_accelerate_patch_install.py
+          tests/test_python_dependency_audit.py -q
+
   # Preserve the required status name and combine coverage from every shard.
   test:
     if: always()

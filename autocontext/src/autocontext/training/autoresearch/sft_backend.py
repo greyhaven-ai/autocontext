@@ -122,6 +122,10 @@ def _load_sft_runtime() -> tuple[Any, Any, Any, Any, Any, Any, Any]:
     )
     from trl import SFTConfig, SFTTrainer  # type: ignore[import-not-found]
 
+    from autocontext.accelerate_patch import require_patched_accelerate
+
+    require_patched_accelerate()
+
     return SFTConfig, SFTTrainer, LoraConfig, Dataset, AutoModelForCausalLM, AutoTokenizer, TrainerCallback
 
 

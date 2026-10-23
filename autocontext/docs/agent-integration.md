@@ -1,5 +1,8 @@
 # External Agent Integration Guide
 
+For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](../../docs/security/accelerate-risk-assessment.md).
+Published installations must install the bundled security build before adding the CUDA extra; source checkouts use the locked uv source.
+
 autocontext provides three integration surfaces for external agents: the `autoctx` CLI, an MCP server, and a Python SDK. This guide covers them in order of recommended usage.
 
 For the canonical user-facing and runtime vocabulary behind those surfaces, see [../../docs/concept-model.md](../../docs/concept-model.md).
@@ -505,7 +508,7 @@ autoctx hermes train-advisor \
 # GPU backend, falls back transparently to CPU
 # torch when CUDA is not available -- the `device` audit field in
 # the checkpoint records which path actually ran). Requires
-# `pip install autocontext[cuda]`. Same JSON schema as --logistic
+# the CUDA installation sequence linked above. Same JSON schema as --logistic
 # / --mlx with `kind: "cuda_logistic_regression"`.
 autoctx hermes train-advisor \
   --data training/hermes-curator-decisions.jsonl \
@@ -632,7 +635,7 @@ required. The importer never writes to the Hermes DB.
   False; the resulting checkpoint records `kind:
 "cuda_logistic_regression"`, `backend: "cuda"`, plus a `device`
   audit field that says whether the run actually landed on CUDA or
-  fell back to CPU. Requires `pip install autocontext[cuda]`.
+  fell back to CPU. Requires the CUDA installation sequence linked above.
 - Exactly one of `--baseline` / `--logistic` / `--mlx` / `--cuda`
   must be passed (mutually exclusive). Passing `--mlx` or `--cuda`
   without the matching optional extra surfaces a loud actionable

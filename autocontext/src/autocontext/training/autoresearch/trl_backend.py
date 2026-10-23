@@ -409,6 +409,10 @@ def run_trl_training(
     from peft import LoraConfig  # type: ignore[import-not-found]
     from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore[import-not-found]
 
+    from autocontext.accelerate_patch import require_patched_accelerate
+
+    require_patched_accelerate()
+
     from autocontext.scenarios import SCENARIO_REGISTRY
     from autocontext.training.autoresearch.distill_common import assert_vocab_compatible, build_trl_metrics
     from autocontext.training.autoresearch.train import _peak_memory_mb, _preflight_backend_deps

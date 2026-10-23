@@ -1,5 +1,8 @@
 # Docs Overview
 
+For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](security/accelerate-risk-assessment.md).
+Published installations must install the bundled security build before adding the CUDA extra; source checkouts use the locked uv source.
+
 This directory is the maintainer-facing landing page for repository docs. Use it to find the right guide quickly and keep public documentation aligned when the repo changes.
 
 ## Start Here

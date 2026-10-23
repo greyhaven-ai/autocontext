@@ -112,22 +112,16 @@ updates:
       # MCP 2 removes FastMCP. Migrate the server API in a dedicated PR.
       - dependency-name: mcp
         update-types: ["version-update:semver-major"]
-      # Keep the existing 0.0.18 lock. Both 0.0.23 and 1.1 reject the
-      # current constructor; migrate and verify execution limits separately.
+      # Monty 0.0.18 is exercised in real-runtime CI. Later releases replace
+      # the interpreter/snapshot API; migrate that API separately.
       - dependency-name: pydantic-monty
         versions: [">=0.0.19"]
       # Newer Prime SDK lines remove the VM request field used to guarantee
       # accelerator isolation. Migrate that request contract separately.
       - dependency-name: prime-sandboxes
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      # The cuda extra pins accelerate, transformers, peft and trl to an exact
-      # reviewed graph. scripts/python_audit_exception.json records a version
-      # and a wheel hash for each, and scripts/audit_python_dependencies.py
-      # refuses the accelerate risk acceptance unless every one still matches.
-      # Moving any of them alone therefore turns dependency-security red.
-      # See docs/security/accelerate-risk-assessment.md; the graph is due for
-      # re-review before the acceptance expires on 2026-10-27, and all four
-      # should move together at that point.
+      # The CUDA stack includes a reproducibly built checkpoint security patch.
+      # Upgrade its upstream base and validate the patch as one reviewed change.
       - dependency-name: accelerate
       - dependency-name: transformers
       - dependency-name: peft

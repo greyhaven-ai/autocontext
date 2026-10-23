@@ -42,6 +42,10 @@ class SftTorchProvider:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore[import-not-found]
 
+        from autocontext.accelerate_patch import require_patched_accelerate
+
+        require_patched_accelerate()
+
         self._torch = torch
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         if adapter_path is not None and not Path(adapter_path).exists():

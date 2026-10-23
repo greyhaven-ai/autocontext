@@ -1,5 +1,8 @@
 # Examples
 
+For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](../docs/security/accelerate-risk-assessment.md).
+Published installations must install the bundled security build before adding the CUDA extra; source checkouts use the locked uv source.
+
 These are copy-paste starting points for people evaluating the repo, integrating external agents, or embedding the packages directly.
 
 ## Which Example To Start With

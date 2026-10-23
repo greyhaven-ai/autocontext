@@ -1,94 +1,102 @@
-# Accelerate checkpoint advisory: scoped risk acceptance
+# Maintained Accelerate checkpoint security build
 
-Reviewed September 8, 2026 and re-reviewed September 26, 2026. Expires October 27, 2026 at 00:00 UTC.
-Scope: CVE-2026-69112 / GHSA-4j2p-28q2-5m79 in Accelerate 1.14.0, only
-with the exact CUDA dependency graph recorded in `scripts/python_audit_exception.json`.
-The repository owner authorized proceeding with a narrowly documented risk
-decision or mitigation after reviewing the upstream dispute. This records the
-selected risk acceptance; it is not a claim that Accelerate was patched.
+The former Accelerate risk acceptance has been removed. CUDA uses
+`accelerate==1.15.0+autocontext.1`, a maintained build bundled in the Python
+wheel and sdist. This is a local security patch, not a claim that upstream
+Accelerate 1.15 fixed CVE-2026-69112.
 
-## Upstream status
+The [upstream advisory](https://github.com/advisories/GHSA-4j2p-28q2-5m79)
+still lists no fixed release. Upstream 1.15 retains the affected loader;
+the [proposed upstream fix](https://github.com/huggingface/accelerate/pull/4214)
+was closed without merging.
 
-The [GitHub advisory](https://github.com/advisories/GHSA-4j2p-28q2-5m79)
-remains active and lists no patched version. It describes checkpoint index
-entries escaping the model directory or naming special files that hang loading.
-On September 8, an upstream maintainer
-[declined the proposed fix](https://github.com/huggingface/accelerate/pull/4214#issuecomment-5586211932).
-Their [security policy](https://github.com/huggingface/accelerate/blob/main/SECURITY.md)
-treats loading untrusted model artifacts as an operator trust decision.
-We retain the finding in audit output rather than treating that position as
-proof that the behavior is harmless.
+## Install CUDA/SFT
 
-## Reviewed harness exposure
+From a source checkout, run inside `autocontext/`:
 
-- Accelerate is in the optional CUDA extra, not the default Python installation,
-  the `all` extra, the Docker runtime requirements, or either npm package.
-- Native PyTorch training and the CUDA advisor do not use Accelerate.
-- SFT serving, SFT training and TRL training load models through Transformers
-  and PEFT. We inspected all Python source in the locked Transformers 5.12.1,
-  PEFT 0.19.1, TRL 1.6.0 and Accelerate 1.14.0 wheels, verifying each archive
-  against its lockfile SHA-256 before reading it; no package code was executed.
-- Harness source and the three caller packages contain no references to
-  `load_checkpoint_in_model`, `load_checkpoint_and_dispatch` or
-  `load_and_quantize_model`. The last helper is Accelerate's additional internal
-  route into the affected loader. Its public dispatch helpers used by PEFT and
-  Transformers are distinct from checkpoint loading.
+```bash
+uv sync --locked --extra cuda
+uv run --frozen python -m autocontext.accelerate_patch
+```
 
-This is static exposure analysis of these exact sources, not a formal
-non-reachability proof or a GPU integration test. Dynamically loaded extensions,
-user scripts directly invoking Accelerate, arbitrary installed dependency
-versions and untrusted artifact workflows are outside the acceptance.
+From a published release containing this patch, install the base package,
+then its bundled build, then the extra:
 
-## Re-review (September 26, 2026)
+```bash
+python -m pip install autocontext
+python -m autocontext.accelerate_patch --install
+python -m pip install 'autocontext[cuda]'
+python -m autocontext.accelerate_patch
+```
 
-The acceptance is renewed unchanged for 30 days, for the same exact graph.
+The installer verifies the bundled wheel's SHA-256 and installs only that local
+file without dependencies. It uses pip, or uv when pip is absent. The CUDA
+extra's exact local-version requirement is then satisfied by this build.
+Installing the CUDA extra first cannot silently choose stock Accelerate.
+Serving, SFT training and TRL training also verify the installed version and
+patched source hashes before model loading. Replacing the build with stock
+Accelerate produces an actionable error.
 
-- The advisory is unchanged: it still affects `<= 1.14.0`, lists no patched
-  version, has not been withdrawn and was last updated September 8.
-- The upstream fix was closed without merging
-  ([huggingface/accelerate#4214](https://github.com/huggingface/accelerate/pull/4214)).
-  Accelerate 1.15.0 (September 9) falls outside the advisory's range but is not
-  a fix: the `weight_map` handling in `load_checkpoint_in_model`
-  (`accelerate/utils/modeling.py`) is identical to 1.14.0, joining each entry
-  onto the checkpoint folder without a containment check. Upgrading would only
-  hide the finding from the audit, so it is not treated as remediation.
-- The four reviewed wheels were downloaded again and matched the recorded
-  SHA-256 hashes before reading. No package code was executed.
-- Transformers 5.12.1, PEFT 0.19.1 and TRL 1.6.0 still contain no references to
-  `load_checkpoint_in_model`, `load_checkpoint_and_dispatch` or
-  `load_and_quantize_model`. Inside Accelerate 1.14.0, `load_checkpoint_in_model`
-  is reached only through `load_checkpoint_and_dispatch` (`big_modeling.py`)
-  and `load_and_quantize_model` (`utils/bnb.py`).
-- The Python, TypeScript and Pi sources still reference none of the three APIs
-  and do not import Accelerate directly.
+Checkpoint loading requires POSIX descriptor-relative, no-follow file access
+(Linux CUDA workers and macOS CPU validation). Other platforms fail explicitly
+at the secure checkpoint boundary. The CPU regressions do not certify GPU,
+distributed, quantized, or Windows execution.
 
-## Controls and limitations
+## Security boundary
 
-1. The CUDA extra pins all four reviewed packages. Changes to their locked
-   versions or wheel hashes require a new review; the audit fails until then.
-2. A source tripwire blocks harness references to the three checkpoint APIs.
-   It is not a sandbox and cannot protect arbitrary user plugins.
-3. CI and Python publishing still export and audit every group and extra using
-   strict pip-audit. The wrapper reports this exact accepted finding visibly.
-   Other packages, versions, CVEs, skipped dependencies, malformed audit results
-   and audit-tool errors remain failures. A published fix reported by pip-audit
-   also makes this exception fail, requiring an upgrade/review.
-4. The exception expires automatically. It must be removed or explicitly
-   re-reviewed; extending it is a security-policy change.
-5. Operators must use reviewed model/checkpoint sources, prefer safetensors and
-   immutable reviewed model revisions, and avoid mounting credentials or unrelated
-   sensitive files into training workers. These are operating requirements, not
-   newly implemented enforcement in the model-loading API. Do not use this
-   acceptance to approve attacker-supplied models or checkpoint directories.
+The patched `load_checkpoint_in_model` snapshots its selected checkpoint into a
+private temporary directory before calling the existing tensor loader. Its
+public aliases, `load_checkpoint_and_dispatch`, and the quantization helper's
+calls into this loader share the same boundary.
 
-No CUDA backend is removed. No approval environment, fork-workflow policy,
-permissions, release-source check or other vulnerability threshold changes.
-The exception does not modify already published distributions or certify
-arbitrary end-user environments as safe.
+- Indexes and shards are opened through held directory descriptors. Final opens
+  are nonblocking, and descriptors must refer to regular files before reading.
+- Shard names must be nonempty relative paths without absolute paths, Windows
+  drives, backslashes, empty components, or dot traversal. Malformed index maps,
+  FIFO/device targets, and directory symlinks are rejected.
+- Hugging Face snapshot file links remain supported only when they resolve to a
+  regular blob in that same repository cache. The blob is opened through anchored
+  cache descriptors; an arbitrary escaping symlink is rejected.
+- Copying reads the already-open descriptor, so replacing a source path after
+  validation cannot redirect the loader. Tensor loading sees only the private
+  snapshot. Copying uses bounded chunks and adds temporary disk use proportional
+  to the selected checkpoint.
 
-## Re-review triggers
+Existing model, placement, dtype, offload and quantization arguments pass through
+unchanged. Valid unsharded/sharded binary and safetensors checkpoints, nested
+shards and Hub blob links are covered by real CPU tests. This fixes the named
+Accelerate checkpoint boundary; it does not make arbitrary model packages,
+remote code, user plugins, or other third-party loaders trustworthy. Continue
+using reviewed model sources and isolated training workers.
 
-Expiry, a dependency fingerprint change, new checkpoint API use, a newly
-reported fixed version, or a deployment that accepts untrusted model artifacts
-requires reassessment. For the latter, isolate and validate checkpoint loading
-or maintain a reviewed upstream patch before enabling that workflow.
+## Build and maintenance
+
+The readable patch is `third_party/accelerate/checkpoint_security.py`.
+`scripts/build_patched_accelerate.py` verifies the official upstream wheel:
+
+```text
+accelerate-1.15.0-py3-none-any.whl
+sha256:97eacca0b73e45cb867dbf8c5d5d4dc32219544300e0c8992c7334dc2ef33cec
+```
+
+It adds the shared boundary and one loader decorator, assigns the local version,
+recomputes the wheel RECORD, and writes deterministic ZIP metadata. The original
+upstream license and notices remain in the wheel. The bundled manifest records
+the upstream hash, patched wheel hash and installed source hashes.
+
+```bash
+python scripts/build_patched_accelerate.py --check
+```
+
+CI reproduces the wheel from that immutable upstream hash and runs the real
+Monty and Accelerate regressions. Changing the upstream base requires reviewing
+the loader/caller changes, rebuilding the wheel and manifest, updating the exact
+CUDA pin and uv lock, and rerunning these tests. Dependabot cannot replace the
+maintained build independently of this review.
+
+Full CI and publishing audits still export every group and extra and use strict
+pip-audit. The wrapper verifies the bundled artifact, lock source and exported
+hash before querying advisories for the fork's upstream version, since the
+advisory service cannot identify the unpublished local version. Every reported
+vulnerability, skipped dependency, malformed inventory and audit-tool error is a
+failure. There is no expiry extension, advisory ignore, or accepted finding.

@@ -1,5 +1,8 @@
 # autoctx — TypeScript package
 
+For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](../docs/security/accelerate-risk-assessment.md).
+Published installations must install the bundled security build before adding the CUDA extra; source checkouts use the locked uv source.
+
 `autoctx` is the Node/TypeScript package for autocontext. It ships the operator-facing CLI, TUI, simulations, investigations, analysis, missions, MCP server, runtime/session primitives, production-trace SDK, and experimental agent-handler surface.
 
 Use the Python package when you need the full Python control plane or local MLX/CUDA training implementation. Use this package when you need Node, npm, the TUI, Fetch/agent adapters, or TypeScript library APIs.

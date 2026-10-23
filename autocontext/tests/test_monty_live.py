@@ -1,6 +1,9 @@
 """Live integration tests using real pydantic-monty. Skipped if not installed."""
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -26,13 +29,12 @@ class TestMontyLiveBasic:
         m = pydantic_monty.Monty(
             "result = double(value)\nresult",
             inputs=["value"],
-            external_functions=["double"],
         )
         progress = m.start(inputs={"value": 21})
         assert progress.function_name == "double"
         assert progress.args == (21,)
 
-        result = progress.resume(return_value=42)
+        result = progress.resume(result={"return_value": 42})
         assert result.output == 42
 
     def test_dict_input_and_output(self) -> None:
@@ -50,13 +52,12 @@ score = strategy["aggression"] * 0.6 + strategy["defense"] * 0.4
 class TestMontyLiveEvalScript:
     def test_eval_script_runs_with_real_monty(self) -> None:
         """The actual eval script template runs in real Monty."""
-        from autocontext.execution.executors.monty import _EXTERNAL_FUNCTIONS, MontyExecutor
+        from autocontext.execution.executors.monty import MontyExecutor
 
         script = MontyExecutor.build_eval_script()
         m = pydantic_monty.Monty(
             script,
             inputs=["strategy", "seed"],
-            external_functions=_EXTERNAL_FUNCTIONS,
         )
 
         # Start and drive through external function calls manually
@@ -65,20 +66,20 @@ class TestMontyLiveEvalScript:
 
         # Provide initial state
         state = {"seed": 42, "terminal": False, "timeline": []}
-        progress = progress.resume(return_value=state)
+        progress = progress.resume(result={"return_value": state})
         assert progress.function_name == "validate_actions"
 
         # Validate actions — return success
-        progress = progress.resume(return_value=[True, "ok"])
+        progress = progress.resume(result={"return_value": [True, "ok"]})
         assert progress.function_name == "step"
 
         # Step — return terminal state with score
         next_state = {**state, "terminal": True, "score": 0.7, "timeline": [{"event": "done"}], "metrics": {}}
-        progress = progress.resume(return_value=next_state)
+        progress = progress.resume(result={"return_value": next_state})
         assert progress.function_name == "is_terminal"
 
         # Is terminal
-        progress = progress.resume(return_value=True)
+        progress = progress.resume(result={"return_value": True})
         assert progress.function_name == "get_result"
 
         # Get result
@@ -86,28 +87,27 @@ class TestMontyLiveEvalScript:
             "score": 0.7, "winner": "challenger", "summary": "Test",
             "replay": [{"event": "done"}], "metrics": {}, "validation_errors": [],
         }
-        final = progress.resume(return_value=result_dict)
+        final = progress.resume(result={"return_value": result_dict})
         assert final.output["score"] == 0.7
 
     def test_eval_script_validation_failure_path(self) -> None:
         """Eval script handles validation failure correctly in real Monty."""
-        from autocontext.execution.executors.monty import _EXTERNAL_FUNCTIONS, MontyExecutor
+        from autocontext.execution.executors.monty import MontyExecutor
 
         script = MontyExecutor.build_eval_script()
         m = pydantic_monty.Monty(
             script,
             inputs=["strategy", "seed"],
-            external_functions=_EXTERNAL_FUNCTIONS,
         )
 
         progress = m.start(inputs={"strategy": {}, "seed": 1})
         assert progress.function_name == "initial_state"
 
-        progress = progress.resume(return_value={"seed": 1, "terminal": False, "timeline": []})
+        progress = progress.resume(result={"return_value": {"seed": 1, "terminal": False, "timeline": []}})
         assert progress.function_name == "validate_actions"
 
         # Return validation failure
-        final = progress.resume(return_value=[False, "missing field"])
+        final = progress.resume(result={"return_value": [False, "missing field"]})
         # Script should return the failure result dict directly (no more external calls)
         assert final.output["score"] == 0.0
         assert final.output["validation_errors"] == ["missing field"]
@@ -115,6 +115,29 @@ class TestMontyLiveEvalScript:
 
 @pytest.mark.skipif(not HAS_MONTY, reason="pydantic-monty not installed")
 class TestMontyLiveFullExecutor:
+    def test_code_strategy_native_timeout_propagates(self) -> None:
+        code = (
+            "import sys\n"
+            "from types import SimpleNamespace\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from test_monty_executor import FakeScenario\n"
+            "from autocontext.execution.executors.monty import MontyExecutor\n"
+            "from autocontext.scenarios.base import ExecutionLimits\n"
+            "scenario = FakeScenario()\n"
+            "scenario.get_observation = lambda *a, **k: SimpleNamespace(narrative='', state={}, constraints=[])\n"
+            "try:\n"
+            "    MontyExecutor().execute(scenario, {'__code__': 'while True:\\n    pass'}, 1, "
+            "ExecutionLimits(timeout_seconds=0.02))\n"
+            "except TimeoutError:\n"
+            "    pass\n"
+            "else:\n"
+            "    raise AssertionError('native timeout did not propagate')\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code, str(Path(__file__).parent)], capture_output=True, text=True, timeout=5,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
     def test_full_execute_with_real_monty_and_scenario(self) -> None:
         """MontyExecutor.execute() works with a real Monty and fake scenario."""
         from autocontext.execution.executors.monty import MontyExecutor

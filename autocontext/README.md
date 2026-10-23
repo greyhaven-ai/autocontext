@@ -1,5 +1,8 @@
 # autocontext Python package
 
+For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](../docs/security/accelerate-risk-assessment.md).
+Published installations must install the bundled security build before adding the CUDA extra; source checkouts use the locked uv source.
+
 This package is the Python control plane for autocontext: scenario runs, `solve`, simulations, investigations, MCP/HTTP surfaces, persistent knowledge, training-data export, and local training hooks.
 
 Use it when you want the full harness in Python, a CLI installed with `uv`/`pip`, or the MCP/HTTP server that coding agents can call.

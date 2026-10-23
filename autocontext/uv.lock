@@ -30,8 +30,8 @@ constraints = [
 
 [[package]]
 name = "accelerate"
-version = "1.14.0"
-source = { registry = "https://pypi.org/simple" }
+version = "1.15.0+autocontext.1"
+source = { path = "src/autocontext/_vendor/accelerate/accelerate-1.15.0+autocontext.1-py3-none-any.whl" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "numpy" },
@@ -41,10 +41,85 @@ dependencies = [
     { name = "safetensors" },
     { name = "torch" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/75/94cd5d389649578aca399e5aa822637eec18319a1dadc400ffe2f9a7493f/accelerate-1.14.0.tar.gz", hash = "sha256:41b9c4377a54e0b460a959b0defa1b736e4ca0a2373252d9a539964c2afe3c8d", size = 412167, upload-time = "2026-06-11T13:45:52.326Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/db/253133d7e7cb40d3af384bb2f5c0b4a2b7fdcffbc95c688cc67a20a3c103/accelerate-1.14.0-py3-none-any.whl", hash = "sha256:e94390c2863b873be18f623f9df48a0d8fe5eff13ea7f1a00092b0a7904888c6", size = 389246, upload-time = "2026-06-11T13:45:50.477Z" },
+    { filename = "accelerate-1.15.0+autocontext.1-py3-none-any.whl", hash = "sha256:3c213a996ebda7cb25a31d4b47fe044db56e67961da5e57049e1a8c41d2e6b1d" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "bitsandbytes", marker = "extra == 'dev'" },
+    { name = "bitsandbytes", marker = "extra == 'test-dev'" },
+    { name = "bitsandbytes", marker = "extra == 'testing'" },
+    { name = "datasets", marker = "extra == 'dev'" },
+    { name = "datasets", marker = "extra == 'test-dev'" },
+    { name = "datasets", marker = "extra == 'testing'" },
+    { name = "deepspeed", marker = "extra == 'deepspeed'" },
+    { name = "diffusers", marker = "extra == 'dev'" },
+    { name = "diffusers", marker = "extra == 'test-dev'" },
+    { name = "diffusers", marker = "extra == 'testing'" },
+    { name = "dvclive", marker = "extra == 'test-trackers'" },
+    { name = "evaluate", marker = "extra == 'dev'" },
+    { name = "evaluate", marker = "extra == 'test-dev'" },
+    { name = "evaluate", marker = "extra == 'testing'" },
+    { name = "huggingface-hub", specifier = ">=0.21.0" },
+    { name = "matplotlib", marker = "extra == 'test-trackers'" },
+    { name = "numpy", specifier = ">=1.17" },
+    { name = "packaging", specifier = ">=20.0" },
+    { name = "parameterized", marker = "extra == 'dev'" },
+    { name = "parameterized", marker = "extra == 'test-prod'" },
+    { name = "parameterized", marker = "extra == 'testing'" },
+    { name = "peft", marker = "extra == 'dev'" },
+    { name = "peft", marker = "extra == 'test-dev'" },
+    { name = "peft", marker = "extra == 'testing'" },
+    { name = "psutil" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.2.0" },
+    { name = "pytest", marker = "extra == 'test-prod'", specifier = ">=7.2.0" },
+    { name = "pytest", marker = "extra == 'testing'", specifier = ">=7.2.0" },
+    { name = "pytest-order", marker = "extra == 'dev'" },
+    { name = "pytest-order", marker = "extra == 'test-prod'" },
+    { name = "pytest-order", marker = "extra == 'testing'" },
+    { name = "pytest-subtests", marker = "extra == 'dev'" },
+    { name = "pytest-subtests", marker = "extra == 'test-prod'" },
+    { name = "pytest-subtests", marker = "extra == 'testing'" },
+    { name = "pytest-xdist", marker = "extra == 'dev'" },
+    { name = "pytest-xdist", marker = "extra == 'test-prod'" },
+    { name = "pytest-xdist", marker = "extra == 'testing'" },
+    { name = "pyyaml" },
+    { name = "rich", marker = "extra == 'dev'" },
+    { name = "rich", marker = "extra == 'rich'" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = "==0.13.1" },
+    { name = "ruff", marker = "extra == 'quality'", specifier = "==0.13.1" },
+    { name = "safetensors", specifier = ">=0.4.3" },
+    { name = "sagemaker", marker = "extra == 'sagemaker'" },
+    { name = "scikit-learn", marker = "extra == 'dev'" },
+    { name = "scikit-learn", marker = "extra == 'test-dev'" },
+    { name = "scikit-learn", marker = "extra == 'testing'" },
+    { name = "scipy", marker = "extra == 'dev'" },
+    { name = "scipy", marker = "extra == 'test-dev'" },
+    { name = "scipy", marker = "extra == 'testing'" },
+    { name = "swanlab", extras = ["dashboard"], marker = "extra == 'test-trackers'" },
+    { name = "tensorboard", marker = "extra == 'test-trackers'" },
+    { name = "timm", marker = "extra == 'dev'" },
+    { name = "timm", marker = "extra == 'test-dev'" },
+    { name = "timm", marker = "extra == 'testing'" },
+    { name = "torch", specifier = ">=2.0.0" },
+    { name = "torchao", marker = "extra == 'test-fp8'" },
+    { name = "torchdata", marker = "extra == 'dev'", specifier = ">=0.8.0" },
+    { name = "torchdata", marker = "extra == 'test-dev'", specifier = ">=0.8.0" },
+    { name = "torchdata", marker = "extra == 'testing'", specifier = ">=0.8.0" },
+    { name = "torchpippy", marker = "extra == 'dev'", specifier = ">=0.2.0" },
+    { name = "torchpippy", marker = "extra == 'test-dev'", specifier = ">=0.2.0" },
+    { name = "torchpippy", marker = "extra == 'testing'", specifier = ">=0.2.0" },
+    { name = "tqdm", marker = "extra == 'dev'" },
+    { name = "tqdm", marker = "extra == 'test-dev'" },
+    { name = "tqdm", marker = "extra == 'testing'" },
+    { name = "trackio", marker = "extra == 'test-trackers'" },
+    { name = "transformers", marker = "extra == 'dev'" },
+    { name = "transformers", marker = "extra == 'test-dev'" },
+    { name = "transformers", marker = "extra == 'testing'" },
+    { name = "wandb", marker = "extra == 'test-trackers'" },
+]
+provides-extras = ["quality", "docs", "test-prod", "test-dev", "testing", "deepspeed", "rich", "test-fp8", "test-trackers", "dev", "sagemaker"]
 
 [[package]]
 name = "aiofiles"
@@ -460,7 +535,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", marker = "extra == 'cuda'", specifier = "==1.14.0" },
+    { name = "accelerate", marker = "extra == 'cuda'", path = "src/autocontext/_vendor/accelerate/accelerate-1.15.0+autocontext.1-py3-none-any.whl" },
     { name = "anthropic", specifier = ">=0.66.0,<1" },
     { name = "autocontext", extras = ["mcp", "agent-sdk", "monty", "openai", "browser", "primeintellect"], marker = "extra == 'all'" },
     { name = "claude-agent-sdk", marker = "extra == 'agent-sdk'", specifier = ">=0.2.121" },
@@ -476,7 +551,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'cuda'", specifier = "==0.19.1" },
     { name = "prime-sandboxes", marker = "extra == 'primeintellect'", specifier = ">=0.2.27,<0.3" },
     { name = "pydantic", specifier = ">=2.11.0" },
-    { name = "pydantic-monty", marker = "extra == 'monty'", specifier = ">=0.0.7,<0.0.19" },
+    { name = "pydantic-monty", marker = "extra == 'monty'", specifier = ">=0.0.18,<0.0.19" },
     { name = "python-ulid", specifier = ">=3.0.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=13.9.4" },

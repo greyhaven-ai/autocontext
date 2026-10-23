@@ -4,6 +4,8 @@ Skipped when pydantic-monty is not installed (CI/offline environments).
 """
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -32,11 +34,31 @@ def _cmd(code: str) -> Any:
 
 
 class TestMontyReplLiveBasic:
+    @pytest.mark.parametrize("prefix", ["", "print('before loop')\n"])
+    def test_native_timeout_interrupts_code_between_callbacks(self, prefix: str) -> None:
+        # An outer process timeout keeps a regression in VM limits from hanging pytest.
+        code = prefix + "while True:\n    pass"
+        script = (
+            "from autocontext.harness.repl.monty_worker import MontyReplWorker\n"
+            "from autocontext.harness.repl.types import ReplCommand\n"
+            f"code = {code!r}\n"
+            "result = MontyReplWorker(timeout_seconds=0.02).run_code(ReplCommand(code))\n"
+            "assert result.error is not None, result\n"
+            "assert 'time' in result.error.lower(), result.error\n"
+        )
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0, result.stdout + result.stderr
+
     def test_simple_print(self) -> None:
         w = _worker()
         result = w.run_code(_cmd('print("hello")'))
         assert "hello" in result.stdout
         assert result.error is None
+
+    def test_print_text_is_not_rewritten(self) -> None:
+        result = _worker().run_code(_cmd('print("print( stays literal")'))
+        assert result.error is None
+        assert result.stdout == "print( stays literal"
 
     def test_trailing_expression_displayed(self) -> None:
         w = _worker()
