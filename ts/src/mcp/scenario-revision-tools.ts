@@ -61,7 +61,7 @@ export function registerScenarioRevisionTools(
     "revise_scenario",
     "Revise a scenario spec based on user feedback. Takes the current spec and feedback, returns an updated spec via LLM.",
     {
-      currentSpec: z.record(z.unknown()).describe("The current scenario spec to revise"),
+      currentSpec: z.record(z.string(), z.unknown()).describe("The current scenario spec to revise"),
       feedback: z.string().describe("User feedback describing what to change"),
       family: z.string().default("agent_task").describe("Scenario family (agent_task, simulation, etc.)"),
     },

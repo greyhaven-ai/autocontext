@@ -275,6 +275,25 @@ describe("ImprovementTaskContract", () => {
     expect(spec.qualityThreshold).toBe(0.76);
   });
 
+  it("keeps absent rubric scope and quality overrides absent", () => {
+    const parsed = ImprovementTaskContractSchema.parse({
+      objective: "Improve the answer",
+      target: "Current answer",
+      deliverable: { description: "A better answer" },
+      criteria: {
+        rubric_id: "answer-quality",
+        goal: "Prefer supported answers",
+        criteria: [{ id: "support", description: "Supported claims", scale_id: "score" }],
+        scales: [{ id: "score", kind: "numeric" }],
+      },
+    });
+
+    expect(parsed).not.toHaveProperty("qualityThreshold");
+    expect(parsed.criteria).not.toHaveProperty("scope");
+    if (typeof parsed.criteria === "string") throw new Error("typed rubric was lost");
+    expect(parsed.criteria.criteria[0]).not.toHaveProperty("scope");
+  });
+
   it("rejects unknown fields throughout nested rubric criteria", () => {
     const rubric = {
       rubric_id: "answer-quality",

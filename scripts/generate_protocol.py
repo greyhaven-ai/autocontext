@@ -110,10 +110,10 @@ def _json_schema_to_zod_type(prop: dict[str, Any], defs: dict[str, Any]) -> str:
         additional = prop.get("additionalProperties")
         if additional is True:
             # additionalProperties: true means any value type
-            return "z.record(z.unknown())"
+            return "z.record(z.string(), z.unknown())"
         if isinstance(additional, dict):
             val_type = _json_schema_to_zod_type(additional, defs)
-            return f"z.record({val_type})"
+            return f"z.record(z.string(), {val_type})"
         if "properties" in prop:
             # Inline object
             inner = _build_object_fields(prop, defs)
@@ -121,7 +121,7 @@ def _json_schema_to_zod_type(prop: dict[str, Any], defs: dict[str, Any]) -> str:
             # Honor additionalProperties: false (Pydantic extra="forbid") so the
             # generated schema rejects unknown keys, matching the server schema.
             return obj + ".strict()" if additional is False else obj
-        return "z.record(z.unknown())"
+        return "z.record(z.string(), z.unknown())"
 
     return "z.unknown()"
 

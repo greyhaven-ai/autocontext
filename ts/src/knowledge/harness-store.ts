@@ -35,7 +35,7 @@ const MAX_ARCHIVE_FILES = 10_000;
 const VERSION_FILENAME = "harness_version.json";
 const RESERVED_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
-const HarnessVersionMapSchema = z.record(z.object({
+const HarnessVersionMapSchema = z.record(z.string(), z.object({
   version: z.number().int().min(0),
   generation: z.number().int().min(0),
 }));

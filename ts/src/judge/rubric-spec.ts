@@ -25,7 +25,7 @@ export const RubricScaleSchema = z.object({
   min_score: z.number().default(0),
   max_score: z.number().default(1),
   pass_score: z.number().optional(),
-  anchors: z.record(z.string()).default({}),
+  anchors: z.record(z.string(), z.string()).default({}),
 });
 
 export const RubricCriterionSchema = z.object({
@@ -52,7 +52,7 @@ export const RubricSpecSchema = z.object({
   rubric_id: z.string(),
   title: z.string().default(""),
   goal: z.string(),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   scope: RubricScopeSchema.optional(),
   corpus_profile: CorpusProfileSchema.optional(),
   criteria: z.array(RubricCriterionSchema),

@@ -30,7 +30,7 @@ export const TaskDataSourceProvenanceSchema = z
     origin: NonEmptyTextSchema,
     sourceRef: NonEmptyTextSchema.optional(),
     collectedAt: z.string().datetime({ message: "collectedAt must be ISO 8601 format" }).optional(),
-    metadata: z.record(z.unknown()).default({}),
+    metadata: z.record(z.string(), z.unknown()).default({}),
   })
   .strict();
 

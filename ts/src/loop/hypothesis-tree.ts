@@ -13,7 +13,7 @@ import { randomBytes } from "node:crypto";
 
 export const HypothesisNodeSchema = z.object({
   id: z.string(),
-  strategy: z.record(z.unknown()),
+  strategy: z.record(z.string(), z.unknown()),
   parentId: z.string().nullable(),
   scores: z.array(z.number()),
   elo: z.number(),

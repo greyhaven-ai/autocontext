@@ -59,7 +59,7 @@ export const TraceFindingReportSchema = z.object({
   failureMotifs: z.array(FailureMotifSchema),
   summary: z.string().min(1),
   createdAt: z.string().datetime({ message: "createdAt must be ISO 8601 format" }),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type TraceFindingReport = z.infer<typeof TraceFindingReportSchema>;
@@ -240,7 +240,7 @@ export const WeaknessReportSchema = z.object({
   recommendations: z.array(z.string()),
   summary: z.string().min(1),
   createdAt: z.string().datetime({ message: "createdAt must be ISO 8601 format" }),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type WeaknessReport = z.infer<typeof WeaknessReportSchema>;

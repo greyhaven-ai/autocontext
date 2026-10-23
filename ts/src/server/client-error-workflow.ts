@@ -75,19 +75,20 @@ function collectZodIssueDetails(
 ): string[] {
   const details: string[] = [];
   const seen = new Set<string>();
-  const visit = (issue: z.ZodIssue): void => {
+  const visit = (issue: z.ZodIssue, parentPath: readonly PropertyKey[] = []): void => {
     if (details.length >= maxDetails) return;
+    const fullPath = [...parentPath, ...issue.path];
     if (issue.code === z.ZodIssueCode.invalid_union) {
-      for (const unionError of issue.unionErrors) {
-        for (const nestedIssue of unionError.issues) {
-          visit(nestedIssue);
+      for (const unionIssues of issue.errors) {
+        for (const nestedIssue of unionIssues) {
+          visit(nestedIssue, fullPath);
           if (details.length >= maxDetails) return;
         }
       }
       return;
     }
-    const path = issue.path.length > 0
-      ? issue.path
+    const path = fullPath.length > 0
+      ? fullPath
           .map((segment) => String(segment).slice(0, 128))
           .join(".")
           .slice(0, 512)

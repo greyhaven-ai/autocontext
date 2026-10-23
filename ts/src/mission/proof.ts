@@ -83,7 +83,7 @@ export const ProofMissionSpecSchema = z.object({
   buildCommand: z.string(),
   theoremName: z.string().optional(),
   budget: MissionBudgetSchema.optional(),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type ProofMissionSpec = z.infer<typeof ProofMissionSpecSchema>;

@@ -7,7 +7,7 @@ import {
   isInteractiveScenarioCommand,
   MAX_CREATE_TASK_VALIDATION_ERROR_CHARACTERS,
 } from "../src/server/client-error-workflow.js";
-import { parseClientMessage } from "../src/server/protocol.js";
+import { ClientMessageSchema, parseClientMessage } from "../src/server/protocol.js";
 
 describe("client error workflow", () => {
   it("identifies interactive scenario commands", () => {
@@ -116,6 +116,38 @@ describe("client error workflow", () => {
     expect(
       buildRecognizableClientValidationError(validationError, { type: "start_run" }),
     ).toBeNull();
+  });
+
+  it.each([
+    { criteria: 42, expectedPath: "contract.criteria:" },
+    {
+      criteria: {
+        rubric_id: "quality",
+        goal: "Clear answers",
+        criteria: [{ id: "clarity", description: 42, scale_id: "score" }],
+        scales: [{ id: "score", kind: "numeric" }],
+      },
+      expectedPath: "contract.criteria.criteria.0.description:",
+    },
+  ])("preserves the full nested union path $expectedPath", ({ criteria, expectedPath }) => {
+    const raw = {
+      type: "create_task",
+      contract: {
+        objective: "Improve the answer",
+        target: "Current answer",
+        deliverable: { description: "A clear answer" },
+        criteria,
+      },
+    };
+    const parsed = ClientMessageSchema.safeParse(raw);
+    if (parsed.success) throw new Error("malformed task was accepted");
+
+    const response = buildRecognizableClientValidationError(parsed.error, raw);
+
+    if (response?.type !== "scenario_error") throw new Error("expected scenario_error");
+    expect(response.stage).toBe("validation");
+    expect(response.message).toContain(expectedPath);
+    expect(response.message.length).toBeLessThanOrEqual(MAX_CREATE_TASK_VALIDATION_ERROR_CHARACTERS);
   });
 
   it("stops traversing validation issues once the response detail limit is reached", () => {

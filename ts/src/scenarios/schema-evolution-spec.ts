@@ -7,7 +7,7 @@ export const SchemaEvolutionMutationSchema = z.object({
   breaking: z.boolean(),
   fieldsAdded: z.array(z.string().min(1)).default([]),
   fieldsRemoved: z.array(z.string().min(1)).default([]),
-  fieldsModified: z.record(z.string()).default({}),
+  fieldsModified: z.record(z.string(), z.string()).default({}),
 });
 
 export const SchemaEvolutionSpecSchema = z.object({

@@ -165,7 +165,7 @@ export const RoutingContextSchema = protocolObject({
   model: z.string().optional(),
   hostingClass: z.string().optional(),
   capabilityTier: z.string().optional(),
-  roles: z.record(RoutingRoleInfoSchema),
+  roles: z.record(z.string(), RoutingRoleInfoSchema),
 });
 
 export const ExecutorAcceleratorSchema = protocolObject({
@@ -229,7 +229,7 @@ export const HelloMsgSchema = protocolObject({
 export const EventMsgSchema = protocolObject({
   type: z.literal("event"),
   event: z.string(),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
   ...RunMessageMetadataSchema,
 });
 

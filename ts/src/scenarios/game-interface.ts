@@ -11,7 +11,7 @@ import { z } from "zod";
 
 export const ObservationSchema = z.object({
   narrative: z.string(),
-  state: z.record(z.unknown()).default({}),
+  state: z.record(z.string(), z.unknown()).default({}),
   constraints: z.array(z.string()).default([]),
 });
 
@@ -22,8 +22,8 @@ export const ResultSchema = z
     score: z.number(),
     winner: z.string().nullable().default(null),
     summary: z.string(),
-    replay: z.array(z.record(z.unknown())).default([]),
-    metrics: z.record(z.number()).default({}),
+    replay: z.array(z.record(z.string(), z.unknown())).default([]),
+    metrics: z.record(z.string(), z.number()).default({}),
     validationErrors: z.array(z.string()).default([]),
   })
   .transform((val) => ({
@@ -39,7 +39,7 @@ export const ReplayEnvelopeSchema = z.object({
   scenario: z.string(),
   seed: z.number().int(),
   narrative: z.string(),
-  timeline: z.array(z.record(z.unknown())).default([]),
+  timeline: z.array(z.record(z.string(), z.unknown())).default([]),
 });
 
 export type ReplayEnvelope = z.infer<typeof ReplayEnvelopeSchema>;

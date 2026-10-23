@@ -162,7 +162,7 @@ const defaultInternals: CoreControlToolInternals = {
 export const DelegatedResultArgSchema = z.object({
   score: z.number().min(0).max(1),
   reasoning: z.string(),
-  dimensionScores: z.record(z.number().min(0).max(1)).optional(),
+  dimensionScores: z.record(z.string(), z.number().min(0).max(1)).optional(),
 });
 
 const EvaluateOutputArgsSchema = z.object({
