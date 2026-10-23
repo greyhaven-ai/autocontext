@@ -269,6 +269,45 @@ class TestHfBucketStore:
                 assert second.head("nested/remote.txt") is None
                 assert second.list_prefix("nested/") == []
 
+    def test_append_does_not_replace_existing_blob_when_remote_read_fails(self) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        key = "runs/run_001/compactions.jsonl"
+        original = b"existing entry\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            writer = HfBucketStore(repo_id="org/repo", cache_dir=Path(tmp) / "writer")
+            reader = HfBucketStore(repo_id="org/repo", cache_dir=Path(tmp) / "reader")
+            runner = self._fake_hf(remote)
+            with patch.object(writer, "_run_hf_command", side_effect=runner):
+                writer.put(key, original)
+
+            def fail_blob_download(cmd: list[str]) -> str:
+                if cmd[1] == "download" and cmd[3] == key:
+                    raise RuntimeError("temporary remote read failure")
+                return runner(cmd)
+
+            with patch.object(reader, "_run_hf_command", side_effect=fail_blob_download):
+                with pytest.raises(RuntimeError, match="temporary remote read failure"):
+                    reader.append(key, b"new entry\n")
+
+            assert remote[key] == original
+
+    def test_append_creates_key_when_index_confirms_it_is_missing(self) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            writer = HfBucketStore(repo_id="org/repo", cache_dir=Path(tmp) / "writer")
+            appender = HfBucketStore(repo_id="org/repo", cache_dir=Path(tmp) / "appender")
+            runner = self._fake_hf(remote)
+            with patch.object(writer, "_run_hf_command", side_effect=runner):
+                writer.put("runs/seed.jsonl", b"seed\n")
+            with patch.object(appender, "_run_hf_command", side_effect=runner):
+                appender.append("runs/new.jsonl", b"new entry\n")
+
+            assert remote["runs/new.jsonl"] == b"new entry\n"
+
 
 # ---------------------------------------------------------------------------
 # BlobRegistry

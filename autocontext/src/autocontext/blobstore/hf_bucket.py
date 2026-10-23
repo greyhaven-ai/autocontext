@@ -89,6 +89,37 @@ class HfBucketStore(BlobStore):
             pass
         return None
 
+    def append(self, key: str, data: bytes) -> str:
+        normalized_key = normalize_blob_key(key)
+        cache_path = resolve_blob_path(self.cache_dir, normalized_key)
+        index_available, index = self._load_index()
+        if not index_available:
+            raise RuntimeError("Cannot safely append without a readable HF blob index")
+
+        if normalized_key not in index:
+            existing = b""
+        elif cache_path.is_file():
+            existing = cache_path.read_bytes()
+        else:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self._run_hf_command(
+                [
+                    "huggingface-cli",
+                    "download",
+                    self.repo_id,
+                    normalized_key,
+                    "--repo-type",
+                    self.repo_type,
+                    "--local-dir",
+                    str(cache_path.parent),
+                ]
+            )
+            if not cache_path.is_file():
+                raise RuntimeError(f"HF blob download completed without producing {normalized_key!r}")
+            existing = cache_path.read_bytes()
+
+        return self.put(normalized_key, existing + data)
+
     def head(self, key: str) -> dict[str, Any] | None:
         normalized_key = normalize_blob_key(key)
         cache_path = resolve_blob_path(self.cache_dir, normalized_key)
