@@ -211,6 +211,14 @@ upgrading it requires a dedicated migration that revalidates isolation,
 resource limits and disposal. Dependabot may propose patch updates, while its
 minor and major version updates are deferred for that migration.
 
+Python also retains the supported Anthropic 0.x HTTPX transport and MCP 1.x
+FastMCP APIs. Their next major versions require dedicated client/server
+migrations. Monty retains its existing 0.0.18 lock: real-runtime checks expose
+an existing API mismatch, and both 0.0.23 and 1.1 also reject the current
+constructor. Repair that integration separately while revalidating execution
+limits and external-call handling. These version deferrals do not change the
+full dependency-security audit.
+
 The new policy takes effect after `.github/dependabot.yml` reaches `main`.
 Retire superseded individual PRs after it is active, then let Dependabot create
 the replacement batches on its next scheduled run. Closing an old PR does not

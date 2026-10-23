@@ -15,15 +15,15 @@ def test_server_has_tools() -> None:
     """Server registers expected tool names."""
     tool_names = list(mcp._tool_manager._tools.keys())
     expected = [
-        "mts_list_scenarios",
-        "mts_describe_scenario",
-        "mts_validate_strategy",
-        "mts_run_match",
-        "mts_run_tournament",
-        "mts_read_playbook",
-        "mts_read_trajectory",
-        "mts_read_hints",
-        "mts_read_skills",
+        "autocontext_list_scenarios",
+        "autocontext_describe_scenario",
+        "autocontext_validate_strategy",
+        "autocontext_run_match",
+        "autocontext_run_tournament",
+        "autocontext_read_playbook",
+        "autocontext_read_trajectory",
+        "autocontext_read_hints",
+        "autocontext_read_skills",
     ]
     for name in expected:
         assert name in tool_names, f"Missing tool: {name}"
@@ -36,9 +36,9 @@ def test_tool_count() -> None:
 
 def test_list_scenarios_tool() -> None:
     """Tool invocation returns valid JSON."""
-    from autocontext.mcp.server import mts_list_scenarios
+    from autocontext.mcp.server import autocontext_list_scenarios
 
-    result = mts_list_scenarios()
+    result = autocontext_list_scenarios()
     parsed = json.loads(result)
     assert isinstance(parsed, list)
     assert len(parsed) >= 2
@@ -46,10 +46,10 @@ def test_list_scenarios_tool() -> None:
 
 def test_run_match_tool() -> None:
     """Tool invocation returns result with score."""
-    from autocontext.mcp.server import mts_run_match
+    from autocontext.mcp.server import autocontext_run_match
 
     strategy = json.dumps({"aggression": 0.5, "defense": 0.5, "path_bias": 0.5})
-    result = mts_run_match(scenario_name="grid_ctf", strategy=strategy, seed=42)
+    result = autocontext_run_match(scenario_name="grid_ctf", strategy=strategy, seed=42)
     parsed = json.loads(result)
     assert "score" in parsed
     assert isinstance(parsed["score"], float)

@@ -27,8 +27,12 @@ def _make_exc(exc_cls: type) -> Exception:
     if "request" in params and "message" in params and "response" not in params:
         req = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
         return exc_cls(message="boom", request=req)
-    # ContentFilterFinishReasonError / LengthFinishReasonError — no args
-    if len(params) == 1:  # just self
+    # Finish-reason errors can have optional keyword-only fields on newer SDKs.
+    if all(
+        p.default is not inspect.Parameter.empty
+        or p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        for name, p in sig.parameters.items() if name != "self"
+    ):
         return exc_cls()
     # APIStatusError subclasses (RateLimitError, BadRequestError, etc.)
     if "response" in params:
