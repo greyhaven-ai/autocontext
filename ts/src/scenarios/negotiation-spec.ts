@@ -2,7 +2,7 @@ import { z } from "zod";
 import { SimulationActionSpecSchema } from "./simulation-spec.js";
 
 export const HiddenPreferencesSchema = z.object({
-  priorities: z.record(z.number()),
+  priorities: z.record(z.string(), z.number()),
   reservationValue: z.number(),
   aspirationValue: z.number(),
   batnaDescription: z.string().min(1),

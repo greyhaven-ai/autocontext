@@ -16,7 +16,7 @@ export const ReplCommandSchema = z.object({
 export const ReplResultSchema = z.object({
   stdout: z.string(),
   error: z.string().nullable().default(null),
-  answer: z.record(z.unknown()).default({}),
+  answer: z.record(z.string(), z.unknown()).default({}),
 });
 
 export const ExecutionRecordSchema = z.object({
@@ -28,7 +28,7 @@ export const ExecutionRecordSchema = z.object({
 });
 
 export const RlmContextSchema = z.object({
-  variables: z.record(z.unknown()),
+  variables: z.record(z.string(), z.unknown()),
   summary: z.string(),
 });
 

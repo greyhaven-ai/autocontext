@@ -40,8 +40,7 @@ const StrictRubricScopeSchema = z
     include: z.array(z.string()).default([]),
     exclude: z.array(z.string()).default([]),
   })
-  .strict()
-  .default({ include: [], exclude: [] });
+  .strict();
 
 const StrictRubricCriterionSchema = RubricCriterionSchema.extend({
   scope: StrictRubricScopeSchema.optional(),
@@ -83,7 +82,7 @@ export const ImprovementTaskContractSchema = z
       )
       .default([]),
     criteria: ImprovementTaskCriteriaSchema,
-    qualityThreshold: AgentTaskSpecObjectSchema.shape.qualityThreshold.optional(),
+    qualityThreshold: AgentTaskSpecObjectSchema.shape.qualityThreshold.removeDefault().optional(),
     minimumIterations: AgentTaskSpecObjectSchema.shape.minRounds,
     iterations: AgentTaskSpecObjectSchema.shape.maxRounds,
     revisionPrompt: AgentTaskSpecObjectSchema.shape.revisionPrompt,

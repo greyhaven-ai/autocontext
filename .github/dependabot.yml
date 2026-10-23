@@ -68,11 +68,6 @@ updates:
       - dependency-name: tree-sitter-javascript
       - dependency-name: tree-sitter-python
       - dependency-name: tree-sitter-typescript
-      # zod 4 cannot resolve while openai v4 is a devDependency: it declares
-      # peerOptional zod ^3.23.8, and @modelcontextprotocol/sdk is also on
-      # zod 3. Unblock by moving to openai v5 first, then bump zod.
-      - dependency-name: zod
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /pi

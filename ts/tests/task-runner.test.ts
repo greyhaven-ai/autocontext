@@ -193,7 +193,13 @@ describe("TaskRunner", () => {
     const runner = new TaskRunner({ store, provider, maxAttempts: 1 });
     const result = await runner.runOnce();
     expect(result!.status).toBe("failed");
-    expect(result!.error).toContain("Expected number");
+    expect(JSON.parse(result!.error!)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "invalid_type",
+        expected: "number",
+        path: ["max_rounds"],
+      }),
+    ]));
   });
 
   it("includes duration_ms in completed task result", async () => {

@@ -37,12 +37,12 @@ export type {
 export const CompletionResultSchema = z.object({
   text: z.string(),
   model: z.string().nullish(),
-  usage: z.record(z.number()).default({}),
+  usage: z.record(z.string(), z.number()).default({}),
   costUsd: z.number().nullish(),
   // AC-904: why generation stopped ("max_tokens"/"length" indicates
   // truncation); absent when the provider does not report one.
   stopReason: z.string().nullish(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   // AC-929: whether the backend actually constrained generation to the
   // requested schema. Mirrors Python's CompletionResult.constrained (AC-913).
   //
@@ -188,7 +188,7 @@ export interface LLMProvider {
 export const JudgeResultSchema = z.object({
   score: z.number().min(0).max(1),
   reasoning: z.string(),
-  dimensionScores: z.record(z.number().min(0).max(1)).default({}),
+  dimensionScores: z.record(z.string(), z.number().min(0).max(1)).default({}),
   rawResponses: z.array(z.string()).default([]),
   parseMethod: z
     .enum(["raw_json", "code_block", "markers", "plaintext", "none", "delegated", "callback"])
@@ -210,7 +210,7 @@ export type JudgeResult = z.infer<typeof JudgeResultSchema>;
 export const AgentTaskResultSchema = z.object({
   score: z.number().min(0).max(1),
   reasoning: z.string(),
-  dimensionScores: z.record(z.number().min(0).max(1)).default({}),
+  dimensionScores: z.record(z.string(), z.number().min(0).max(1)).default({}),
   internalRetries: z.number().int().min(0).default(0),
   /**
    * The authoritative evaluator response could not be parsed. Optional for
@@ -306,7 +306,7 @@ export const RoundResultSchema = z.object({
   output: z.string(),
   score: z.number(),
   reasoning: z.string(),
-  dimensionScores: z.record(z.number()).default({}),
+  dimensionScores: z.record(z.string(), z.number()).default({}),
   isRevision: z.boolean().default(false),
   judgeFailed: z.boolean().default(false),
   worstDimension: z.string().nullish(),
@@ -335,7 +335,7 @@ export const ImprovementResultSchema = z.object({
       "consecutive_failures",
     ])
     .default("max_rounds"),
-  dimensionTrajectory: z.record(z.array(z.number())).default({}),
+  dimensionTrajectory: z.record(z.string(), z.array(z.number())).default({}),
   totalInternalRetries: z.number().int().min(0).default(0),
   durationMs: z.number().int().min(0).nullish(),
   judgeCalls: z.number().int().min(0).default(0),

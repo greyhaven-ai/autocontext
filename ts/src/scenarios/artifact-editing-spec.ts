@@ -4,7 +4,7 @@ export const ArtifactSpecSchema = z.object({
   path: z.string().min(1),
   content: z.string(),
   contentType: z.string().min(1),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export const ArtifactEditingSpecSchema = z.object({

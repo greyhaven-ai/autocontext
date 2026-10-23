@@ -5,7 +5,7 @@ export const SchemaVersionSchema = z.literal(SCHEMA_VERSION);
 
 export const ToolCallSchema = z.object({
   toolName: z.string().min(1),
-  args: z.record(z.unknown()).default({}),
+  args: z.record(z.string(), z.unknown()).default({}),
   result: z.unknown().optional(),
   durationMs: z.number().optional(),
   error: z.string().optional(),
@@ -18,7 +18,7 @@ export const TraceMessageSchema = z.object({
   content: z.string(),
   timestamp: z.string().datetime({ message: "timestamp must be ISO 8601 format" }),
   toolCalls: z.array(ToolCallSchema).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type TraceMessage = z.infer<typeof TraceMessageSchema>;
@@ -26,7 +26,7 @@ export type TraceMessage = z.infer<typeof TraceMessageSchema>;
 export const TraceOutcomeSchema = z.object({
   score: z.number().min(0).max(1),
   reasoning: z.string(),
-  dimensions: z.record(z.number()).default({}),
+  dimensions: z.record(z.string(), z.number()).default({}),
 });
 
 export type TraceOutcome = z.infer<typeof TraceOutcomeSchema>;
@@ -39,7 +39,7 @@ export const PublicTraceSchema = z.object({
   collectedAt: z.string().datetime({ message: "collectedAt must be ISO 8601 format" }),
   messages: z.array(TraceMessageSchema).min(1),
   outcome: TraceOutcomeSchema.optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   fileReferences: z.array(z.object({
     path: z.string(),
     action: z.enum(["read", "write", "edit", "delete"]).optional(),
@@ -72,7 +72,7 @@ export const ProvenanceManifestSchema = z.object({
   createdAt: z.string().datetime({ message: "createdAt must be ISO 8601 format" }),
   redactionPolicy: RedactionPolicySchema.optional(),
   datasetLineage: z.array(z.string()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type ProvenanceManifest = z.infer<typeof ProvenanceManifestSchema>;

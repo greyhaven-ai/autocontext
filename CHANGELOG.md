@@ -56,6 +56,19 @@ All notable changes to this project will be documented in this file.
   reach packages installed from npm, and `autoctx@0.19.0` on npm still pins
   `undici` 8.9.0 until the next `autoctx` release.
 
+## [TypeScript 0.19.1] - 2026-10-23
+
+### Security
+
+- Upgrade Zod to 4.6.6 for GHSA-mrhx-c7xc-m3w5. Oversized bounded
+  attachment, task-source, plan and progress-note collections reject before
+  validating their elements. Migrate record schemas, generated protocol
+  constructors and nested union-error handling to Zod 4 while preserving
+  optional rubric overrides and parsed CLI defaults.
+- Pi's dependency lock must move to this runtime after it is published.
+  Forcing Zod 4 into the older published runtime breaks structured-task
+  validation errors, even though its six Pi tool examples still pass.
+
 ## [Pi 0.12.0] - 2026-09-28
 
 The Pi extension moves onto the newly published `autoctx@0.19.0` runtime. This

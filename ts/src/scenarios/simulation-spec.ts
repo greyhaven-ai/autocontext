@@ -3,7 +3,7 @@ import { z } from "zod";
 export const SimulationActionSpecSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
-  parameters: z.record(z.string()).default({}),
+  parameters: z.record(z.string(), z.string()).default({}),
   preconditions: z.array(z.string()).default([]),
   effects: z.array(z.string()).default([]),
 });

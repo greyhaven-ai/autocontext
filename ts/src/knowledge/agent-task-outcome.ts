@@ -19,7 +19,7 @@ export const AgentTaskOutcomeGenerationV1Schema = z
     generation: z.number().int().positive(),
     score: z.number().finite(),
     reasoning: z.string(),
-    dimension_scores: z.record(z.number().finite()),
+    dimension_scores: z.record(z.string(), z.number().finite()),
     judge_failed: z.boolean(),
     evaluator_epoch: z.string().nullable(),
   })

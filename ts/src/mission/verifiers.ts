@@ -114,7 +114,7 @@ export const CodeMissionSpecSchema = z.object({
   lintCommand: z.string().optional(),
   buildCommand: z.string().optional(),
   budget: MissionBudgetSchema.optional(),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type CodeMissionSpec = z.infer<typeof CodeMissionSpecSchema>;

@@ -51,7 +51,7 @@ const LegacyHelloSchema = z
 
 const LegacyRunMessageSchema = z.discriminatedUnion("type", [
   z
-    .object({ type: z.literal("event"), event: z.string(), payload: z.record(z.unknown()) })
+    .object({ type: z.literal("event"), event: z.string(), payload: z.record(z.string(), z.unknown()) })
     .strict(),
   z
     .object({

@@ -36,7 +36,7 @@ export const FlagSchema = z.object({
   description: z.string().default(""),
   default: z.unknown().optional(),
   choices: z.array(z.string()).default([]),
-  value_aliases: z.record(z.string()).default({}),
+  value_aliases: z.record(z.string(), z.string()).default({}),
 });
 
 export const PositionalArgumentSchema = z.object({
@@ -61,8 +61,8 @@ export const OutputSpecSchema = z.object({
   streaming: z.enum(["single", "ndjson"]).default("single"),
   success_stream: z.enum(["stdout", "stderr"]).default("stdout"),
   error_stream: z.enum(["stdout", "stderr"]).default("stderr"),
-  schemas: z.record(z.string()).default({}),
-  fixtures: z.record(z.string()).default({}),
+  schemas: z.record(z.string(), z.string()).default({}),
+  fixtures: z.record(z.string(), z.string()).default({}),
 });
 
 export const ExitCodesSchema = z.object({
@@ -87,7 +87,7 @@ export const CommandSpecSchema = z.object({
   flags: z.array(FlagSchema).default([]),
   output_contract: z.enum(["json", "text", "none"]).default("text"),
   output: OutputSpecSchema.optional(),
-  exit_codes: ExitCodesSchema.default({}),
+  exit_codes: ExitCodesSchema.prefault({}),
   examples: z.array(z.string()).default([]),
   runtime_shapes: RuntimeCommandShapesSchema.optional().default({}),
 });
@@ -164,7 +164,7 @@ function validateVersion2Entries(value: unknown): void {
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
-  const parsed = z.record(z.unknown()).safeParse(value);
+  const parsed = z.record(z.string(), z.unknown()).safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
 

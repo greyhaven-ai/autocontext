@@ -33,7 +33,7 @@ export const MissionSchema = z.object({
   goal: z.string(),
   status: MissionStatusSchema,
   budget: MissionBudgetSchema.optional(),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   createdAt: z.string(),
   updatedAt: z.string().optional(),
   completedAt: z.string().optional(),
@@ -68,7 +68,7 @@ export const VerifierResultSchema = z.object({
   passed: z.boolean(),
   reason: z.string(),
   suggestions: z.array(z.string()).default([]),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type VerifierResult = z.infer<typeof VerifierResultSchema>;
@@ -92,7 +92,7 @@ export const MissionSpecSchema = z.object({
   verifierType: z.string().optional(),
   budget: MissionBudgetSchema.optional(),
   subgoals: z.array(SubgoalSpecSchema).optional(),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type MissionSpec = z.infer<typeof MissionSpecSchema>;

@@ -61,7 +61,7 @@ export const EventMsgSchema = z.object({
   occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
   type: z.literal("event"),
   event: z.string(),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 }).strict();
 
 export const StateMsgSchema = z.object({

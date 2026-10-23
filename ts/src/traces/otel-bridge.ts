@@ -37,7 +37,7 @@ import {
 
 const OtelAttributeValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 
-const OtelAttributesSchema = z.record(OtelAttributeValueSchema);
+const OtelAttributesSchema = z.record(z.string(), OtelAttributeValueSchema);
 
 const OtelSpanStatusSchema = z.object({
   code: z.enum(["OK", "ERROR", "UNSET"]),

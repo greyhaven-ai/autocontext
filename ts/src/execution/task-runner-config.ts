@@ -56,8 +56,8 @@ export interface EnqueueTaskRequest {
 const DelegatedResultSchema = z.object({
   score: z.number().min(0).max(1),
   reasoning: z.string(),
-  dimension_scores: z.record(z.number().min(0).max(1)).optional(),
-  dimensionScores: z.record(z.number().min(0).max(1)).optional(),
+  dimension_scores: z.record(z.string(), z.number().min(0).max(1)).optional(),
+  dimensionScores: z.record(z.string(), z.number().min(0).max(1)).optional(),
 }).passthrough();
 
 const TaskConfigSchema = z.object({
@@ -67,7 +67,7 @@ const TaskConfigSchema = z.object({
   reference_context: z.string().optional(),
   browser_url: z.string().url().optional(),
   required_concepts: z.array(z.string()).optional(),
-  calibration_examples: z.array(z.record(z.unknown())).optional(),
+  calibration_examples: z.array(z.record(z.string(), z.unknown())).optional(),
   initial_output: z.string().optional(),
   rubric: z.string().optional(),
   task_prompt: z.string().optional(),
