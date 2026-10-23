@@ -39,13 +39,15 @@ Accelerate produces an actionable error.
 
 Checkpoint loading requires POSIX descriptor-relative, no-follow file access
 (Linux CUDA workers and macOS CPU validation). Other platforms fail explicitly
-at the secure checkpoint boundary. The CPU regressions do not certify GPU,
-distributed, quantized, or Windows execution.
+at the secure checkpoint boundary. The CPU regressions include a real two-rank
+Gloo broadcast, but do not certify GPU, distributed GPU, quantized, or Windows execution.
 
 ## Security boundary
 
 The patched `load_checkpoint_in_model` snapshots its selected checkpoint into a
-private temporary directory before calling the existing tensor loader. Its
+private temporary directory before calling the existing tensor loader. Index validation happens upfront;
+shards are copied lazily when the existing rank/device branch requests them, so
+nonzero broadcast ranks do not need rank-zero-only files. Its
 public aliases, `load_checkpoint_and_dispatch`, and the quantization helper's
 calls into this loader share the same boundary.
 
@@ -79,7 +81,7 @@ accelerate-1.15.0-py3-none-any.whl
 sha256:97eacca0b73e45cb867dbf8c5d5d4dc32219544300e0c8992c7334dc2ef33cec
 ```
 
-It adds the shared boundary and one loader decorator, assigns the local version,
+It adds the shared boundary and checkpoint/state-dictionary decorators, assigns the local version,
 recomputes the wheel RECORD, and writes deterministic ZIP metadata. The original
 upstream license and notices remain in the wheel. The bundled manifest records
 the upstream hash, patched wheel hash and installed source hashes.

@@ -240,6 +240,9 @@ class MontyExecutor:
                     raise TimeoutError(f"Code strategy exceeded {self._max_external_calls} external function calls")
                 return_value = dispatch(progress.function_name, progress.args)
                 progress = progress.resume(result={"return_value": return_value})
+            if hasattr(progress, "variable_name"):
+                raise NameError(f"name {progress.variable_name!r} is not defined")
+            raw_result = progress.output
         except (TimeoutError, ValueError):
             raise
         except Exception as exc:
@@ -259,7 +262,6 @@ class MontyExecutor:
                 timeline=[{"event": "code_error"}],
             )
 
-        raw_result = progress.output
         result = Result.model_validate(raw_result)
         replay = ReplayEnvelope(
             scenario=scenario.name,
@@ -357,6 +359,9 @@ class MontyExecutor:
 
                 return_value = dispatch(progress.function_name, progress.args)
                 progress = progress.resume(result={"return_value": return_value})
+            if hasattr(progress, "variable_name"):
+                raise NameError(f"name {progress.variable_name!r} is not defined")
+            raw_result = progress.output
         except (TimeoutError, ValueError):
             raise  # Let our own errors propagate
         except Exception as exc:
@@ -365,7 +370,6 @@ class MontyExecutor:
             raise RuntimeError(f"Monty sandbox execution failed for scenario '{scenario.name}': {exc}") from exc
 
         # progress is now MontyComplete — extract the result dict
-        raw_result = progress.output
         result = Result.model_validate(raw_result)
         replay = ReplayEnvelope(
             scenario=scenario.name,

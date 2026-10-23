@@ -11,11 +11,13 @@ import re
 import shutil
 import stat
 import tempfile
+from contextvars import ContextVar
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 PATCH_ID = "autocontext-checkpoint-v1"
 _HEX = re.compile(r"[0-9a-f]{40,64}")
 _INDEX_LIMIT = 16 * 1024 * 1024
+_ACTIVE_CHECKPOINT = ContextVar("accelerate_secure_checkpoint", default=None)
 
 
 def _parts(name):
@@ -153,12 +155,21 @@ def secure_checkpoint(checkpoint):
                     _parts(name)
                 selected = sorted(set(weights.values()))
                 destination.joinpath(index_name).write_bytes(raw)
-            for name in selected:
-                _copy_file(root, root_fd, name, destination)
-            if is_directory:
-                yield str(destination)
-            else:
-                yield str(destination / (index_name or selected[0]))
+            paths = {str(destination.joinpath(*_parts(name))): name for name in selected}
+            materialized = set()
+            if index_name is None:
+                # The original loader needs the unsharded file to select its format.
+                for path, name in paths.items():
+                    _copy_file(root, root_fd, name, destination)
+                    materialized.add(path)
+            token = _ACTIVE_CHECKPOINT.set((root, root_fd, destination, paths, materialized))
+            try:
+                if is_directory:
+                    yield str(destination)
+                else:
+                    yield str(destination / (index_name or selected[0]))
+            finally:
+                _ACTIVE_CHECKPOINT.reset(token)
     except OSError as exc:
         raise ValueError("unsafe or inaccessible checkpoint file") from exc
     finally:
@@ -170,5 +181,23 @@ def with_secure_checkpoint(function):
     def guarded(model, checkpoint, *args, **kwargs):
         with secure_checkpoint(checkpoint) as snapshot:
             return function(model, snapshot, *args, **kwargs)
+
+    return guarded
+
+
+def with_secure_state_dict(function):
+    """Copy indexed shards only when the existing rank/device logic requests them."""
+    @functools.wraps(function)
+    def guarded(checkpoint_file, *args, **kwargs):
+        active = _ACTIVE_CHECKPOINT.get()
+        if active is not None:
+            root, root_fd, destination, paths, materialized = active
+            path = str(Path(checkpoint_file))
+            if path not in paths:
+                raise ValueError("tensor loader requested an unregistered checkpoint shard")
+            if path not in materialized:
+                _copy_file(root, root_fd, paths[path], destination)
+                materialized.add(path)
+        return function(checkpoint_file, *args, **kwargs)
 
     return guarded

@@ -42,7 +42,7 @@ dependencies = [
     { name = "torch" },
 ]
 wheels = [
-    { filename = "accelerate-1.15.0+autocontext.1-py3-none-any.whl", hash = "sha256:3c213a996ebda7cb25a31d4b47fe044db56e67961da5e57049e1a8c41d2e6b1d" },
+    { filename = "accelerate-1.15.0+autocontext.1-py3-none-any.whl", hash = "sha256:673fd66c9284b7638c5c267dbb0b6f050dafd7f205f15d48bd40584ccbb4b8e9" },
 ]
 
 [package.metadata]

@@ -5,10 +5,10 @@
   "upstream_sha256": "97eacca0b73e45cb867dbf8c5d5d4dc32219544300e0c8992c7334dc2ef33cec",
   "advisory": "CVE-2026-69112",
   "wheel": "accelerate-1.15.0+autocontext.1-py3-none-any.whl",
-  "wheel_sha256": "3c213a996ebda7cb25a31d4b47fe044db56e67961da5e57049e1a8c41d2e6b1d",
+  "wheel_sha256": "673fd66c9284b7638c5c267dbb0b6f050dafd7f205f15d48bd40584ccbb4b8e9",
   "patched_files": {
-    "accelerate/utils/modeling.py": "907c118b9b8b3db0a7fbdbbb4549262a2f24cb505a49f73c02573d45b4b0d3c1",
-    "accelerate/_checkpoint_security.py": "dc252527ae111ae98c13dc009840adde22a2c553bacac17f5993bbcabf883877",
+    "accelerate/utils/modeling.py": "9738acaf8744008f77984aba8589ccfdd21fe1e271b9b393340683c231b5a15d",
+    "accelerate/_checkpoint_security.py": "36d4fe3de3dab38cfe99343c3266ad077fbdac6477eb1a157ef029935a777034",
     "accelerate/__init__.py": "da5ac4a9d2f91bc868d870c710a4c955e435bd69f019f8b25be7bcf9b0722df4"
   }
 }

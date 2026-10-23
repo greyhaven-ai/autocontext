@@ -237,6 +237,12 @@ class MontyReplWorker:
                 error=str(exc),
                 answer=dict(self._namespace.get("answer", {"content": "", "ready": False})),
             )
+        except Exception as exc:
+            return ReplResult(
+                stdout="",
+                error=str(exc),
+                answer=dict(self._namespace.get("answer", {"content": "", "ready": False})),
+            )
 
         # 8. Dispatch loop
         stdout_lines: list[str] = []
@@ -265,6 +271,14 @@ class MontyReplWorker:
                 return_value = dispatch(progress.function_name, progress.args)
                 progress = progress.resume(result={"return_value": return_value})
 
+            if hasattr(progress, "variable_name"):
+                raise NameError(f"name {progress.variable_name!r} is not defined")
+            raw_output = progress.output
+            if isinstance(raw_output, dict) and (
+                not isinstance(raw_output.get("answer", self._namespace["answer"]), dict)
+                or not isinstance(raw_output.get("state", self._namespace["state"]), dict)
+            ):
+                raise ValueError("Monty REPL answer and state must remain dictionaries")
         except Exception as exc:
             logger.debug("harness.repl.monty_worker: caught Exception", exc_info=True)
             return ReplResult(
@@ -274,7 +288,6 @@ class MontyReplWorker:
             )
 
         # 9. Extract output and update namespace
-        raw_output = progress.output
         if isinstance(raw_output, dict):
             if "answer" in raw_output:
                 self._namespace["answer"] = raw_output["answer"]

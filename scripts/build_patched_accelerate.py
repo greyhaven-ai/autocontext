@@ -28,12 +28,18 @@ def build(upstream: bytes) -> tuple[bytes, dict]:
     files.pop(f"{info}/RECORD")
     modeling_path = "accelerate/utils/modeling.py"
     modeling = files[modeling_path].decode()
-    needle = "def load_checkpoint_in_model("
-    if modeling.count(needle) != 1:
-        raise ValueError("upstream checkpoint entry point changed")
-    modeling = modeling.replace(needle, "@with_secure_checkpoint\n" + needle)
+    for name, decorator in (
+        ("load_checkpoint_in_model", "with_secure_checkpoint"),
+        ("load_state_dict", "with_secure_state_dict"),
+    ):
+        needle = f"def {name}("
+        if modeling.count(needle) != 1:
+            raise ValueError(f"upstream {name} entry point changed")
+        modeling = modeling.replace(needle, f"@{decorator}\n" + needle)
     modeling = modeling.replace(
-        "import contextlib\n", "import contextlib\nfrom .._checkpoint_security import with_secure_checkpoint\n", 1,
+        "import contextlib\n",
+        "import contextlib\nfrom .._checkpoint_security import with_secure_checkpoint, with_secure_state_dict\n",
+        1,
     )
     files[modeling_path] = modeling.encode()
     files["accelerate/_checkpoint_security.py"] = (ROOT / "third_party/accelerate/checkpoint_security.py").read_bytes()

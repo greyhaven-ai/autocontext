@@ -115,6 +115,22 @@ class TestMontyLiveEvalScript:
 
 @pytest.mark.skipif(not HAS_MONTY, reason="pydantic-monty not installed")
 class TestMontyLiveFullExecutor:
+    def test_unknown_code_strategy_name_returns_failed_result(self) -> None:
+        from types import SimpleNamespace
+
+        from test_monty_executor import FakeScenario
+
+        from autocontext.execution.executors.monty import MontyExecutor
+        from autocontext.scenarios.base import ExecutionLimits
+
+        scenario = FakeScenario()
+        scenario.get_observation = lambda *a, **k: SimpleNamespace(narrative="", state={}, constraints=[])
+        result, _ = MontyExecutor().execute(
+            scenario, {"__code__": "result = missing"}, 1, ExecutionLimits(timeout_seconds=1),
+        )
+        assert result.score == 0.0
+        assert "missing" in result.validation_errors[0]
+
     def test_code_strategy_native_timeout_propagates(self) -> None:
         code = (
             "import sys\n"

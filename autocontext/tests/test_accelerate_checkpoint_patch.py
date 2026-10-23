@@ -151,3 +151,66 @@ def test_maintained_public_aliases_share_the_guard() -> None:
     assert accelerate.load_checkpoint_in_model is utils.load_checkpoint_in_model is modeling.load_checkpoint_in_model
     assert big.load_checkpoint_in_model is modeling.load_checkpoint_in_model
     assert modeling.load_checkpoint_in_model.__wrapped__.__name__ == "load_checkpoint_in_model"
+
+
+@pytest.mark.parametrize("rank,broadcast,device_map,success", [
+    (1, True, None, True), (0, True, None, False),
+    (1, False, None, False), (1, True, {"": "cpu"}, False),
+])
+def test_only_the_existing_broadcast_branch_skips_rank_zero_shards(
+    tmp_path: Path, monkeypatch, rank, broadcast, device_map, success,
+) -> None:
+    import torch.distributed.checkpoint.state_dict as state_dict
+    (tmp_path / "model.index.json").write_text(json.dumps({"weight_map": {"weight": "rank-zero-only.bin"}}))
+    received = []
+    monkeypatch.setattr(torch.distributed, "get_rank", lambda: rank)
+    monkeypatch.setattr(state_dict, "set_model_state_dict", lambda model, values, **kwargs: received.append(values))
+    if success:
+        accelerate.load_checkpoint_in_model(
+            torch.nn.Linear(2, 1), tmp_path, broadcast_from_rank0=broadcast, device_map=device_map,
+        )
+        assert received == [{}]
+    else:
+        with pytest.raises(ValueError):
+            accelerate.load_checkpoint_in_model(
+                torch.nn.Linear(2, 1), tmp_path, broadcast_from_rank0=broadcast, device_map=device_map,
+            )
+
+
+def _distributed_checkpoint_worker(rank: int, directory: str) -> None:
+    root = Path(directory)
+    checkpoint = root / f"rank-{rank}"
+    checkpoint.mkdir()
+    weights = _weights()
+    (checkpoint / "model.index.json").write_text(json.dumps({
+        "weight_map": {"weight": "weights.bin", "bias": "weights.bin"},
+    }))
+    if rank == 0:
+        _save(checkpoint / "weights.bin", weights)
+    torch.distributed.init_process_group(
+        "gloo", init_method=(root / "rendezvous").as_uri(), rank=rank, world_size=2,
+    )
+    try:
+        model = torch.nn.Linear(2, 1)
+        accelerate.load_checkpoint_in_model(model, checkpoint, broadcast_from_rank0=True)
+        assert torch.equal(model.weight, weights["weight"])
+        assert torch.equal(model.bias, weights["bias"])
+    finally:
+        torch.distributed.destroy_process_group()
+
+
+@pytest.mark.skipif(not torch.distributed.is_gloo_available(), reason="Gloo CPU distributed backend unavailable")
+def test_real_two_rank_broadcast_needs_shards_only_on_rank_zero(tmp_path: Path) -> None:
+    code = (
+        "import sys\n"
+        "sys.path.insert(0, sys.argv[1])\n"
+        "from test_accelerate_checkpoint_patch import _distributed_checkpoint_worker\n"
+        "from torch.multiprocessing import spawn\n"
+        "if __name__ == '__main__':\n"
+        "    spawn(_distributed_checkpoint_worker, args=(sys.argv[2],), nprocs=2, join=True)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(Path(__file__).parent), str(tmp_path)],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

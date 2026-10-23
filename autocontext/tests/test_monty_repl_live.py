@@ -34,6 +34,16 @@ def _cmd(code: str) -> Any:
 
 
 class TestMontyReplLiveBasic:
+    @pytest.mark.parametrize("code", [
+        "missing_name", "missing_name()", "class Foo:\n    pass", "del state", "nonlocal x", "yield 1",
+        "answer = None", "answer = 'bad answer'", "state = None",
+    ])
+    def test_runtime_lookup_and_subset_errors_are_contained(self, code: str) -> None:
+        worker = _worker(namespace={"state": {"known": 42}})
+        result = worker.run_code(_cmd(code))
+        assert result.error
+        assert worker.namespace["state"] == {"known": 42}
+
     @pytest.mark.parametrize("prefix", ["", "print('before loop')\n"])
     def test_native_timeout_interrupts_code_between_callbacks(self, prefix: str) -> None:
         # An outer process timeout keeps a regression in VM limits from hanging pytest.
