@@ -216,46 +216,49 @@
   "overrides": {
     "@hono/node-server": "1.19.15",
     "fast-uri": "3.1.8",
-    "hono": "4.13.7",
-    "ip-address": "10.7.2",
-    "js-yaml": "4.3.1",
+    "hono": "4.13.11",
+    "ip-address": "10.7.4",
+    "js-yaml@^4": "4.3.2",
+    "js-yaml@^5": "5.4.1",
     "@apidevtools/json-schema-ref-parser@^16.0.1": {
-      "js-yaml": "5.2.3",
-      "undici": "8.10.1"
+      "undici": "8.12.2"
     },
     "nanoid": "3.3.18",
-    "postcss": "8.5.23"
+    "postcss": "8.5.23",
+    "pbkdf2": "3.1.7",
+    "proxy-addr": "2.0.8",
+    "source-map-js": "1.2.2"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.127.0",
+    "@anthropic-ai/sdk": "^0.135.0",
     "@apidevtools/json-schema-ref-parser": "^16.0.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/ws": "^8.5.13",
     "esbuild": "^0.28.2",
     "fast-check": "^4.7.0",
-    "json-schema-to-typescript": "^15.0.4",
+    "json-schema-to-typescript": "^16.0.0",
     "openai": "^7",
     "typescript": "^7.0.2",
     "typescript-6": "npm:typescript@^6.0.3",
     "vitest": "^5.0.1"
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "0.85.1",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@earendil-works/pi-tui": "1.3.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "better-sqlite3": "^13.0.3",
     "diff": "^9.0.0",
-    "ignore": "7.0.9",
-    "secure-exec": "^0.1.0",
-    "sharp": "0.35.4",
+    "ignore": "7.0.12",
+    "secure-exec": "0.1.0",
+    "sharp": "0.35.5",
     "tree-sitter": "0.21.1",
     "tree-sitter-javascript": "0.21.4",
     "tree-sitter-python": "0.21.0",
     "tree-sitter-typescript": "0.21.2",
     "tsx": "^4.21.0",
     "ulid": "^3.0.2",
-    "undici": "8.10.2",
+    "undici": "8.12.2",
     "ws": "^8.18.0",
     "zod": "^3.24.0"
   }

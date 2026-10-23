@@ -100,8 +100,6 @@ export interface BrowserAuditEvent {
 
 // ---- browser-session-config.schema.json ----
 export type BrowserSessionConfig = {
-  [k: string]: unknown;
-} & {
   schemaVersion: "1.0";
   profileMode: "ephemeral" | "isolated" | "user-profile";
   allowedDomains: string[];

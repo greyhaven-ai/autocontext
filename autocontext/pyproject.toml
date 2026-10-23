@@ -36,8 +36,8 @@ dependencies = [
 [project.optional-dependencies]
 browser = ["httpx>=0.28.1"]
 primeintellect = ["prime-sandboxes>=0.2.27"]
-mcp = ["mcp>=1.28.1"]
-agent-sdk = ["claude-agent-sdk>=0.1.0"]
+mcp = ["mcp>=1.30.0,<2"]
+agent-sdk = ["claude-agent-sdk>=0.2.121"]
 monty = ["pydantic-monty>=0.0.7"]
 mlx = ["mlx>=0.30.0", "rustbpe>=0.1.0", "tiktoken>=0.11.0", "safetensors>=0.4.0", "numpy>=1.24.0"]
 mlxlm = ["mlx-lm>=0.20.0"]
@@ -62,7 +62,7 @@ all = ["autocontext[mcp,agent-sdk,monty,openai,browser,primeintellect]"]
 
 [dependency-groups]
 dev = [
-  "datamodel-code-generator>=0.64.0,<0.83.0",
+  "datamodel-code-generator>=0.81.0,<0.86.0",
   "httpx>=0.28.1",
   "hypothesis>=6.151.12",
   "markdown-it-py>=4.0.0",
@@ -81,8 +81,15 @@ dev = [
 
 [tool.uv]
 constraint-dependencies = [
-  "aiohttp>=3.14.3",
+  "aiohttp>=3.14.4",
   "anyio>=4.14.2",
+  "black>=26.10.1",
+  "certifi>=2026.10.19",
+  "fsspec>=2026.6.0",
+  "multidict>=6.9.1,<7",
+  "opentelemetry-api>=1.45.1",
+  "pyjwt>=2.15.0",
+  "urllib3>=2.8.0",
   "cryptography>=50.0.0",
   "setuptools>=83.0.0",
 ]

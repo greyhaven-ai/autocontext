@@ -201,7 +201,15 @@ Security updates have separate groups and are not capped by the version-update
 limit or delayed by the version cooldown. Existing dependency pins, ignore
 rules, release-age checks, and required CI still apply. A grouped PR must keep
 the npm and Bun locks synchronized, and Python manifest updates must include
-the matching uv lock and any derived container requirements.
+the matching uv lock and any derived container requirements. The Python entry
+uses Dependabot's native `uv` updater so its PRs update `uv.lock` alongside
+`pyproject.toml`.
+
+`secure-exec` stays on its reviewed 0.1 API. Its 0.2 line removes `NodeRuntime`
+and the driver factories used by the generated-scenario and RLM sandboxes;
+upgrading it requires a dedicated migration that revalidates isolation,
+resource limits and disposal. Dependabot may propose patch updates, while its
+minor and major version updates are deferred for that migration.
 
 The new policy takes effect after `.github/dependabot.yml` reaches `main`.
 Retire superseded individual PRs after it is active, then let Dependabot create
