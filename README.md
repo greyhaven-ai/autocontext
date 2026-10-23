@@ -25,6 +25,9 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 ## Install
 
+For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](docs/security/accelerate-risk-assessment.md).
+Published installations must install the bundled security build before adding the CUDA extra; source checkouts use the locked uv source.
+
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
 | Python CLI          | `uv tool install autocontext==0.19.1` |

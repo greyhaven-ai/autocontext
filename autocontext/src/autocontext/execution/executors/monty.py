@@ -19,7 +19,7 @@ from autocontext.scenarios.base import (
 logger = logging.getLogger(__name__)
 
 
-def _create_monty(code: str, inputs: list[str], external_functions: list[str]) -> Any:
+def _create_monty(code: str, inputs: list[str]) -> Any:
     """Create a Monty interpreter instance. Separated for testability (mock target)."""
     try:
         import pydantic_monty
@@ -28,26 +28,20 @@ def _create_monty(code: str, inputs: list[str], external_functions: list[str]) -
     return pydantic_monty.Monty(
         code,
         inputs=inputs,
-        external_functions=external_functions,
     )
 
 
-_EXTERNAL_FUNCTIONS = [
-    "initial_state",
-    "validate_actions",
-    "step",
-    "is_terminal",
-    "get_result",
-]
+def _raise_native_timeout(exc: Exception) -> None:
+    """Preserve the executor timeout contract for VM-enforced execution limits."""
+    try:
+        from pydantic_monty import MontyRuntimeError
+    except ImportError:
+        return
+    if isinstance(exc, MontyRuntimeError):
+        cause = exc.exception()
+        if isinstance(cause, TimeoutError):
+            raise TimeoutError(f"Monty sandbox exceeded execution time limit: {cause}") from exc
 
-_CODE_STRATEGY_EXTERNAL_FUNCTIONS = [
-    "get_observation",
-    "initial_state",
-    "validate_actions",
-    "step",
-    "is_terminal",
-    "get_result",
-]
 
 _EVAL_SCRIPT = """\
 state = initial_state(seed)
@@ -217,7 +211,6 @@ class MontyExecutor:
             monty = _create_monty(
                 code=script,
                 inputs=["seed"],
-                external_functions=_CODE_STRATEGY_EXTERNAL_FUNCTIONS,
             )
         except ImportError:
             raise
@@ -235,7 +228,7 @@ class MontyExecutor:
 
         try:
             start_time = time.monotonic()
-            progress = monty.start(inputs={"seed": seed})
+            progress = monty.start(inputs={"seed": seed}, limits={"max_duration_secs": timeout})
             calls = 0
 
             while hasattr(progress, "function_name"):
@@ -246,10 +239,14 @@ class MontyExecutor:
                 if calls > self._max_external_calls:
                     raise TimeoutError(f"Code strategy exceeded {self._max_external_calls} external function calls")
                 return_value = dispatch(progress.function_name, progress.args)
-                progress = progress.resume(return_value=return_value)
+                progress = progress.resume(result={"return_value": return_value})
+            if hasattr(progress, "variable_name"):
+                raise NameError(f"name {progress.variable_name!r} is not defined")
+            raw_result = progress.output
         except (TimeoutError, ValueError):
             raise
         except Exception as exc:
+            _raise_native_timeout(exc)
             logger.debug("execution.executors.monty: caught Exception", exc_info=True)
             return Result(
                 score=0.0,
@@ -265,7 +262,6 @@ class MontyExecutor:
                 timeline=[{"event": "code_error"}],
             )
 
-        raw_result = progress.output
         result = Result.model_validate(raw_result)
         replay = ReplayEnvelope(
             scenario=scenario.name,
@@ -336,7 +332,6 @@ class MontyExecutor:
             monty = _create_monty(
                 code=script,
                 inputs=["strategy", "seed"],
-                external_functions=_EXTERNAL_FUNCTIONS,
             )
         except ImportError:
             raise  # Let import errors propagate with the helpful message
@@ -349,7 +344,9 @@ class MontyExecutor:
 
         try:
             start_time = time.monotonic()
-            progress = monty.start(inputs={"strategy": dict(strategy), "seed": seed})
+            progress = monty.start(
+                inputs={"strategy": dict(strategy), "seed": seed}, limits={"max_duration_secs": timeout},
+            )
             calls = 0
 
             while hasattr(progress, "function_name"):
@@ -361,15 +358,18 @@ class MontyExecutor:
                     raise TimeoutError(f"Monty sandbox exceeded {self._max_external_calls} external function calls")
 
                 return_value = dispatch(progress.function_name, progress.args)
-                progress = progress.resume(return_value=return_value)
+                progress = progress.resume(result={"return_value": return_value})
+            if hasattr(progress, "variable_name"):
+                raise NameError(f"name {progress.variable_name!r} is not defined")
+            raw_result = progress.output
         except (TimeoutError, ValueError):
             raise  # Let our own errors propagate
         except Exception as exc:
             logger.debug("execution.executors.monty: caught Exception", exc_info=True)
+            _raise_native_timeout(exc)
             raise RuntimeError(f"Monty sandbox execution failed for scenario '{scenario.name}': {exc}") from exc
 
         # progress is now MontyComplete — extract the result dict
-        raw_result = progress.output
         result = Result.model_validate(raw_result)
         replay = ReplayEnvelope(
             scenario=scenario.name,

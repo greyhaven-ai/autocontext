@@ -1,77 +1,77 @@
-"""Run the full strict audit with one expiring, graph-bound risk acceptance."""
+"""Audit every Python dependency, including the verified maintained Accelerate build."""
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
+import tempfile
 import tomllib
-from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+from autocontext.accelerate_patch import verified_bundle
+
 ROOT = Path(__file__).resolve().parents[1]
-FORBIDDEN_APIS = ("load_checkpoint_in_model", "load_checkpoint_and_dispatch", "load_and_quantize_model")
 
 
-def validate_policy(root: Path, today: date) -> dict[str, Any]:
-    policy = json.loads((root / "scripts/python_audit_exception.json").read_text())
-    if today >= date.fromisoformat(policy["expires"]):
-        raise ValueError("Accelerate risk acceptance expired; review or remove it")
-    if not (root / policy["review"]).is_file():
-        raise ValueError("Missing risk assessment")
-    package_root = root / "autocontext"
-    lock = tomllib.loads((package_root / "uv.lock").read_text())
-    manifest = tomllib.loads((package_root / "pyproject.toml").read_text())
-    cuda = manifest["project"]["optional-dependencies"]["cuda"]
-    for name, expected in policy["reviewed_packages"].items():
-        packages = [p for p in lock["package"] if p["name"] == name]
-        if len(packages) != 1:
-            raise ValueError(f"Review required: ambiguous or missing {name}")
-        package = packages[0]
-        if package["version"] != expected["version"] or {
-            w["hash"] for w in package.get("wheels", [])
-        } != {expected["wheel_hash"]}:
-            raise ValueError(f"Review required: {name} version or wheel changed")
-        if f'{name}=={expected["version"]}' not in cuda:
-            raise ValueError(f"Review required: {name} CUDA version is not pinned")
-    # A review tripwire, not a sandbox: extensions and direct third-party API
-    # calls are outside this assessment. New harness use needs a fresh review.
-    for source in (package_root / "src/autocontext").rglob("*.py"):
-        if any(api in source.read_text(encoding="utf-8") for api in FORBIDDEN_APIS):
-            raise ValueError(f"Review required: checkpoint API reference in {source.relative_to(root)}")
-    return policy
+def normalize_requirements(requirements: str) -> str:
+    """Verify the fork artifact, then query all advisories for its upstream version.
+
+    PyPI's advisory service cannot identify an unpublished local version. No
+    vulnerability is ignored or accepted in this normalization.
+    """
+    wheel, manifest = verified_bundle()
+    lock = tomllib.loads((ROOT / "autocontext/uv.lock").read_text())
+    packages = [p for p in lock["package"] if p["name"] == "accelerate"]
+    if len(packages) != 1 or packages[0]["version"] != manifest["version"]:
+        raise ValueError("Full audit requires the maintained Accelerate build in uv.lock")
+    source = packages[0]["source"].get("path")
+    if not source or (ROOT / "autocontext" / source).resolve() != wheel.resolve():
+        raise ValueError("Locked Accelerate source differs from the verified bundle")
+    entries = requirements.replace("\\\n", "").splitlines()
+    replaced = 0
+    normalized = []
+    for entry in entries:
+        if not entry.strip() or entry.lstrip().startswith("#"):
+            normalized.append(entry)
+            continue
+        if ".whl" in entry:
+            fields = entry.split()
+            if Path(fields[0]).resolve() != wheel.resolve() or fields[1:] != [
+                "--hash=sha256:" + manifest["wheel_sha256"],
+            ]:
+                raise ValueError("Unverified local wheel in full dependency export")
+            normalized.append(
+                f"accelerate=={manifest['upstream_version']} --hash=sha256:{manifest['upstream_sha256']}"
+            )
+            replaced += 1
+        else:
+            normalized.append(entry)
+    if replaced != 1:
+        raise ValueError("Full export must contain exactly one verified Accelerate wheel")
+    return "\n".join(normalized) + "\n"
 
 
-def evaluate_report(report: dict[str, Any], policy: dict[str, Any]) -> tuple[list[str], list[str]]:
+def evaluate_report(report: dict[str, Any]) -> list[str]:
     dependencies = report.get("dependencies")
     if not isinstance(dependencies, list) or not dependencies:
         raise ValueError("Audit returned no dependency inventory")
-    accepted, failures = [], []
-    observed: dict[str, str] = {}
+    failures = []
+    observed = {}
     for dependency in dependencies:
         name = dependency["name"]
         if "skip_reason" in dependency:
             failures.append(f"Unaudited dependency: {name}: {dependency['skip_reason']}")
             continue
-        version = dependency["version"]
         if name in observed:
             raise ValueError(f"Duplicate audited dependency: {name}")
-        observed[name] = version
+        observed[name] = dependency["version"]
         for vulnerability in dependency["vulns"]:
-            ids = {vulnerability["id"], *vulnerability.get("aliases", [])}
-            label = f"{name}=={version}: {vulnerability['id']}"
-            if (
-                name == policy["package"] and version == policy["version"]
-                and ids.intersection({policy["advisory"], policy["alias"]})
-                and not vulnerability["fix_versions"]
-            ):
-                accepted.append(f"ACCEPTED until {policy['expires']}: {label}; see {policy['review']}")
-            else:
-                failures.append(label)
-    for name, expected in policy["reviewed_packages"].items():
-        if observed.get(name) != expected["version"]:
-            failures.append(f"Full reviewed inventory missing or changed: {name}")
-    return accepted, failures
+            failures.append(f"{name}=={dependency['version']}: {vulnerability['id']}")
+    _, manifest = verified_bundle()
+    if observed.get("accelerate") != manifest["upstream_version"]:
+        failures.append("Full upstream advisory inventory missing or changed: accelerate")
+    return failures
 
 
 def main() -> int:
@@ -79,25 +79,26 @@ def main() -> int:
         print("usage: audit_python_dependencies.py EXPORTED_REQUIREMENTS", file=sys.stderr)
         return 2
     try:
-        policy = validate_policy(ROOT, datetime.now(UTC).date())
-        result = subprocess.run(
-            [sys.executable, "-m", "pip_audit", "-r", sys.argv[1],
-             "--disable-pip", "--strict", "--format", "json"],
-            stdout=subprocess.PIPE, text=True, timeout=180, check=False,
-        )
+        requirements = normalize_requirements(Path(sys.argv[1]).read_text())
+        with tempfile.TemporaryDirectory(prefix="autocontext-audit-") as temporary:
+            audited = Path(temporary) / "requirements.lock"
+            audited.write_text(requirements)
+            result = subprocess.run(
+                [sys.executable, "-m", "pip_audit", "-r", str(audited),
+                 "--disable-pip", "--strict", "--format", "json"],
+                stdout=subprocess.PIPE, text=True, timeout=180, check=False,
+            )
         if result.returncode not in (0, 1):
             raise ValueError(f"Audit tool failed with exit code {result.returncode}")
-        accepted, failures = evaluate_report(json.loads(result.stdout), policy)
-        if result.returncode == 1 and not accepted and not failures:
+        failures = evaluate_report(json.loads(result.stdout))
+        if result.returncode == 1 and not failures:
             raise ValueError("Audit failed without a vulnerability result")
-        for message in accepted:
-            print(message)
         for message in failures:
             print(f"BLOCKED: {message}", file=sys.stderr)
         if not failures:
-            print("Full Python audit passed subject to the explicitly listed risk acceptance.")
+            print("Full Python audit passed; maintained Accelerate build verified; no accepted findings.")
         return int(bool(failures))
-    except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as exc:
+    except (ValueError, KeyError, TypeError, OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         print(f"Audit blocked: {exc}", file=sys.stderr)
         return 1
 

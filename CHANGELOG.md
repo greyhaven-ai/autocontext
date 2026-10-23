@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Repair Monty 0.0.18 constructor and snapshot-resume calls in the executor
+  and REPL. Enforce native VM deadlines and preserve printed string contents;
+  CI now exercises the installed optional runtime.
+
 - Python grouped dependency updates retain the compatible Anthropic, MCP and
   Monty execution APIs, refresh the derived Docker lock, and repair SDK-version
   exception fixtures and MCP tool-name tests for the current public API.
@@ -21,10 +25,16 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Replace the expiring Accelerate acceptance with a reproducible maintained
+  build that snapshots regular checkpoint files through anchored descriptors
+  before loading. Reject traversal, special files and escaping symlinks while
+  supporting Hub cache blob links. Bundle the wheel, require its exact build
+  for CUDA model loading, and document the updated installation process.
+
 - Refresh the Python dependency lock and derived Docker requirements with
   patched packages across all dependency groups and extras. Refresh the
   TypeScript and Pi security overrides and synchronize npm and Bun locks.
-  The existing graph-bound Accelerate exception remains unchanged.
+  The former graph-bound Accelerate exception is superseded by the maintained build.
 - Grouped dependency updates now use compatible YAML versions for schema
   generation and retain the reviewed `secure-exec` 0.1 sandbox API until a
   dedicated isolation migration can validate the replacement API.

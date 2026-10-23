@@ -44,12 +44,13 @@ _BASE_DEPS = [
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install("torch", "transformers", "peft", "accelerate", "safetensors")
+    .pip_install("torch==2.14.1", "transformers==5.12.1", "peft==0.19.1", "safetensors==0.8.0")
     .pip_install(*_BASE_DEPS)
     .add_local_dir(
         str(_PKG_SRC), "/pkg", copy=True, ignore=["**/__pycache__", "**/*.pyc"]
     )
     .env({"PYTHONPATH": "/pkg", "HF_HUB_DISABLE_TELEMETRY": "1"})
+    .run_commands("python -m autocontext.accelerate_patch --install")
 )
 
 app = modal.App("ac891-sft-serving-validation")

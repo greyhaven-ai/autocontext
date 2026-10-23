@@ -17,7 +17,7 @@ from autocontext.harness.repl.worker import _chunk_by_headers, _chunk_by_size, _
 logger = logging.getLogger(__name__)
 
 
-def _create_repl_monty(code: str, inputs: list[str], external_functions: list[str]) -> Any:
+def _create_repl_monty(code: str, inputs: list[str]) -> Any:
     """Create a Monty interpreter instance. Separated for testability (mock target)."""
     try:
         import pydantic_monty
@@ -29,7 +29,6 @@ def _create_repl_monty(code: str, inputs: list[str], external_functions: list[st
     return pydantic_monty.Monty(
         code,
         inputs=inputs,
-        external_functions=external_functions,
     )
 
 
@@ -130,16 +129,6 @@ _REPL_SCRIPT_TEMPLATE = """\
 {{"answer": answer, "state": state}}
 """
 
-_BASE_EXTERNAL_FUNCTIONS = [
-    "_print",
-    "stdlib",
-    "peek",
-    "grep",
-    "chunk_by_size",
-    "chunk_by_headers",
-]
-
-
 # ---------------------------------------------------------------------------
 # MontyReplWorker
 # ---------------------------------------------------------------------------
@@ -221,23 +210,18 @@ class MontyReplWorker:
                 answer=dict(self._namespace.get("answer", {"content": "", "ready": False})),
             )
 
-        # 2. Rewrite trailing expression
-        code = _rewrite_trailing_expr(command.code)
-
-        # 3. Rewrite print() to _print()
-        code = code.replace("print(", "_print(")
+        # Rewrite actual print calls, preserving strings and the trailing _print wrapper.
+        tree = ast.parse(command.code, mode="exec")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print":
+                node.func.id = "_print"
+        code = _rewrite_trailing_expr(ast.unparse(tree))
 
         # 4. Wrap in script template
         script = _REPL_SCRIPT_TEMPLATE.format(user_code=code)
 
         # 5. Separate namespace
         data, callables = self._separate_namespace()
-
-        # 6. Build external function list
-        ext_fns = list(_BASE_EXTERNAL_FUNCTIONS)
-        for name in callables:
-            if name not in ext_fns:
-                ext_fns.append(name)
 
         input_names = sorted(data.keys())
 
@@ -246,9 +230,14 @@ class MontyReplWorker:
             monty = _create_repl_monty(
                 code=script,
                 inputs=input_names,
-                external_functions=ext_fns,
             )
         except ImportError as exc:
+            return ReplResult(
+                stdout="",
+                error=str(exc),
+                answer=dict(self._namespace.get("answer", {"content": "", "ready": False})),
+            )
+        except Exception as exc:
             return ReplResult(
                 stdout="",
                 error=str(exc),
@@ -261,7 +250,7 @@ class MontyReplWorker:
 
         try:
             start_time = time_mod.monotonic()
-            progress = monty.start(inputs=data)
+            progress = monty.start(inputs=data, limits={"max_duration_secs": self._timeout})
             calls = 0
 
             while hasattr(progress, "function_name"):
@@ -280,8 +269,16 @@ class MontyReplWorker:
                         answer=dict(self._namespace.get("answer", {"content": "", "ready": False})),
                     )
                 return_value = dispatch(progress.function_name, progress.args)
-                progress = progress.resume(return_value=return_value)
+                progress = progress.resume(result={"return_value": return_value})
 
+            if hasattr(progress, "variable_name"):
+                raise NameError(f"name {progress.variable_name!r} is not defined")
+            raw_output = progress.output
+            if isinstance(raw_output, dict) and (
+                not isinstance(raw_output.get("answer", self._namespace["answer"]), dict)
+                or not isinstance(raw_output.get("state", self._namespace["state"]), dict)
+            ):
+                raise ValueError("Monty REPL answer and state must remain dictionaries")
         except Exception as exc:
             logger.debug("harness.repl.monty_worker: caught Exception", exc_info=True)
             return ReplResult(
@@ -291,7 +288,6 @@ class MontyReplWorker:
             )
 
         # 9. Extract output and update namespace
-        raw_output = progress.output
         if isinstance(raw_output, dict):
             if "answer" in raw_output:
                 self._namespace["answer"] = raw_output["answer"]
