@@ -15,6 +15,14 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Refresh the Python dependency lock and derived Docker requirements with
+  patched packages across all dependency groups and extras. Refresh the
+  TypeScript and Pi security overrides and synchronize npm and Bun locks.
+  The existing graph-bound Accelerate exception remains unchanged.
+- Grouped dependency updates now use compatible YAML versions for schema
+  generation and retain the reviewed `secure-exec` 0.1 sandbox API until a
+  dedicated isolation migration can validate the replacement API.
+
 - TypeScript: `ts/bun.lock` is regenerated from `ts/package-lock.json`, so the
   two lockfiles lock identical versions again. They disagreed on 146 packages,
   including the whole vitest 3 tree that vitest 5 replaced, because Dependabot

@@ -8,7 +8,7 @@ version: 2
 #
 # Cooldowns hold version updates until a release is seven days old, the age
 # NPM_CONFIG_MIN_RELEASE_AGE sets in ci.yml and the npm publish workflows;
-# change them together. The github-actions and pip entries use the same age.
+# change them together. The github-actions and Python entries use the same age.
 # For npm, Dependabot also passes the cooldown to npm as --min-release-age when
 # it regenerates a lockfile, which holds newly locked transitive packages to
 # the same age. Cooldowns never apply to security updates.
@@ -49,6 +49,11 @@ updates:
     cooldown:
       default-days: 7
     ignore:
+      # 0.2 removes NodeRuntime and the driver factories used by both sandbox
+      # boundaries. Keep the reviewed 0.1 API until a dedicated migration proves
+      # filesystem/network denial, timeouts, memory limits and disposal again.
+      - dependency-name: secure-exec
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # tree-sitter is capped at 0.21.x by upstream, not by choice.
       # tree-sitter-typescript's newest release (0.23.2) still peers
       # tree-sitter ^0.21.0, which for a 0.x version resolves to
@@ -84,7 +89,8 @@ updates:
     cooldown:
       default-days: 7
 
-  - package-ecosystem: pip
+  # Use the native updater so manifest changes also update uv.lock.
+  - package-ecosystem: uv
     directory: /autocontext
     schedule:
       interval: weekly

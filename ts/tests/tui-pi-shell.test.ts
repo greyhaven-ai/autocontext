@@ -50,6 +50,7 @@ class VirtualTerminal implements Terminal {
   clearScreen(): void {}
   setTitle(): void {}
   setProgress(): void {}
+  setProgramStatus(): void {}
   input(data: string): void { this.#onInput?.(data); }
   resize(columns: number): void {
     this.columns = columns;
@@ -96,7 +97,7 @@ describe("pi-tui shell", () => {
       .map((name) => readFileSync(join(import.meta.dirname, "..", name), "utf-8"))
       .join("\n");
 
-    expect(manifest.dependencies["@earendil-works/pi-tui"]).toBe("0.85.1");
+    expect(manifest.dependencies["@earendil-works/pi-tui"]).toBe("1.3.0");
     expect(manifest.engines.node).toBe(">=22.19.0");
     for (const removed of ["ink", "ink-text-input", "react", "@types/react"]) {
       expect(manifest.dependencies[removed]).toBeUndefined();
