@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Python: `get_human_feedback` and `get_calibration_examples` returned the
+  oldest matching rows instead of the newest whenever timestamps tied, as the
+  TypeScript store did before 0.18.0. `human_feedback.created_at` has
+  one-second resolution, so a burst of writes shared a sort key and
+  `ORDER BY created_at DESC LIMIT n` returned the first n inserted. Results now
+  break ties by id, newest first.
+
 ### Security
 
 - TypeScript: `ts/bun.lock` is regenerated from `ts/package-lock.json`, so the
