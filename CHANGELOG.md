@@ -68,6 +68,10 @@ All notable changes to this project will be documented in this file.
 - Pi's dependency lock must move to this runtime after it is published.
   Forcing Zod 4 into the older published runtime breaks structured-task
   validation errors, even though its six Pi tool examples still pass.
+  A user-approved bootstrap exception accepts only the existing Pi Zod
+  advisory on its unchanged manifest and lock until 2026-10-24 21:00 UTC;
+  remove it immediately after the published-runtime upgrade. Other audit
+  findings and release approval gates remain enforced.
 
 ## [Pi 0.12.0] - 2026-09-28
 
