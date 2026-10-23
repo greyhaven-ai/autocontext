@@ -36,7 +36,7 @@ dependencies = [
 [project.optional-dependencies]
 browser = ["httpx>=0.28.1"]
 primeintellect = ["prime-sandboxes>=0.2.27"]
-mcp = ["mcp>=1.30.0,<2"]
+mcp = ["mcp>=1.30.0,<3"]
 agent-sdk = ["claude-agent-sdk>=0.2.121"]
 monty = ["pydantic-monty>=0.0.7"]
 mlx = ["mlx>=0.30.0", "rustbpe>=0.1.0", "tiktoken>=0.11.0", "safetensors>=0.4.0", "numpy>=1.24.0"]
