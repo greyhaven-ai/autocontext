@@ -25,6 +25,11 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Prevent executable skill output from being accepted after a child OOM kill
+  when Docker's OOM notification lags its exit event. A protected supervisor
+  checks the private cgroup-v2 kernel counter after all descendants stop;
+  missing evidence fails closed and existing evaluator identities invalidate.
+
 - Update both fast-uri overrides and locks to 3.1.9 for URI scheme,
   relative-path and host canonicalization advisories found by CI.
 - Replace the expiring Accelerate acceptance with a reproducible maintained

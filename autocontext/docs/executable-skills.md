@@ -108,12 +108,20 @@ capability grants are supported.
 The default budget is 10 seconds, 128 MiB memory and 64 KiB per output stream;
 source/input are each limited to 64 KiB and scratch tmpfs to 16 MiB. CPU quota is
 one core, process count is capped at 16, and CPU time is capped per process.
-The wall deadline includes image inspection, container startup, Docker OOM-state
-inspection and a bounded check of the container's daemon OOM and exit events.
+The runtime requires a private cgroup-v2 namespace with readable kernel memory
+counters and the exact requested memory cap; other environments fail closed.
+A PID-1 supervisor disables ptrace access before forking candidate code. After
+the candidate exits, it kills and reaps remaining descendants, verifies that
+none remain, and reads the kernel OOM counter before allowing exit zero.
+Candidate output and metrics cannot substitute for that supervisor exit status.
+This remains within the wall deadline, together with image inspection, startup,
+Docker OOM-state inspection and the bounded daemon event check.
 An OOM kill, including a killed child whose parent returns valid JSON and exits
-zero, returns `oom`. A Python `MemoryError` without a kernel OOM event can return
+zero, returns `oom`, even if Docker's asynchronous OOM notification is missing
+or arrives after its exit event. A Python `MemoryError` without a kernel OOM event can return
 `candidate_error`, but cannot authorize output. Missing or malformed resource
-state or an unverified container exit event returns `resource_status_unverified`;
+state, an unverified cgroup or supervisor status, or an unverified container exit
+event returns `resource_status_unverified`;
 inspection errors also fail closed.
 Cancellation, timeout and output overflow terminate the invocation; cleanup force-removes the
 container and verifies removal with a separate bounded cleanup allowance.

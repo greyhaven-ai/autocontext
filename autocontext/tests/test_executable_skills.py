@@ -211,6 +211,8 @@ def test_direct_executor_bounds_payloads_before_docker(monkeypatch, field, value
     (b"false\n", 0, 0, "die", 0, "verified_proposal"),
     (b"false\n", 0, 1, "die", 0, "candidate_error"),
     (b"false\n", 0, 0, "oom", 0, "oom"),
+    (b"false\n", 0, 123, "die", 0, "oom"),
+    (b"false\n", 0, 125, "die", 0, "resource_status_unverified"),
     (b"false\n", 0, 0, "missing", 0, "resource_status_unverified"),
     (b"false\n", 0, 0, "wrong-id", 0, "resource_status_unverified"),
     (b"false\n", 0, 0, "malformed", 0, "resource_status_unverified"),
@@ -236,6 +238,7 @@ def test_oom_state_is_required_before_accepting_output_and_cleanup(
                 raise oom_output
             return subprocess.CompletedProcess(command, inspect_code, oom_output)
         if command[1] == "create":
+            assert command[2:4] == ["--cgroupns", "private"]
             return subprocess.CompletedProcess(command, 0, b"a" * 64)
         if command[1] == "events":
             assert "container=" + "a" * 64 in command and 0 < kwargs["timeout"] <= DEFAULT_LIMITS.timeout_seconds
@@ -261,7 +264,7 @@ def test_oom_state_is_required_before_accepting_output_and_cleanup(
     assert result.status == ("success" if reason == "verified_proposal" else "execution_failure")
     assert (result.output_json is not None) == (reason == "verified_proposal")
     assert commands[:3] == ["image", "create", "inspect"] and commands[-2:] == ["rm", "ps"]
-    assert ("events" in commands) == (oom_output == b"false\n" and inspect_code == 0)
+    assert ("events" in commands) == (oom_output == b"false\n" and inspect_code == 0 and exit_code not in (123, 125))
 
 
 @pytest.mark.parametrize("output,reason", [
@@ -487,6 +490,14 @@ def test_real_docker_executable_skill_boundary(candidate, tmp_path, monkeypatch)
     probe = f'''import os, pathlib, socket
 assert 'AUTOCONTEXT_BRIDGE_TEST_SECRET' not in os.environ
 assert not pathlib.Path({str(sentinel)!r}).exists()
+for path in ['/proc/1/mem', '/proc/1/fd/2']:
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except OSError:
+        pass
+    else:
+        os.close(fd)
+        raise AssertionError('supervisor can be modified')
 for path in ['/input/skill.py', '/etc/bridge-probe']:
     try:
         pathlib.Path(path).write_text('host write')
@@ -516,7 +527,7 @@ else:
         outcome = executor.execute(source, INPUT, limits)
         assert outcome.failure in expected and not outcome.output, outcome
     # A child can be OOM-killed while the parent exits zero with correct JSON.
-    # Docker's durable OOM marker must still prevent a verified proposal.
+    # The protected supervisor's kernel counter must prevent a verified proposal.
     child_oom_source = '''import subprocess, sys
 def choose_action(state):
     child = subprocess.run([sys.executable, '-c', 'memory = bytearray(512 * 1024 * 1024)'])
@@ -531,6 +542,30 @@ def choose_action(state):
     )
     child_oom = invoke((store, child_oom_bundle))
     assert (child_oom.status, child_oom.reason, child_oom.output_json) == ("execution_failure", "oom", None), child_oom
+    # Docker can publish a die event before (or without) its asynchronous OOM
+    # notification. The same real OOM must reject without either daemon signal.
+    real_run = subprocess.run
+    def without_daemon_oom(command, **kwargs):
+        result = real_run(command, **kwargs)
+        if command[1:4] == ["inspect", "--format", "{{.State.OOMKilled}}"]:
+            return subprocess.CompletedProcess(command, 0, b"false\n")
+        if command[1] == "events":
+            clean = b"\n".join(line for line in result.stdout.splitlines()
+                               if json.loads(line).get("Action") != "oom")
+            return subprocess.CompletedProcess(command, result.returncode, clean)
+        return result
+    with monkeypatch.context() as patch:
+        patch.setattr(subprocess, "run", without_daemon_oom)
+        outcome = executor.execute(child_oom_source, INPUT, DEFAULT_LIMITS)
+    assert outcome.failure == "oom" and not outcome.output
+    # Ordinary fork/wait remains supported. A live orphan is killed and reaped
+    # before the supervisor verifies the final kernel counter.
+    for prefix in [
+        "import subprocess, sys\nsubprocess.run([sys.executable, '-c', 'pass'], check=True)\n",
+        "import os, time\nif os.fork() == 0:\n    time.sleep(30)\n    os._exit(0)\n",
+    ]:
+        outcome = executor.execute(prefix + SOURCE, INPUT, DEFAULT_LIMITS)
+        assert outcome.failure is None and json.loads(outcome.output) == json.loads(OUTPUT), outcome
     # Wait until this container is running before cancelling, so this exercises
     # mid-execution termination rather than just the preflight event check.
     cancel = threading.Event()

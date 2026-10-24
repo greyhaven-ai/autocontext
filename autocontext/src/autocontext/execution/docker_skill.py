@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from autocontext.artifacts.policy_candidate import CandidateLimits
+from autocontext.execution import docker_skill_supervisor
 from autocontext.execution.docker_isolation import (
     DockerIsolationLimits,
     build_docker_isolation_command,
@@ -67,33 +68,8 @@ def encode_skill_payload(value: str) -> bytes | None:
     return encoded if len(encoded) <= MAX_PAYLOAD_BYTES else None
 
 
-# Inputs/source are already bounded by the bridge. Treat every byte returned by
-# this process as untrusted, even if a skill replaces its Python interpreter state.
-RUNNER = """
-import json
-import os
-import pathlib
-import sys
-
-pid = os.fork()
-if pid == 0:
-    namespace = {}
-    source = pathlib.Path('/input/skill.py').read_text()
-    state = json.loads(pathlib.Path('/input/input.json').read_text())
-    exec(compile(source, '/input/skill.py', 'exec'), namespace)
-    result = namespace['choose_action'](state)
-    sys.stdout.write(json.dumps(result, allow_nan=False, separators=(',', ':')))
-    sys.stdout.flush()
-    os._exit(0)
-
-_, status, usage = os.wait4(pid, 0)
-sys.stderr.write('AC_RESOURCE_METRICS:' + json.dumps({
-    'cpu_seconds': usage.ru_utime + usage.ru_stime,
-    'peak_memory_bytes': usage.ru_maxrss * 1024,
-}) + '\\n')
-sys.stderr.flush()
-sys.exit(os.waitstatus_to_exitcode(status))
-"""
+# The protected supervisor's status gates acceptance; output bytes remain untrusted.
+RUNNER = Path(docker_skill_supervisor.__file__).read_text(encoding="utf-8")
 
 
 def parse_runner_metrics(stderr: str) -> tuple[float | None, int | None]:
@@ -193,7 +169,7 @@ class DockerSkillExecutor:
                     ),
                     readonly_mounts={root: "/input"}, writable_mounts={},
                     tmpfs_mounts={"/tmp": "rw,noexec,nosuid,nodev,size=16m,mode=1777"},
-                    argv=["python", "-I", "-B", "-S", "/input/runner.py"],
+                    argv=["python", "-I", "-B", "-S", "/input/runner.py", str(limits.max_memory_mb * 1024 * 1024)],
                     auto_remove=False, working_dir="/tmp", ulimits={"nofile": (64, 64)},
                 )
                 # Create before start so cancellation always has an established
@@ -202,7 +178,7 @@ class DockerSkillExecutor:
                 event_since = time.time() - 5
                 created = True
                 creation = subprocess.run(  # noqa: S603
-                    [command[0], "create", *command[2:]], capture_output=True,
+                    [command[0], "create", "--cgroupns", "private", *command[2:]], capture_output=True,
                     check=False, timeout=remaining(), env=environment,
                 )
                 if creation.returncode != 0:
@@ -260,6 +236,10 @@ class DockerSkillExecutor:
                         failure = "resource_status_unverified"
                     elif oom == b"true":
                         failure = "oom"
+                    elif proc.returncode == docker_skill_supervisor.OOM_EXIT:
+                        failure = "oom"
+                    elif proc.returncode == docker_skill_supervisor.UNVERIFIED_EXIT:
+                        failure = "resource_status_unverified"
                     else:
                         event_oom = None
                         verification_deadline = min(deadline, time.monotonic() + 1)
