@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Update both fast-uri overrides and locks to 3.1.9 for URI scheme,
+  relative-path and host canonicalization advisories found by CI.
 - Replace the expiring Accelerate acceptance with a reproducible maintained
   build that snapshots regular checkpoint files through anchored descriptors
   before loading. Reject traversal, special files and escaping symlinks while
@@ -78,7 +80,7 @@ All notable changes to this project will be documented in this file.
   validation errors, even though its six Pi tool examples still pass.
   A user-approved bootstrap exception accepts only the existing Pi Zod
   advisory on its approved manifest and lock until 2026-10-24 21:00 UTC;
-  the lock binding includes the user-requested body-parser repair.
+  the graph binding includes the body-parser and fast-uri security repairs.
   Remove it immediately after the published-runtime upgrade. Other audit
   findings and release approval gates remain enforced.
 
