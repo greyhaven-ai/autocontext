@@ -1,9 +1,9 @@
 {
   "approved": true,
-  "approved_at": "2026-10-23T21:07:22Z",
-  "expires_at": "2026-10-24T21:00:00Z",
+  "approved_at": "2026-10-24T21:28:13Z",
+  "expires_at": "2026-10-25T21:28:13Z",
   "advisory": "GHSA-mrhx-c7xc-m3w5",
   "package_sha256": "7f2ecfdac9f5713f7354933e9c1be269038c68475807caf5044fdee77b76abcc",
   "lock_sha256": "a5e7d039735e5dc283122c9278f0294447ca29493c102e98e9665859a3953387",
-  "reason": "User-approved Zod release bootstrap, bound to the authorized body-parser and fast-uri CI security repairs. The only Pi manifest change is the patched fast-uri override; lock changes contain those fixes and body-parser required dependencies. The Zod advisory, runtime version and original expiry are unchanged. Remove immediately after publishing autoctx 0.19.1 and updating Pi. No release-environment approval is waived."
+  "reason": "User renewed the Zod-only release bootstrap for at most 24 hours after the original window expired while the Docker CI repair awaited merge approval. The advisory, runtime version, Pi manifest and lock are unchanged from the reviewed body-parser and fast-uri security repair. All unrelated findings remain enforced. Remove immediately after publishing autoctx 0.19.1 and updating Pi. No release-environment approval is waived."
 }

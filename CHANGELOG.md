@@ -84,8 +84,10 @@ All notable changes to this project will be documented in this file.
   Forcing Zod 4 into the older published runtime breaks structured-task
   validation errors, even though its six Pi tool examples still pass.
   A user-approved bootstrap exception accepts only the existing Pi Zod
-  advisory on its approved manifest and lock until 2026-10-24 21:00 UTC;
+  advisory on its approved manifest and lock until 2026-10-25 21:28:13 UTC;
   the graph binding includes the body-parser and fast-uri security repairs.
+  The user renewed the same scoped window after Docker CI repair approval
+  arrived beyond the original expiry; the guard and dependency graph are unchanged.
   Remove it immediately after the published-runtime upgrade. Other audit
   findings and release approval gates remain enforced.
 
