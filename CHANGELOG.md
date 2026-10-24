@@ -60,6 +60,9 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Raise the Python dependency floors to filelock 4.2.1 and setuptools 84.1.0
+  for the filelock path/lock-lifecycle advisories and setuptools namespace
+  path traversal reported by the full dependency audit.
 - Update the TypeScript and Pi locks to body-parser 2.4.0 for
   GHSA-27r3-jxmh-p828. The parser releases compressed-body decoders safely
   after reading a complete frame, preventing trailing bytes from crashing
