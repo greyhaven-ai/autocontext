@@ -4,6 +4,6 @@
   "expires_at": "2026-10-24T21:00:00Z",
   "advisory": "GHSA-mrhx-c7xc-m3w5",
   "package_sha256": "534be22e2d804ba079b3e27572b864c96b0c245871503f245fa3a268c6872e7c",
-  "lock_sha256": "74f35cc1d1d85e8a9aee4041f978afcd7f7ad8b40103527e56e37a508f958489",
-  "reason": "User-approved release bootstrap for PR #1470. Remove immediately after publishing autoctx 0.19.1 and updating the Pi lock. No release-environment approval is waived."
+  "lock_sha256": "f0630f1bb3146bd0061f90844c32883d9a98d88b23782871addde7612e669d0b",
+  "reason": "User-approved Zod release bootstrap, rebound to the explicitly requested body-parser repair. Only body-parser and its three required dependency updates changed in the Pi lock. The Zod advisory and original expiry are unchanged. Remove immediately after publishing autoctx 0.19.1 and updating Pi. No release-environment approval is waived."
 }

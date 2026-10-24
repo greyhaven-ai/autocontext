@@ -60,6 +60,11 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Update the TypeScript and Pi locks to body-parser 2.4.0 for
+  GHSA-27r3-jxmh-p828. The parser releases compressed-body decoders safely
+  after reading a complete frame, preventing trailing bytes from crashing
+  an HTTP process. Pi also updates the parser's required content-type,
+  iconv-lite and qs dependencies.
 - Upgrade Zod to 4.6.6 for GHSA-mrhx-c7xc-m3w5. Oversized bounded
   attachment, task-source, plan and progress-note collections reject before
   validating their elements. Migrate record schemas, generated protocol
@@ -69,8 +74,9 @@ All notable changes to this project will be documented in this file.
   Forcing Zod 4 into the older published runtime breaks structured-task
   validation errors, even though its six Pi tool examples still pass.
   A user-approved bootstrap exception accepts only the existing Pi Zod
-  advisory on its unchanged manifest and lock until 2026-10-24 21:00 UTC;
-  remove it immediately after the published-runtime upgrade. Other audit
+  advisory on its approved manifest and lock until 2026-10-24 21:00 UTC;
+  the lock binding includes the user-requested body-parser repair.
+  Remove it immediately after the published-runtime upgrade. Other audit
   findings and release approval gates remain enforced.
 
 ## [Pi 0.12.0] - 2026-09-28
