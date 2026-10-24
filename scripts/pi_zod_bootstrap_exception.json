@@ -3,7 +3,7 @@
   "approved_at": "2026-10-23T21:07:22Z",
   "expires_at": "2026-10-24T21:00:00Z",
   "advisory": "GHSA-mrhx-c7xc-m3w5",
-  "package_sha256": "534be22e2d804ba079b3e27572b864c96b0c245871503f245fa3a268c6872e7c",
-  "lock_sha256": "74f35cc1d1d85e8a9aee4041f978afcd7f7ad8b40103527e56e37a508f958489",
-  "reason": "User-approved release bootstrap for PR #1470. Remove immediately after publishing autoctx 0.19.1 and updating the Pi lock. No release-environment approval is waived."
+  "package_sha256": "7f2ecfdac9f5713f7354933e9c1be269038c68475807caf5044fdee77b76abcc",
+  "lock_sha256": "a5e7d039735e5dc283122c9278f0294447ca29493c102e98e9665859a3953387",
+  "reason": "User-approved Zod release bootstrap, bound to the authorized body-parser and fast-uri CI security repairs. The only Pi manifest change is the patched fast-uri override; lock changes contain those fixes and body-parser required dependencies. The Zod advisory, runtime version and original expiry are unchanged. Remove immediately after publishing autoctx 0.19.1 and updating Pi. No release-environment approval is waived."
 }
