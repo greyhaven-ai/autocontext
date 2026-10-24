@@ -25,6 +25,11 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Prevent executable skill output from being accepted after a child OOM kill
+  when Docker's OOM notification lags its exit event. A protected supervisor
+  checks the private cgroup-v2 kernel counter after all descendants stop;
+  missing evidence fails closed and existing evaluator identities invalidate.
+
 - Update both fast-uri overrides and locks to 3.1.9 for URI scheme,
   relative-path and host canonicalization advisories found by CI.
 - Replace the expiring Accelerate acceptance with a reproducible maintained
@@ -79,8 +84,10 @@ All notable changes to this project will be documented in this file.
   Forcing Zod 4 into the older published runtime breaks structured-task
   validation errors, even though its six Pi tool examples still pass.
   A user-approved bootstrap exception accepts only the existing Pi Zod
-  advisory on its approved manifest and lock until 2026-10-24 21:00 UTC;
+  advisory on its approved manifest and lock until 2026-10-25 21:28:13 UTC;
   the graph binding includes the body-parser and fast-uri security repairs.
+  The user renewed the same scoped window after Docker CI repair approval
+  arrived beyond the original expiry; the guard and dependency graph are unchanged.
   Remove it immediately after the published-runtime upgrade. Other audit
   findings and release approval gates remain enforced.
 

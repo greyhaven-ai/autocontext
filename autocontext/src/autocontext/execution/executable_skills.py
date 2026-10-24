@@ -25,7 +25,7 @@ from autocontext.context_bundles import models as bundle_models
 from autocontext.context_bundles.models import BundleComponent, ComparisonDecision, ComponentKind, ContextBundle, stable_digest
 from autocontext.context_bundles.store import ContextBundleStore
 from autocontext.context_bundles.store_transactions import promotion_from_pointer
-from autocontext.execution import docker_isolation, docker_skill
+from autocontext.execution import docker_isolation, docker_skill, docker_skill_supervisor
 from autocontext.execution.docker_skill import DockerSkillExecutor, encode_skill_payload
 from autocontext.execution.skill_routing_models import SkillRoutingConfig
 from autocontext.kernel_evolution import _process_control
@@ -147,7 +147,8 @@ class ExecutableSkillEligibility(FrozenContract):
 def evaluator_identity() -> str:
     """Invalidate replay on changes to the verifier, bridge or isolation boundary."""
     paths = [Path(__file__), *(Path(str(module.__file__)) for module in (
-        docker_skill, docker_isolation, _process_control, policy_candidate, bundle_models, runtime_budget,
+        docker_skill, docker_skill_supervisor, docker_isolation, _process_control, policy_candidate, bundle_models,
+        runtime_budget,
     ))]
     return stable_digest({
         "source": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths},
