@@ -80,16 +80,11 @@ All notable changes to this project will be documented in this file.
   validating their elements. Migrate record schemas, generated protocol
   constructors and nested union-error handling to Zod 4 while preserving
   optional rubric overrides and parsed CLI defaults.
-- Pi's dependency lock must move to this runtime after it is published.
-  Forcing Zod 4 into the older published runtime breaks structured-task
-  validation errors, even though its six Pi tool examples still pass.
-  A user-approved bootstrap exception accepts only the existing Pi Zod
-  advisory on its approved manifest and lock until 2026-10-25 21:28:13 UTC;
-  the graph binding includes the body-parser and fast-uri security repairs.
-  The user renewed the same scoped window after Docker CI repair approval
-  arrived beyond the original expiry; the guard and dependency graph are unchanged.
-  Remove it immediately after the published-runtime upgrade. Other audit
-  findings and release approval gates remain enforced.
+- Pi requires the published autoctx 0.19.1 runtime and its patched Zod
+  dependency. Remove the temporary Pi release-bootstrap exception and restore
+  its strict npm production audit. The installed package contract now checks
+  early collection rejection, nonempty records and full validation-error paths
+  alongside all six real tool flows.
 
 ## [Pi 0.12.0] - 2026-09-28
 

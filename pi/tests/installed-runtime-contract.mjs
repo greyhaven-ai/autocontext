@@ -11,7 +11,7 @@ import { constants, copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, 
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const currentFile = fileURLToPath(import.meta.url);
 const cleanEnv = {
@@ -103,6 +103,50 @@ try {
   assert.ok(runtimeRoot.startsWith(join(root, "node_modules")));
   const extensionRequire = createRequire(join(root, "node_modules/pi-autocontext/package.json"));
   assert.equal(extensionRequire.resolve("autoctx/package.json"), join(runtimeRoot, "package.json"));
+  // Exercise the installed dependency's collection and error contracts too:
+  // the six tool examples alone can miss a broken dependency-major override.
+  for (const schema of [ac.ImageAttachmentListSchema, ac.TaskDataSourceContentListSchema]) {
+    let elementReads = 0;
+    const oversized = new Proxy(Array(2_000).fill(null), {
+      get(target, key, receiver) {
+        if (/^\d+$/.test(String(key))) elementReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const rejected = schema.safeParse(oversized);
+    assert.equal(rejected.success, false);
+    assert.equal(rejected.error.issues.length, 1);
+    assert.equal(rejected.error.issues[0].code, "too_big");
+    assert.equal(elementReads, 0);
+    const sparse = new Array(2_000);
+    Object.defineProperty(sparse, 0, { get() { throw new Error("oversized element was read"); } });
+    assert.equal(schema.safeParse(sparse).success, false);
+    const malformedElement = schema.safeParse([null]);
+    assert.equal(malformedElement.success, false);
+    assert.deepEqual(malformedElement.error.issues[0].path, [0]);
+    assert.deepEqual(schema.parse([]), []);
+  }
+  const sourceContents = [{ sourceId: "input", content: "valid" }];
+  assert.deepEqual(ac.TaskDataSourceContentListSchema.parse(sourceContents), sourceContents);
+  assert.deepEqual(
+    ac.JudgeResultSchema.parse({ score: 0.7, reasoning: "valid", dimensionScores: { accuracy: 0.7 } }).dimensionScores,
+    { accuracy: 0.7 },
+  );
+  const { ClientMessageSchema } = await import("autoctx/server/protocol");
+  const { buildRecognizableClientValidationError } = await import(
+    pathToFileURL(join(runtimeRoot, "dist/server/client-error-workflow.js")).href
+  );
+  const malformed = {
+    type: "create_task",
+    contract: { objective: "Summarize", target: "Document", deliverable: { description: "Summary" }, criteria: 42 },
+  };
+  const invalid = ClientMessageSchema.safeParse(malformed);
+  assert.equal(invalid.success, false);
+  const response = buildRecognizableClientValidationError(invalid.error, malformed);
+  assert.equal(response.stage, "validation");
+  assert.ok(response.message.includes("contract.criteria:"));
+  assert.ok(response.message.length <= 1_024);
+  console.log("PASS installed runtime rejects oversized collections early and preserves record/error contracts");
   const hostRequire = createRequire(import.meta.resolve("@earendil-works/pi-coding-agent"));
   const { createJiti } = hostRequire("jiti");
   const loader = createJiti(import.meta.url);

@@ -8,7 +8,14 @@ autocontext extension for [Pi coding agent](https://github.com/earendil-works/pi
 pi install npm:pi-autocontext@0.12.0
 ```
 
-Current package note: `pi-autocontext@0.12.0` is on a separate Pi extension line and depends on `autoctx@^0.19.0`. A follow-up Pi release can move it to a newer `autoctx` line after the core npm package is live.
+Current package note: the `pi-autocontext@0.12.0` source checkout is on a separate Pi extension line and depends on `autoctx@^0.19.1`. A follow-up Pi release can move it to a newer `autoctx` line after the core npm package is live.
+
+Source checkouts require `autoctx@^0.19.1` for the Zod collection-validation
+security fix. The latest published Pi extension is currently 0.10.0 and uses
+the older `autoctx@^0.15.0` line. The 0.12.0 install command above requires a
+separate Pi release; publishing autoctx 0.19.1 alone does not update that
+extension. Until then, install this source checkout with
+`pi install /path/to/autocontext/pi`.
 
 Or add to your project's `.pi/settings.json`:
 

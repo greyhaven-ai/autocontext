@@ -346,11 +346,9 @@ jobs:
       - name: Audit TypeScript Bun lock
         working-directory: ts
         run: bun audit --prod --audit-level=moderate
-      - name: Verify scoped Pi release bootstrap checks
-        run: python -m unittest discover -s scripts -p "test_pi_zod_bootstrap.py"
       - name: Audit Pi npm lock
         working-directory: pi
-        run: python ../scripts/audit_pi_zod_bootstrap.py
+        run: npm audit --omit=dev --audit-level=moderate
 
   # `npm ci` does not enforce NPM_CONFIG_MIN_RELEASE_AGE, so this job fails a
   # pull request whose lockfiles newly pin an npm version younger than it. It
