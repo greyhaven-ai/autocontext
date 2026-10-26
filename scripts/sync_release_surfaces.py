@@ -136,7 +136,8 @@ def sync_ts_readme(text: str, manifest: ReleaseManifest) -> str:
 
 def render_pi_package_note(manifest: ReleaseManifest) -> str:
     return (
-        f"Current package note: `pi-autocontext@{manifest.pi_version}` is on a separate Pi extension line "
+        f"Current package note: the `pi-autocontext@{manifest.pi_version}` source checkout "
+        "is on a separate Pi extension line "
         f"and depends on `autoctx@{manifest.pi_autoctx_dependency}`. A follow-up Pi release can move it "
         "to a newer `autoctx` line after the core npm package is live."
     )
@@ -144,7 +145,8 @@ def render_pi_package_note(manifest: ReleaseManifest) -> str:
 
 def sync_pi_readme(text: str, manifest: ReleaseManifest) -> str:
     note = re.compile(
-        r"Current package note: `pi-autocontext@[^`]+` is on a separate Pi extension line and "
+        r"Current package note: (?:the )?`pi-autocontext@[^`]+` (?:source checkout )?"
+        r"is on a separate Pi extension line and "
         r"depends on `autoctx@[^`]+`\. A follow-up Pi release can move it to a newer `autoctx` line "
         r"after the core npm package is live\."
     )
