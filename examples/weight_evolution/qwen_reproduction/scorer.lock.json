@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "profile": "qwen-p50-math-verify-official-ifeval-v1",
+  "python_version": "3.13",
+  "requirements_sha256": "c9251c03510442ad434781ea7f54595137547af1e8572314f82be7b363e9e9a6",
+  "packages": [
+    {
+      "name": "absl-py",
+      "version": "2.5.1"
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.8.0"
+    },
+    {
+      "name": "antlr4-python3-runtime",
+      "version": "4.13.2"
+    },
+    {
+      "name": "click",
+      "version": "8.5.0"
+    },
+    {
+      "name": "cloudpickle",
+      "version": "3.1.2"
+    },
+    {
+      "name": "defusedxml",
+      "version": "0.7.1"
+    },
+    {
+      "name": "immutabledict",
+      "version": "4.3.1"
+    },
+    {
+      "name": "joblib",
+      "version": "1.6.0"
+    },
+    {
+      "name": "langdetect",
+      "version": "1.0.9"
+    },
+    {
+      "name": "latex2sympy2-extended",
+      "version": "1.11.0"
+    },
+    {
+      "name": "math-verify",
+      "version": "0.9.0"
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0"
+    },
+    {
+      "name": "nltk",
+      "version": "3.10.4"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.14.1"
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.50.1"
+    },
+    {
+      "name": "regex",
+      "version": "2026.9.29"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0"
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0"
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.1"
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0"
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.4"
+    }
+  ],
+  "assets": [
+    {
+      "filename": "instructions_util.py",
+      "url": "https://raw.githubusercontent.com/google-research/google-research/e6890f85757dd84e27ca6df2dd30651dafad28e0/instruction_following_eval/instructions_util.py",
+      "sha256": "a73797261eee5bf447e279d82a2b700b1bdd3cb1193412dbab1270a85832bc6b",
+      "size_bytes": 19538
+    },
+    {
+      "filename": "instructions.py",
+      "url": "https://raw.githubusercontent.com/google-research/google-research/e6890f85757dd84e27ca6df2dd30651dafad28e0/instruction_following_eval/instructions.py",
+      "sha256": "60e086f5342a03ce8e18b64bbcccf86308f523c08aa826707a562150a52f3edf",
+      "size_bytes": 55162
+    },
+    {
+      "filename": "instructions_registry.py",
+      "url": "https://raw.githubusercontent.com/google-research/google-research/e6890f85757dd84e27ca6df2dd30651dafad28e0/instruction_following_eval/instructions_registry.py",
+      "sha256": "ec92d72c264f6d906978613085db262356174300370a3fffe6fefd5969ce9cfc",
+      "size_bytes": 7240
+    },
+    {
+      "filename": "LICENSE",
+      "url": "https://raw.githubusercontent.com/google-research/google-research/e6890f85757dd84e27ca6df2dd30651dafad28e0/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "size_bytes": 11358
+    },
+    {
+      "filename": "punkt_tab.zip",
+      "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt_tab.zip",
+      "sha256": "e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106",
+      "size_bytes": 4319076
+    }
+  ],
+  "punkt_members": [
+    {
+      "filename": "abbrev_types.txt",
+      "sha256": "92a3e070f43d9b4c5534758ca40ad7343b04e7e29bfe0c2eb658a39445a4f779",
+      "size_bytes": 619
+    },
+    {
+      "filename": "collocations.tab",
+      "sha256": "8e2da1225e4dd2cc9dba261ee231ccb134859e21b46006e7f472c5ee269af0cf",
+      "size_bytes": 594
+    },
+    {
+      "filename": "ortho_context.tab",
+      "sha256": "4bbcca25ed3d3f06c02402abf8419b9f033b8adc06e7b482eca4e45f81a5dc4c",
+      "size_bytes": 236303
+    },
+    {
+      "filename": "sent_starters.txt",
+      "sha256": "f3f8535483e1dba487241b764945168123bca3209a9645e59acd1225dc76edac",
+      "size_bytes": 241
+    }
+  ],
+  "random_seed": 0,
+  "parse_timeout_seconds": 5,
+  "source_revision": "e6890f85757dd84e27ca6df2dd30651dafad28e0",
+  "nltk_revision": "550b6625bcef1f2abff2ff770a5a0d272c9c6b2a",
+  "fidelity_notes": [
+    "The released mathqa.py names math-verify 0.9.0, latex2sympy2_extended 1.11.0 and antlr4-python3-runtime 4.13.2. SymPy and the remaining dependency versions are declared reproduction choices because upstream inherited them from an unspecified environment.",
+    "The official Google IFEval checker and dataset source revision is pinned. The original experiment referenced an unreleased weightenv adapter; identical upstream adapter behavior is not claimed.",
+    "NLTK 3.10.4 redirects the official English Punkt pickle URI to verified non-pickle punkt_tab tables. Langdetect and checker randomness use seed 0; these choices are declared because upstream randomness was not pinned.",
+    "Installation is separate and uses scorer-requirements.txt with --require-hashes. Loading verifies installed distribution versions and local source/resource bytes, but is not remote image or installed-wheel-byte attestation."
+  ]
+}

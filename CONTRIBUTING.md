@@ -54,7 +54,10 @@ has offline contract, reconstruction, runtime, worker and scorer tests in
 `tests/test_weight_*.py`. Keep normal tests synthetic: no downloaded weights,
 provider credentials, external checker installation or GPU is needed. Full
 checkpoint verification uses explicitly fetched assets; live inference is an
-opt-in Linux/NVIDIA Docker smoke test, documented in the example.
+opt-in Linux/NVIDIA Docker smoke test, documented in the example. The separate
+hash-locked CPU scorer environment has explicit optional integrations; normal CI
+uses synthetic cohorts and injected checkers. Reproduction reports must reject
+missing/duplicate shards and label fixture/smoke evidence explicitly.
 
 TypeScript:
 

@@ -84,11 +84,25 @@ def _read_report(path: Path, limit: int) -> dict[str, Any]:
     return value
 
 
-def _copy_harness(destination: Path) -> str:
-    """Copy only trusted source modules, excluding editable install/site hooks."""
+def _harness_sources() -> tuple[Path, list[Path]]:
     package = Path(__file__).resolve().parent.parent
     files = [*sorted((package / "weight_evolution").glob("*.py")), package / "runtime_images.py",
              package / "util" / "json_io.py", package / "util" / "file_lock.py", package / "util" / "models.py"]
+    return package, files
+
+
+def worker_harness_digest() -> str:
+    """Fingerprint the same source closure copied into each isolated worker."""
+    package, files = _harness_sources()
+    digest = hashlib.sha256()
+    for source in files:
+        digest.update(str(source.relative_to(package)).encode() + b"\0" + hashlib.sha256(source.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+def _copy_harness(destination: Path) -> str:
+    """Copy only trusted source modules, excluding editable install/site hooks."""
+    package, files = _harness_sources()
     digest = hashlib.sha256()
     for source in files:
         relative = source.relative_to(package)
@@ -164,6 +178,7 @@ class WeightDockerRunner:
         self, *, operation: Literal["reconstruct", "infer"], lock_path: Path, runtime_path: Path,
         asset_root: Path, output_dir: Path, variant: Literal["base", "published_patch"] = "published_patch",
         checkpoint: Path | None = None, request_path: Path | None = None, gpu_device: str | None = None,
+        expected_harness_digest: str | None = None,
     ) -> dict[str, Any]:
         plan = self.plan(operation=operation, lock_path=lock_path, runtime_path=runtime_path,
                          asset_root=asset_root, variant=variant, checkpoint=checkpoint,
@@ -183,6 +198,8 @@ class WeightDockerRunner:
             inputs.mkdir()
             output.mkdir()
             harness_digest = _copy_harness(harness)
+            if expected_harness_digest is not None and harness_digest != expected_harness_digest:
+                raise ValueError("worker source changed after replay harness identity was frozen")
             # Snapshot validated contract inputs; no mutable file paths enter the request.
             locked = load_reproduction_lock(lock_path)
             runtime = load_runtime_lock(runtime_path)

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "datasets": [
+    {
+      "dataset": "math500",
+      "repository": "HuggingFaceH4/MATH-500",
+      "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "source_path": "test.jsonl",
+      "url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/test.jsonl",
+      "relative_path": "math500.jsonl",
+      "sha256": "35dc41080a3680858b27fa7e0533d2d547825316fc5dafe5d316f4ccc5a06132",
+      "size_bytes": 446564,
+      "expected_count": 500,
+      "normalized_sha256": "fde8ad0413886beb104830f515f6a9dd02ce1fa746b11354297c58b83890d164",
+      "split": "test",
+      "format": "jsonl",
+      "role": "final_test",
+      "normalization": "qwen-reproduction-cohort-v1"
+    },
+    {
+      "dataset": "gsm8k",
+      "repository": "openai/grade-school-math",
+      "revision": "3101c7d5072418e28b9008a6636bde82a006892c",
+      "source_path": "grade_school_math/data/test.jsonl",
+      "url": "https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/grade_school_math/data/test.jsonl",
+      "relative_path": "gsm8k.jsonl",
+      "sha256": "3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14",
+      "size_bytes": 749738,
+      "expected_count": 1319,
+      "normalized_sha256": "360dfdd7d7904aef31e918616e921dae37d6c31e058c84996b529fef1427a13d",
+      "split": "test",
+      "format": "jsonl",
+      "role": "final_test",
+      "normalization": "qwen-reproduction-cohort-v1"
+    },
+    {
+      "dataset": "ifeval",
+      "repository": "google-research/google-research",
+      "revision": "e6890f85757dd84e27ca6df2dd30651dafad28e0",
+      "source_path": "instruction_following_eval/data/input_data.jsonl",
+      "url": "https://raw.githubusercontent.com/google-research/google-research/e6890f85757dd84e27ca6df2dd30651dafad28e0/instruction_following_eval/data/input_data.jsonl",
+      "relative_path": "ifeval.jsonl",
+      "sha256": "67ffeee0fcb87c317c5b08a2de85557b4a7e96ada6178aa645b4954fe4b53d49",
+      "size_bytes": 207111,
+      "expected_count": 541,
+      "normalized_sha256": "230f1f12a2ab76cba6a9fc312025c6ef645590cf40cc2955bf028a642a27f486",
+      "split": "test",
+      "format": "jsonl",
+      "role": "final_test",
+      "normalization": "qwen-reproduction-cohort-v1"
+    }
+  ],
+  "fidelity_notes": [
+    "These immutable snapshots define the reproduction cohort now; the original experiment did not release content-pinned benchmark snapshots, so identity with its private files is not established.",
+    "MATH-500 uses the same HuggingFaceH4 repository as upstream. GSM8K uses the official OpenAI JSONL and upstream final-answer normalization. All 1319 ordered question/answer records were independently confirmed equal to openai/gsm8k main/test at Hugging Face revision 740312add88f781978c0658806c59bc2815b9866 (parquet SHA-256 ee7b8da9e381df27b9e3f7758a159ab2bdaa4dbaa910546cbbc47e0cb44e4f59).",
+    "IFEval uses the official Google input_data.jsonl. Its source keys define stable IDs; the original unreleased weightenv preparation may have used different row IDs.",
+    "Canonical cohort digests include ordered raw prompts and gold answers/instructions. Inference requests project only IDs and prompts; gold answers remain in the trusted evaluator.",
+    "Pinned test cohorts are for frozen replay only. Practice/discovery cohort snapshots and normalized/13-word overlap audits remain unresolved; exact or normalized overlap checks alone do not establish freedom from contamination."
+  ]
+}
