@@ -1,8 +1,15 @@
-# Qwen weight-space reproduction: contract and offline checks
+# Qwen weight-space reproduction: verified checkpoints and pinned inference
 
-Milestone 1 pins the published Qwen3.5-0.8B p50 experiment and verifies its
-assets as data. It provides offline scorer fixtures before an inference worker
-or editing agent is introduced. Python only; TypeScript parity is deferred.
+Milestone 1 pins the published Qwen3.5-0.8B p50 experiment and its offline scorer
+boundaries. Milestone 2 reconstructs and independently verifies the base and
+published-patch text checkpoints, then provides a pinned Docker inference runner
+that records raw generation evidence. Python only; TypeScript parity is deferred.
+
+Both real checkpoints were reconstructed and verified on CPU during development.
+The Docker execution path and GPU inference have not been exercised on NVIDIA
+hardware. No reproduction benchmark scores are claimed.
+See [VALIDATION.md](VALIDATION.md) for checkpoint identities, checks run and
+remaining acceptance work.
 
 The source is [Weight-Space Programming](https://rikiyat.github.io/blog/weight-space-programming/)
 and its [released experiment](https://github.com/RikiyaT/lm_understand-logs/tree/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math).
@@ -60,13 +67,148 @@ the fixed digest also authenticates CDN-delivered bytes.
 For a selected asset, append `--asset patch_delta` (repeat the flag for multiple
 IDs). A selected-assets result covers only the listed files. Optional large
 assets require explicit selection, and the model shard additionally exceeds the
-default byte budget. Full-model acquisition is not needed for this milestone.
+default byte budget. Reconstruction requires both optional files, in addition
+to the fourteen required assets fetched above:
+
+```bash
+uv run --frozen python ../examples/weight_evolution/qwen_reproduction/run.py fetch-assets \
+  --asset-root ../examples/weight_evolution/qwen_reproduction/.assets \
+  --asset base_weights --asset tokenizer_vocabulary --max-download-bytes 1800000000
+```
+
+The two files total 1,759,750,582 bytes. Allow additional disk space for both
+reconstructed checkpoints and staging directories. Verification re-reads the
+source shard and output tensors; retaining the source assets is required for
+subsequent checkpoint verification and inference.
+
 `--lock PATH` before the subcommand selects another lock of the same fixed v1
 profile; changing the experiment requires a new contract version.
 
-Exit codes: `0` means the requested validation/verification succeeded, `1` means
-selected local assets were missing/invalid, and `2` means the request, lock or
-download failed. All commands emit JSON; request/download errors go to stderr.
+Exit codes: `0` means the requested operation succeeded, `1` means selected local
+assets were missing/invalid, and `2` means the request, lock or operation failed.
+All commands emit JSON; errors and execution resource plans go to stderr.
+
+## Reconstruct and independently verify checkpoints
+
+[runtime.lock.json](runtime.lock.json) fixes the Linux amd64 vLLM 0.32.0 image by
+its immutable digest. Fetch the image explicitly before executing either worker:
+
+```bash
+docker pull --platform linux/amd64 \
+  vllm/vllm-openai:v0.32.0@sha256:6ee133356d49ed24cee03dd0cda3d3980279a11c107ce3e752c89e76540f41c9
+```
+
+The worker uses the local image and does not pull images automatically.
+Reconstruction needs CPU and memory; it does not request a GPU. The image metadata
+specifies CUDA 13.0.2. Inference additionally requires an NVIDIA GPU, a compatible
+driver, and the NVIDIA Container Toolkit. This is a declared reproduction runtime;
+the original experiment did not release an environment lock. Its package versions
+and hardware must not be inferred from a Transformers version in model metadata.
+The digest pins the environment, while runtime receipts record installed package
+versions and hardware actually observed during execution.
+
+From `autocontext/`, create an ignored output parent and inspect the resource plan:
+
+```bash
+mkdir -p ./runs/qwen-replay
+uv run --frozen python ../examples/weight_evolution/qwen_reproduction/run.py reconstruct \
+  --asset-root ../examples/weight_evolution/qwen_reproduction/.assets \
+  --variant base --output ./runs/qwen-replay/base
+```
+
+Without `--execute`, this prints a plan and starts no container. A plan validates
+request metadata and paths; it is not a checkpoint or runtime-readiness test.
+Add `--execute` to reconstruct each variant:
+
+```bash
+uv run --frozen python ../examples/weight_evolution/qwen_reproduction/run.py reconstruct \
+  --asset-root ../examples/weight_evolution/qwen_reproduction/.assets \
+  --variant base --output ./runs/qwen-replay/base --execute
+
+uv run --frozen python ../examples/weight_evolution/qwen_reproduction/run.py reconstruct \
+  --asset-root ../examples/weight_evolution/qwen_reproduction/.assets \
+  --variant published_patch --output ./runs/qwen-replay/published_patch --execute
+
+uv run --frozen python ../examples/weight_evolution/qwen_reproduction/run.py verify-checkpoint \
+  --asset-root ../examples/weight_evolution/qwen_reproduction/.assets \
+  --checkpoint ./runs/qwen-replay/published_patch/checkpoint
+```
+
+Each `--output` must be a new directory whose parent already exists. The runner
+publishes the checkpoint under its `checkpoint/` child, with a worker report and
+execution receipt. The completion receipt is published last; an interrupted
+publication leaves an incomplete directory, never a successful run. Existing
+output directories are refused. `verify-checkpoint`
+runs locally, needs NumPy, and independently compares every output tensor and
+loader asset to the authenticated source inputs; it does not trust the worker's
+receipt. `--runtime PATH`, when needed, is a global option before the subcommand.
+
+The reconstruction worker uses data-only NPZ loading with pickle disabled,
+checks declared array sizes before allocation, and applies the released sparse
+uint16 BF16 replacements without floating-point rounding. It preserves every
+retained tensor's name, shape, dtype, and bytes except the two pinned changes.
+The text export retains 320 language-model tensors, including FP32 tensors, and
+excludes 153 visual and 15 multi-token-prediction tensors. Receipts record the
+names, shapes, dtypes and hashes of retained and excluded tensors, checkpoint
+content identity, and the pinned configuration/tokenizer files. Unexpected
+checkpoint files or tensor names fail verification before model loading.
+
+The CPU development run verified both published edited tensor hashes:
+
+| Tensor | Reconstructed BF16 SHA-256 | Changed entries |
+| --- | --- | ---: |
+| `model.language_model.layers.15.mlp.down_proj.weight` | `82e2d733ea64feaeb4af93a1e065641d3df98b494a8b7576ef2f52e90fe2ee53` | 65,260 |
+| `model.language_model.layers.19.mlp.down_proj.weight` | `8ef3c61bc36af113ad58e89dbb0a4a14dcba5a45cb750c15ab515c82ddd12eb2` | 64,928 |
+
+Exactly 130,188 BF16 values change. The 131,072 selected-entry count describes
+the source's selected rectangle capacity; the released delta contains only
+changed positions. Reconstruction cannot independently identify every selected
+position that rounded back to its original value. This distinction is recorded
+in each receipt.
+
+These checks used the real downloaded assets and the reconstruction functions
+directly on CPU. They establish tensor reconstruction, not successful execution
+of the pinned Docker image or behavioral reproduction on a GPU.
+
+## Run a bounded inference smoke request
+
+[smoke.request.json](smoke.request.json) is an authored arithmetic example routed
+through the MATH-500 sampling protocol, using the published-patch variant and a
+64-token cap. Its dataset hash identifies the synthetic input cohort. In general,
+`dataset_sha256` is caller-supplied metadata; it does not certify official dataset
+membership, snapshots, splits or contamination checks. The complete request
+digest also binds the actual problem text, order, variant and smoke settings.
+
+```bash
+uv run --frozen python ../examples/weight_evolution/qwen_reproduction/run.py infer \
+  --asset-root ../examples/weight_evolution/qwen_reproduction/.assets \
+  --checkpoint ./runs/qwen-replay/published_patch/checkpoint \
+  --request ../examples/weight_evolution/qwen_reproduction/smoke.request.json \
+  --variant published_patch --gpu-device 0 --output ./runs/qwen-replay/smoke
+```
+
+Inspect the plan, then repeat with `--execute` on the GPU host. Select one explicit
+GPU device; the runner does not accept `all`. Defaults limit the worker to four
+CPUs, 16 GiB host memory and 1,800 seconds; flags can set resource limits. The
+existing Docker isolation/watchdog infrastructure supplies network denial,
+read-only inputs, bounded output capture, deadline enforcement and cleanup.
+This development runner does not attest exclusive GPU-memory ownership or produce
+promotion evidence.
+
+Before inference, the worker verifies the checkpoint again, renders the pinned
+thinking-enabled chat template, and enforces the source decoding parameters.
+It saves raw response text and token IDs, rendered prompts and prompt token IDs,
+hashes, sample indices, seed, termination reasons, timing and observed runtime
+identity. Output is generation evidence, with no benchmark score attached.
+Missing dependencies and worker failures are infrastructure failures, not zero
+scores. Prompt overflow fails explicitly rather than truncating the problem.
+
+Smoke requests are labeled separately and do not reproduce the original token
+budget. Reproduction-mode requests use 32,768 output tokens and a 34,816-token
+model limit, with four samples for MATH-500 and two for GSM8K/IFEval. Official
+grading and benchmark cohort certification remain later work. A full benchmark
+can exceed the runner's 64 MiB report limit; shard orchestration and report
+aggregation must be added before a full-cohort study.
 
 ## Scorer boundaries and fixtures
 
@@ -89,7 +231,8 @@ pinned `math-verify` runtime. IFEval requires an explicitly supplied official
 instruction registry. Missing dependencies fail explicitly. The test fixtures
 are authored synthetic cases and use injected test checkers; they validate
 extraction, error handling and aggregation, **not full official benchmark parity**.
-No new model/scorer dependencies are installed by this example.
+Offline scorer fixtures need no model runtime. Inference dependencies are
+provided separately by the pinned Docker image.
 
 ```python
 from pathlib import Path
@@ -106,10 +249,15 @@ print(report.to_dict())
 
 ## Remaining reproduction work
 
-Asset verification does not reconstruct or validate loaded tensors. Milestone 2
-must apply the patch in an isolated worker, check the original/edited tensor
-hashes and untouched tensors, and build a pinned inference adapter. Dataset
-snapshots, contamination checks, official scorer dependencies and exact runtime
-versions remain explicit fidelity gaps. The original forward-pass service and
-some grading imports were not released. No benchmark scores or autonomous
-rediscovery claims are produced by milestone 1.
+Run the pinned image on compatible NVIDIA hardware and inspect its runtime
+receipt before claiming inference readiness. Then pin dataset snapshots, splits,
+contamination checks and official scorer dependencies; add bounded cohort shards
+and aggregate evidence; and compare base-versus-patch behavior under the source
+protocol. The original runtime, editor driver, forward-pass service and some
+grading imports were not released. Fresh discovery and the planned comparison
+conditions remain subsequent milestones.
+
+The original `reproduction.lock.json` remains unchanged so its identity and
+historical milestone-1 fidelity notes stay reproducible. Those notes are not a
+dynamic readiness status: checkpoint receipts record the completed tensor
+verification, and the separate runtime lock describes the chosen environment.
