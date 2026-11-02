@@ -534,8 +534,25 @@ def _supports_temperature(model_id: str) -> bool:
     return re.search(r"(?:^|/)gemini-3\.(?:5|6)(?:$|[-:])", model_id.lower()) is None
 
 
+def _is_reasoning_model(model_id: str) -> bool:
+    """Identify OpenAI reasoning models, which reject the legacy max_tokens field.
+
+    The o-series and every GPT-5 generation require max_completion_tokens on
+    Chat Completions; only the GPT-5.6+ check above used to select it, so
+    earlier reasoning models (gpt-5.4-mini, gpt-5.5, o4-mini, ...) were sent
+    max_tokens and failed with a 400.
+    """
+    lowered = model_id.lower()
+    if re.search(r"(?:^|/)o\d+(?:$|[-:])", lowered):
+        return True
+    match = re.search(r"(?:^|[/:-])gpt-(\d+)(?:\.(\d+))?", lowered)
+    return match is not None and int(match.group(1)) >= 5
+
+
 def _output_token_field(model_id: str) -> str:
-    return "max_completion_tokens" if _is_gpt_56_plus(model_id) else "max_tokens"
+    if _is_gpt_56_plus(model_id) or _is_reasoning_model(model_id):
+        return "max_completion_tokens"
+    return "max_tokens"
 
 
 def _assistant_tool_message(message: Any, tool_calls: list[Any]) -> dict[str, Any]:
