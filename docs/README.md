@@ -11,6 +11,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Canonical concept model](concept-model.md)
 - [Copy-paste examples](../examples/README.md)
 - [Change history](../CHANGELOG.md)
+- [Qwen weight-space reproduction contract and offline fixtures (Python)](../examples/weight_evolution/qwen_reproduction/README.md)
 
 ## Using The Packages
 

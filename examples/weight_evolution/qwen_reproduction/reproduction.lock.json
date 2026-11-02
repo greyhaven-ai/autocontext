@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "study_id": "qwen35-08b-weight-space-p50-replay-v1",
+  "source": {
+    "repository": "RikiyaT/lm_understand-logs",
+    "revision": "4d09ba6d6a7e891dd8063974dfe81b3d78e3494f"
+  },
+  "model": {
+    "repository": "Qwen/Qwen3.5-0.8B",
+    "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "architecture": "Qwen3_5ForCausalLM",
+    "dtype": "bfloat16",
+    "tensor_namespace": "model.language_model.",
+    "num_hidden_layers": 24
+  },
+  "evaluation": {
+    "engine": "vllm",
+    "thinking": true,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20,
+    "presence_penalty": 1.5,
+    "max_new_tokens": 32768,
+    "max_model_len": 34816,
+    "seed": 0,
+    "math_prompt_suffix": "\nPlease reason step by step, and put your final answer within \\boxed{}.",
+    "samples_per_problem": {
+      "math500": 4,
+      "gsm8k": 2,
+      "ifeval": 2
+    },
+    "math_metric": "mean_sample_accuracy",
+    "ifeval_metric": "strict_prompt_accuracy",
+    "math_grader": "math-verify",
+    "math_extraction": "last_boxed_after_last_think_if_present",
+    "ifeval_extraction": "require_think_close"
+  },
+  "assets": [
+    {
+      "asset_id": "source_readme",
+      "relative_path": "exp8_math/README.md",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/README.md",
+      "sha256": "473e386ade21ff52240103003b6b125e4362d9fa11010916c1b770ddb0edcbbd",
+      "size_bytes": 13447,
+      "role": "source",
+      "required": true
+    },
+    {
+      "asset_id": "apply_edit_source",
+      "relative_path": "exp8_math/code/apply_edit.py",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/code/apply_edit.py",
+      "sha256": "d2b627a6cf344f309cca4bcab4ff6ccc6ad1c8f29cabda78d11f99c19d1b1c5d",
+      "size_bytes": 3005,
+      "role": "source",
+      "required": true
+    },
+    {
+      "asset_id": "evaluate_source",
+      "relative_path": "exp8_math/code/evaluate.py",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/code/evaluate.py",
+      "sha256": "c93f477c02b3ae0d6b37abe3afad8bb7353e273322ff963eec7ff2270012035d",
+      "size_bytes": 13371,
+      "role": "source",
+      "required": true
+    },
+    {
+      "asset_id": "mathqa_source",
+      "relative_path": "exp8_math/code/mathqa.py",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/code/mathqa.py",
+      "sha256": "f0d576a1adc625dede7bff749b3bf8c9a5a8f6bae43d51e2d0ee36d694e89843",
+      "size_bytes": 25874,
+      "role": "source",
+      "required": true
+    },
+    {
+      "asset_id": "profiles_source",
+      "relative_path": "exp8_math/code/profiles.py",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/code/profiles.py",
+      "sha256": "ba4be365e44c3e165b9c3982af9dbcd8ec94f7fd0430e5fd9de1d57f249a4ae4",
+      "size_bytes": 9144,
+      "role": "source",
+      "required": true
+    },
+    {
+      "asset_id": "build_checkpoint_source",
+      "relative_path": "exp8_math/code/build_ckpt.py",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/code/build_ckpt.py",
+      "sha256": "da0759bd0a150392b7aaa330f9d242429f47b49c0f900d0d890c91832c9217db",
+      "size_bytes": 2437,
+      "role": "source",
+      "required": true
+    },
+    {
+      "asset_id": "practice_filter_source",
+      "relative_path": "exp8_math/code/practice35.py",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/code/practice35.py",
+      "sha256": "6e19a615fd04d20af7641900c32198010a716939b91f926c7fe2c1cc781f99db",
+      "size_bytes": 3173,
+      "role": "source",
+      "required": true
+    },
+    {
+      "asset_id": "patch_manifest",
+      "relative_path": "exp8_math/runs/p50c/edit/manifest.json",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/runs/p50c/edit/manifest.json",
+      "sha256": "83185c1db46e3dafb34af645f8c5ce033c09cc99d4512b9e1b8e3aba9d269225",
+      "size_bytes": 1326,
+      "role": "patch_manifest",
+      "required": true
+    },
+    {
+      "asset_id": "patch_delta",
+      "relative_path": "exp8_math/runs/p50c/edit/edit.npz",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/runs/p50c/edit/edit.npz",
+      "sha256": "e92a92aafd1f1068b4fd94aa0fbe081ba3ddea2047ee7bcac7161d861be299e7",
+      "size_bytes": 387619,
+      "role": "patch_delta",
+      "required": true
+    },
+    {
+      "asset_id": "text_config",
+      "relative_path": "exp8_math/base_model/Qwen3.5-0.8B-text/config.json",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/base_model/Qwen3.5-0.8B-text/config.json",
+      "sha256": "3f56b6210db3c52e0bafb50da005eb52b6d340ab4ad980091879b397743675fc",
+      "size_bytes": 1790,
+      "role": "config",
+      "required": true
+    },
+    {
+      "asset_id": "generation_config",
+      "relative_path": "exp8_math/base_model/Qwen3.5-0.8B-text/generation_config.json",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/base_model/Qwen3.5-0.8B-text/generation_config.json",
+      "sha256": "62153eb6c69f2e1f426beaa8002b7186437e949c7588167085df14e10e9c0a73",
+      "size_bytes": 116,
+      "role": "config",
+      "required": true
+    },
+    {
+      "asset_id": "tokenizer_config",
+      "relative_path": "exp8_math/base_model/Qwen3.5-0.8B-text/tokenizer_config.json",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/base_model/Qwen3.5-0.8B-text/tokenizer_config.json",
+      "sha256": "66e427c470fe580fe8c7b5725d857af23d8417e37fae62667ec698306a19987b",
+      "size_bytes": 1124,
+      "role": "tokenizer",
+      "required": true
+    },
+    {
+      "asset_id": "chat_template",
+      "relative_path": "exp8_math/base_model/Qwen3.5-0.8B-text/chat_template.jinja",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/base_model/Qwen3.5-0.8B-text/chat_template.jinja",
+      "sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+      "size_bytes": 7755,
+      "role": "tokenizer",
+      "required": true
+    },
+    {
+      "asset_id": "source_license",
+      "relative_path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/RikiyaT/lm_understand-logs/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/LICENSE",
+      "sha256": "395f7febedfda6b5498ca36cfe3344d3986659ce4385dd8b03d2d75604250a8e",
+      "size_bytes": 1819,
+      "role": "license",
+      "required": true
+    },
+    {
+      "asset_id": "base_weights",
+      "relative_path": "model/model.safetensors-00001-of-00001.safetensors",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-0.8B/resolve/2fc06364715b967f1860aea9cf38778875588b17/model.safetensors-00001-of-00001.safetensors",
+      "sha256": "04b1c301231dd422b8860db31311ab2721511346a32cb1e079c4c4e5f1fe4696",
+      "size_bytes": 1746942600,
+      "role": "model_weights",
+      "required": false
+    },
+    {
+      "asset_id": "tokenizer_vocabulary",
+      "relative_path": "model/tokenizer.json",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-0.8B/resolve/2fc06364715b967f1860aea9cf38778875588b17/tokenizer.json",
+      "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+      "size_bytes": 12807982,
+      "role": "tokenizer",
+      "required": false
+    }
+  ],
+  "patch": {
+    "manifest_asset_id": "patch_manifest",
+    "delta_asset_id": "patch_delta",
+    "touched_entries": 131072,
+    "changed_entries": 130188,
+    "tensors": [
+      {
+        "name": "model.language_model.layers.15.mlp.down_proj.weight",
+        "shape": [
+          1024,
+          3584
+        ],
+        "dtype": "bfloat16",
+        "changed_entries": 65260,
+        "changed_columns": 64,
+        "changed_rows": 1024,
+        "relative_change": 0.10635984688997269,
+        "base_sha256": "ef60d2c687bab19464dca9c8bfd7777e46ad226df0c9e25643b0bab04b5a1cca",
+        "edited_sha256": "82e2d733ea64feaeb4af93a1e065641d3df98b494a8b7576ef2f52e90fe2ee53",
+        "submitted_file": "model.language_model.layers.15.mlp.down_proj.weight.npy",
+        "form": "sparse"
+      },
+      {
+        "name": "model.language_model.layers.19.mlp.down_proj.weight",
+        "shape": [
+          1024,
+          3584
+        ],
+        "dtype": "bfloat16",
+        "changed_entries": 64928,
+        "changed_columns": 64,
+        "changed_rows": 1023,
+        "relative_change": 0.08106115460395813,
+        "base_sha256": "638eedeb701b94aa861f4438e615c07ec6c60ee703db1bfee2de577bb6498c3e",
+        "edited_sha256": "8ef3c61bc36af113ad58e89dbb0a4a14dcba5a45cb750c15ab515c82ddd12eb2",
+        "submitted_file": "model.language_model.layers.19.mlp.down_proj.weight.npy",
+        "form": "sparse"
+      }
+    ]
+  },
+  "fidelity_gaps": [
+    "The original editor driver and forward-pass service are not released; milestone 1 verifies contracts and assets only.",
+    "Exact vLLM, PyTorch, Transformers, math-verify package versions and inference hardware are unresolved. The text config transformers_version field is metadata, not an environment lock.",
+    "The source imports unreleased IFEval and multiple-choice grading modules. Offline injected-checker fixtures do not establish official full-benchmark parity.",
+    "Benchmark and practice datasets are not bundled or fully content-pinned by this milestone. Dataset snapshots, splits, overlap audit and scorer dependencies must be pinned before a scored reproduction.",
+    "The base weight shard and tokenizer.json checksums/sizes are from immutable-revision Hugging Face LFS metadata. Those large assets were not downloaded while creating this lock.",
+    "This lock verifies file bytes, not loaded tensor contents or reconstructed checkpoint equivalence. The subsequent patch worker must validate the listed base/edited tensor hashes and unchanged protected tensors.",
+    "The source math scorer can credit a closed boxed answer even without a closing think tag or before the token limit. Thinking-mode IFEval instead requires a closing think tag. Preserve these separate extraction contracts."
+  ]
+}
