@@ -15,6 +15,9 @@ The [bounded editing-session fixtures](../examples/weight_evolution/qwen_session
 also run only in Python, producing sealed comparison artifacts from synthetic
 CPU sessions. TypeScript parity, real GPU editing and benchmark practice
 selection remain deferred.
+The [adaptive editing and confirmation workflow](../examples/weight_evolution/qwen_adaptive/README.md)
+is also Python-only. Its deterministic providers do not run models; TypeScript
+parity and live inference remain deferred.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the

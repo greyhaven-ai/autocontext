@@ -17,6 +17,10 @@ finite durable budgets. Adapters see selected practice prompts; sealed candidate
 exports carry verified lineage and retained attempt costs into the comparison
 harness. These CPU fixtures leave real GPU editing and benchmark practice
 selection deferred.
+The [adaptive editing fixtures](../examples/weight_evolution/qwen_adaptive/README.md)
+reuse the provider/refinement interfaces for feedback-conditioned proposals,
+select candidates on practice only, and require separate confirmation before
+the final fixture audit. Equal search caps include failures and restoration.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,

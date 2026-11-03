@@ -35,6 +35,9 @@ These are copy-paste starting points for people evaluating the repo, integrating
   Run the [CPU-only editing-session fixtures](weight_evolution/qwen_sessions/README.md),
   with practice-only adapter views and sealed exports into the comparison harness.
   Real GPU editing and benchmark practice selection remain deferred.
+- Want practice feedback to determine proposals and candidate selection?
+  Run the [adaptive editing fixtures](weight_evolution/qwen_adaptive/README.md),
+  with equal search caps and a one-look confirmation gate before the final audit.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

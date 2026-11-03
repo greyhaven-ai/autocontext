@@ -42,6 +42,17 @@ edits before the held-out comparison. These are synthetic CPU fixtures;
 simulated time does not enforce a wall-clock deadline. Real GPU editing,
 benchmark practice selection and TypeScript parity remain deferred.
 
+The [adaptive editing workflow](../../examples/weight_evolution/qwen_adaptive/README.md)
+adds `validate` and `run-fixtures` for feedback-driven proposals through the
+existing `LLMProvider`, `OutputSchema`, and refinement-prompt interfaces. Only
+the pinned offline provider is accepted. Proposal inspections reserve before
+calling the provider, typed edits and probes retain failures, and all C/W/D arms
+share the same search caps. Practice ranking uses complete-cohort correctness
+with an earliest-round tie break. An earlier winner is restored and re-probed
+under the original budget before sealing. Separate one-look confirmation uses
+its pinned held-out role; a veto blocks the final audit and cannot feed back
+into search. All outputs remain synthetic and ineligible for real promotion.
+
 ## Context mutation safety
 
 Coach and architect output that would change the playbook, hints, prompts,

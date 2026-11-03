@@ -34,6 +34,12 @@ All notable changes to this project will be documented in this file.
   Sealed candidates export into the five-condition comparison harness with
   journal-derived provenance. Real GPU editing, benchmark practice selection
   and TypeScript parity remain deferred.
+- Feedback-driven CPU editing fixtures using the existing provider/schema and
+  refinement-prompt interfaces. Equal search caps include proposal failures,
+  candidate probes and restoration; complete practice evidence determines a
+  frozen selection. Separate one-look confirmation vetoes block the final audit
+  without reselection. Real model execution, tensor editing and promotion remain
+  deferred; deterministic fixtures do not establish benchmark gains.
 
 ### Fixed
 

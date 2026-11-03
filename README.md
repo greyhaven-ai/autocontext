@@ -28,6 +28,7 @@ pins model/data/scorer assets, verifies the published checkpoint, and provides b
 The [GPU acceptance workflow](examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md) gates full execution; live reproduction remains pending.
 The [comparison-condition harness](examples/weight_evolution/qwen_comparison/README.md) exercises baseline, context, weight, combined and decoding conditions with offline synthetic fixtures.
 The [CPU-only editing sessions](examples/weight_evolution/qwen_sessions/README.md) create context, weight-descriptor and decoding candidates with finite durable budgets, practice-only adapter views and sealed exports into that comparison harness. Real GPU editing and benchmark practice selection remain deferred.
+The [adaptive editing fixtures](examples/weight_evolution/qwen_adaptive/README.md) add feedback-conditioned proposals, equal search caps, practice-based selection, and a separate confirmation gate before the final fixture audit.
 
 ## Install
 

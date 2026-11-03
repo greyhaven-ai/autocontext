@@ -74,6 +74,12 @@ across restart. Test that sealing prevents new edits and that an ambiguous
 dispatch cannot be retried automatically. Byte counts and simulated seconds
 are fixture accounting; real GPU editing, benchmark practice selection and
 TypeScript parity remain deferred.
+The [adaptive editing fixtures](examples/weight_evolution/qwen_adaptive/README.md)
+exercise the normal provider and refinement-prompt interfaces using literal
+responses addressed by practice state and feedback. Preserve equal per-arm caps,
+preclaimed proposal calls, failed-attempt costs, deterministic practice selection,
+and the immutable selection-before-confirmation boundary. Confirmation vetoes
+must never trigger another candidate or a final audit on the same experiment.
 
 TypeScript:
 
