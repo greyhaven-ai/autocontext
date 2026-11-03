@@ -143,7 +143,7 @@ class VerifiedDataset:
     def dataset_name(self) -> str:
         return self.dataset
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> dict[str, Any]:
         """Verification summary deliberately omits protected prompts and answers."""
         return {
             "dataset": self.dataset, "digest": self.digest, "source_sha256": self.source_sha256,

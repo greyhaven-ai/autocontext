@@ -55,7 +55,7 @@ def regular_file(path: Path) -> Iterator[BinaryIO]:
         yield stream
 
 
-def file_identity(path: Path, *, max_bytes: int = MAX_CHECKPOINT_BYTES) -> dict[str, object]:
+def file_identity(path: Path, *, max_bytes: int = MAX_CHECKPOINT_BYTES) -> dict[str, Any]:
     digest = hashlib.sha256()
     total = 0
     with regular_file(path) as stream:
@@ -158,7 +158,7 @@ def ensure_finite(data: bytes, dtype: str) -> None:
 
 def write_tensor_file(path: Path, tensors: tuple[TensorInfo, ...], read: Callable[[str], bytes]) -> None:
     """Write a deterministic safetensors container from a validated byte supplier."""
-    header: dict[str, object] = {"__metadata__": {"format": "pt"}}
+    header: dict[str, Any] = {"__metadata__": {"format": "pt"}}
     offset = 0
     for tensor in tensors:
         size = math.prod(tensor.shape) * _DTYPES[tensor.dtype]
