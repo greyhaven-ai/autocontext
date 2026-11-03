@@ -49,6 +49,11 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Raise the Python msgpack floor to 1.2.3 and the TypeScript/Pi
+  `@hono/node-server` overrides to 2.1.3 to resolve the dependency audit
+  blockers CVE-2026-114613 and GHSA-rmxm-3fg6-px4f. Preserve the existing
+  audit thresholds and compatible MCP dependency ranges.
+
 - Prevent executable skill output from being accepted after a child OOM kill
   when Docker's OOM notification lags its exit event. A protected supervisor
   checks the private cgroup-v2 kernel counter after all descendants stop;

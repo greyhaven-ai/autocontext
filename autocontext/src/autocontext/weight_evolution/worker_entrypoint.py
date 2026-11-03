@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from autocontext.util.json_io import write_json
 from autocontext.weight_evolution.inference_models import load_inference_request
@@ -33,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         lock = load_reproduction_lock(args.lock)
         runtime = load_runtime_lock(args.runtime)
         observed = check_installed_runtime(runtime)
-        report: dict[str, object] = {
+        report: dict[str, Any] = {
             "ok": True, "operation": args.operation, "lock_digest": lock.digest,
             "runtime_digest": runtime.digest, "observed_runtime": observed,
         }
