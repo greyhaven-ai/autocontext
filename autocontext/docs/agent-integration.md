@@ -22,6 +22,11 @@ adds read-only `check-gpu`, live `accept-gpu`, and acceptance-gated
 require `--execute`. These research operations do not activate checkpoints or
 add production CLI/MCP tools.
 
+The separate [comparison example](../../examples/weight_evolution/qwen_comparison/README.md)
+offers `validate` and `run-fixtures` for the five-condition context/weight/decoding
+matrix. Both are strictly offline with prerecorded synthetic responses; they
+have no model-execution option and do not generate promotion evidence.
+
 ## Context mutation safety
 
 Coach and architect output that would change the playbook, hints, prompts,

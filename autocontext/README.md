@@ -10,6 +10,7 @@ Use it when you want the full harness in Python, a CLI installed with `uv`/`pip`
 The experimental [Qwen weight-space reproduction](../examples/weight_evolution/qwen_reproduction/README.md)
 adds pinned model/data/scorer contracts, exact checkpoint reconstruction, bounded paired inference, and deterministic saved-evidence reproduction reports.
 Its [GPU acceptance workflow](../examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md) checks host prerequisites and gates full execution; real GPU results remain pending.
+The separate [comparison harness](../examples/weight_evolution/qwen_comparison/README.md) validates the five-condition matrix and replays synthetic fixtures without a GPU.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,

@@ -61,6 +61,11 @@ missing/duplicate shards and label fixture/smoke evidence explicitly.
 The [GPU acceptance workflow](examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md)
 has offline orchestration tests as well. Keep real NVIDIA execution explicit;
 synthetic CUDA envelopes must never be reported as live acceptance results.
+The [comparison harness](examples/weight_evolution/qwen_comparison/README.md)
+uses pinned synthetic inputs and prerecorded responses in `qwen_comparison/`.
+Its tests require no model, downloaded data or official checker dependencies.
+Preserve fixture labels, paired coverage, permitted condition changes and
+practice/evaluation separation; fixture scores are not benchmark evidence.
 
 TypeScript:
 

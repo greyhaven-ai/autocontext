@@ -23,6 +23,10 @@ All notable changes to this project will be documented in this file.
   acceptance, and an acceptance-gated full-study coordinator. CUDA device UUIDs
   and per-shard runtime checks stop dispatch on provenance drift. CPU tests do
   not establish real GPU acceptance or measured benchmark reproduction.
+- Offline comparison-condition harness for baseline, context-only, weight-only,
+  fixed context-plus-weight and decoding-control arms. Content-bound artifacts,
+  matched fixture schedules, synthetic scoring, cost attribution and paired
+  descriptive reports preserve explicit fixture labels; GPU execution is deferred.
 
 ### Fixed
 

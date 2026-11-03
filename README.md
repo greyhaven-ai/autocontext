@@ -26,6 +26,7 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 Experimental Python research: the [Qwen weight-space reproduction](examples/weight_evolution/qwen_reproduction/README.md)
 pins model/data/scorer assets, verifies the published checkpoint, and provides bounded paired inference with replayable reproduction reports.
 The [GPU acceptance workflow](examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md) gates full execution; live reproduction remains pending.
+The [comparison-condition harness](examples/weight_evolution/qwen_comparison/README.md) exercises baseline, context, weight, combined and decoding conditions with offline synthetic fixtures.
 
 ## Install
 
