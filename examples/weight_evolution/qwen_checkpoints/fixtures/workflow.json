@@ -1,0 +1,3129 @@
+{
+  "arms": [
+    {
+      "probes": [
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{4}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": "\\boxed{8}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "76aa4ab91e0d12431eae5ecde9857ff70536e1d194eb18eae4df13b56ff7bd2d"
+        },
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{3}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": ""
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "7b3973bb0026bdbe09a474db65c5f8ad456d140c38a8d028964deab72a1038a8"
+        },
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{3}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": "\\boxed{9}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "b6b1e1bb8e029c5bac36e8141e1c674f9821b0a4158a7cd08b6b43274d331532"
+        },
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{0}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": "\\boxed{0}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "3fb50e6ec596344b012b94f968facd9e2167afddeb0d65449bfd0b6c623329f5"
+        }
+      ],
+      "routes": [
+        {
+          "constrained": false,
+          "message": "",
+          "outcome": "return",
+          "response_text": "{\"mechanism\": \"C\", \"rationale\": \"Literal proposal from this practice view.\", \"context_text\": \"Check each answer once.\", \"weight_descriptor\": null, \"decoding\": null}",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "bdda0bf996828b48564396b2e7c84e81666b52c3df0068d2ff30b0f983da53ed"
+        },
+        {
+          "constrained": true,
+          "message": "",
+          "outcome": "return",
+          "response_text": "{\"mechanism\": \"C\", \"rationale\": \"Literal proposal from this practice view.\", \"context_text\": \"Work through each arithmetic step once. Check the requested format before answering.\", \"weight_descriptor\": null, \"decoding\": null}",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "9a5b6e1a6e87aac6b2dde1e44118c79fece34763a57be2406f1e928ea8bdb7d5"
+        },
+        {
+          "constrained": false,
+          "message": "scripted context proposal failure",
+          "outcome": "failure",
+          "response_text": "",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "f21b4629fc59b9760d5304b0993ddab30619dd3184ca0dc2dff1a52de0c28db3"
+        }
+      ],
+      "spec": {
+        "adapter_digest": "e807c88b37dde6d200d38758189770478ca2b1089088b00cfb820f20975e9411",
+        "baseline": {
+          "base_checkpoint": {
+            "artifact_id": "tiny-checkpoint-base-projection",
+            "content": "{\"candidate_digest\":\"493770f779213175e074d903c477206123ad889781eea444809fbba5884c48fb\",\"input_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_size_bytes\":340,\"program_digest\":null,\"representation\":\"verified_cpu_tensor_reference\",\"schema_version\":1}",
+            "representation": "synthetic_weight_descriptor",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            }
+          },
+          "base_context": {
+            "artifact_id": "fixture-base-context",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "text": ""
+          },
+          "base_decoding": {
+            "artifact_id": "fixture-base-decoding",
+            "presence_penalty": 0.0,
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "temperature": 0.6,
+            "top_k": 20,
+            "top_p": 0.95
+          }
+        },
+        "data_digest": "be1724692b9a61f8679db7b66a7a8ce9aabaa8bb59e342e62723b8d2ab3d7d7e",
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "limits": {
+          "max_editor_input_bytes": 122880,
+          "max_editor_output_bytes": 49152,
+          "max_operations": 12,
+          "max_probe_input_bytes": 20480,
+          "max_probe_output_bytes": 20480,
+          "max_simulated_seconds": 12.0
+        },
+        "mechanism": "C",
+        "model_execution_performed": false,
+        "schema_version": 1,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "session_id": "checkpoint-c"
+      }
+    },
+    {
+      "probes": [
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{4}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": "\\boxed{8}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "76aa4ab91e0d12431eae5ecde9857ff70536e1d194eb18eae4df13b56ff7bd2d"
+        },
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{3}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": ""
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "616921e93573bcfa18a579a2cc798d5b728cbfee260b3744bff40c84d8411cb1"
+        },
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{3}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": "\\boxed{9}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "06d2feb4ec6b695f007ec3fae56c2582f6a9e9658a2d7769407221edcde69cbe"
+        },
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{0}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": "\\boxed{0}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "2a3fed0822f222036e44f45956c069120642005e72107dba6a83fb7f5ea79002"
+        }
+      ],
+      "routes": [
+        {
+          "constrained": false,
+          "message": "",
+          "outcome": "return",
+          "response_text": "{\"mechanism\": \"W\", \"rationale\": \"Literal proposal from this practice view.\", \"context_text\": null, \"weight_descriptor\": \"{\\\"candidate_digest\\\":\\\"c6fce8dae079efc10b21c150d4661b2c775c7fe8a067c8fb7cc79e509d98bbb2\\\",\\\"input_sha256\\\":\\\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\\\",\\\"output_sha256\\\":\\\"580f5923138613009806e96014e9551e9f028cdec46c1eaf89a0c505079bbebc\\\",\\\"output_size_bytes\\\":340,\\\"program_digest\\\":\\\"7ae0ba4f32ecfb5c205024a75fe5a32a37433fa47c03c329b80ad448ab1e029b\\\",\\\"representation\\\":\\\"verified_cpu_tensor_reference\\\",\\\"schema_version\\\":1}\", \"decoding\": null}",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "8ab5e9e9e9a10dc31b10248a0b9990767268bc97a43b64f06e406876fee7a08e"
+        },
+        {
+          "constrained": true,
+          "message": "",
+          "outcome": "return",
+          "response_text": "{\"mechanism\": \"W\", \"rationale\": \"Literal proposal from this practice view.\", \"context_text\": null, \"weight_descriptor\": \"{\\\"candidate_digest\\\":\\\"fc9b2e01c7ba65e5e0b9c5544c2d41f07bd39c0b1b09b2cc8927fb96c3299676\\\",\\\"input_sha256\\\":\\\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\\\",\\\"output_sha256\\\":\\\"a4ad53da6ad6135427f2fddd38f99aeeb02eb7a2b01673f2f4af4e82e3be756b\\\",\\\"output_size_bytes\\\":340,\\\"program_digest\\\":\\\"692dce89e7d8d8b9592b4ac39b4c00221ecb16ca9ae32af335e83058c4b2c48f\\\",\\\"representation\\\":\\\"verified_cpu_tensor_reference\\\",\\\"schema_version\\\":1}\", \"decoding\": null}",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "af38e55c8f180e2e84dc5f643a4dc8170b068765dea26fc69da49b7986088fcd"
+        },
+        {
+          "constrained": true,
+          "message": "",
+          "outcome": "return",
+          "response_text": "{\"mechanism\": \"W\", \"rationale\": \"Literal proposal from this practice view.\", \"context_text\": null, \"weight_descriptor\": \"{\\\"candidate_digest\\\":\\\"8e67c7d31748afe761847f4f6f489b01316f802e577f2f76797cc91034eeaeba\\\",\\\"input_sha256\\\":\\\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\\\",\\\"output_sha256\\\":\\\"a056e2d02093072191be1be8e4916fafc93bb0dbd1e97a6d0c19b52ad62d58dd\\\",\\\"output_size_bytes\\\":340,\\\"program_digest\\\":\\\"d2122497eedaa2f71f6a42f17f74b435532cdb92ecbee65301e403bb6934afa7\\\",\\\"representation\\\":\\\"verified_cpu_tensor_reference\\\",\\\"schema_version\\\":1}\", \"decoding\": null}",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "9ec7fac07ffad3321515a9c4ff3d0de51bad7778cd65a4abeae37babb842f7a8"
+        }
+      ],
+      "spec": {
+        "adapter_digest": "d4745303a12cb8a0ee4d3005b6308cb83480a7c35624d1841429b8ee790fd999",
+        "baseline": {
+          "base_checkpoint": {
+            "artifact_id": "tiny-checkpoint-base-projection",
+            "content": "{\"candidate_digest\":\"493770f779213175e074d903c477206123ad889781eea444809fbba5884c48fb\",\"input_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_size_bytes\":340,\"program_digest\":null,\"representation\":\"verified_cpu_tensor_reference\",\"schema_version\":1}",
+            "representation": "synthetic_weight_descriptor",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            }
+          },
+          "base_context": {
+            "artifact_id": "fixture-base-context",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "text": ""
+          },
+          "base_decoding": {
+            "artifact_id": "fixture-base-decoding",
+            "presence_penalty": 0.0,
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "temperature": 0.6,
+            "top_k": 20,
+            "top_p": 0.95
+          }
+        },
+        "data_digest": "be1724692b9a61f8679db7b66a7a8ce9aabaa8bb59e342e62723b8d2ab3d7d7e",
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "limits": {
+          "max_editor_input_bytes": 122880,
+          "max_editor_output_bytes": 49152,
+          "max_operations": 12,
+          "max_probe_input_bytes": 20480,
+          "max_probe_output_bytes": 20480,
+          "max_simulated_seconds": 12.0
+        },
+        "mechanism": "W",
+        "model_execution_performed": false,
+        "schema_version": 1,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "session_id": "checkpoint-w"
+      }
+    },
+    {
+      "probes": [
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{4}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": "\\boxed{8}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "76aa4ab91e0d12431eae5ecde9857ff70536e1d194eb18eae4df13b56ff7bd2d"
+        },
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{3}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": ""
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "89bd4f265e3ebda8122e63d56b965314a48c3815872786eb616830d4191f017c"
+        },
+        {
+          "message": "",
+          "outcome": "return",
+          "outputs": [
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.sum",
+              "text": "\\boxed{3}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.pears",
+              "text": "\\boxed{9}"
+            },
+            {
+              "finish_reason": "stop",
+              "problem_id": "practice.words",
+              "text": "</think>green leaf"
+            }
+          ],
+          "state_digest": "c5ac7ae21a727f7d5bf5aaeabd5323ccf026c55919bc3ab8e7d26554b9afaba8"
+        },
+        {
+          "message": "scripted decoding probe failure",
+          "outcome": "failure",
+          "outputs": [],
+          "state_digest": "a2fdfaa1b3846d55e834c9347abf605fc1aaa7b5c46a9fbcdb460d695cad20cf"
+        }
+      ],
+      "routes": [
+        {
+          "constrained": false,
+          "message": "",
+          "outcome": "return",
+          "response_text": "{\"mechanism\": \"D\", \"rationale\": \"Literal proposal from this practice view.\", \"context_text\": null, \"weight_descriptor\": null, \"decoding\": {\"temperature\": 0.45, \"top_p\": 0.95, \"top_k\": 20, \"presence_penalty\": 0.5}}",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "558d329852d8dbe6cbce3fc17db428166e4901ee5db77b1916cfa5e59823683b"
+        },
+        {
+          "constrained": true,
+          "message": "",
+          "outcome": "return",
+          "response_text": "{\"mechanism\": \"D\", \"rationale\": \"Literal proposal from this practice view.\", \"context_text\": null, \"weight_descriptor\": null, \"decoding\": {\"temperature\": 0.2, \"top_p\": 0.95, \"top_k\": 20, \"presence_penalty\": 1.0}}",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "6e51d42571dd7c41e7ba6acc6abc71ea225956b6fef6de50548ea2c7c31c5a9e"
+        },
+        {
+          "constrained": true,
+          "message": "",
+          "outcome": "return",
+          "response_text": "{\"mechanism\": \"D\", \"rationale\": \"Literal proposal from this practice view.\", \"context_text\": null, \"weight_descriptor\": null, \"decoding\": {\"temperature\": 1.2, \"top_p\": 0.95, \"top_k\": 20, \"presence_penalty\": 1.5}}",
+          "served_model": null,
+          "stop_reason": "stop",
+          "view_digest": "4da8298d0b91fa0fa0594a4998e16c0671bf663d4d99c76560b67c30fc643082"
+        }
+      ],
+      "spec": {
+        "adapter_digest": "a3e20d94be40b978b83818d10aae6913f1c9dd60132f860e23d4f3a891805b0f",
+        "baseline": {
+          "base_checkpoint": {
+            "artifact_id": "tiny-checkpoint-base-projection",
+            "content": "{\"candidate_digest\":\"493770f779213175e074d903c477206123ad889781eea444809fbba5884c48fb\",\"input_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_size_bytes\":340,\"program_digest\":null,\"representation\":\"verified_cpu_tensor_reference\",\"schema_version\":1}",
+            "representation": "synthetic_weight_descriptor",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            }
+          },
+          "base_context": {
+            "artifact_id": "fixture-base-context",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "text": ""
+          },
+          "base_decoding": {
+            "artifact_id": "fixture-base-decoding",
+            "presence_penalty": 0.0,
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "temperature": 0.6,
+            "top_k": 20,
+            "top_p": 0.95
+          }
+        },
+        "data_digest": "be1724692b9a61f8679db7b66a7a8ce9aabaa8bb59e342e62723b8d2ab3d7d7e",
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "limits": {
+          "max_editor_input_bytes": 122880,
+          "max_editor_output_bytes": 49152,
+          "max_operations": 12,
+          "max_probe_input_bytes": 20480,
+          "max_probe_output_bytes": 20480,
+          "max_simulated_seconds": 12.0
+        },
+        "mechanism": "D",
+        "model_execution_performed": false,
+        "schema_version": 1,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "session_id": "checkpoint-d"
+      }
+    }
+  ],
+  "audit_evidence_digest": "c0ddc93e9ab169bcf0ac9019428248bc783d3fa342fe966a55d6baf8bb912275",
+  "audit_plan": {
+    "artifacts": {
+      "base_checkpoint": {
+        "artifact_id": "tiny-checkpoint-base-projection",
+        "content": "{\"candidate_digest\":\"493770f779213175e074d903c477206123ad889781eea444809fbba5884c48fb\",\"input_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_size_bytes\":340,\"program_digest\":null,\"representation\":\"verified_cpu_tensor_reference\",\"schema_version\":1}",
+        "representation": "synthetic_weight_descriptor",
+        "source": {
+          "declared_search_calls": 0,
+          "declared_search_units": 0,
+          "kind": "baseline_fixture",
+          "source_problem_ids": []
+        }
+      },
+      "base_context": {
+        "artifact_id": "fixture-base-context",
+        "source": {
+          "declared_search_calls": 0,
+          "declared_search_units": 0,
+          "kind": "baseline_fixture",
+          "source_problem_ids": []
+        },
+        "text": ""
+      },
+      "base_decoding": {
+        "artifact_id": "fixture-base-decoding",
+        "presence_penalty": 0.0,
+        "source": {
+          "declared_search_calls": 0,
+          "declared_search_units": 0,
+          "kind": "baseline_fixture",
+          "source_problem_ids": []
+        },
+        "temperature": 0.6,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "edited_checkpoint": {
+        "artifact_id": "checkpoint-w-w-candidate",
+        "content": "{\"candidate_digest\":\"fc9b2e01c7ba65e5e0b9c5544c2d41f07bd39c0b1b09b2cc8927fb96c3299676\",\"input_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_sha256\":\"a4ad53da6ad6135427f2fddd38f99aeeb02eb7a2b01673f2f4af4e82e3be756b\",\"output_size_bytes\":340,\"program_digest\":\"692dce89e7d8d8b9592b4ac39b4c00221ecb16ca9ae32af335e83058c4b2c48f\",\"representation\":\"verified_cpu_tensor_reference\",\"schema_version\":1}",
+        "representation": "synthetic_weight_descriptor",
+        "source": {
+          "declared_search_calls": 12,
+          "declared_search_units": 212992,
+          "kind": "development_fixture",
+          "source_problem_ids": [
+            "practice.pears",
+            "practice.sum",
+            "practice.words"
+          ]
+        }
+      },
+      "learned_context": {
+        "artifact_id": "checkpoint-c-c-candidate",
+        "source": {
+          "declared_search_calls": 9,
+          "declared_search_units": 167936,
+          "kind": "development_fixture",
+          "source_problem_ids": [
+            "practice.pears",
+            "practice.sum",
+            "practice.words"
+          ]
+        },
+        "text": "Work through each arithmetic step once. Check the requested format before answering."
+      },
+      "selected_decoding": {
+        "artifact_id": "checkpoint-d-d-candidate",
+        "presence_penalty": 1.0,
+        "source": {
+          "declared_search_calls": 12,
+          "declared_search_units": 212992,
+          "kind": "development_fixture",
+          "source_problem_ids": [
+            "practice.pears",
+            "practice.sum",
+            "practice.words"
+          ]
+        },
+        "temperature": 0.2,
+        "top_k": 20,
+        "top_p": 0.95
+      }
+    },
+    "budgets": {
+      "max_generated_units_per_condition": 1152,
+      "max_input_units_per_sample": 2048,
+      "max_search_calls_per_mechanism": 12,
+      "max_search_units_per_mechanism": 250000,
+      "max_total_generated_units": 5760,
+      "max_total_input_units": 100000,
+      "max_total_wall_seconds": 10.0
+    },
+    "cases": [
+      {
+        "dataset": "math500",
+        "problem": {
+          "answer": "42",
+          "instructions": [],
+          "problem_id": "audit.sum",
+          "text": "What is 17 plus 25?"
+        }
+      },
+      {
+        "dataset": "math500",
+        "problem": {
+          "answer": "42",
+          "instructions": [],
+          "problem_id": "audit.product",
+          "text": "What is 6 times 7?"
+        }
+      },
+      {
+        "dataset": "gsm8k",
+        "problem": {
+          "answer": "6",
+          "instructions": [],
+          "problem_id": "audit.books",
+          "text": "Iris has nine books and gives away three. How many remain?"
+        }
+      },
+      {
+        "dataset": "gsm8k",
+        "problem": {
+          "answer": "15",
+          "instructions": [],
+          "problem_id": "audit.boxes",
+          "text": "Three boxes each hold five stones. How many stones in total?"
+        }
+      },
+      {
+        "dataset": "ifeval",
+        "problem": {
+          "answer": null,
+          "instructions": [
+            {
+              "instruction_id": "fixture:word_count",
+              "kwargs": {
+                "count": 3
+              }
+            },
+            {
+              "instruction_id": "fixture:contains_word",
+              "kwargs": {
+                "word": "violet"
+              }
+            }
+          ],
+          "problem_id": "audit.violet",
+          "text": "Reply with exactly three words including violet."
+        }
+      },
+      {
+        "dataset": "ifeval",
+        "problem": {
+          "answer": null,
+          "instructions": [
+            {
+              "instruction_id": "fixture:word_count",
+              "kwargs": {
+                "count": 2
+              }
+            },
+            {
+              "instruction_id": "fixture:uppercase",
+              "kwargs": {}
+            }
+          ],
+          "problem_id": "audit.upper",
+          "text": "Reply in uppercase using exactly two words."
+        }
+      }
+    ],
+    "cells": [
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 17 plus 25?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "c5906fd83e8dd48b68fdcc647a6cb977c04f4e28234e91c502ae4b78e25e407a",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.product",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is 6 times 7?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.books",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Iris has nine books and gives away three. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "c08147bc7ce9e3c5f53746b3a054ffce2260e85fc969f4246d4c25ce40e697ee",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.boxes",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Three boxes each hold five stones. How many stones in total?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.violet",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply with exactly three words including violet."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "dd32f9d58c87365ddde8b11d7a661022144cbffc64ace2727fff9ad12c454f0d",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "audit.upper",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in uppercase using exactly two words."
+      }
+    ],
+    "conditions": [
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "declared_search_calls": 0,
+        "declared_search_units": 0,
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "search_attribution": "baseline_zero"
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "declared_search_calls": 9,
+        "declared_search_units": 167936,
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "search_attribution": "single_mechanism"
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "declared_search_calls": 12,
+        "declared_search_units": 212992,
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "search_attribution": "single_mechanism"
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "declared_search_calls": 21,
+        "declared_search_units": 380928,
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "search_attribution": "sum_of_C_and_W_shared_artifacts"
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "declared_search_calls": 12,
+        "declared_search_units": 212992,
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "search_attribution": "single_mechanism"
+      }
+    ],
+    "development": {
+      "cases": [
+        {
+          "dataset": "math500",
+          "problem": {
+            "answer": "3",
+            "instructions": [],
+            "problem_id": "practice.sum",
+            "text": "What is 1 plus 2?"
+          }
+        },
+        {
+          "dataset": "gsm8k",
+          "problem": {
+            "answer": "9",
+            "instructions": [],
+            "problem_id": "practice.pears",
+            "text": "Mia has seven pears and buys two. How many pears now?"
+          }
+        },
+        {
+          "dataset": "ifeval",
+          "problem": {
+            "answer": null,
+            "instructions": [
+              {
+                "instruction_id": "fixture:word_count",
+                "kwargs": {
+                  "count": 2
+                }
+              },
+              {
+                "instruction_id": "fixture:contains_word",
+                "kwargs": {
+                  "word": "green"
+                }
+              }
+            ],
+            "problem_id": "practice.words",
+            "text": "Reply in two words including green."
+          }
+        }
+      ],
+      "origin": "synthetic_fixture"
+    },
+    "execution_mode": "offline_fixture",
+    "factorial_interaction": "CW-C-W+A",
+    "protocol": {
+      "math_prompt_suffix": "\nReturn the answer in \\boxed{...}.",
+      "max_new_tokens": 96,
+      "renderer_version": "fixture-context-user-v1",
+      "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+      "samples_per_problem": {
+        "gsm8k": 1,
+        "ifeval": 1,
+        "math500": 1
+      },
+      "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+      "seeds": [
+        0,
+        17
+      ],
+      "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+      "tokenizer_kind": "utf8-bytes-v1"
+    },
+    "schedule_version": "rotating-condition-problem-seed-sample-v1",
+    "schema_version": 1,
+    "study_id": "tiny-checkpoint-audit-v1"
+  },
+  "candidates": [
+    {
+      "candidate_id": "tiny-base",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 2,
+        "schema_version": 1,
+        "sha256": "5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da",
+        "size_bytes": 340,
+        "tensors": [
+          {
+            "dtype": "F16",
+            "editable": false,
+            "name": "embedding.weight",
+            "sha256": "6b60ada811679b7b8aeee509afcdd89fde521eef8c3686639eb8c923d109c639",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "editable": true,
+            "name": "layer.0.weight",
+            "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5",
+            "shape": [
+              2,
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "layer.1.weight",
+            "sha256": "dee9bee38d8ce139ee23552fc0ca83067114ae903518d7711ba7937b72c0d697",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F64",
+            "editable": false,
+            "name": "norm.weight",
+            "sha256": "4cfa5b42ca669328764e67cd9a34bb8f90b16ed7ca8d85e8443783d7ccce15ed",
+            "shape": [
+              1
+            ]
+          }
+        ]
+      },
+      "output_sha256": "5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da",
+      "output_size_bytes": 340,
+      "program": null
+    },
+    {
+      "candidate_id": "tiny-weak",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 2,
+        "schema_version": 1,
+        "sha256": "5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da",
+        "size_bytes": 340,
+        "tensors": [
+          {
+            "dtype": "F16",
+            "editable": false,
+            "name": "embedding.weight",
+            "sha256": "6b60ada811679b7b8aeee509afcdd89fde521eef8c3686639eb8c923d109c639",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "editable": true,
+            "name": "layer.0.weight",
+            "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5",
+            "shape": [
+              2,
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "layer.1.weight",
+            "sha256": "dee9bee38d8ce139ee23552fc0ca83067114ae903518d7711ba7937b72c0d697",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F64",
+            "editable": false,
+            "name": "norm.weight",
+            "sha256": "4cfa5b42ca669328764e67cd9a34bb8f90b16ed7ca8d85e8443783d7ccce15ed",
+            "shape": [
+              1
+            ]
+          }
+        ]
+      },
+      "output_sha256": "580f5923138613009806e96014e9551e9f028cdec46c1eaf89a0c505079bbebc",
+      "output_size_bytes": 340,
+      "program": {
+        "edits": [
+          {
+            "dtype": "BF16",
+            "expected_sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5",
+            "name": "layer.0.weight",
+            "replacements": [
+              {
+                "index": 0,
+                "value_hex": "0040"
+              }
+            ],
+            "shape": [
+              2,
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "expected_sha256": "dee9bee38d8ce139ee23552fc0ca83067114ae903518d7711ba7937b72c0d697",
+            "name": "layer.1.weight",
+            "replacements": [
+              {
+                "index": 1,
+                "value_hex": "00000000"
+              }
+            ],
+            "shape": [
+              2
+            ]
+          }
+        ],
+        "input_digest": "59da878ef2ce0227b9a045ea8f4b9ddbb7837415ac9d0a7b35f04c38d28bca96",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    },
+    {
+      "candidate_id": "tiny-selected",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 2,
+        "schema_version": 1,
+        "sha256": "5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da",
+        "size_bytes": 340,
+        "tensors": [
+          {
+            "dtype": "F16",
+            "editable": false,
+            "name": "embedding.weight",
+            "sha256": "6b60ada811679b7b8aeee509afcdd89fde521eef8c3686639eb8c923d109c639",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "editable": true,
+            "name": "layer.0.weight",
+            "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5",
+            "shape": [
+              2,
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "layer.1.weight",
+            "sha256": "dee9bee38d8ce139ee23552fc0ca83067114ae903518d7711ba7937b72c0d697",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F64",
+            "editable": false,
+            "name": "norm.weight",
+            "sha256": "4cfa5b42ca669328764e67cd9a34bb8f90b16ed7ca8d85e8443783d7ccce15ed",
+            "shape": [
+              1
+            ]
+          }
+        ]
+      },
+      "output_sha256": "a4ad53da6ad6135427f2fddd38f99aeeb02eb7a2b01673f2f4af4e82e3be756b",
+      "output_size_bytes": 340,
+      "program": {
+        "edits": [
+          {
+            "dtype": "BF16",
+            "expected_sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5",
+            "name": "layer.0.weight",
+            "replacements": [
+              {
+                "index": 0,
+                "value_hex": "4040"
+              }
+            ],
+            "shape": [
+              2,
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "expected_sha256": "dee9bee38d8ce139ee23552fc0ca83067114ae903518d7711ba7937b72c0d697",
+            "name": "layer.1.weight",
+            "replacements": [
+              {
+                "index": 1,
+                "value_hex": "00000040"
+              }
+            ],
+            "shape": [
+              2
+            ]
+          }
+        ],
+        "input_digest": "59da878ef2ce0227b9a045ea8f4b9ddbb7837415ac9d0a7b35f04c38d28bca96",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    },
+    {
+      "candidate_id": "tiny-regressed",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 2,
+        "schema_version": 1,
+        "sha256": "5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da",
+        "size_bytes": 340,
+        "tensors": [
+          {
+            "dtype": "F16",
+            "editable": false,
+            "name": "embedding.weight",
+            "sha256": "6b60ada811679b7b8aeee509afcdd89fde521eef8c3686639eb8c923d109c639",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "editable": true,
+            "name": "layer.0.weight",
+            "sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5",
+            "shape": [
+              2,
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "layer.1.weight",
+            "sha256": "dee9bee38d8ce139ee23552fc0ca83067114ae903518d7711ba7937b72c0d697",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F64",
+            "editable": false,
+            "name": "norm.weight",
+            "sha256": "4cfa5b42ca669328764e67cd9a34bb8f90b16ed7ca8d85e8443783d7ccce15ed",
+            "shape": [
+              1
+            ]
+          }
+        ]
+      },
+      "output_sha256": "a056e2d02093072191be1be8e4916fafc93bb0dbd1e97a6d0c19b52ad62d58dd",
+      "output_size_bytes": 340,
+      "program": {
+        "edits": [
+          {
+            "dtype": "BF16",
+            "expected_sha256": "cdbdbbb719c0a903a6c13b43153797e903d08cbcaa63917d8d28048f1fb6b8f5",
+            "name": "layer.0.weight",
+            "replacements": [
+              {
+                "index": 0,
+                "value_hex": "8040"
+              }
+            ],
+            "shape": [
+              2,
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "expected_sha256": "dee9bee38d8ce139ee23552fc0ca83067114ae903518d7711ba7937b72c0d697",
+            "name": "layer.1.weight",
+            "replacements": [
+              {
+                "index": 1,
+                "value_hex": "00001041"
+              }
+            ],
+            "shape": [
+              2
+            ]
+          }
+        ],
+        "input_digest": "59da878ef2ce0227b9a045ea8f4b9ddbb7837415ac9d0a7b35f04c38d28bca96",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    }
+  ],
+  "checkpoint_kind": "tiny_cpu_safetensors",
+  "confirmation_evidence_digest": "b0a280ab76210b977232073001f315ba7e42d566d1facdfc237b040ce9ea5ea4",
+  "confirmation_plan": {
+    "artifacts": {
+      "base_checkpoint": {
+        "artifact_id": "tiny-checkpoint-base-projection",
+        "content": "{\"candidate_digest\":\"493770f779213175e074d903c477206123ad889781eea444809fbba5884c48fb\",\"input_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_size_bytes\":340,\"program_digest\":null,\"representation\":\"verified_cpu_tensor_reference\",\"schema_version\":1}",
+        "representation": "synthetic_weight_descriptor",
+        "source": {
+          "declared_search_calls": 0,
+          "declared_search_units": 0,
+          "kind": "baseline_fixture",
+          "source_problem_ids": []
+        }
+      },
+      "base_context": {
+        "artifact_id": "fixture-base-context",
+        "source": {
+          "declared_search_calls": 0,
+          "declared_search_units": 0,
+          "kind": "baseline_fixture",
+          "source_problem_ids": []
+        },
+        "text": ""
+      },
+      "base_decoding": {
+        "artifact_id": "fixture-base-decoding",
+        "presence_penalty": 0.0,
+        "source": {
+          "declared_search_calls": 0,
+          "declared_search_units": 0,
+          "kind": "baseline_fixture",
+          "source_problem_ids": []
+        },
+        "temperature": 0.6,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "edited_checkpoint": {
+        "artifact_id": "checkpoint-w-w-candidate",
+        "content": "{\"candidate_digest\":\"fc9b2e01c7ba65e5e0b9c5544c2d41f07bd39c0b1b09b2cc8927fb96c3299676\",\"input_sha256\":\"5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da\",\"output_sha256\":\"a4ad53da6ad6135427f2fddd38f99aeeb02eb7a2b01673f2f4af4e82e3be756b\",\"output_size_bytes\":340,\"program_digest\":\"692dce89e7d8d8b9592b4ac39b4c00221ecb16ca9ae32af335e83058c4b2c48f\",\"representation\":\"verified_cpu_tensor_reference\",\"schema_version\":1}",
+        "representation": "synthetic_weight_descriptor",
+        "source": {
+          "declared_search_calls": 12,
+          "declared_search_units": 212992,
+          "kind": "development_fixture",
+          "source_problem_ids": [
+            "practice.pears",
+            "practice.sum",
+            "practice.words"
+          ]
+        }
+      },
+      "learned_context": {
+        "artifact_id": "checkpoint-c-c-candidate",
+        "source": {
+          "declared_search_calls": 9,
+          "declared_search_units": 167936,
+          "kind": "development_fixture",
+          "source_problem_ids": [
+            "practice.pears",
+            "practice.sum",
+            "practice.words"
+          ]
+        },
+        "text": "Work through each arithmetic step once. Check the requested format before answering."
+      },
+      "selected_decoding": {
+        "artifact_id": "checkpoint-d-d-candidate",
+        "presence_penalty": 1.0,
+        "source": {
+          "declared_search_calls": 12,
+          "declared_search_units": 212992,
+          "kind": "development_fixture",
+          "source_problem_ids": [
+            "practice.pears",
+            "practice.sum",
+            "practice.words"
+          ]
+        },
+        "temperature": 0.2,
+        "top_k": 20,
+        "top_p": 0.95
+      }
+    },
+    "budgets": {
+      "max_generated_units_per_condition": 1152,
+      "max_input_units_per_sample": 2048,
+      "max_search_calls_per_mechanism": 12,
+      "max_search_units_per_mechanism": 250000,
+      "max_total_generated_units": 5760,
+      "max_total_input_units": 100000,
+      "max_total_wall_seconds": 10.0
+    },
+    "cases": [
+      {
+        "dataset": "math500",
+        "problem": {
+          "answer": "14",
+          "instructions": [],
+          "problem_id": "confirmation.sum",
+          "text": "What is eight plus six?"
+        }
+      },
+      {
+        "dataset": "gsm8k",
+        "problem": {
+          "answer": "7",
+          "instructions": [],
+          "problem_id": "confirmation.coins",
+          "text": "Paz has eleven coins and gives away four. How many remain?"
+        }
+      },
+      {
+        "dataset": "ifeval",
+        "problem": {
+          "answer": null,
+          "instructions": [
+            {
+              "instruction_id": "fixture:word_count",
+              "kwargs": {
+                "count": 2
+              }
+            },
+            {
+              "instruction_id": "fixture:contains_word",
+              "kwargs": {
+                "word": "coral"
+              }
+            }
+          ],
+          "problem_id": "confirmation.words",
+          "text": "Reply in exactly two words including coral."
+        }
+      }
+    ],
+    "cells": [
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "math500",
+        "dataset_digest": "5333db22d6a283777721696decf93ef380c5a5affeb18320834928000e814ff1",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.sum",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "What is eight plus six?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "gsm8k",
+        "dataset_digest": "b1a702744a6eb3ded106ca6554d1860dd804c78a3d1b46740c0c22e1eca2cd84",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.coins",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Paz has eleven coins and gives away four. How many remain?\nReturn the answer in \\boxed{...}."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "context_text": "",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 0,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+        "dataset": "ifeval",
+        "dataset_digest": "f1c6da1b22ffec03b0e65ecc6844a6cfeead91364126a224ec684ebd3b229093",
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "max_new_tokens": 96,
+        "problem_id": "confirmation.words",
+        "renderer_version": "fixture-context-user-v1",
+        "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+        "sample_index": 0,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "seed": 17,
+        "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+        "tokenizer_kind": "utf8-bytes-v1",
+        "user_text": "Reply in exactly two words including coral."
+      }
+    ],
+    "conditions": [
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "A",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "declared_search_calls": 0,
+        "declared_search_units": 0,
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "search_attribution": "baseline_zero"
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "C",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "declared_search_calls": 9,
+        "declared_search_units": 167936,
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "search_attribution": "single_mechanism"
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "W",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "declared_search_calls": 12,
+        "declared_search_units": 212992,
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "search_attribution": "single_mechanism"
+      },
+      {
+        "checkpoint_digest": "4120a8a1d7e27cb8c3af471c36a9f386dfd57fb2d4599fbc270992e49291366e",
+        "condition_id": "CW",
+        "context_digest": "25168813f20a95b43273525a26d1e1efab4df65b43769d10462da7285e9243c8",
+        "declared_search_calls": 21,
+        "declared_search_units": 380928,
+        "decoding_digest": "79d267c1f3ded12aca8c2c47b70aaae1ac4f35f09701585c6236fd0a9e9731f6",
+        "search_attribution": "sum_of_C_and_W_shared_artifacts"
+      },
+      {
+        "checkpoint_digest": "1b64753ac3bcfea72c711a2d8d38a2ecc71b1701cc521ba27151e2a885dc6e68",
+        "condition_id": "D",
+        "context_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "declared_search_calls": 12,
+        "declared_search_units": 212992,
+        "decoding_digest": "a89d9cf819fa0ab28db6868b05a3cf3f32b87658d0d40a5f072235e261e83166",
+        "search_attribution": "single_mechanism"
+      }
+    ],
+    "development": {
+      "cases": [
+        {
+          "dataset": "math500",
+          "problem": {
+            "answer": "3",
+            "instructions": [],
+            "problem_id": "practice.sum",
+            "text": "What is 1 plus 2?"
+          }
+        },
+        {
+          "dataset": "gsm8k",
+          "problem": {
+            "answer": "9",
+            "instructions": [],
+            "problem_id": "practice.pears",
+            "text": "Mia has seven pears and buys two. How many pears now?"
+          }
+        },
+        {
+          "dataset": "ifeval",
+          "problem": {
+            "answer": null,
+            "instructions": [
+              {
+                "instruction_id": "fixture:word_count",
+                "kwargs": {
+                  "count": 2
+                }
+              },
+              {
+                "instruction_id": "fixture:contains_word",
+                "kwargs": {
+                  "word": "green"
+                }
+              }
+            ],
+            "problem_id": "practice.words",
+            "text": "Reply in two words including green."
+          }
+        }
+      ],
+      "origin": "synthetic_fixture"
+    },
+    "execution_mode": "offline_fixture",
+    "factorial_interaction": "CW-C-W+A",
+    "protocol": {
+      "math_prompt_suffix": "\nReturn the answer in \\boxed{...}.",
+      "max_new_tokens": 96,
+      "renderer_version": "fixture-context-user-v1",
+      "runtime_digest": "a9af404ceccc4a00734ea6a32f7fdd8aa774890ef48d5d60f905b477739a1c75",
+      "samples_per_problem": {
+        "gsm8k": 1,
+        "ifeval": 1,
+        "math500": 1
+      },
+      "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+      "seeds": [
+        0,
+        17
+      ],
+      "tokenizer_digest": "e4a4e3973ccba00c65a2bfdaafd6dd2a38f4c22703db50a658ecdf72a258845c",
+      "tokenizer_kind": "utf8-bytes-v1"
+    },
+    "schedule_version": "rotating-condition-problem-seed-sample-v1",
+    "schema_version": 1,
+    "study_id": "tiny-checkpoint-confirmation-v1"
+  },
+  "confirmation_policy": {
+    "max_looks": 1,
+    "minimum_mean_gain": 0.1,
+    "no_per_dataset_regression": true,
+    "schema_version": 1,
+    "statistical_significance_claimed": false
+  },
+  "data_digest": "be1724692b9a61f8679db7b66a7a8ce9aabaa8bb59e342e62723b8d2ab3d7d7e",
+  "execution_kind": "fixture",
+  "gpu_execution_deferred": true,
+  "model_execution_performed": false,
+  "schema_version": 1,
+  "search_policy": {
+    "edit_reservation": {
+      "editor_input_bytes": 8192,
+      "editor_output_bytes": 4096,
+      "operations": 1,
+      "probe_input_bytes": 0,
+      "probe_output_bytes": 0,
+      "simulated_seconds": 1.0
+    },
+    "execution_kind": "fixture",
+    "probe_reservation": {
+      "editor_input_bytes": 8192,
+      "editor_output_bytes": 4096,
+      "operations": 1,
+      "probe_input_bytes": 4096,
+      "probe_output_bytes": 4096,
+      "simulated_seconds": 1.0
+    },
+    "proposal_reservation": {
+      "editor_input_bytes": 16384,
+      "editor_output_bytes": 4096,
+      "operations": 1,
+      "probe_input_bytes": 0,
+      "probe_output_bytes": 0,
+      "simulated_seconds": 1.0
+    },
+    "proposal_rounds": 3,
+    "schema_version": 1,
+    "selection_rule": "highest-practice-correct-then-earliest-round"
+  },
+  "workflow_id": "tiny-checkpoint-pass-v1"
+}

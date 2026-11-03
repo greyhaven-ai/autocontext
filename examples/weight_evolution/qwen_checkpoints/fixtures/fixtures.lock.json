@@ -1,0 +1,14 @@
+{
+  "audit_sha256": "27eff80564972053e65399743a0d72649eaa1f6e610777bc6836a8b826a3a735",
+  "audit_size_bytes": 30598,
+  "base_sha256": "5afa821526fe6ff31bb8c5ab7255e8889a5085a5cf2f3c6e89f6e6cf9482f6da",
+  "base_size_bytes": 340,
+  "confirmation_sha256": "2a1efc97e04f8955c2d11cfcfd70e10cd13ea7b1920bf88afe119a50584034bf",
+  "confirmation_size_bytes": 15555,
+  "data_sha256": "fbe7b1515d7b22b3837fcbfe7b23852453875d95a79a60036afb2b8e81338e4a",
+  "data_size_bytes": 3862,
+  "execution_kind": "fixture",
+  "schema_version": 1,
+  "workflow_sha256": "170a54ba8b40df43204c0ba30d03d21723c29c71539c0325aa02532bb01ad2eb",
+  "workflow_size_bytes": 149503
+}

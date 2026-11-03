@@ -38,8 +38,14 @@ All notable changes to this project will be documented in this file.
   refinement-prompt interfaces. Equal search caps include proposal failures,
   candidate probes and restoration; complete practice evidence determines a
   frozen selection. Separate one-look confirmation vetoes block the final audit
-  without reselection. Real model execution, tensor editing and promotion remain
+  without reselection. Real model execution and promotion remain
   deferred; deterministic fixtures do not establish benchmark gains.
+- Checkpoint-backed editing fixtures apply bounded typed programs to tiny CPU
+  safetensors, reusing exact BF16/F16/F32/F64 reconstruction checks. Permitted
+  tensor scope, finite values and unchanged payloads are independently verified.
+  Native seals carry input/program/output hashes through adaptive selection and
+  confirmation; legacy strings are compatibility projections only. Real Qwen
+  and GPU inference, arbitrary editing code and TypeScript parity remain deferred.
 
 ### Fixed
 

@@ -18,6 +18,10 @@ selection remain deferred.
 The [adaptive editing and confirmation workflow](../examples/weight_evolution/qwen_adaptive/README.md)
 is also Python-only. Its deterministic providers do not run models; TypeScript
 parity and live inference remain deferred.
+The [checkpoint-backed editing fixtures](../examples/weight_evolution/qwen_checkpoints/README.md)
+also remain Python-only. They verify actual tiny CPU tensor edits and native
+checkpoint seals; TypeScript parity, real Qwen execution and GPU inference
+remain deferred.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
