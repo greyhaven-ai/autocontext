@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -152,7 +152,7 @@ class ReplayPlan(FrozenModel):
     def digest(self) -> str:
         return content_digest(self.to_dict())
 
-    def resource_summary(self) -> dict[str, object]:
+    def resource_summary(self) -> dict[str, Any]:
         return {"plan_digest": self.digest, "mode": self.mode, "shards": len(self.shards),
                 "cohorts": [{"dataset": c.dataset, "problems": len(c.problem_ids),
                              "complete_dataset": c.complete_dataset} for c in self.cohorts],
