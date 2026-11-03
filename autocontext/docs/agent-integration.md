@@ -7,6 +7,12 @@ autocontext provides three integration surfaces for external agents: the `autoct
 
 For the canonical user-facing and runtime vocabulary behind those surfaces, see [../../docs/concept-model.md](../../docs/concept-model.md).
 
+For experimental weight-space research, use the Python
+[Qwen reproduction example](../../examples/weight_evolution/qwen_reproduction/README.md).
+Its `validate-lock` and `verify-assets` operations are offline; `fetch-assets`
+explicitly downloads verified data. These example operations do not execute
+models, activate checkpoints, or add CLI/MCP tools.
+
 ## Context mutation safety
 
 Coach and architect output that would change the playbook, hints, prompts,

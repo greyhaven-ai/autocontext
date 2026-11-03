@@ -26,6 +26,8 @@ These are copy-paste starting points for people evaluating the repo, integrating
   Start with the settings and lifecycle requirements in
   [research workspaces](../docs/research-workspaces.md).
 - Want correctness-first recursive GPU-kernel search? Start with the kernel evolution MVP.
+- Want to validate the published Qwen weight-editing protocol before running models?
+  Use the Python [reproduction contract and offline fixtures](weight_evolution/qwen_reproduction/README.md).
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

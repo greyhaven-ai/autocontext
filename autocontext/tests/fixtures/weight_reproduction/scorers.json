@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "provenance": "Autocontext-authored synthetic fixtures; no benchmark problem text or model outputs. These test protocol boundaries with injected checkers, not equivalence to the complete official IFEval suite.",
+  "protocol_source": "https://github.com/RikiyaT/lm_understand-logs/tree/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/code",
+  "math": [
+    {"id": "nested_fraction", "text": "</think>The result is \\boxed{\\frac{1}{2}}.", "gold": "0.5", "prediction": "\\frac{1}{2}", "score": 1},
+    {"id": "last_box_wins", "text": "</think>First \\boxed{3}, corrected to \\boxed{4}.", "gold": "4", "prediction": "4", "score": 1},
+    {"id": "bad_last_box", "text": "</think>\\boxed{4} then \\boxed{", "gold": "4", "prediction": null, "score": 0},
+    {"id": "empty_last_box", "text": "</think>\\boxed{4} then \\boxed{ }", "gold": "4", "prediction": null, "score": 0},
+    {"id": "last_reasoning_boundary", "text": "draft \\boxed{8}</think>draft \\boxed{3}</think>\\boxed{4}", "gold": "4", "prediction": "4", "score": 1},
+    {"id": "reasoning_box_excluded", "text": "<think>\\boxed{4}</think>No final answer.", "gold": "4", "prediction": null, "score": 0},
+    {"id": "unfinished_no_box", "text": "<think>Let me reconsider. Let me reconsider.", "gold": "4", "prediction": null, "score": 0, "finish_reason": "length"},
+    {"id": "unfinished_closed_box_source_behavior", "text": "<think>Perhaps \\boxed{4}. More reasoning follows", "gold": "4", "prediction": "4", "score": 1, "finish_reason": "length"},
+    {"id": "fbox_fallback", "text": "</think>\\fbox{4}", "gold": "4", "prediction": "4", "score": 1},
+    {"id": "boxed_preferred_over_later_fbox", "text": "</think>\\boxed{4} and \\fbox{9}", "gold": "4", "prediction": "4", "score": 1},
+    {"id": "spaced_box", "text": "</think>\\boxed { 4 }", "gold": "4", "prediction": "4", "score": 1},
+    {"id": "unbraced_box", "text": "</think>$\\boxed 4$ trailing", "gold": "4", "prediction": "4", "score": 1},
+    {"id": "unbraced_line_end", "text": "</think>\\boxed 4\nmore text", "gold": "4", "prediction": "4", "score": 1},
+    {"id": "no_box_no_lenient_fallback", "text": "</think>Final Answer: 4", "gold": "4", "prediction": null, "score": 0},
+    {"id": "wrong_box", "text": "</think>\\boxed{5}", "gold": "4", "prediction": "5", "score": 0},
+    {"id": "malformed_formula", "text": "</think>\\boxed{\\frac{}{}?}", "gold": "4", "prediction": "\\frac{}{}?", "score": 0},
+    {"id": "empty_output", "text": "", "gold": "4", "prediction": null, "score": 0}
+  ],
+  "ifeval": [
+    {"id": "all_instructions", "text": "<think>reasoning</think>BLUE SKY", "thinking": true, "response": "BLUE SKY", "instruction_results": [true, true], "score": 1},
+    {"id": "one_instruction_fails", "text": "</think>blue sky", "thinking": true, "response": "blue sky", "instruction_results": [true, false], "score": 0},
+    {"id": "keyword_missing", "text": "</think>GREEN SKY", "thinking": true, "response": "GREEN SKY", "instruction_results": [false, true], "score": 0},
+    {"id": "unfinished_thinking", "text": "<think>BLUE SKY", "thinking": true, "response": "", "instruction_results": [false, false], "score": 0, "finish_reason": "length"},
+    {"id": "no_open_tag_still_requires_close", "text": "BLUE SKY", "thinking": true, "response": "", "instruction_results": [false, false], "score": 0},
+    {"id": "thinking_disabled", "text": " BLUE SKY ", "thinking": false, "response": "BLUE SKY", "instruction_results": [true, true], "score": 1},
+    {"id": "last_close_only", "text": "</think>GREEN SKY</think>BLUE SKY", "thinking": true, "response": "BLUE SKY", "instruction_results": [true, true], "score": 1},
+    {"id": "empty_final", "text": "<think>BLUE SKY</think> ", "thinking": true, "response": "", "instruction_results": [false, false], "score": 0}
+  ],
+  "grouped_accuracy": {
+    "samples_per_problem": 4,
+    "scores": {"problem-a": [1, 0, 0, 0], "problem-b": [0, 0, 0, 0]},
+    "expected_mean_accuracy": 0.125,
+    "expected_problem_scores": {"problem-a": 0.25, "problem-b": 0.0}
+  }
+}

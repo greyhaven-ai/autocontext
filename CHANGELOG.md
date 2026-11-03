@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Experimental Python Qwen weight-space reproduction contract: immutable source
+  and model revisions, SHA-256 asset verification, explicit bounded downloads,
+  and offline math/strict-IFEval scorer fixtures. Model execution, official
+  benchmark parity and TypeScript parity are deferred.
+
 ### Fixed
 
 - Apply the shared Claude request controls in both Python `AnthropicClient`

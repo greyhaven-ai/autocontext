@@ -49,6 +49,11 @@ Each shard retains JUnit timings and coverage data; the required `test` job
 checks all shards and combines their coverage into the existing report.
 Dependency caches remain disabled in public workflows.
 
+The experimental [Qwen reproduction](examples/weight_evolution/qwen_reproduction/README.md)
+has CPU-only contract/scorer tests in `test_weight_reproduction_contract.py` and
+`test_weight_reproduction_scorers.py`. Keep these offline: no model weights,
+provider credentials, external checker installation or GPU is needed.
+
 TypeScript:
 
 ```bash
