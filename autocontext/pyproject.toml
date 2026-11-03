@@ -88,6 +88,7 @@ constraint-dependencies = [
   "filelock>=4.2.1",
   "fsspec>=2026.6.0",
   "multidict>=6.9.1,<7",
+  "msgpack>=1.2.3",
   "opentelemetry-api>=1.45.1",
   "pyjwt>=2.15.0",
   "urllib3>=2.8.0",
