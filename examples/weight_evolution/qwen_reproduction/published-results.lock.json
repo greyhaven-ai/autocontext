@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "source_revision": "4d09ba6d6a7e891dd8063974dfe81b3d78e3494f",
+  "sources": [
+    {
+      "variant": "base",
+      "relative_path": "reference/unedited.json",
+      "url": "https://github.com/RikiyaT/lm_understand-logs/blob/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/eval/unedited/merged.json",
+      "sha256": "5c31370485b9f197f592745e935eeaee6b09dc127daa5b2a8be1ebbcbc210221",
+      "size_bytes": 1706
+    },
+    {
+      "variant": "published_patch",
+      "relative_path": "reference/p50c.json",
+      "url": "https://github.com/RikiyaT/lm_understand-logs/blob/4d09ba6d6a7e891dd8063974dfe81b3d78e3494f/exp8_math/eval/p50c/merged.json",
+      "sha256": "c93d3db30a612ef0da396014fdfbe011efbcf2cd417e2e6125664d7effdd0471",
+      "size_bytes": 1777
+    }
+  ],
+  "metrics": [
+    {
+      "dataset": "math500",
+      "variant": "base",
+      "accuracy": 0.079,
+      "token_limit_rate": 0.93,
+      "mean_tokens": 30868.4345,
+      "n_problems": 500
+    },
+    {
+      "dataset": "gsm8k",
+      "variant": "base",
+      "accuracy": 0.13836239575435935,
+      "token_limit_rate": 0.8749052312357847,
+      "mean_tokens": 29288.653904473085,
+      "n_problems": 1319
+    },
+    {
+      "dataset": "ifeval",
+      "variant": "base",
+      "accuracy": 0.2097966728280961,
+      "token_limit_rate": 0.7486136783733827,
+      "mean_tokens": 25296.210720887248,
+      "n_problems": 541
+    },
+    {
+      "dataset": "math500",
+      "variant": "published_patch",
+      "accuracy": 0.481,
+      "token_limit_rate": 0.3305,
+      "mean_tokens": 22037.1475,
+      "n_problems": 500
+    },
+    {
+      "dataset": "gsm8k",
+      "variant": "published_patch",
+      "accuracy": 0.6709628506444276,
+      "token_limit_rate": 0.07240333586050038,
+      "mean_tokens": 11993.395375284306,
+      "n_problems": 1319
+    },
+    {
+      "dataset": "ifeval",
+      "variant": "published_patch",
+      "accuracy": 0.6229205175600739,
+      "token_limit_rate": 0.022181146025878003,
+      "mean_tokens": 4240.579482439926,
+      "n_problems": 541
+    }
+  ]
+}

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from autocontext.weight_evolution.assets import DEFAULT_MAX_DOWNLOAD_BYTES, fetch_assets, select_assets, verify_assets
 from autocontext.weight_evolution.models import load_reproduction_lock
+from autocontext.weight_evolution.replay_commands import COMMANDS, configure_replay_commands, handle_replay_command
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -17,6 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lock", type=Path, default=Path(__file__).with_name("reproduction.lock.json"))
     parser.add_argument("--runtime", type=Path, default=Path(__file__).with_name("runtime.lock.json"))
     commands = parser.add_subparsers(dest="command", required=True)
+    configure_replay_commands(parser, commands, Path(__file__).parent)
     commands.add_parser("validate-lock", help="validate pinned metadata, without network access")
     for name in ("verify-assets", "fetch-assets"):
         command = commands.add_parser(name, help="verify local assets" if name == "verify-assets" else "fetch verified bytes")
@@ -43,6 +45,9 @@ def main(argv: list[str] | None = None) -> int:
             command.add_argument("--gpu-device", required=True, help="one explicit NVIDIA device, never 'all'")
     args = parser.parse_args(argv)
     try:
+        if args.command in COMMANDS:
+            print(json.dumps(handle_replay_command(args), indent=2, sort_keys=True))
+            return 0
         lock = load_reproduction_lock(args.lock)
         if args.command == "verify-checkpoint":
             from autocontext.weight_evolution.patch_worker import verify_checkpoint

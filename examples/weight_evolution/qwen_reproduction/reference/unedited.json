@@ -1,0 +1,82 @@
+{
+ "olympiad": {
+  "acc": 0.013353115727002967,
+  "cut_share": 0.9870178041543026,
+  "mean_tokens": 32484.688427299705,
+  "problems": 674,
+  "complete": true,
+  "acc_lenient": 0.07010385756676558
+ },
+ "ifeval": {
+  "acc": 0.2097966728280961,
+  "cut_share": 0.7486136783733827,
+  "mean_tokens": 25296.210720887248,
+  "problems": 541,
+  "complete": true,
+  "acc_lenient": 0.2097966728280961
+ },
+ "gpqa": {
+  "acc": 0.22727272727272727,
+  "cut_share": 0.5946969696969697,
+  "mean_tokens": 23193.217171717173,
+  "problems": 198,
+  "complete": true,
+  "acc_lenient": 0.22727272727272727
+ },
+ "gsm8k": {
+  "acc": 0.13836239575435935,
+  "cut_share": 0.8749052312357847,
+  "mean_tokens": 29288.653904473085,
+  "problems": 1319,
+  "complete": true,
+  "acc_lenient": null
+ },
+ "mmlupro1k": {
+  "acc": 0.403,
+  "cut_share": 0.289,
+  "mean_tokens": 13705.696,
+  "problems": 1000,
+  "complete": true,
+  "acc_lenient": 0.403
+ },
+ "math500": {
+  "acc": 0.079,
+  "cut_share": 0.93,
+  "mean_tokens": 30868.4345,
+  "problems": 500,
+  "complete": true,
+  "acc_lenient": null
+ },
+ "aime25": {
+  "acc": 0.0,
+  "cut_share": 1.0,
+  "mean_tokens": 32768.0,
+  "problems": 30,
+  "complete": true,
+  "acc_lenient": 0.0020833333333333333
+ },
+ "amc23": {
+  "acc": 0.0046875,
+  "cut_share": 0.9953125,
+  "mean_tokens": 32679.809375,
+  "problems": 40,
+  "complete": true,
+  "acc_lenient": 0.0796875
+ },
+ "aime24": {
+  "acc": 0.0,
+  "cut_share": 1.0,
+  "mean_tokens": 32768.0,
+  "problems": 30,
+  "complete": true,
+  "acc_lenient": 0.0125
+ },
+ "minerva": {
+  "acc": 0.014705882352941176,
+  "cut_share": 0.9816176470588235,
+  "mean_tokens": 32301.77573529412,
+  "problems": 272,
+  "complete": true,
+  "acc_lenient": 0.0744485294117647
+ }
+}

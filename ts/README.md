@@ -7,7 +7,7 @@ Published installations must install the bundled security build before adding th
 
 Use the Python package when you need the full Python control plane or local MLX/CUDA training implementation. Use this package when you need Node, npm, the TUI, Fetch/agent adapters, or TypeScript library APIs.
 
-The experimental [Qwen reconstruction and inference runner](../examples/weight_evolution/qwen_reproduction/README.md)
+The experimental [Qwen reconstruction, evaluation and reproduction reports](../examples/weight_evolution/qwen_reproduction/README.md)
 currently live in Python; TypeScript parity is deferred.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable

@@ -5,6 +5,12 @@ boundaries. Milestone 2 reconstructs and independently verifies the base and
 published-patch text checkpoints, then provides a pinned Docker inference runner
 that records raw generation evidence. Python only; TypeScript parity is deferred.
 
+Milestone 3 adds [dataset pins](DATASETS.md), [official CPU scorer pins](SCORERS.md),
+and [bounded paired replay with saved-evidence reporting](REPLAY.md). Follow the
+replay guide after reconstructing the two checkpoints below.
+See [milestone 3 validation](MILESTONE3_VALIDATION.md) for real evaluator checks,
+frozen plan bounds and the remaining GPU reproduction work.
+
 Both real checkpoints were reconstructed and verified on CPU during development.
 The Docker execution path and GPU inference have not been exercised on NVIDIA
 hardware. No reproduction benchmark scores are claimed.
@@ -250,12 +256,13 @@ print(report.to_dict())
 ## Remaining reproduction work
 
 Run the pinned image on compatible NVIDIA hardware and inspect its runtime
-receipt before claiming inference readiness. Then pin dataset snapshots, splits,
-contamination checks and official scorer dependencies; add bounded cohort shards
-and aggregate evidence; and compare base-versus-patch behavior under the source
-protocol. The original runtime, editor driver, forward-pass service and some
-grading imports were not released. Fresh discovery and the planned comparison
-conditions remain subsequent milestones.
+receipt before claiming inference readiness. Dataset/scorer pins, bounded cohort
+shards and saved-evidence reporting are implemented in milestone 3; a real
+base-versus-patch GPU evaluation is still required. Original private dataset
+identity, scorer-wrapper behavior and runtime/hardware remain fidelity gaps.
+Practice/discovery snapshots and contamination audits remain later work. The
+original editor driver and forward-pass service were not released. Fresh
+discovery and the planned comparison conditions remain subsequent milestones.
 
 The original `reproduction.lock.json` remains unchanged so its identity and
 historical milestone-1 fidelity notes stay reproducible. Those notes are not a

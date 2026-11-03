@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
   A pinned Docker inference runner records complete raw samples with runtime and
   resource provenance, reusing shared isolation and deadline cleanup. GPU smoke
   tests are opt-in; official benchmark parity and TypeScript parity remain deferred.
+- Pinned MATH-500/GSM8K/IFEval snapshots and a separate hash-locked official CPU
+  scorer environment. Frozen base/patch plans enforce bounded cohorts and durable
+  dispatch claims; saved-evidence JSON/Markdown reports verify complete coverage
+  and record grouped accuracy, token costs, paired intervals and discrepancies
+  against final published aggregates. Actual GPU reproduction remains unvalidated.
 
 ### Fixed
 

@@ -139,6 +139,39 @@ def _inference_report(workspace: SimpleNamespace, lifecycle: SimpleNamespace) ->
     lifecycle.report.update(operation="infer", request_digest=request.digest, inference=result.to_dict())
 
 
+def test_worker_harness_fingerprint_matches_copied_bytes_and_changes_with_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = tmp_path / "source"
+    package.mkdir()
+    source = package / "trusted.py"
+    source.write_text("VALUE = 1\n")
+    monkeypatch.setattr(docker_runner, "_harness_sources", lambda: (package, [source]))
+    digest = docker_runner.worker_harness_digest()
+    assert docker_runner._copy_harness(tmp_path / "copy") == digest
+    assert (tmp_path / "copy" / "autocontext" / "trusted.py").read_bytes() == source.read_bytes()
+    source.write_text("VALUE = 2\n")
+    assert docker_runner.worker_harness_digest() != digest
+
+
+def test_changed_copied_worker_harness_rejects_before_container_creation(
+    workspace: SimpleNamespace, lifecycle: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(docker_runner, "_copy_harness", lambda destination: "e" * 64)
+    with pytest.raises(ValueError, match="worker source changed"):
+        docker_runner.WeightDockerRunner().run(expected_harness_digest="f" * 64, **_arguments(workspace))
+    lifecycle.created.assert_not_called()
+    assert not workspace.output.exists()
+
+
+def test_matching_worker_harness_is_recorded_in_published_receipt(
+    workspace: SimpleNamespace, lifecycle: SimpleNamespace,
+) -> None:
+    digest = docker_runner.worker_harness_digest()
+    receipt = docker_runner.WeightDockerRunner().run(expected_harness_digest=digest, **_arguments(workspace))
+    assert receipt["harness_digest"] == digest
+
+
 def test_inference_dry_run_binds_request_budget_and_explicit_device(workspace: SimpleNamespace) -> None:
     arguments = _arguments(workspace, infer=True)
     arguments.pop("output_dir")
