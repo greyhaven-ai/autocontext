@@ -16,7 +16,7 @@ from typing import Any
 
 from autocontext.util.file_lock import advisory_path_lock
 from autocontext.util.json_io import write_json
-from autocontext.weight_evolution.artifacts import load_small_json
+from autocontext.weight_evolution.artifacts import canonical_digest, load_small_json
 from autocontext.weight_evolution.cohort import ReplayPlan, validate_plan_datasets
 from autocontext.weight_evolution.datasets import VerifiedDataset
 from autocontext.weight_evolution.docker_runner import WeightDockerRunner, WeightWorkerLimits, worker_harness_digest
@@ -41,6 +41,7 @@ def run_replay(
     plan: ReplayPlan, *, datasets: tuple[VerifiedDataset, ...], lock_path: Path, runtime_path: Path,
     asset_root: Path, checkpoints: Mapping[str, Path], output_dir: Path, gpu_device: str,
     runner: WeightDockerRunner | None = None,
+    expected_execution: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute the exact frozen plan once, or reconcile already completed work."""
     from autocontext.weight_evolution.evaluation import read_shard_evidence
@@ -62,6 +63,22 @@ def run_replay(
     worker = runner or WeightDockerRunner(limits=limits)
     if worker.limits != limits:
         raise ValueError("worker resource limits differ from the frozen plan")
+    profile = dict(expected_execution) if expected_execution is not None else None
+    if profile is not None and (
+        set(profile) != {"harness_digest", "runtime_environment", "hardware"}
+        or profile["harness_digest"] != worker_harness_digest()
+        or not isinstance(profile["runtime_environment"], dict) or not profile["runtime_environment"]
+        or not isinstance(profile["hardware"], dict) or not profile["hardware"].get("device_uuid")
+    ):
+        raise ValueError("accepted execution profile is incomplete or the harness changed")
+
+    def check_execution(evidence: Any) -> None:
+        if profile is not None and (
+            evidence.harness_digest != profile["harness_digest"]
+            or evidence.result.runtime_environment != profile["runtime_environment"]
+            or evidence.result.hardware != profile["hardware"]
+        ):
+            raise ReplayIncompleteError("shard runtime or hardware differs from GPU acceptance; stopping dispatch")
     root = output_dir.absolute()
     if any(path.is_symlink() for path in (root, *root.parents)):
         raise ValueError("replay output must not traverse symlinks")
@@ -74,10 +91,18 @@ def run_replay(
                 raise ValueError("existing replay directory belongs to a different plan")
             if load_small_json(root / "harness.json", max_bytes=65536) != {"harness_digest": harness_digest}:
                 raise ReplayIncompleteError("worker source changed; resume requires the original replay harness")
+            profile_path = root / "accepted-execution.json"
+            if profile is not None:
+                if not profile_path.exists() or load_small_json(profile_path, max_bytes=65536) != profile:
+                    raise ReplayIncompleteError("accepted execution profile changed on resume")
+            elif profile_path.exists():
+                raise ReplayIncompleteError("cannot resume without the original accepted execution profile")
         else:
             root.mkdir()
             _immutable_json(root / "plan.json", plan.to_dict())
             _immutable_json(root / "harness.json", {"harness_digest": harness_digest})
+            if profile is not None:
+                _immutable_json(root / "accepted-execution.json", profile)
             for name in ("claims", "requests", "runs", "failures", "completed"):
                 (root / name).mkdir()
         for name in ("claims", "requests", "runs", "failures", "completed"):
@@ -102,6 +127,7 @@ def run_replay(
                 evidence = read_shard_evidence(plan, shard, run_path)
                 if evidence.harness_digest != harness_digest:
                     raise ReplayIncompleteError("completed result differs from the frozen replay harness")
+                check_execution(evidence)
                 completion = {"plan_digest": plan.digest, "shard_id": shard.shard_id,
                               "report_sha256": evidence.report_sha256,
                               "execution_receipt_sha256": evidence.execution_receipt_sha256}
@@ -138,6 +164,7 @@ def run_replay(
                 evidence = read_shard_evidence(plan, shard, run_path)
                 if evidence.harness_digest != harness_digest:
                     raise ReplayIncompleteError("worker result differs from the frozen replay harness")
+                check_execution(evidence)
                 _immutable_json(complete_path, {"plan_digest": plan.digest, "shard_id": shard.shard_id,
                                                "report_sha256": evidence.report_sha256,
                                                "execution_receipt_sha256": evidence.execution_receipt_sha256})
@@ -155,5 +182,7 @@ def run_replay(
                    "completed_shards": completed, "shard_count": len(completed),
                    "max_generated_tokens": plan.total_generated_tokens,
                    "reserved_worker_seconds": len(plan.shards) * plan.limits.shard_timeout_seconds}
+        if profile is not None:
+            receipt["accepted_execution_digest"] = canonical_digest(profile)
         write_json(root / "replay.receipt.json", receipt)
         return {**receipt, "dispatched_this_invocation": dispatched}

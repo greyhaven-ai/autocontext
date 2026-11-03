@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import time
+import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -112,11 +113,22 @@ class VllmBackend:
         if not torch.cuda.is_available():
             raise InferenceInfrastructureError("the pinned inference profile requires CUDA")
         device = torch.cuda.current_device()
+        properties = torch.cuda.get_device_properties(device)
+        # PyTorch exposes cudaDeviceProp.uuid as _CUuuid with 16 uint8 bytes.
+        # Record the CUDA-selected device, rather than trusting a host ordinal
+        # or environment variable that can be remapped by the container runtime.
+        raw_uuid = getattr(getattr(properties, "uuid", None), "bytes", None)
+        if not isinstance(raw_uuid, (list, tuple, bytes)) or len(raw_uuid) != 16 or any(
+            type(part) is not int or not 0 <= part <= 255 for part in raw_uuid
+        ) or not any(raw_uuid):
+            raise InferenceInfrastructureError("CUDA device lacks a valid observed UUID")
+        device_uuid = f"GPU-{uuid.UUID(bytes=bytes(raw_uuid))}"
         return {
             "accelerator": "cuda",
+            "device_uuid": device_uuid,
             "device_name": str(torch.cuda.get_device_name(device)),
             "device_capability": ".".join(str(part) for part in torch.cuda.get_device_capability(device)),
-            "device_total_memory_bytes": str(torch.cuda.get_device_properties(device).total_memory),
+            "device_total_memory_bytes": str(properties.total_memory),
             "cuda_runtime": str(torch.version.cuda),
             "tensor_parallel_size": "1",
             "gpu_memory_utilization": "0.85",

@@ -15,8 +15,12 @@ a resource plan by default; `--execute` runs the pinned isolated worker.
 `plan-replay` freezes dataset/scorer/checkpoint identities and finite shard budgets;
 `run-replay` requires `--execute` and refuses ambiguous retries. `report-replay`
 uses pinned official CPU scorers on complete saved evidence. See the
-[replay guide](../../examples/weight_evolution/qwen_reproduction/REPLAY.md). These
-research operations do not activate checkpoints or add production CLI/MCP tools.
+[replay guide](../../examples/weight_evolution/qwen_reproduction/REPLAY.md).
+The [GPU workflow](../../examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md)
+adds read-only `check-gpu`, live `accept-gpu`, and acceptance-gated
+`run-reproduction`. Both execution operations default to dry inspection and
+require `--execute`. These research operations do not activate checkpoints or
+add production CLI/MCP tools.
 
 ## Context mutation safety
 

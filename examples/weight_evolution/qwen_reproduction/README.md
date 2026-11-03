@@ -11,6 +11,11 @@ replay guide after reconstructing the two checkpoints below.
 See [milestone 3 validation](MILESTONE3_VALIDATION.md) for real evaluator checks,
 frozen plan bounds and the remaining GPU reproduction work.
 
+Milestone 4 adds [GPU readiness, acceptance and the gated full-study workflow](GPU_ACCEPTANCE.md).
+`check-gpu` is read-only; `accept-gpu` and `run-reproduction` require `--execute`
+to start workers. CPU implementation does not require a GPU. See
+[milestone 4 validation](MILESTONE4_VALIDATION.md) for checks and live-run status.
+
 Both real checkpoints were reconstructed and verified on CPU during development.
 The Docker execution path and GPU inference have not been exercised on NVIDIA
 hardware. No reproduction benchmark scores are claimed.
@@ -255,8 +260,8 @@ print(report.to_dict())
 
 ## Remaining reproduction work
 
-Run the pinned image on compatible NVIDIA hardware and inspect its runtime
-receipt before claiming inference readiness. Dataset/scorer pins, bounded cohort
+Run the [GPU acceptance workflow](GPU_ACCEPTANCE.md) on compatible NVIDIA hardware
+before claiming inference readiness. Dataset/scorer pins, bounded cohort
 shards and saved-evidence reporting are implemented in milestone 3; a real
 base-versus-patch GPU evaluation is still required. Original private dataset
 identity, scorer-wrapper behavior and runtime/hardware remain fidelity gaps.

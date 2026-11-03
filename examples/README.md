@@ -28,6 +28,7 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want correctness-first recursive GPU-kernel search? Start with the kernel evolution MVP.
 - Want to reconstruct the published Qwen weight edit and compare its behavior with a pinned evaluation?
   Use the Python [bounded replay and reproduction-report example](weight_evolution/qwen_reproduction/README.md).
+  For live execution, follow its [GPU acceptance workflow](weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md).
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

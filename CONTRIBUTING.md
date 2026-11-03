@@ -58,6 +58,9 @@ opt-in Linux/NVIDIA Docker smoke test, documented in the example. The separate
 hash-locked CPU scorer environment has explicit optional integrations; normal CI
 uses synthetic cohorts and injected checkers. Reproduction reports must reject
 missing/duplicate shards and label fixture/smoke evidence explicitly.
+The [GPU acceptance workflow](examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md)
+has offline orchestration tests as well. Keep real NVIDIA execution explicit;
+synthetic CUDA envelopes must never be reported as live acceptance results.
 
 TypeScript:
 

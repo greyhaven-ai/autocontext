@@ -11,6 +11,7 @@ import pytest
 from test_weight_cohort import EXAMPLE, replay_context
 
 from autocontext.weight_evolution import evaluation, replay
+from autocontext.weight_evolution.artifacts import canonical_digest
 from autocontext.weight_evolution.docker_runner import WeightDockerRunner, WeightWorkerLimits
 
 
@@ -267,3 +268,94 @@ def test_resumed_internal_symlink_directory_is_rejected(workspace: SimpleNamespa
         run(workspace)
     assert workspace.worker.calls == calls
     assert list(target.iterdir()) == []
+
+
+def _accepted_execution(workspace: SimpleNamespace) -> dict[str, Any]:
+    profile = {"harness_digest": "9" * 64, "runtime_environment": {"python_version": "3.12.1"},
+               "hardware": {"accelerator": "cuda", "device_uuid": "GPU-01234567-89ab-cdef-0123-456789abcdef"}}
+    reader = workspace.evidence_reader.side_effect
+
+    def with_observations(plan: Any, shard: Any, directory: Path) -> SimpleNamespace:
+        evidence = reader(plan, shard, directory)
+        evidence.result = SimpleNamespace(runtime_environment=dict(profile["runtime_environment"]),
+                                           hardware=dict(profile["hardware"]))
+        return evidence
+
+    workspace.evidence_reader.side_effect = with_observations
+    workspace.options["expected_execution"] = profile
+    return profile
+
+
+def test_accepted_profile_persists_and_checks_every_shard_including_resume(workspace: SimpleNamespace) -> None:
+    profile = _accepted_execution(workspace)
+    first = run(workspace)
+    assert first["accepted_execution_digest"] == canonical_digest(profile)
+    assert json.loads((workspace.output / "accepted-execution.json").read_bytes()) == profile
+    count = len(workspace.context.plan.shards)
+    assert workspace.evidence_reader.call_count == count
+    assert len(workspace.worker.calls) == count
+    second = run(workspace)
+    assert second["dispatched_this_invocation"] == 0
+    assert second["accepted_execution_digest"] == first["accepted_execution_digest"]
+    assert workspace.evidence_reader.call_count == count * 2
+    assert len(workspace.worker.calls) == count
+
+
+@pytest.mark.parametrize("field", ["runtime_environment", "hardware"])
+def test_execution_drift_stops_before_next_shard_and_preserves_claim(workspace: SimpleNamespace, field: str) -> None:
+    _accepted_execution(workspace)
+    reader = workspace.evidence_reader.side_effect
+
+    def changed(plan: Any, shard: Any, directory: Path) -> SimpleNamespace:
+        evidence = reader(plan, shard, directory)
+        if shard.shard_id == workspace.context.plan.shards[1].shard_id:
+            setattr(evidence.result, field, {"changed": "observation"})
+        return evidence
+
+    workspace.evidence_reader.side_effect = changed
+    with pytest.raises(replay.ReplayIncompleteError, match="differs from GPU acceptance"):
+        run(workspace)
+    first, second = [shard.shard_id for shard in workspace.context.plan.shards[:2]]
+    assert workspace.worker.calls == [first, second]
+    assert (workspace.output / "completed" / f"{first}.json").exists()
+    assert not (workspace.output / "completed" / f"{second}.json").exists()
+    assert (workspace.output / "claims" / f"{second}.json").exists()
+    failure = json.loads((workspace.output / "failures" / f"{second}.json").read_bytes())
+    assert failure["automatic_retry_permitted"] is False
+    with pytest.raises(replay.ReplayIncompleteError, match="differs from GPU acceptance"):
+        run(workspace)
+    assert workspace.worker.calls == [first, second]
+
+
+@pytest.mark.parametrize("change", ["omit", "hardware", "runtime", "saved_profile"])
+def test_accepted_profile_cannot_be_downgraded_or_changed_on_resume(workspace: SimpleNamespace, change: str) -> None:
+    profile = _accepted_execution(workspace)
+    run(workspace)
+    calls = list(workspace.worker.calls)
+    if change == "omit":
+        workspace.options.pop("expected_execution")
+    elif change == "saved_profile":
+        (workspace.output / "accepted-execution.json").write_text("{}")
+    else:
+        field = "hardware" if change == "hardware" else "runtime_environment"
+        workspace.options["expected_execution"] = {**profile, field: {**profile[field], "changed": "value"}}
+    with pytest.raises(replay.ReplayIncompleteError, match="accepted execution profile"):
+        run(workspace)
+    assert workspace.worker.calls == calls
+
+
+@pytest.mark.parametrize("change", ["harness", "empty_runtime", "missing_uuid", "extra_field"])
+def test_incomplete_accepted_profile_rejects_before_any_dispatch(workspace: SimpleNamespace, change: str) -> None:
+    profile = _accepted_execution(workspace)
+    if change == "harness":
+        profile["harness_digest"] = "8" * 64
+    elif change == "empty_runtime":
+        profile["runtime_environment"] = {}
+    elif change == "missing_uuid":
+        profile["hardware"] = {"accelerator": "cuda"}
+    else:
+        profile["extra"] = True
+    with pytest.raises(ValueError, match="accepted execution profile"):
+        run(workspace)
+    assert workspace.worker.calls == []
+    assert not workspace.output.exists()
