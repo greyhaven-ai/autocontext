@@ -13,6 +13,7 @@ from autocontext.config.settings import AppSettings
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
 from autocontext.offline import require_online, require_runtime_available
+from autocontext.providers.anthropic import _claude_request_controls
 from autocontext.providers.base import ProviderError
 from autocontext.providers.mlx_provider import MLXProvider  # type: ignore[import-untyped]
 from autocontext.providers.retry import _is_transient
@@ -85,7 +86,7 @@ class AnthropicClient(LanguageModelClient):
         response = self._messages_create_with_retry(
             model=model,
             max_tokens=max_tokens,
-            temperature=temperature,
+            **_claude_request_controls(model, temperature),
             messages=[{"role": "user", "content": prompt}],
         )
         elapsed = int((time.perf_counter() - started) * 1000)
@@ -118,7 +119,7 @@ class AnthropicClient(LanguageModelClient):
         response = self._messages_create_with_retry(
             model=model,
             max_tokens=max_tokens,
-            temperature=temperature,
+            **_claude_request_controls(model, temperature),
             system=system,
             messages=messages,  # type: ignore[arg-type]
         )

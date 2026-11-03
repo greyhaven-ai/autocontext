@@ -7,6 +7,8 @@ filesystem backend), HfBucketStore (mocked), BlobRegistry, and factory.
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -185,6 +187,8 @@ class TestLocalBlobStore:
 class TestHfBucketStore:
     @staticmethod
     def _fake_hf(remote: dict[str, bytes]):
+        from autocontext.blobstore.hf_bucket import _HfEntryNotFoundError
+
         def runner(cmd: list[str]) -> str:
             if cmd[1] == "upload":
                 local_path = Path(cmd[3])
@@ -195,9 +199,11 @@ class TestHfBucketStore:
                 key = cmd[3]
                 local_dir = Path(cmd[cmd.index("--local-dir") + 1])
                 if key not in remote:
-                    raise RuntimeError("missing remote key")
-                local_dir.mkdir(parents=True, exist_ok=True)
-                (local_dir / Path(key).name).write_bytes(remote[key])
+                    raise _HfEntryNotFoundError("missing remote key")
+                # The real CLI preserves the repository directory structure.
+                local_path = local_dir / key
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                local_path.write_bytes(remote[key])
                 return ""
             if cmd[1:3] == ["repo-files", "delete"]:
                 key = cmd[4]
@@ -268,6 +274,160 @@ class TestHfBucketStore:
                 assert second.delete("nested/remote.txt") is True
                 assert second.head("nested/remote.txt") is None
                 assert second.list_prefix("nested/") == []
+
+    def test_get_downloads_nested_key_into_cache_root(self, tmp_path: Path) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote = {"nested/remote.txt": b"remote data"}
+        store = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path)
+        with patch.object(store, "_run_hf_command", side_effect=self._fake_hf(remote)):
+            assert store.get("nested/remote.txt") == b"remote data"
+        assert (tmp_path / "nested/remote.txt").read_bytes() == b"remote data"
+
+    @pytest.mark.parametrize("failed_key", [".autocontext/blob_index.json", "runs/run_001/compactions.jsonl"])
+    @pytest.mark.parametrize("cached", [False, True])
+    def test_append_does_not_replace_existing_blob_when_remote_read_fails(
+        self, tmp_path: Path, failed_key: str, cached: bool
+    ) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        key = "runs/run_001/compactions.jsonl"
+        writer = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path / "writer")
+        reader = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path / "reader")
+        runner = self._fake_hf(remote)
+        with patch.object(writer, "_run_hf_command", side_effect=runner):
+            writer.put(key, b"existing entry\n")
+        if cached:
+            with patch.object(reader, "_run_hf_command", side_effect=runner):
+                assert reader.get(key) == b"existing entry\n"
+        before = dict(remote)
+
+        def fail_download(cmd: list[str]) -> str:
+            if cmd[1] == "download" and cmd[3] == failed_key:
+                raise RuntimeError("temporary remote read failure")
+            return runner(cmd)
+
+        with patch.object(reader, "_run_hf_command", side_effect=fail_download) as command:
+            with pytest.raises(RuntimeError, match="temporary remote read failure"):
+                reader.append(key, b"new entry\n")
+            assert all(call.args[0][1] != "upload" for call in command.call_args_list)
+        assert remote == before
+
+    @pytest.mark.parametrize("seed_index", [False, True])
+    def test_append_creates_missing_key_in_new_or_initialized_repository(
+        self, tmp_path: Path, seed_index: bool
+    ) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        store = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path)
+        with patch.object(store, "_run_hf_command", side_effect=self._fake_hf(remote)):
+            if seed_index:
+                store.put("runs/seed.jsonl", b"seed\n")
+            digest = store.append("runs/new.jsonl", b"new entry\n")
+            store.append("runs/new.jsonl", b"second entry\n")
+        assert remote["runs/new.jsonl"] == b"new entry\nsecond entry\n"
+        assert digest == "sha256:" + hashlib.sha256(b"new entry\n").hexdigest()
+        index = json.loads(remote[".autocontext/blob_index.json"])
+        if seed_index:
+            assert "runs/seed.jsonl" in index
+        assert index["runs/new.jsonl"]["size_bytes"] == len(remote["runs/new.jsonl"])
+
+    def test_append_refreshes_stale_cache_and_preserves_other_index_entries(self, tmp_path: Path) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        first = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path / "first")
+        second = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path / "second")
+        runner = self._fake_hf(remote)
+        with patch.object(first, "_run_hf_command", side_effect=runner):
+            first.put("nested/ledger.jsonl", b"first\n")
+        with patch.object(second, "_run_hf_command", side_effect=runner):
+            second.append("nested/ledger.jsonl", b"second\n")
+            second.put("other.txt", b"other data")
+        with patch.object(first, "_run_hf_command", side_effect=runner):
+            first.append("nested/ledger.jsonl", b"third\n")
+        assert remote["nested/ledger.jsonl"] == b"first\nsecond\nthird\n"
+        assert "other.txt" in json.loads(remote[".autocontext/blob_index.json"])
+
+    @pytest.mark.parametrize("index_present", [False, True])
+    def test_append_preserves_unindexed_blob(self, tmp_path: Path, index_present: bool) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote = {"nested/ledger.jsonl": b"original\n"}
+        if index_present:
+            remote[".autocontext/blob_index.json"] = b"{}"
+        store = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path)
+        with patch.object(store, "_run_hf_command", side_effect=self._fake_hf(remote)):
+            store.append("nested/ledger.jsonl", b"new\n")
+        assert remote["nested/ledger.jsonl"] == b"original\nnew\n"
+
+    @pytest.mark.parametrize("corruption", ["invalid_json", "invalid_index", "missing_blob", "wrong_digest"])
+    def test_append_rejects_corrupt_remote_state_without_upload(self, tmp_path: Path, corruption: str) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        store = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path)
+        runner = self._fake_hf(remote)
+        with patch.object(store, "_run_hf_command", side_effect=runner):
+            store.put("nested/ledger.jsonl", b"original\n")
+        if corruption == "invalid_json":
+            remote[".autocontext/blob_index.json"] = b"{"
+        elif corruption == "invalid_index":
+            remote[".autocontext/blob_index.json"] = b'{"nested/ledger.jsonl": null}'
+        elif corruption == "missing_blob":
+            del remote["nested/ledger.jsonl"]
+        else:
+            remote["nested/ledger.jsonl"] = b"truncated"
+        before = dict(remote)
+        with patch.object(store, "_run_hf_command", side_effect=runner) as command:
+            with pytest.raises(RuntimeError):
+                store.append("nested/ledger.jsonl", b"new\n")
+            assert all(call.args[0][1] != "upload" for call in command.call_args_list)
+        assert remote == before
+
+    @pytest.mark.parametrize("missing_key", [".autocontext/blob_index.json", "nested/ledger.jsonl"])
+    def test_append_rejects_successful_download_without_file(self, tmp_path: Path, missing_key: str) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        store = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path)
+        runner = self._fake_hf(remote)
+
+        def no_output(cmd: list[str]) -> str:
+            if cmd[1] == "download" and cmd[3] == missing_key:
+                return ""
+            return runner(cmd)
+
+        with patch.object(store, "_run_hf_command", side_effect=no_output) as command:
+            with pytest.raises(RuntimeError, match="without producing"):
+                store.append("nested/ledger.jsonl", b"new\n")
+            assert all(call.args[0][1] != "upload" for call in command.call_args_list)
+        assert remote == {}
+
+    @pytest.mark.parametrize(
+        ("stderr", "missing"),
+        [
+            ("huggingface_hub.errors.EntryNotFoundError: 404 Client Error", True),
+            ("huggingface_hub.utils._errors.EntryNotFoundError: 404 Client Error", True),
+            ("huggingface_hub.errors.RemoteEntryNotFoundError: 404 Client Error", True),
+            ("huggingface_hub.errors.RepositoryNotFoundError: 404 Client Error", False),
+            ("huggingface_hub.errors.GatedRepoError: 403 Client Error", False),
+            ("HTTP 404 Not Found", False),
+            ("huggingface_hub.errors.EntryNotFoundError: missing\nRuntimeError: later failure", False),
+            ("huggingface_hub.errors.EntryNotFoundError: missing\nSystemExit: later failure", False),
+        ],
+    )
+    def test_download_only_classifies_explicit_missing_entry(self, tmp_path: Path, stderr: str, missing: bool) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore, _HfEntryNotFoundError
+
+        store = HfBucketStore(repo_id="org/repo", cache_dir=tmp_path)
+        result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=stderr)
+        with patch("autocontext.blobstore.hf_bucket.subprocess.run", return_value=result):
+            with pytest.raises(RuntimeError) as raised:
+                store._run_hf_command(["huggingface-cli", "download", "org/repo", "file.txt"])
+        assert isinstance(raised.value, _HfEntryNotFoundError) is missing
 
 
 # ---------------------------------------------------------------------------
