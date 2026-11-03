@@ -9,9 +9,10 @@ For the canonical user-facing and runtime vocabulary behind those surfaces, see 
 
 For experimental weight-space research, use the Python
 [Qwen reproduction example](../../examples/weight_evolution/qwen_reproduction/README.md).
-Its `validate-lock` and `verify-assets` operations are offline; `fetch-assets`
-explicitly downloads verified data. These example operations do not execute
-models, activate checkpoints, or add CLI/MCP tools.
+Its `validate-lock`, `verify-assets` and `verify-checkpoint` operations are offline;
+`fetch-assets` explicitly downloads verified data. `reconstruct` and `infer` print
+a resource plan by default; `--execute` runs the pinned isolated worker. These
+research operations do not activate checkpoints or add production CLI/MCP tools.
 
 ## Context mutation safety
 

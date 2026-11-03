@@ -8,8 +8,12 @@ All notable changes to this project will be documented in this file.
 
 - Experimental Python Qwen weight-space reproduction contract: immutable source
   and model revisions, SHA-256 asset verification, explicit bounded downloads,
-  and offline math/strict-IFEval scorer fixtures. Model execution, official
-  benchmark parity and TypeScript parity are deferred.
+  and offline math/strict-IFEval scorer fixtures.
+- Qwen patch replay with exact BF16 reconstruction, independent verification of
+  every retained tensor and pinned loader file, and base/edited checkpoint receipts.
+  A pinned Docker inference runner records complete raw samples with runtime and
+  resource provenance, reusing shared isolation and deadline cleanup. GPU smoke
+  tests are opt-in; official benchmark parity and TypeScript parity remain deferred.
 
 ### Fixed
 

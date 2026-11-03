@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "variant": "published_patch",
+  "dataset": "math500",
+  "dataset_sha256": "8df9ac3f7c9e5569ff5298b24253e88fa4088394f6734b894b0a8594f665d1f2",
+  "problems": [
+    {
+      "problem_id": "synthetic/addition-1",
+      "text": "What is 17 + 25?"
+    }
+  ],
+  "mode": "smoke",
+  "smoke_max_new_tokens": 64
+}

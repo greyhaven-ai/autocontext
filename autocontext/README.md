@@ -8,7 +8,7 @@ This package is the Python control plane for autocontext: scenario runs, `solve`
 Use it when you want the full harness in Python, a CLI installed with `uv`/`pip`, or the MCP/HTTP server that coding agents can call.
 
 The experimental [Qwen weight-space reproduction](../examples/weight_evolution/qwen_reproduction/README.md)
-adds pinned asset contracts and offline scorer fixtures. It does not yet run or edit models.
+adds pinned asset contracts, exact checkpoint reconstruction, offline scorer fixtures, and a pinned Docker inference runner for development replay.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,

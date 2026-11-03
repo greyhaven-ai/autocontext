@@ -53,6 +53,7 @@ def build_docker_isolation_command(
     working_dir: str | None = None,
     ulimits: Mapping[str, tuple[int, int]] | None = None,
     environment: Mapping[str, str] | None = None,
+    entrypoint: str | None = None,
 ) -> list[str]:
     """Build one shell-free, deny-network, least-privilege Docker invocation."""
 
@@ -72,6 +73,10 @@ def build_docker_isolation_command(
         command.append("--rm")
     if interactive:
         command.append("--interactive")
+    if entrypoint is not None:
+        if not entrypoint.startswith("/") or re.fullmatch(r"/[A-Za-z0-9_./-]+", entrypoint) is None:
+            raise ValueError("Docker entrypoint must be an absolute executable path")
+        command.extend(("--entrypoint", entrypoint))
     command.extend(("--name", container_name, "--log-driver", "none"))
     for name, value in sorted(labels.items()):
         if not name.strip() or any(char in f"{name}{value}" for char in "\r\n\0"):

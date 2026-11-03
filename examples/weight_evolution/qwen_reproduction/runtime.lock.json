@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "image": "vllm/vllm-openai:v0.32.0@sha256:6ee133356d49ed24cee03dd0cda3d3980279a11c107ce3e752c89e76540f41c9",
+  "platform": "linux/amd64",
+  "python_version": "3.12",
+  "packages": [{"name": "vllm", "version": "0.32.0"}],
+  "fidelity_notes": [
+    "The immutable linux/amd64 image pins the complete environment; worker receipts record exact installed versions of Python, torch, transformers, numpy, safetensors, tokenizers and pydantic.",
+    "Image metadata was verified from Docker Hub; this image has not been executed on NVIDIA hardware as part of milestone 2.",
+    "The original experiment did not release a runtime lock. This is a declared reproduction environment, not a claim of identical upstream hardware or sampled outputs.",
+    "Image CUDA version is 13.0.2. The GPU host must provide a compatible NVIDIA driver and NVIDIA Container Toolkit."
+  ]
+}

@@ -1,4 +1,4 @@
-"""Crash-independent host watchdog for Docker kernel worker deadlines."""
+"""Crash-independent host watchdog for Docker worker deadlines."""
 
 from __future__ import annotations
 
@@ -206,20 +206,27 @@ def launch_deadline_watchdog(
     container_name: str,
     expires_at: float,
     ready_path: Path,
+    *,
+    owner_label: str = DOCKER_KERNEL_OWNER_LABEL,
 ) -> subprocess.Popen[bytes]:
     """Start a detached helper and wait until it owns the deadline."""
 
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", owner_label) is None:
+        raise ValueError("Docker watchdog owner label must be a safe label key")
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--docker-deadline-watchdog",
+        docker_binary,
+        container_name,
+        f"{expires_at:.9f}",
+        str(ready_path),
+        str(os.getpid()),
+    ]
+    if owner_label != DOCKER_KERNEL_OWNER_LABEL:
+        command.append(owner_label)
     watchdog = subprocess.Popen(  # noqa: S603
-        [
-            sys.executable,
-            str(Path(__file__).resolve()),
-            "--docker-deadline-watchdog",
-            docker_binary,
-            container_name,
-            f"{expires_at:.9f}",
-            str(ready_path),
-            str(os.getpid()),
-        ],
+        command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -244,6 +251,8 @@ def run_deadline_watchdog(
     expires_at: float,
     ready_path: Path,
     coordinator_pid: int | None = None,
+    *,
+    owner_label: str = DOCKER_KERNEL_OWNER_LABEL,
 ) -> int:
     """Remove the owned container at its deadline or when its coordinator dies."""
 
@@ -255,6 +264,7 @@ def run_deadline_watchdog(
         or not math.isfinite(expires_at)
         or expires_at <= 0
         or (coordinator_pid is not None and coordinator_pid < 2)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", owner_label) is None
     ):
         return 2
     try:
@@ -266,7 +276,7 @@ def run_deadline_watchdog(
         time.sleep(min(_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
 
     env = sanitized_docker_environment()
-    filter_value = f"label={DOCKER_KERNEL_OWNER_LABEL}={container_name}"
+    filter_value = f"label={owner_label}={container_name}"
     # The container exists before this watchdog is launched. Keep ownership
     # until removal is verified, including across a temporary daemon outage;
     # a fixed retry window could otherwise abandon live GPU work.
@@ -298,14 +308,15 @@ def run_deadline_watchdog(
 
 
 def _entrypoint(argv: Sequence[str]) -> int:
-    if len(argv) != 7 or argv[1] != "--docker-deadline-watchdog":
+    if len(argv) not in (7, 8) or argv[1] != "--docker-deadline-watchdog":
         return 2
     try:
         expires_at = float(argv[4])
         coordinator_pid = int(argv[6])
     except ValueError:
         return 2
-    return run_deadline_watchdog(argv[2], argv[3], expires_at, Path(argv[5]), coordinator_pid)
+    owner_label = argv[7] if len(argv) == 8 else DOCKER_KERNEL_OWNER_LABEL
+    return run_deadline_watchdog(argv[2], argv[3], expires_at, Path(argv[5]), coordinator_pid, owner_label=owner_label)
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised as a detached host helper

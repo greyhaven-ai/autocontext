@@ -24,7 +24,7 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 **Docs:** [autocontext.ai/docs](https://autocontext.ai/docs) · [quickstart](https://autocontext.ai/docs/get-started/quickstart) · [CLI reference](https://autocontext.ai/docs/cli/reference) · [changelog](https://autocontext.ai/docs/changelog)
 
 Experimental Python research: the [Qwen weight-space reproduction](examples/weight_evolution/qwen_reproduction/README.md)
-pins source/model assets and provides offline verification/scorer fixtures; model execution is a later milestone.
+pins source/model assets, reconstructs and verifies the published checkpoint, and provides an opt-in pinned Docker inference runner.
 
 ## Install
 
