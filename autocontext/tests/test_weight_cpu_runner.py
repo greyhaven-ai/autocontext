@@ -14,7 +14,7 @@ from autocontext.weight_evolution import cpu_runner
 from autocontext.weight_evolution.artifacts import TensorInfo, canonical_digest, file_identity, write_tensor_file
 from autocontext.weight_evolution.cpu_models import CpuInferenceRequest, CpuModelContract
 from autocontext.weight_evolution.cpu_runner import CpuRunnerError, run_cpu_batch, runtime_identity
-from autocontext.weight_evolution.cpu_worker import _audit_guard
+from autocontext.weight_evolution.cpu_worker import MAX_PROC_STATUS_BYTES, _audit_guard, _linux_peak_rss
 
 
 @pytest.fixture
@@ -55,8 +55,55 @@ def test_real_cpu_worker_and_semantic_digest(input_case: tuple[CpuInferenceReque
     assert first.runtime_digest == canonical_digest(runtime_identity())
 
 
+@pytest.mark.parametrize("raw", [b"Name:\tpython\n", b"VmHWM:\t10 MB\n", b"VmHWM:\t-1 kB\n",
+                                  b"VmHWM:\t1.5 kB\n", b"VmHWM:\t0 kB\n", b"VmHWM:\t1 kB trailing\n",
+                                  b"VmHWM:\t1 kB\nVmHWM:\t2 kB\n",
+                                  b"VmHWM:\t999999999999999999999 kB\n", b"x" * (MAX_PROC_STATUS_BYTES + 1)])
+def test_linux_peak_rss_rejects_unusable_status(tmp_path: Path, raw: bytes) -> None:
+    status = tmp_path / "status"
+    status.write_bytes(raw)
+    with pytest.raises(ValueError, match="memory status|peak RSS"):
+        _linux_peak_rss(status)
+
+
+def test_linux_peak_rss_preserves_actual_high_water_and_missing_status_fails(tmp_path: Path) -> None:
+    status = tmp_path / "status"
+    with pytest.raises(FileNotFoundError):
+        _linux_peak_rss(status)
+    status.write_bytes(b"Name:\tpython\nVmHWM:\t700000 kB\nVmRSS:\t1000 kB\n")
+    assert _linux_peak_rss(status) == 700000 * 1024
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux preserves pre-exec getrusage RSS")
+def test_large_parent_rss_does_not_reject_small_exec_worker(input_case: tuple[CpuInferenceRequest, Path]) -> None:
+    request, checkpoint = input_case
+    request = request.model_copy(update={"limits": request.limits.model_copy(update={"memory_mb": 256})})
+    source = str(Path(cpu_runner.__file__).resolve().parents[2])
+    # Retain more resident memory than the worker's cap in a separate launcher;
+    # exec drops those mappings but Linux getrusage retains their high-water.
+    script = f"""
+import json, resource, sys
+sys.path.insert(0, {source!r})
+from pathlib import Path
+from autocontext.weight_evolution.cpu_models import CpuInferenceRequest
+from autocontext.weight_evolution.cpu_runner import run_cpu_batch
+pressure = bytearray(300 * 1024 * 1024)
+pressure[::4096] = b'x' * (len(pressure) // 4096)
+request = CpuInferenceRequest.model_validate_json({json.dumps(request.to_dict())!r})
+receipt = run_cpu_batch((request,), checkpoint_path=Path({str(checkpoint)!r}))
+assert resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024 > receipt.telemetry.memory_limit_bytes
+assert receipt.telemetry.peak_rss_bytes < receipt.telemetry.memory_limit_bytes
+assert receipt.telemetry.address_space_limit_bytes == 256 * 1024 * 1024
+assert receipt.results[0].text == 'yes'
+print('post-exec worker peak accepted')
+"""
+    raw, error, _, code, _ = cpu_runner._run_bounded([sys.executable, "-I", "-c", script], b"", wall_seconds=15.0)
+    assert code == 0, error.decode()
+    assert raw.strip() == b"post-exec worker peak accepted"
+
+
 @pytest.mark.parametrize("mutation", ["batch", "request", "checkpoint", "runtime", "count", "token", "text",
-                                      "choice", "memory", "bool"])
+                                      "choice", "memory", "rss", "bool"])
 def test_tampered_worker_responses_rejected(input_case: tuple[CpuInferenceRequest, Path], mutation: str) -> None:
     request, checkpoint = input_case
     good = run_cpu_batch((request,), checkpoint_path=checkpoint)
@@ -78,6 +125,8 @@ def test_tampered_worker_responses_rejected(input_case: tuple[CpuInferenceReques
         value["results"][0]["text"] = "no"
     elif mutation == "memory":
         value["telemetry"]["memory_limit_bytes"] += 1
+    elif mutation == "rss":
+        value["telemetry"]["peak_rss_bytes"] = value["telemetry"]["memory_limit_bytes"] + 1
     else:
         value["model_execution_performed"] = 1
     with pytest.raises(CpuRunnerError, match="response|result|resource|count"):

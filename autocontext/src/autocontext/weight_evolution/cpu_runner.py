@@ -98,6 +98,7 @@ def runtime_identity() -> dict[str, Any]:
 
 def resource_policy() -> dict[str, Any]:
     return {"memory_enforcement": "hard_address_space" if sys.platform == "linux" else "monitored_rss",
+            "peak_rss_source": "proc-self-status-VmHWM" if sys.platform == "linux" else "getrusage-self-bytes",
             "rss_poll_interval_seconds": 0.0 if sys.platform == "linux" else RSS_POLL_SECONDS,
             "rss_sampling_may_overshoot": sys.platform != "linux", "cpu_limit": "rlimit_cpu",
             "wall_limit": "parent_monotonic", "scope": "trusted_fixed_model_only"}

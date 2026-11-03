@@ -58,14 +58,27 @@ caps. The bundle reserves at most 100 forward passes, 512 input tokens and
 The worker has a 512 MiB memory policy. Linux uses `RLIMIT_AS`; this macOS run
 used monitored RSS at 10 ms intervals with explicitly recorded possible sampling
 overshoot. It did not establish a hard address-space limit on macOS. The observed
-maximum worker RSS was 39,960,576 bytes; summed worker elapsed time was about
-1.89 seconds for the first 19-batch run. These are local measurements, not a
+maximum worker RSS was 40,009,728 bytes; summed worker elapsed time was about
+1.93 seconds for the first 19-batch run. These are local measurements, not a
 performance comparison.
+
+Linux peak RSS uses the current worker address space's `/proc/self/status`
+`VmHWM`. CI exposed that `getrusage` retains the parent process's high-water
+mark across exec: all 12 failing worker responses reported 645,181,440 bytes
+despite a successful small worker under a 512 MiB address-space cap. The fix
+pins the measurement source, rejects missing/malformed/oversized status data,
+and retains rejection of receipts reporting peak RSS above the memory limit.
+The regression launches a 256 MiB worker from a parent holding 300 MiB.
+A local, network-disabled Linux container probe reproduced an inherited
+`getrusage` peak of 327,716,864 bytes and a post-exec `VmHWM` of 14,446,592
+bytes while both `RLIMIT_AS` bounds remained 268,435,456 bytes. That probe
+validated Linux measurement and limit installation, not the full model suite
+or allocation-pressure rejection by the kernel.
 
 The worker blocks network, child-process, and external model-backend operations.
 This is still trusted fixed code with resource controls, not an arbitrary-code
-sandbox. Linux hard-address-space enforcement is implemented but has not been
-executed on this Mac; it needs Linux CI validation. Windows execution is rejected.
+sandbox. Windows execution is rejected. Limit-triggered Linux memory/CPU
+failure and cleanup checks remain follow-up validation.
 
 Durable reservations precede dispatch. An incomplete claim remains charged and
 cannot silently retry. Resume validates an ordered claim/result prefix before
@@ -97,18 +110,18 @@ uv sync --locked --group dev
 git diff --check
 ```
 
-The focused milestone suite passed **157 tests**: 96 model/contract tests,
-31 runner/worker tests, and 30 study tests. Ruff passed; mypy passed for 997
-source files and two example files. The full repository and TypeScript runtime
-suites were not rerun for this Python-only milestone.
+The focused milestone suite passed **168 tests**, with one Linux-only skip:
+96 model/contract tests, 42 runner/worker tests, and 30 study tests. Ruff passed;
+mypy passed for 997 source files and two example files. The full repository and
+TypeScript runtime suites were not rerun locally for this Python-only milestone.
 
-The broader selected regression suite above passed **1,647 tests**, with
-**7 skipped**, in 183.50 seconds. It covers all weight-evolution tests, dictionary
+The broader selected regression suite above passed **1,658 tests**, with
+**8 skipped**, in 188.99 seconds. It covers all weight-evolution tests, dictionary
 annotation conventions, Docker watchdog/worker ownership, protected kernel
 authority, kernel generation/benchmark contracts, and statistical confirmation.
 The skips require explicit official scorer assets/environment (2), real
-Docker/MIG (1), or native Windows launcher/Job Object behavior (4); none is GPU
-acceptance evidence. Markdown validation passed for 431 local links across
+Docker/MIG (1), native Windows launcher/Job Object behavior (4), or Linux's
+inherited-RSS regression (1); none is GPU acceptance evidence. Markdown validation passed for 431 local links across
 164 files, and `git diff --check` passed.
 
 ## Artifact identities
@@ -118,15 +131,15 @@ acceptance evidence. Markdown validation passed for 431 local links across
 | Base checkpoint | `8769486603c36aced642b933fde7ba200d2efba3d60a1fbc25e2fe551c85bfd9` |
 | Helpful checkpoint | `bde0dd60d7c20f728e88155f08223146d1cfbe4bc80cab7e10ef8cd51b7d69b4` |
 | Harmful checkpoint | `fe3798e81533637bdfe304b021233d85cfc6129ffc05c16ad4a810bf04e25c7c` |
-| Study | `2b54309dd5faf2cd9f012a1c204937c3700cb9d1a95d39d8a051b80716dd7397` |
-| Local runtime | `5b4bab8759a83c21fc2adff110e484d1f4bae6dde16b8bb072b90f76d6d81abc` |
-| Semantic summary | `1fb37b85bd150e6530eaed6dbdabf6ec2e159b8b3f9738f6ab284037d1f7e8fb` |
+| Study | `34468b6214afec050875b245f869e43d4d52c2b426df7f1bf2179306da36b94c` |
+| Local runtime | `f145b3b85fcc79a49cc9a885adf3042ea200f5553fc355c5111f05d2fb690a9b` |
+| Semantic summary | `d099ed83c0a32ca667dd5425f1df977b407120a6887a8612ebbd3046da20e109` |
 
 ## Remaining work
 
 Inference-driven adaptive proposal generation/selection, full-sized Qwen,
 real benchmark splits and contamination review, repeated-search studies,
-TypeScript parity, Linux resource integration validation, GPU acceptance and
+TypeScript parity, Linux limit-triggered resource validation, GPU acceptance and
 published-score reproduction remain deferred. The local hashes authenticate
 retained trusted inputs and records; they are not remote attestation or a defense
 against replacing an entire experiment and its provenance.

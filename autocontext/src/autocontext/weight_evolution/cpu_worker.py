@@ -9,6 +9,29 @@ import sys
 import time
 from pathlib import Path
 
+MAX_PROC_STATUS_BYTES = 64 * 1024
+
+
+def _linux_peak_rss(status_path: Path = Path("/proc/self/status")) -> int:
+    """Read the current exec image's peak, excluding inherited pre-exec RSS.
+
+    Linux getrusage preserves the previous address space's high-water mark
+    across exec; VmHWM belongs to the new mm instead. The RLIMIT_AS check and
+    parent receipt validation remain authoritative for the requested limit.
+    """
+    with status_path.open("rb") as stream:
+        raw = stream.read(MAX_PROC_STATUS_BYTES + 1)
+    if len(raw) > MAX_PROC_STATUS_BYTES:
+        raise ValueError("Linux worker memory status exceeds its byte cap")
+    rows = [line.split() for line in raw.splitlines() if line.startswith(b"VmHWM:")]
+    if (len(rows) != 1 or len(rows[0]) != 3 or rows[0][2] != b"kB"
+            or not rows[0][1].isdigit() or len(rows[0][1]) > 20):
+        raise ValueError("Linux worker memory status lacks one valid VmHWM in kB")
+    peak = int(rows[0][1]) * 1024
+    if peak <= 0:
+        raise ValueError("Linux worker peak RSS must be positive")
+    return peak
+
 
 def _audit_guard(event: str, arguments: tuple[object, ...]) -> None:
     """Catch accidental external execution in trusted code, not hostile code."""
@@ -77,7 +100,8 @@ def main() -> None:
     if envelope["runtime_digest"] != runtime_digest:
         raise ValueError("CPU worker runtime differs from the dispatch pin")
     results = tuple(infer_cpu(request, Path(envelope["checkpoint_path"])) for request in requests)
-    peak_rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * (1024 if sys.platform == "linux" else 1)
+    peak_rss = (_linux_peak_rss() if sys.platform == "linux"
+                else int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
     policy = resource_policy()
     receipt = CpuBatchReceipt(
         batch_digest=_batch_digest(requests, runtime_digest), request_digests=tuple(request.digest for request in requests),

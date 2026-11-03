@@ -157,7 +157,10 @@ forward passes, 512 input tokens, and 100 output tokens. The default plan uses
 95 forward passes; a confirmation veto withholds the final 25.
 
 The parent enforces the wall deadline and terminates overdue workers. Linux
-also applies an address-space limit with `RLIMIT_AS`; macOS uses monitored RSS
+also applies an address-space limit with `RLIMIT_AS` and reads the worker's
+post-exec peak RSS from `/proc/self/status` (`VmHWM`). Linux `getrusage` can
+retain the launcher's earlier memory peak, so it is not used for this measurement.
+Missing or malformed peak evidence fails closed. macOS uses monitored RSS
 together with the structural caps. RSS polling can overshoot between samples
 and is not a hard address-space limit. CPU-time limits also apply. The recorded
 resource policy distinguishes these platforms. This is containment for trusted,
