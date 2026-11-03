@@ -265,7 +265,7 @@
   "context": "hint",
   "harmful_candidate": "harmful",
   "helpful_candidate": "helpful",
-  "implementation_digest": "a4b6d35c7cbbe12a26bb37bfbbcc2d30db2f864b628e9613ce1d4201f72fabb1",
+  "implementation_digest": "cfa844b9dc62f04c3d3206b429c8814c7fe42bbc7a46403431f7bc3eeca6a360",
   "limits": {
     "max_input_tokens": 16,
     "max_output_tokens": 1,

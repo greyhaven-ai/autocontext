@@ -32,6 +32,11 @@ adds actual forward passes through a tiny token-sum classifier. It preserves
 earlier fixture contracts and binds measured responses to verified checkpoint,
 prompt, decoding, runtime, and scorer identities. Its fixed candidates and
 constructed tasks are integration evidence, not model-quality benchmarks.
+The [adaptive CPU search](../examples/weight_evolution/cpu_adaptive/README.md)
+adds a deterministic policy over pinned finite choices. Actual practice scores
+guide C/W/D trials under equal caps; selected C+W form the combined condition.
+Charged restoration, native seals, one-look confirmation, and verified replay
+retain the complete search evidence. GPU execution remains deferred.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,

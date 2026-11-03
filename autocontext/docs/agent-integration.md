@@ -64,6 +64,15 @@ compatibility projections; the typed verified-safetensors artifact is authoritat
 Probe responses remain literal fixtures. Real Qwen/model inference, GPU execution,
 arbitrary editing code and TypeScript parity remain deferred.
 
+The [adaptive CPU search](../../examples/weight_evolution/cpu_adaptive/README.md)
+provides separate real-execution contracts for practice-driven C/W/D selection.
+Use its read-only `validate` preflight, then `run --output` for durable execution
+or resume. The policy receives practice counts only; evaluation seeds are fixed,
+and CW composes the selected C and W without an additional search. Failed or
+uncertain claims remain charged and block retries. A confirmation veto withholds
+audit. Linux limit-failure acceptance exercises the actual worker installation;
+this remains trusted fixed code on constructed tasks, with GPU execution deferred.
+
 The [CPU inference study](../../examples/weight_evolution/cpu_inference/README.md)
 evaluates fixed tiny-model candidates through actual CPU forward passes. Its
 versioned evidence declares model execution and pins the checkpoint, prompt,

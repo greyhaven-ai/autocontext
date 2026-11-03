@@ -45,6 +45,11 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want measured outputs from those tensor edits without a GPU?
   Run the [tiny-model CPU inference study](weight_evolution/cpu_inference/README.md),
   with fixed candidates, bounded forward passes, and separate confirmation/audit.
+- Want actual practice results to guide the next edit?
+  Run the [adaptive CPU search](weight_evolution/cpu_adaptive/README.md), with
+  finite C/W/D choices, equal search caps, earlier-best restoration, and a
+  confirmation veto. Linux tests exercise memory/CPU failures and cleanup;
+  GPU execution remains deferred.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

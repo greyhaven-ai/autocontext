@@ -26,6 +26,10 @@ remain deferred.
 The [tiny-model CPU inference study](../examples/weight_evolution/cpu_inference/README.md)
 also remains Python-only. It measures actual CPU outputs from verified edited
 checkpoints; TypeScript parity and GPU/Qwen execution remain deferred.
+The [adaptive CPU search](../examples/weight_evolution/cpu_adaptive/README.md)
+also remains Python-only. It uses measured practice feedback for bounded edits,
+selection, restoration, and confirmation; this milestone adds no TypeScript
+runtime or GPU execution path.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
