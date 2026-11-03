@@ -14,6 +14,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Qwen checkpoint replay, pinned evaluation and reproduction reports (Python)](../examples/weight_evolution/qwen_reproduction/README.md)
 - [Qwen GPU acceptance and full-study execution (Python)](../examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md)
 - [Offline context/weight/decoding comparison fixtures (Python)](../examples/weight_evolution/qwen_comparison/README.md)
+- [Bounded editing sessions and sealed comparison exports (Python, synthetic CPU fixtures)](../examples/weight_evolution/qwen_sessions/README.md)
 
 ## Using The Packages
 

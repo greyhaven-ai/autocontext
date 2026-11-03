@@ -27,6 +27,21 @@ offers `validate` and `run-fixtures` for the five-condition context/weight/decod
 matrix. Both are strictly offline with prerecorded synthetic responses; they
 have no model-execution option and do not generate promotion evidence.
 
+The [editing-session example](../../examples/weight_evolution/qwen_sessions/README.md)
+uses the Python `EditingSession` controller with typed inspect/edit/probe
+operations. Each session changes only context (C), a synthetic weight descriptor
+(W), or decoding settings (D). Pinned practice, confirmation and final-audit
+roles reject shared identities and normalized prompt aliases; trusted fixture
+adapters receive selected practice prompts without gold or held-out rows.
+Operation, editor-byte, probe-byte and simulated-time reservations are persisted
+before dispatch. Failed attempts retain their charges, and an interrupted claim
+blocks automatic retry after restart. A changed candidate with a successful
+practice probe can be sealed and exported as an M5 comparison artifact with
+lineage and costs derived from the verified journal. Sealing prevents further
+edits before the held-out comparison. These are synthetic CPU fixtures;
+simulated time does not enforce a wall-clock deadline. Real GPU editing,
+benchmark practice selection and TypeScript parity remain deferred.
+
 ## Context mutation safety
 
 Coach and architect output that would change the playbook, hints, prompts,

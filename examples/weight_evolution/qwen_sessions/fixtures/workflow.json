@@ -1,0 +1,596 @@
+{
+  "budgets": {
+    "max_generated_units_per_condition": 1152,
+    "max_input_units_per_sample": 2048,
+    "max_search_calls_per_mechanism": 4,
+    "max_search_units_per_mechanism": 100000,
+    "max_total_generated_units": 5760,
+    "max_total_input_units": 100000,
+    "max_total_wall_seconds": 10.0
+  },
+  "data_digest": "be1724692b9a61f8679db7b66a7a8ce9aabaa8bb59e342e62723b8d2ab3d7d7e",
+  "execution_kind": "fixture",
+  "gpu_execution_deferred": true,
+  "model_execution_performed": false,
+  "programs": [
+    {
+      "operations": [
+        {
+          "candidate_digest": "1e7e96980e9c6717eb309ef5123e9ca0ffbc324f399f1f5311956ad5482330ac",
+          "kind": "inspect",
+          "operation_id": "inspect-practice",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 0,
+            "probe_output_bytes": 0,
+            "simulated_seconds": 1.0
+          },
+          "target": "practice"
+        },
+        {
+          "candidate_digest": "1e7e96980e9c6717eb309ef5123e9ca0ffbc324f399f1f5311956ad5482330ac",
+          "context_text": "Work through each arithmetic step once. Check the requested format before answering.",
+          "decoding": null,
+          "kind": "edit",
+          "operation_id": "edit-candidate",
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 0,
+            "probe_output_bytes": 0,
+            "simulated_seconds": 1.0
+          },
+          "weight_descriptor": null
+        },
+        {
+          "candidate_digest": "bd0268b1d37f9eedd1bd8f6ef6cc645beaa8e9710f473539c5654c7984bfd26d",
+          "kind": "probe",
+          "operation_id": "failed-probe",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 4096,
+            "probe_output_bytes": 4096,
+            "simulated_seconds": 1.0
+          }
+        },
+        {
+          "candidate_digest": "bd0268b1d37f9eedd1bd8f6ef6cc645beaa8e9710f473539c5654c7984bfd26d",
+          "kind": "probe",
+          "operation_id": "practice-probe",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 4096,
+            "probe_output_bytes": 4096,
+            "simulated_seconds": 1.0
+          }
+        }
+      ],
+      "script": {
+        "entries": [
+          {
+            "candidate_digest": "1e7e96980e9c6717eb309ef5123e9ca0ffbc324f399f1f5311956ad5482330ac",
+            "message": "literal offline fixture response",
+            "operation_digest": "b9a73c9cd22c8f48f355ec943e46cf4cb321d6f86f79e15522d55d620c57c9ee",
+            "operation_kind": "inspect",
+            "outcome": "return",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "1e7e96980e9c6717eb309ef5123e9ca0ffbc324f399f1f5311956ad5482330ac",
+            "message": "literal offline fixture response",
+            "operation_digest": "fcb9c9096eb2a3d114836a910ff3e228f54f61b26783679cf57e0862db1c95be",
+            "operation_kind": "edit",
+            "outcome": "return",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "bd0268b1d37f9eedd1bd8f6ef6cc645beaa8e9710f473539c5654c7984bfd26d",
+            "message": "scripted known failure",
+            "operation_digest": "12d47327b200cc2b842cb8b46dea742a297b6900e316200cef71f06454efeeff",
+            "operation_kind": "probe",
+            "outcome": "failure",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "bd0268b1d37f9eedd1bd8f6ef6cc645beaa8e9710f473539c5654c7984bfd26d",
+            "message": "literal offline fixture response",
+            "operation_digest": "4be180f1d07b81b680f4decaf9620a188ced90eb446c28ffb4386b795f307e86",
+            "operation_kind": "probe",
+            "outcome": "return",
+            "probe_outputs": [
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.sum",
+                "text": "\\boxed{3}"
+              },
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.pears",
+                "text": "\\boxed{9}"
+              },
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.words",
+                "text": "</think>green leaf"
+              }
+            ],
+            "simulated_seconds": 0.01
+          }
+        ],
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "model_execution_performed": false,
+        "schema_version": 1
+      },
+      "spec": {
+        "adapter_digest": "f42a555a93004b799fa1691eae956d9befb5ce3b4ace7a9009d2d7762e35ed1f",
+        "baseline": {
+          "base_checkpoint": {
+            "artifact_id": "fixture-base-weights",
+            "content": "Synthetic base checkpoint descriptor; contains no model weights.",
+            "representation": "synthetic_weight_descriptor",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            }
+          },
+          "base_context": {
+            "artifact_id": "fixture-base-context",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "text": ""
+          },
+          "base_decoding": {
+            "artifact_id": "fixture-base-decoding",
+            "presence_penalty": 0.0,
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "temperature": 0.6,
+            "top_k": 20,
+            "top_p": 0.95
+          }
+        },
+        "data_digest": "be1724692b9a61f8679db7b66a7a8ce9aabaa8bb59e342e62723b8d2ab3d7d7e",
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "limits": {
+          "max_editor_input_bytes": 65536,
+          "max_editor_output_bytes": 16384,
+          "max_operations": 4,
+          "max_probe_input_bytes": 8192,
+          "max_probe_output_bytes": 8192,
+          "max_simulated_seconds": 4.0
+        },
+        "mechanism": "C",
+        "model_execution_performed": false,
+        "schema_version": 1,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "session_id": "fixture-session-c"
+      }
+    },
+    {
+      "operations": [
+        {
+          "candidate_digest": "7f41fe7ae5f253f97c031cf0289efafe2df2337c12b0a0d1cd8bbf7037e32c5e",
+          "kind": "inspect",
+          "operation_id": "inspect-practice",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 0,
+            "probe_output_bytes": 0,
+            "simulated_seconds": 1.0
+          },
+          "target": "practice"
+        },
+        {
+          "candidate_digest": "7f41fe7ae5f253f97c031cf0289efafe2df2337c12b0a0d1cd8bbf7037e32c5e",
+          "context_text": null,
+          "decoding": null,
+          "kind": "edit",
+          "operation_id": "edit-candidate",
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 0,
+            "probe_output_bytes": 0,
+            "simulated_seconds": 1.0
+          },
+          "weight_descriptor": "Synthetic edited checkpoint descriptor; contains no model weights."
+        },
+        {
+          "candidate_digest": "2e4b9383e93caf86349a85ec4a10b5451a04bf517c037747c4bcf8a5907ecef3",
+          "kind": "probe",
+          "operation_id": "failed-probe",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 4096,
+            "probe_output_bytes": 4096,
+            "simulated_seconds": 1.0
+          }
+        },
+        {
+          "candidate_digest": "2e4b9383e93caf86349a85ec4a10b5451a04bf517c037747c4bcf8a5907ecef3",
+          "kind": "probe",
+          "operation_id": "practice-probe",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 4096,
+            "probe_output_bytes": 4096,
+            "simulated_seconds": 1.0
+          }
+        }
+      ],
+      "script": {
+        "entries": [
+          {
+            "candidate_digest": "7f41fe7ae5f253f97c031cf0289efafe2df2337c12b0a0d1cd8bbf7037e32c5e",
+            "message": "literal offline fixture response",
+            "operation_digest": "342303951285f1cae1f1291b6085f99c2719bf58e0409c529ccd383c90ceb334",
+            "operation_kind": "inspect",
+            "outcome": "return",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "7f41fe7ae5f253f97c031cf0289efafe2df2337c12b0a0d1cd8bbf7037e32c5e",
+            "message": "literal offline fixture response",
+            "operation_digest": "133e0f8489e3f84f147611bb3b621ce61ec818c668feef7837fb5cbb0e94349a",
+            "operation_kind": "edit",
+            "outcome": "return",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "2e4b9383e93caf86349a85ec4a10b5451a04bf517c037747c4bcf8a5907ecef3",
+            "message": "scripted known failure",
+            "operation_digest": "a79a77b5d1c60c501b22b8e7836c432284f37a93722f043fb212d6132f54b63d",
+            "operation_kind": "probe",
+            "outcome": "failure",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "2e4b9383e93caf86349a85ec4a10b5451a04bf517c037747c4bcf8a5907ecef3",
+            "message": "literal offline fixture response",
+            "operation_digest": "e3f03ae1f87c0fe5b198b6e5c6fc25dda5a1ecedbb6221d165089ea8cb05f425",
+            "operation_kind": "probe",
+            "outcome": "return",
+            "probe_outputs": [
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.sum",
+                "text": "\\boxed{3}"
+              },
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.pears",
+                "text": ""
+              },
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.words",
+                "text": "</think>green leaf"
+              }
+            ],
+            "simulated_seconds": 0.01
+          }
+        ],
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "model_execution_performed": false,
+        "schema_version": 1
+      },
+      "spec": {
+        "adapter_digest": "d9460e3dfe99519bc003343fdf058aca22b4e98e69b5bcf0bc7c9a97e90dc455",
+        "baseline": {
+          "base_checkpoint": {
+            "artifact_id": "fixture-base-weights",
+            "content": "Synthetic base checkpoint descriptor; contains no model weights.",
+            "representation": "synthetic_weight_descriptor",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            }
+          },
+          "base_context": {
+            "artifact_id": "fixture-base-context",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "text": ""
+          },
+          "base_decoding": {
+            "artifact_id": "fixture-base-decoding",
+            "presence_penalty": 0.0,
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "temperature": 0.6,
+            "top_k": 20,
+            "top_p": 0.95
+          }
+        },
+        "data_digest": "be1724692b9a61f8679db7b66a7a8ce9aabaa8bb59e342e62723b8d2ab3d7d7e",
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "limits": {
+          "max_editor_input_bytes": 65536,
+          "max_editor_output_bytes": 16384,
+          "max_operations": 4,
+          "max_probe_input_bytes": 8192,
+          "max_probe_output_bytes": 8192,
+          "max_simulated_seconds": 4.0
+        },
+        "mechanism": "W",
+        "model_execution_performed": false,
+        "schema_version": 1,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "session_id": "fixture-session-w"
+      }
+    },
+    {
+      "operations": [
+        {
+          "candidate_digest": "ca0e8fb658cb9b090f28cc585fe9ba487fc7999dad946af8a60935f7d93af572",
+          "kind": "inspect",
+          "operation_id": "inspect-practice",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 0,
+            "probe_output_bytes": 0,
+            "simulated_seconds": 1.0
+          },
+          "target": "practice"
+        },
+        {
+          "candidate_digest": "ca0e8fb658cb9b090f28cc585fe9ba487fc7999dad946af8a60935f7d93af572",
+          "context_text": null,
+          "decoding": {
+            "presence_penalty": 1.0,
+            "temperature": 0.2,
+            "top_k": 20,
+            "top_p": 0.95
+          },
+          "kind": "edit",
+          "operation_id": "edit-candidate",
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 0,
+            "probe_output_bytes": 0,
+            "simulated_seconds": 1.0
+          },
+          "weight_descriptor": null
+        },
+        {
+          "candidate_digest": "6a6950b7a277a8745f22a8acb9a5e27fbe988cee0aeef6229a55aec3ae5592da",
+          "kind": "probe",
+          "operation_id": "failed-probe",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 4096,
+            "probe_output_bytes": 4096,
+            "simulated_seconds": 1.0
+          }
+        },
+        {
+          "candidate_digest": "6a6950b7a277a8745f22a8acb9a5e27fbe988cee0aeef6229a55aec3ae5592da",
+          "kind": "probe",
+          "operation_id": "practice-probe",
+          "problem_ids": [
+            "practice.sum",
+            "practice.pears",
+            "practice.words"
+          ],
+          "reservation": {
+            "editor_input_bytes": 16384,
+            "editor_output_bytes": 4096,
+            "operations": 1,
+            "probe_input_bytes": 4096,
+            "probe_output_bytes": 4096,
+            "simulated_seconds": 1.0
+          }
+        }
+      ],
+      "script": {
+        "entries": [
+          {
+            "candidate_digest": "ca0e8fb658cb9b090f28cc585fe9ba487fc7999dad946af8a60935f7d93af572",
+            "message": "literal offline fixture response",
+            "operation_digest": "f82982ddc3578920e517a978593096a5ce48337ed9103a260dcd88da6076e18d",
+            "operation_kind": "inspect",
+            "outcome": "return",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "ca0e8fb658cb9b090f28cc585fe9ba487fc7999dad946af8a60935f7d93af572",
+            "message": "literal offline fixture response",
+            "operation_digest": "16df6d256cd9b92fe1b736df0c7ea8f14936670711f978fb7c1f09fcde74331d",
+            "operation_kind": "edit",
+            "outcome": "return",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "6a6950b7a277a8745f22a8acb9a5e27fbe988cee0aeef6229a55aec3ae5592da",
+            "message": "scripted known failure",
+            "operation_digest": "eeb409673c53bae745efd649b86d9a837e9c164baa4ffaa81cb3d862bf0fa60d",
+            "operation_kind": "probe",
+            "outcome": "failure",
+            "probe_outputs": [],
+            "simulated_seconds": 0.01
+          },
+          {
+            "candidate_digest": "6a6950b7a277a8745f22a8acb9a5e27fbe988cee0aeef6229a55aec3ae5592da",
+            "message": "literal offline fixture response",
+            "operation_digest": "997284e4f3697ad24d4cc6fd7b90ddd8aef0d7e5588a9dfe5a0dcd4228bd6cfe",
+            "operation_kind": "probe",
+            "outcome": "return",
+            "probe_outputs": [
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.sum",
+                "text": "\\boxed{4}"
+              },
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.pears",
+                "text": "\\boxed{9}"
+              },
+              {
+                "finish_reason": "stop",
+                "problem_id": "practice.words",
+                "text": "</think>green leaf"
+              }
+            ],
+            "simulated_seconds": 0.01
+          }
+        ],
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "model_execution_performed": false,
+        "schema_version": 1
+      },
+      "spec": {
+        "adapter_digest": "3e68599c8917c40c46b204d622418de9405bd4551b712ce9e0b1e4c40bf44abb",
+        "baseline": {
+          "base_checkpoint": {
+            "artifact_id": "fixture-base-weights",
+            "content": "Synthetic base checkpoint descriptor; contains no model weights.",
+            "representation": "synthetic_weight_descriptor",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            }
+          },
+          "base_context": {
+            "artifact_id": "fixture-base-context",
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "text": ""
+          },
+          "base_decoding": {
+            "artifact_id": "fixture-base-decoding",
+            "presence_penalty": 0.0,
+            "source": {
+              "declared_search_calls": 0,
+              "declared_search_units": 0,
+              "kind": "baseline_fixture",
+              "source_problem_ids": []
+            },
+            "temperature": 0.6,
+            "top_k": 20,
+            "top_p": 0.95
+          }
+        },
+        "data_digest": "be1724692b9a61f8679db7b66a7a8ce9aabaa8bb59e342e62723b8d2ab3d7d7e",
+        "execution_kind": "fixture",
+        "gpu_execution_deferred": true,
+        "limits": {
+          "max_editor_input_bytes": 65536,
+          "max_editor_output_bytes": 16384,
+          "max_operations": 4,
+          "max_probe_input_bytes": 8192,
+          "max_probe_output_bytes": 8192,
+          "max_simulated_seconds": 4.0
+        },
+        "mechanism": "D",
+        "model_execution_performed": false,
+        "schema_version": 1,
+        "scorer_digest": "9c1a69a1c31d9f767413ab36c35905533e795c7308205dd83eb0446411133529",
+        "session_id": "fixture-session-d"
+      }
+    }
+  ],
+  "schema_version": 1,
+  "source_comparison_evidence_digest": "abd5e1af7243e55b91019d0da66bdceedb6876be891fdc3f9128c93210c58a56",
+  "source_comparison_plan_digest": "bb02b2ea61709cc010b9722b156e85e2a2be67700acfd042ea633930486fe603",
+  "workflow_id": "qwen-editing-sessions-synthetic-v1"
+}

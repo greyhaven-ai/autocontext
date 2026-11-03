@@ -11,6 +11,10 @@ The experimental [Qwen reconstruction, evaluation and reproduction reports](../e
 currently live in Python; TypeScript parity is deferred.
 The [GPU acceptance workflow](../examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md) is also Python-only; no NVIDIA execution is required for TypeScript development.
 The [offline comparison-condition fixtures](../examples/weight_evolution/qwen_comparison/README.md) are Python-only too; TypeScript parity remains deferred.
+The [bounded editing-session fixtures](../examples/weight_evolution/qwen_sessions/README.md)
+also run only in Python, producing sealed comparison artifacts from synthetic
+CPU sessions. TypeScript parity, real GPU editing and benchmark practice
+selection remain deferred.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the

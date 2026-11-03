@@ -27,6 +27,13 @@ All notable changes to this project will be documented in this file.
   fixed context-plus-weight and decoding-control arms. Content-bound artifacts,
   matched fixture schedules, synthetic scoring, cost attribution and paired
   descriptive reports preserve explicit fixture labels; GPU execution is deferred.
+- CPU-only editing sessions for context, synthetic weight descriptors and decoding
+  settings, with typed inspect/edit/probe operations, pinned practice-only adapter
+  views and immutable candidate lineage. Durable finite reservations retain failed
+  attempt costs across restart; ambiguous dispatches block automatic retries.
+  Sealed candidates export into the five-condition comparison harness with
+  journal-derived provenance. Real GPU editing, benchmark practice selection
+  and TypeScript parity remain deferred.
 
 ### Fixed
 
