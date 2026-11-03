@@ -1,0 +1,10 @@
+{
+  "confirmation_sha256": "943bb6665e20be13a53f7de882afcdcf5b870a1ca871cfe141b9598f24555171",
+  "confirmation_size_bytes": 15555,
+  "data_sha256": "fbe7b1515d7b22b3837fcbfe7b23852453875d95a79a60036afb2b8e81338e4a",
+  "data_size_bytes": 3862,
+  "execution_kind": "fixture",
+  "schema_version": 1,
+  "workflow_sha256": "14017f9d05c2241e2992ec95f923179b319975068e72475353e187f2faa034e0",
+  "workflow_size_bytes": 61324
+}
