@@ -8,7 +8,7 @@ import json
 import platform
 import re
 from pathlib import Path
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
@@ -72,7 +72,7 @@ def load_runtime_lock(path: Path) -> RuntimeLock:
     return RuntimeLock.model_validate_json(data)
 
 
-def check_installed_runtime(runtime: RuntimeLock) -> dict[str, object]:
+def check_installed_runtime(runtime: RuntimeLock) -> dict[str, Any]:
     """Check declared pins and record exact packages captured by the image digest.
 
     The controller verifies the actual Docker image. An environment variable or
