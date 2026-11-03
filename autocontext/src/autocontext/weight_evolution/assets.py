@@ -15,7 +15,7 @@ import urllib.request
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import IO, BinaryIO, Literal
+from typing import IO, Any, BinaryIO, Literal
 from urllib.parse import urlsplit
 
 from autocontext.weight_evolution.models import AssetPin, ReproductionLock
@@ -48,7 +48,7 @@ class VerificationReport:
         """All selected assets verified; this is not model/evaluation readiness."""
         return bool(self.assets) and all(item.status == "verified" for item in self.assets)
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "stage": "asset_verification",
             "lock_digest": self.lock_digest,
