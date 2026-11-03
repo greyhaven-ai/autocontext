@@ -66,6 +66,14 @@ uses pinned synthetic inputs and prerecorded responses in `qwen_comparison/`.
 Its tests require no model, downloaded data or official checker dependencies.
 Preserve fixture labels, paired coverage, permitted condition changes and
 practice/evaluation separation; fixture scores are not benchmark evidence.
+The [editing-session fixtures](examples/weight_evolution/qwen_sessions/README.md)
+exercise typed C/W/D candidate creation and sealed exports into that harness.
+Preserve practice-only adapter projections, immutable candidate lineage and
+finite pre-dispatch reservations, including failed and interrupted attempts
+across restart. Test that sealing prevents new edits and that an ambiguous
+dispatch cannot be retried automatically. Byte counts and simulated seconds
+are fixture accounting; real GPU editing, benchmark practice selection and
+TypeScript parity remain deferred.
 
 TypeScript:
 
