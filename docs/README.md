@@ -18,6 +18,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Adaptive editing and separate confirmation (Python, synthetic CPU fixtures)](../examples/weight_evolution/qwen_adaptive/README.md)
 - [Checkpoint-backed tensor edits and native seals (Python, tiny CPU safetensors)](../examples/weight_evolution/qwen_checkpoints/README.md)
 - [Actual CPU inference and paired comparisons on a tiny constructed model](../examples/weight_evolution/cpu_inference/README.md)
+- [Adaptive CPU search with measured feedback, bounded edits, and Linux resource acceptance](../examples/weight_evolution/cpu_adaptive/README.md)
 
 ## Using The Packages
 

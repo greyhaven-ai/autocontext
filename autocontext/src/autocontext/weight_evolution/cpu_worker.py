@@ -43,13 +43,18 @@ def _audit_guard(event: str, arguments: tuple[object, ...]) -> None:
         raise RuntimeError("CPU worker permits only the trusted stdlib inference implementation")
 
 
-def main() -> None:
-    if os.name != "posix" or sys.platform not in {"linux", "darwin"} or len(sys.argv) != 3:
+def _install_resource_limits(memory_mb: int, cpu_seconds: int) -> int:
+    """Install and verify the real worker limits before loading model code.
+
+    Kept stdlib-only so Linux acceptance probes exercise the same installation
+    path as inference, without adding failure-injection modes to the worker.
+    """
+    if os.name != "posix" or sys.platform not in {"linux", "darwin"}:
         raise ValueError("CPU worker requires supported POSIX resource limits")
     import resource
 
-    memory_mb, cpu_seconds = (int(value) for value in sys.argv[1:])
-    if not 256 <= memory_mb <= 2048 or not 1 <= cpu_seconds <= 30:
+    if (type(memory_mb) is not int or type(cpu_seconds) is not int
+            or not 256 <= memory_mb <= 2048 or not 1 <= cpu_seconds <= 30):
         raise ValueError("CPU worker limits are outside the supported bounds")
     memory_bytes = memory_mb * 1024 * 1024
     if sys.platform == "linux":
@@ -57,8 +62,19 @@ def main() -> None:
     resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     if ((sys.platform == "linux" and resource.getrlimit(resource.RLIMIT_AS) != (memory_bytes, memory_bytes))
-            or resource.getrlimit(resource.RLIMIT_CPU) != (cpu_seconds, cpu_seconds)):
+            or resource.getrlimit(resource.RLIMIT_CPU) != (cpu_seconds, cpu_seconds)
+            or resource.getrlimit(resource.RLIMIT_CORE) != (0, 0)):
         raise ValueError("CPU worker resource limits were not installed")
+    return memory_bytes
+
+
+def main() -> None:
+    if len(sys.argv) != 3:
+        raise ValueError("CPU worker requires memory and CPU limits")
+    memory_mb, cpu_seconds = (int(value) for value in sys.argv[1:])
+    memory_bytes = _install_resource_limits(memory_mb, cpu_seconds)
+    import resource
+
     sys.addaudithook(_audit_guard)
     # -I removes ambient Python paths; add only this trusted checkout's source root.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))

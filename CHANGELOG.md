@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Adaptive CPU editing uses actual practice scores to choose among pinned finite
+  context, tensor, and decoding options under equal search caps. Charged journals,
+  earlier-best restoration, native seals, one-look confirmation, and replay
+  preserve measured evidence. Linux acceptance tests exercise real address-space
+  denial, CPU-limit termination, wall deadlines, and reaping through the worker's
+  limit installation. GPU/Qwen execution, live proposal models, arbitrary edit
+  programs, TypeScript parity, and benchmark-quality claims remain deferred.
+
 - A CPU inference study connects verified tiny safetensors edits to actual
   token-sum classifier outputs and exact-label scores across A/C/W/CW/D conditions.
   Separate inference contracts preserve prior fixture pins; bounded subprocess

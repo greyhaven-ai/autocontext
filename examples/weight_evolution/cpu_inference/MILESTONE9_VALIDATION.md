@@ -5,6 +5,13 @@ using the locked development environment. Worktree: `cpu-checkpoint-inference`;
 branch: `codex/cpu-checkpoint-inference`; base: merged `main` commit
 `e115c1842a51bf80cf78c9c9b00c9667ee8c9eb7` (milestone 8).
 
+Milestone 10 extracts the same worker limit installation for direct Linux
+acceptance tests. The input bundle was repinned to that shared source change
+and revalidated in `cpu-adaptive-search`: two fresh runs, exact resume, veto,
+and byte-identical bundle rebuilding retain the results below. The artifact
+identities and measurements below describe this refreshed bundle; the original
+M9 test counts remain recorded separately. See [M10 validation](../cpu_adaptive/MILESTONE10_VALIDATION.md).
+
 ## Scope and evidence
 
 The five new modules define strict CPU model/request/result contracts, a trusted
@@ -58,8 +65,8 @@ caps. The bundle reserves at most 100 forward passes, 512 input tokens and
 The worker has a 512 MiB memory policy. Linux uses `RLIMIT_AS`; this macOS run
 used monitored RSS at 10 ms intervals with explicitly recorded possible sampling
 overshoot. It did not establish a hard address-space limit on macOS. The observed
-maximum worker RSS was 40,009,728 bytes; summed worker elapsed time was about
-1.93 seconds for the first 19-batch run. These are local measurements, not a
+maximum worker RSS was 40,206,336 bytes; summed worker elapsed time was about
+1.99 seconds for the first 19-batch run. These are local measurements, not a
 performance comparison.
 
 Linux peak RSS uses the current worker address space's `/proc/self/status`
@@ -77,8 +84,8 @@ or allocation-pressure rejection by the kernel.
 
 The worker blocks network, child-process, and external model-backend operations.
 This is still trusted fixed code with resource controls, not an arbitrary-code
-sandbox. Windows execution is rejected. Limit-triggered Linux memory/CPU
-failure and cleanup checks remain follow-up validation.
+sandbox. Windows execution is rejected. M10 adds successful Linux/arm64
+acceptance for allocation denial, CPU-limit termination, wall timeout and reaping.
 
 Durable reservations precede dispatch. An incomplete claim remains charged and
 cannot silently retry. Resume validates an ordered claim/result prefix before
@@ -115,7 +122,7 @@ The focused milestone suite passed **168 tests**, with one Linux-only skip:
 mypy passed for 997 source files and two example files. The full repository and
 TypeScript runtime suites were not rerun locally for this Python-only milestone.
 
-The broader selected regression suite above passed **1,658 tests**, with
+The original M9 selected regression suite above passed **1,658 tests**, with
 **8 skipped**, in 188.99 seconds. It covers all weight-evolution tests, dictionary
 annotation conventions, Docker watchdog/worker ownership, protected kernel
 authority, kernel generation/benchmark contracts, and statistical confirmation.
@@ -131,15 +138,15 @@ inherited-RSS regression (1); none is GPU acceptance evidence. Markdown validati
 | Base checkpoint | `8769486603c36aced642b933fde7ba200d2efba3d60a1fbc25e2fe551c85bfd9` |
 | Helpful checkpoint | `bde0dd60d7c20f728e88155f08223146d1cfbe4bc80cab7e10ef8cd51b7d69b4` |
 | Harmful checkpoint | `fe3798e81533637bdfe304b021233d85cfc6129ffc05c16ad4a810bf04e25c7c` |
-| Study | `34468b6214afec050875b245f869e43d4d52c2b426df7f1bf2179306da36b94c` |
-| Local runtime | `f145b3b85fcc79a49cc9a885adf3042ea200f5553fc355c5111f05d2fb690a9b` |
-| Semantic summary | `d099ed83c0a32ca667dd5425f1df977b407120a6887a8612ebbd3046da20e109` |
+| Study | `f69525c63179b231931608cdecf59a191b26f6a9eae3e2c9782111e9ad0d992c` |
+| Local runtime | `f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00` |
+| Semantic summary | `1e6356b70fbd335f85c31bad432e9973c11d42a58421abf103ac7f900f90209a` |
 
 ## Remaining work
 
-Inference-driven adaptive proposal generation/selection, full-sized Qwen,
-real benchmark splits and contamination review, repeated-search studies,
-TypeScript parity, Linux limit-triggered resource validation, GPU acceptance and
-published-score reproduction remain deferred. The local hashes authenticate
+M10 adds bounded adaptive selection driven by actual CPU practice results.
+Open-ended proposal generation, full-sized Qwen, real benchmark splits and
+contamination review, repeated-search studies, TypeScript parity, GPU acceptance
+and published-score reproduction remain deferred. The local hashes authenticate
 retained trusted inputs and records; they are not remote attestation or a defense
 against replacing an entire experiment and its provenance.

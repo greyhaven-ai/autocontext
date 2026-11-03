@@ -98,6 +98,14 @@ Keep measured timing/RSS separate from deterministic semantic evidence and state
 the platform's memory-enforcement mode. Its constructed correlated tasks do not
 establish generalization, optimization, or Qwen benchmark performance.
 
+The [adaptive CPU search](examples/weight_evolution/cpu_adaptive/README.md)
+uses separate contracts from the fixture adapters. Keep the proposal policy's
+input limited to practice counts and pin evaluation seeds outside its control.
+Reserve materializations, proposals, probes, and restoration before execution;
+replay all retained evidence before dispatching new work. Test an earlier winner,
+changed-feedback branching, veto, incomplete claims, and real Linux limit failures.
+Constructed-task scores establish adaptive execution correctness only.
+
 TypeScript:
 
 ```bash
