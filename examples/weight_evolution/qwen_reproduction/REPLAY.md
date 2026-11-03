@@ -6,6 +6,10 @@ reuses milestone 2's checkpoint verification and isolated inference runner.
 Actual CUDA inference remains unvalidated on this development host; the commands
 below provide the execution path, not measured reproduction scores.
 
+For milestone 4, use the [GPU acceptance and full-study coordinator](GPU_ACCEPTANCE.md)
+to require live acceptance before dispatching this full plan. The commands below
+remain the lower-level planning, replay and independent reporting operations.
+
 Run commands from `autocontext/`. First follow the [checkpoint guide](README.md)
 to acquire model assets and create `runs/qwen-replay/base/checkpoint` and
 `runs/qwen-replay/published_patch/checkpoint` on a compatible host. The original

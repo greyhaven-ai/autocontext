@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -226,6 +227,46 @@ def test_real_adapter_is_local_only_and_preserves_template_and_eos_defaults(monk
         "tensor_parallel_size": 1, "generation_config": "auto",
     }
     llm.generate.assert_called_once_with(["rendered"], vllm.SamplingParams.return_value, use_tqdm=False)
+
+
+def test_hardware_records_cuda_selected_uuid_not_host_ordinal(monkeypatch: Any) -> None:
+    identity = uuid.UUID("01234567-89ab-cdef-0123-456789abcdef")
+    properties = SimpleNamespace(uuid=SimpleNamespace(bytes=list(identity.bytes)), total_memory=24 * 1024**3)
+    cuda = SimpleNamespace(
+        is_available=Mock(return_value=True), current_device=Mock(return_value=0),
+        get_device_properties=Mock(return_value=properties), get_device_name=Mock(return_value="GPU name"),
+        get_device_capability=Mock(return_value=(8, 9)),
+    )
+    torch = SimpleNamespace(cuda=cuda, version=SimpleNamespace(cuda="13.0"))
+    monkeypatch.setattr("autocontext.weight_evolution.inference_worker.importlib.import_module", lambda _: torch)
+    # Device observation needs no tokenizer or inference construction.
+    observed = object.__new__(VllmBackend).hardware()
+    assert observed == {
+        "accelerator": "cuda", "device_uuid": f"GPU-{identity}", "device_name": "GPU name",
+        "device_capability": "8.9", "device_total_memory_bytes": str(24 * 1024**3),
+        "cuda_runtime": "13.0", "tensor_parallel_size": "1", "gpu_memory_utilization": "0.85",
+    }
+    cuda.get_device_properties.assert_called_once_with(0)
+
+
+@pytest.mark.parametrize("raw_uuid", [None, "01234567-89ab-cdef-0123-456789abcdef", [], [1] * 15,
+                                      [1] * 17, [True] * 16, [-1] * 16, [256] * 16, [0] * 16])
+def test_hardware_rejects_missing_or_malformed_cuda_uuid(monkeypatch: Any, raw_uuid: Any) -> None:
+    properties = SimpleNamespace(uuid=SimpleNamespace(bytes=raw_uuid), total_memory=1024)
+    cuda = SimpleNamespace(is_available=lambda: True, current_device=lambda: 0,
+                           get_device_properties=lambda _: properties)
+    monkeypatch.setattr("autocontext.weight_evolution.inference_worker.importlib.import_module",
+                        lambda _: SimpleNamespace(cuda=cuda))
+    with pytest.raises(InferenceInfrastructureError, match="valid observed UUID"):
+        object.__new__(VllmBackend).hardware()
+
+
+def test_hardware_rejects_cuda_unavailable_before_device_observation(monkeypatch: Any) -> None:
+    cuda = SimpleNamespace(is_available=lambda: False)
+    monkeypatch.setattr("autocontext.weight_evolution.inference_worker.importlib.import_module",
+                        lambda _: SimpleNamespace(cuda=cuda))
+    with pytest.raises(InferenceInfrastructureError, match="requires CUDA"):
+        object.__new__(VllmBackend).hardware()
 
 
 @pytest.mark.parametrize("changes", [

@@ -19,6 +19,10 @@ All notable changes to this project will be documented in this file.
   dispatch claims; saved-evidence JSON/Markdown reports verify complete coverage
   and record grouped accuracy, token costs, paired intervals and discrepancies
   against final published aggregates. Actual GPU reproduction remains unvalidated.
+- Read-only Qwen GPU readiness checks, two-variant reconstruction/inference
+  acceptance, and an acceptance-gated full-study coordinator. CUDA device UUIDs
+  and per-shard runtime checks stop dispatch on provenance drift. CPU tests do
+  not establish real GPU acceptance or measured benchmark reproduction.
 
 ### Fixed
 

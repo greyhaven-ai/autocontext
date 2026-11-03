@@ -12,6 +12,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Copy-paste examples](../examples/README.md)
 - [Change history](../CHANGELOG.md)
 - [Qwen checkpoint replay, pinned evaluation and reproduction reports (Python)](../examples/weight_evolution/qwen_reproduction/README.md)
+- [Qwen GPU acceptance and full-study execution (Python)](../examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md)
 
 ## Using The Packages
 

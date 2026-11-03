@@ -9,6 +9,7 @@ Use the Python package when you need the full Python control plane or local MLX/
 
 The experimental [Qwen reconstruction, evaluation and reproduction reports](../examples/weight_evolution/qwen_reproduction/README.md)
 currently live in Python; TypeScript parity is deferred.
+The [GPU acceptance workflow](../examples/weight_evolution/qwen_reproduction/GPU_ACCEPTANCE.md) is also Python-only; no NVIDIA execution is required for TypeScript development.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
