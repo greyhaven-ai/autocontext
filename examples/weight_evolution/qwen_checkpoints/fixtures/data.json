@@ -1,0 +1,168 @@
+{
+  "confirmation": [
+    {
+      "dataset": "math500",
+      "problem": {
+        "answer": "14",
+        "instructions": [],
+        "problem_id": "confirmation.sum",
+        "text": "What is eight plus six?"
+      }
+    },
+    {
+      "dataset": "gsm8k",
+      "problem": {
+        "answer": "7",
+        "instructions": [],
+        "problem_id": "confirmation.coins",
+        "text": "Paz has eleven coins and gives away four. How many remain?"
+      }
+    },
+    {
+      "dataset": "ifeval",
+      "problem": {
+        "answer": null,
+        "instructions": [
+          {
+            "instruction_id": "fixture:word_count",
+            "kwargs": {
+              "count": 2
+            }
+          },
+          {
+            "instruction_id": "fixture:contains_word",
+            "kwargs": {
+              "word": "coral"
+            }
+          }
+        ],
+        "problem_id": "confirmation.words",
+        "text": "Reply in exactly two words including coral."
+      }
+    }
+  ],
+  "final_audit": [
+    {
+      "dataset": "math500",
+      "problem": {
+        "answer": "42",
+        "instructions": [],
+        "problem_id": "audit.sum",
+        "text": "What is 17 plus 25?"
+      }
+    },
+    {
+      "dataset": "math500",
+      "problem": {
+        "answer": "42",
+        "instructions": [],
+        "problem_id": "audit.product",
+        "text": "What is 6 times 7?"
+      }
+    },
+    {
+      "dataset": "gsm8k",
+      "problem": {
+        "answer": "6",
+        "instructions": [],
+        "problem_id": "audit.books",
+        "text": "Iris has nine books and gives away three. How many remain?"
+      }
+    },
+    {
+      "dataset": "gsm8k",
+      "problem": {
+        "answer": "15",
+        "instructions": [],
+        "problem_id": "audit.boxes",
+        "text": "Three boxes each hold five stones. How many stones in total?"
+      }
+    },
+    {
+      "dataset": "ifeval",
+      "problem": {
+        "answer": null,
+        "instructions": [
+          {
+            "instruction_id": "fixture:word_count",
+            "kwargs": {
+              "count": 3
+            }
+          },
+          {
+            "instruction_id": "fixture:contains_word",
+            "kwargs": {
+              "word": "violet"
+            }
+          }
+        ],
+        "problem_id": "audit.violet",
+        "text": "Reply with exactly three words including violet."
+      }
+    },
+    {
+      "dataset": "ifeval",
+      "problem": {
+        "answer": null,
+        "instructions": [
+          {
+            "instruction_id": "fixture:word_count",
+            "kwargs": {
+              "count": 2
+            }
+          },
+          {
+            "instruction_id": "fixture:uppercase",
+            "kwargs": {}
+          }
+        ],
+        "problem_id": "audit.upper",
+        "text": "Reply in uppercase using exactly two words."
+      }
+    }
+  ],
+  "origin": "synthetic_fixture",
+  "practice": [
+    {
+      "dataset": "math500",
+      "problem": {
+        "answer": "3",
+        "instructions": [],
+        "problem_id": "practice.sum",
+        "text": "What is 1 plus 2?"
+      }
+    },
+    {
+      "dataset": "gsm8k",
+      "problem": {
+        "answer": "9",
+        "instructions": [],
+        "problem_id": "practice.pears",
+        "text": "Mia has seven pears and buys two. How many pears now?"
+      }
+    },
+    {
+      "dataset": "ifeval",
+      "problem": {
+        "answer": null,
+        "instructions": [
+          {
+            "instruction_id": "fixture:word_count",
+            "kwargs": {
+              "count": 2
+            }
+          },
+          {
+            "instruction_id": "fixture:contains_word",
+            "kwargs": {
+              "word": "green"
+            }
+          }
+        ],
+        "problem_id": "practice.words",
+        "text": "Reply in two words including green."
+      }
+    }
+  ],
+  "schema_version": 1
+}

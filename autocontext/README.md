@@ -21,6 +21,12 @@ The [adaptive editing fixtures](../examples/weight_evolution/qwen_adaptive/READM
 reuse the provider/refinement interfaces for feedback-conditioned proposals,
 select candidates on practice only, and require separate confirmation before
 the final fixture audit. Equal search caps include failures and restoration.
+The [checkpoint-backed editing fixtures](../examples/weight_evolution/qwen_checkpoints/README.md)
+replace W's free-form descriptor with a typed checkpoint reference. Exact
+BF16/F16/F32/F64 checks reuse the reconstruction primitives; native seals bind
+input, edit-program and output hashes through adaptive selection and confirmation.
+Legacy controller strings are compatibility projections; verified safetensors
+artifacts are authoritative. Tiny CPU edits do not run Qwen or GPU inference.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,

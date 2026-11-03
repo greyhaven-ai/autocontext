@@ -53,6 +53,17 @@ under the original budget before sealing. Separate one-look confirmation uses
 its pinned held-out role; a veto blocks the final audit and cannot feed back
 into search. All outputs remain synthetic and ineligible for real promotion.
 
+The [checkpoint-backed workflow](../../examples/weight_evolution/qwen_checkpoints/README.md)
+adds typed, bounded tensor-edit programs over tiny CPU safetensors. It reuses M2's
+exact BF16/F16/F32/F64 readers, writer and finite-value checks, permits edits only
+to pinned tensors, and independently verifies every changed and untouched tensor
+payload. Actual checkpoint bytes are checked before probes and again on replay.
+Native seals bind input, program and output hashes to the selected candidate and
+separate confirmation evidence. Legacy controller strings carry canonical
+compatibility projections; the typed verified-safetensors artifact is authoritative.
+Probe responses remain literal fixtures. Real Qwen/model inference, GPU execution,
+arbitrary editing code and TypeScript parity remain deferred.
+
 ## Context mutation safety
 
 Coach and architect output that would change the playbook, hints, prompts,

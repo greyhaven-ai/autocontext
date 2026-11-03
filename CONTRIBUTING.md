@@ -80,6 +80,14 @@ responses addressed by practice state and feedback. Preserve equal per-arm caps,
 preclaimed proposal calls, failed-attempt costs, deterministic practice selection,
 and the immutable selection-before-confirmation boundary. Confirmation vetoes
 must never trigger another candidate or a final audit on the same experiment.
+The [checkpoint-backed fixtures](examples/weight_evolution/qwen_checkpoints/README.md)
+exercise real tensor-byte changes on tiny CPU safetensors. Preserve the pinned
+inventory, allowed tensor scope, shape/dtype, finite-value and untouched-payload
+checks. Verify checkpoint bytes before probes, on resume, and through native
+selection/confirmation seals; never recreate missing completed evidence. Legacy
+string handles are compatibility projections, not authoritative artifacts.
+Keep these edits data-only: real model/GPU execution and arbitrary editing code
+remain outside this fixture workflow.
 
 TypeScript:
 
