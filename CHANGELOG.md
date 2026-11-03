@@ -6,6 +6,27 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Apply the shared Claude request controls in both Python `AnthropicClient`
+  entrypoints, and send `max_completion_tokens` for GPT-5 and o-series reasoning
+  models through the OpenAI-compatible provider. Adapted from
+  [#1480](https://github.com/greyhaven-ai/autocontext/pull/1480) and
+  [#1481](https://github.com/greyhaven-ai/autocontext/pull/1481) by
+  [xh123637](https://github.com/xh123637), with expanded request and fallback tests.
+
+- Preserve Hugging Face blob contents when append reads fail. Refresh the remote
+  index and payload before writing, verify indexed bytes, and distinguish confirmed
+  missing files from unreadable repositories so the first append still works.
+  Correct nested download paths. Adapted from
+  [#1467](https://github.com/greyhaven-ai/autocontext/pull/1467) by
+  [sean0407](https://github.com/sean0407); append still requires a single writer.
+
+- Integrate Dependabot's reviewed Python, TypeScript, Pi typebox, and GitHub
+  Actions updates from [#1477](https://github.com/greyhaven-ai/autocontext/pull/1477),
+  [#1476](https://github.com/greyhaven-ai/autocontext/pull/1476),
+  [#1466](https://github.com/greyhaven-ai/autocontext/pull/1466), and
+  [#1475](https://github.com/greyhaven-ai/autocontext/pull/1475), including the
+  derived Docker requirements and Bun lockfiles.
+
 - Repair Monty 0.0.18 constructor and snapshot-resume calls in the executor
   and REPL. Enforce native VM deadlines and preserve printed string contents;
   CI now exercises the installed optional runtime.

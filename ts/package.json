@@ -230,7 +230,7 @@
     "source-map-js": "1.2.2"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.135.0",
+    "@anthropic-ai/sdk": "^0.137.0",
     "@apidevtools/json-schema-ref-parser": "^16.0.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/ws": "^8.5.13",
@@ -249,7 +249,7 @@
     "ajv-formats": "^3.0.1",
     "better-sqlite3": "^13.0.3",
     "diff": "^9.0.0",
-    "ignore": "7.0.12",
+    "ignore": "7.0.13",
     "secure-exec": "0.1.0",
     "sharp": "0.35.5",
     "tree-sitter": "0.21.1",
@@ -258,7 +258,7 @@
     "tree-sitter-typescript": "0.21.2",
     "tsx": "^4.21.0",
     "ulid": "^3.0.2",
-    "undici": "8.12.2",
+    "undici": "8.12.3",
     "ws": "^8.18.0",
     "zod": "^4.6.6"
   }

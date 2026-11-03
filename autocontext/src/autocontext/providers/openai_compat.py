@@ -534,8 +534,17 @@ def _supports_temperature(model_id: str) -> bool:
     return re.search(r"(?:^|/)gemini-3\.(?:5|6)(?:$|[-:])", model_id.lower()) is None
 
 
+def _is_reasoning_model(model_id: str) -> bool:
+    """Identify OpenAI model families that use max_completion_tokens."""
+    lowered = model_id.lower()
+    if re.search(r"(?:^|[/:-])o\d+(?:$|[-:])", lowered):
+        return True
+    match = re.search(r"(?:^|[/:-])gpt-(\d+)(?:\.\d+)?(?:$|[-:])", lowered)
+    return match is not None and int(match.group(1)) >= 5
+
+
 def _output_token_field(model_id: str) -> str:
-    return "max_completion_tokens" if _is_gpt_56_plus(model_id) else "max_tokens"
+    return "max_completion_tokens" if _is_reasoning_model(model_id) else "max_tokens"
 
 
 def _assistant_tool_message(message: Any, tool_calls: list[Any]) -> dict[str, Any]:

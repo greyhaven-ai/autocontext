@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,10 @@ from autocontext.offline import require_online
 
 logger = logging.getLogger(__name__)
 _INDEX_KEY = ".autocontext/blob_index.json"
+
+
+class _HfEntryNotFoundError(RuntimeError):
+    """The CLI positively identified a missing file, not an unreadable repo."""
 
 
 class HfBucketStore(BlobStore):
@@ -30,6 +36,11 @@ class HfBucketStore(BlobStore):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def put(self, key: str, data: bytes) -> str:
+        return self._put_with_index(key, data)
+
+    def _put_with_index(
+        self, key: str, data: bytes, index: dict[str, dict[str, Any]] | None = None
+    ) -> str:
         normalized_key = normalize_blob_key(key)
         # Write to local cache first, then upload
         cache_path = resolve_blob_path(self.cache_dir, normalized_key)
@@ -48,7 +59,8 @@ class HfBucketStore(BlobStore):
                 self.repo_type,
             ]
         )
-        index = self._load_index()[1]
+        if index is None:
+            index = self._load_index()[1]
         index[normalized_key] = {
             "size_bytes": len(data),
             "digest": digest,
@@ -56,6 +68,64 @@ class HfBucketStore(BlobStore):
         }
         self._save_index(index)
         return digest
+
+    def append(self, key: str, data: bytes) -> str:
+        """Append only after reading remote state successfully.
+
+        Fresh download directories prevent a failed refresh from falling back
+        to stale cached bytes. This read/modify/write operation still requires
+        a single writer; HF uploads do not provide an atomic append primitive.
+        """
+        normalized_key = normalize_blob_key(key)
+        with tempfile.TemporaryDirectory(prefix="hf-append-", dir=self.cache_dir) as tmp:
+            download_dir = Path(tmp)
+            index_bytes = self._download_for_append(_INDEX_KEY, download_dir)
+            index: dict[str, dict[str, Any]] = {}
+            if index_bytes is not None:
+                try:
+                    loaded = json.loads(index_bytes)
+                except (ValueError, UnicodeDecodeError) as exc:
+                    raise RuntimeError("Cannot safely append with an unreadable HF blob index") from exc
+                if not isinstance(loaded, dict) or any(
+                    not isinstance(item_key, str) or not isinstance(metadata, dict)
+                    for item_key, metadata in loaded.items()
+                ):
+                    raise RuntimeError("Cannot safely append with an invalid HF blob index")
+                index = loaded
+
+            existing = self._download_for_append(normalized_key, download_dir)
+            metadata = index.get(normalized_key)
+            if metadata is not None:
+                if existing is None:
+                    raise RuntimeError(f"Indexed HF blob is missing: {normalized_key!r}")
+                digest = "sha256:" + hashlib.sha256(existing).hexdigest()
+                if metadata.get("digest") != digest or metadata.get("size_bytes") != len(existing):
+                    raise RuntimeError(f"HF blob does not match its index: {normalized_key!r}")
+
+            # Only a confirmed missing file can initialize a new key. An absent
+            # index is also valid on the first append into an empty repository.
+            return self._put_with_index(normalized_key, (existing or b"") + data, index)
+
+    def _download_for_append(self, key: str, download_dir: Path) -> bytes | None:
+        path = resolve_blob_path(download_dir, key)
+        try:
+            self._run_hf_command(
+                [
+                    "huggingface-cli",
+                    "download",
+                    self.repo_id,
+                    key,
+                    "--repo-type",
+                    self.repo_type,
+                    "--local-dir",
+                    str(download_dir),
+                ]
+            )
+        except _HfEntryNotFoundError:
+            return None
+        if not path.is_file():
+            raise RuntimeError(f"HF blob download completed without producing {key!r}")
+        return path.read_bytes()
 
     def get(self, key: str) -> bytes | None:
         normalized_key = normalize_blob_key(key)
@@ -80,7 +150,7 @@ class HfBucketStore(BlobStore):
                     "--repo-type",
                     self.repo_type,
                     "--local-dir",
-                    str(cache_path.parent),
+                    str(self.cache_dir),
                 ]
             )
             if cache_path.is_file():
@@ -152,7 +222,7 @@ class HfBucketStore(BlobStore):
                         "--repo-type",
                         self.repo_type,
                         "--local-dir",
-                        str(index_path.parent),
+                        str(self.cache_dir),
                     ]
                 )
             except (RuntimeError, OSError):
@@ -213,6 +283,17 @@ class HfBucketStore(BlobStore):
             timeout=60,
         )
         if result.returncode != 0:
+            # A generic 404 can mean a private/inaccessible repository. Only
+            # the CLI's final typed entry-not-found error establishes absence.
+            # Unknown CLI error formats fail closed instead of risking a write.
+            errors = re.findall(r"(?m)^([A-Za-z_][\w.]*):", result.stderr)
+            if (
+                cmd[1] == "download"
+                and errors
+                and errors[-1].startswith("huggingface_hub.")
+                and errors[-1].rsplit(".", 1)[-1] in {"EntryNotFoundError", "RemoteEntryNotFoundError"}
+            ):
+                raise _HfEntryNotFoundError(f"HF file not found: {cmd[3]}")
             raise RuntimeError(f"HF command failed: {result.stderr.strip()}")
         return result.stdout.strip()
 
