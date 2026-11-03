@@ -23,6 +23,10 @@ also remain Python-only. They verify actual tiny CPU tensor edits and native
 checkpoint seals; TypeScript parity, real Qwen execution and GPU inference
 remain deferred.
 
+The [tiny-model CPU inference study](../examples/weight_evolution/cpu_inference/README.md)
+also remains Python-only. It measures actual CPU outputs from verified edited
+checkpoints; TypeScript parity and GPU/Qwen execution remain deferred.
+
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
 Python control plane. It validates the same shared fixtures and can be used by

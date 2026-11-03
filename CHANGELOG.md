@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- A CPU inference study connects verified tiny safetensors edits to actual
+  token-sum classifier outputs and exact-label scores across A/C/W/CW/D conditions.
+  Separate inference contracts preserve prior fixture pins; bounded subprocess
+  batches, durable charged claims, checkpoint seals, replay verification, and
+  one-look confirmation gate the audit. Fixed helpful/harmful edits and base
+  restoration provide controlled execution checks. GPU/Qwen execution, adaptive
+  proposal generation, TypeScript parity, and benchmark claims remain deferred.
+
 - Experimental Python Qwen weight-space reproduction contract: immutable source
   and model revisions, SHA-256 asset verification, explicit bounded downloads,
   and offline math/strict-IFEval scorer fixtures.

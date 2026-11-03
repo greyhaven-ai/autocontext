@@ -1,0 +1,296 @@
+{
+  "alternative_decoding": {
+    "mode": "sample",
+    "seed": 406,
+    "temperature": 1.0,
+    "top_k": 2
+  },
+  "baseline_decoding": {
+    "mode": "greedy",
+    "seed": 0,
+    "temperature": 1.0,
+    "top_k": 0
+  },
+  "budget": {
+    "max_inference_calls": 100,
+    "max_input_tokens": 512,
+    "max_output_tokens": 100
+  },
+  "candidates": [
+    {
+      "candidate_id": "base",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 2,
+        "schema_version": 1,
+        "sha256": "8769486603c36aced642b933fde7ba200d2efba3d60a1fbc25e2fe551c85bfd9",
+        "size_bytes": 240,
+        "tensors": [
+          {
+            "dtype": "F32",
+            "editable": false,
+            "name": "projection.bias",
+            "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "projection.weight",
+            "sha256": "d6e485c66aea90cd39939b92f32afed69ff3491c99cd0d716a518bcd61bb71f1",
+            "shape": [
+              6,
+              2
+            ]
+          }
+        ]
+      },
+      "output_sha256": "8769486603c36aced642b933fde7ba200d2efba3d60a1fbc25e2fe551c85bfd9",
+      "output_size_bytes": 240,
+      "program": null
+    },
+    {
+      "candidate_id": "helpful",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 2,
+        "schema_version": 1,
+        "sha256": "8769486603c36aced642b933fde7ba200d2efba3d60a1fbc25e2fe551c85bfd9",
+        "size_bytes": 240,
+        "tensors": [
+          {
+            "dtype": "F32",
+            "editable": false,
+            "name": "projection.bias",
+            "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "projection.weight",
+            "sha256": "d6e485c66aea90cd39939b92f32afed69ff3491c99cd0d716a518bcd61bb71f1",
+            "shape": [
+              6,
+              2
+            ]
+          }
+        ]
+      },
+      "output_sha256": "bde0dd60d7c20f728e88155f08223146d1cfbe4bc80cab7e10ef8cd51b7d69b4",
+      "output_size_bytes": 240,
+      "program": {
+        "edits": [
+          {
+            "dtype": "F32",
+            "expected_sha256": "d6e485c66aea90cd39939b92f32afed69ff3491c99cd0d716a518bcd61bb71f1",
+            "name": "projection.weight",
+            "replacements": [
+              {
+                "index": 4,
+                "value_hex": "00000041"
+              },
+              {
+                "index": 5,
+                "value_hex": "00000000"
+              }
+            ],
+            "shape": [
+              6,
+              2
+            ]
+          }
+        ],
+        "input_digest": "fc942e26fdf25ffe1d98ede382c41169156b321299d58c84c336441f8e6988bb",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    },
+    {
+      "candidate_id": "harmful",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 2,
+        "schema_version": 1,
+        "sha256": "8769486603c36aced642b933fde7ba200d2efba3d60a1fbc25e2fe551c85bfd9",
+        "size_bytes": 240,
+        "tensors": [
+          {
+            "dtype": "F32",
+            "editable": false,
+            "name": "projection.bias",
+            "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "projection.weight",
+            "sha256": "d6e485c66aea90cd39939b92f32afed69ff3491c99cd0d716a518bcd61bb71f1",
+            "shape": [
+              6,
+              2
+            ]
+          }
+        ]
+      },
+      "output_sha256": "fe3798e81533637bdfe304b021233d85cfc6129ffc05c16ad4a810bf04e25c7c",
+      "output_size_bytes": 240,
+      "program": {
+        "edits": [
+          {
+            "dtype": "F32",
+            "expected_sha256": "d6e485c66aea90cd39939b92f32afed69ff3491c99cd0d716a518bcd61bb71f1",
+            "name": "projection.weight",
+            "replacements": [
+              {
+                "index": 0,
+                "value_hex": "00000000"
+              },
+              {
+                "index": 1,
+                "value_hex": "00000041"
+              }
+            ],
+            "shape": [
+              6,
+              2
+            ]
+          }
+        ],
+        "input_digest": "fc942e26fdf25ffe1d98ede382c41169156b321299d58c84c336441f8e6988bb",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "practice-1",
+      "expected": "zero",
+      "prompt": "anchor",
+      "role": "practice"
+    },
+    {
+      "case_id": "practice-2",
+      "expected": "one",
+      "prompt": "gap",
+      "role": "practice"
+    },
+    {
+      "case_id": "practice-3",
+      "expected": "zero",
+      "prompt": "flipped",
+      "role": "practice"
+    },
+    {
+      "case_id": "practice-4",
+      "expected": "one",
+      "prompt": "near",
+      "role": "practice"
+    },
+    {
+      "case_id": "practice-5",
+      "expected": "zero",
+      "prompt": "stochastic",
+      "role": "practice"
+    },
+    {
+      "case_id": "confirmation-1",
+      "expected": "zero",
+      "prompt": "anchor anchor",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "confirmation-2",
+      "expected": "one",
+      "prompt": "gap gap",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "confirmation-3",
+      "expected": "zero",
+      "prompt": "flipped flipped",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "confirmation-4",
+      "expected": "one",
+      "prompt": "near near",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "confirmation-5",
+      "expected": "zero",
+      "prompt": "stochastic stochastic",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "audit-1",
+      "expected": "zero",
+      "prompt": "anchor anchor anchor",
+      "role": "audit"
+    },
+    {
+      "case_id": "audit-2",
+      "expected": "one",
+      "prompt": "gap gap gap",
+      "role": "audit"
+    },
+    {
+      "case_id": "audit-3",
+      "expected": "zero",
+      "prompt": "flipped flipped flipped",
+      "role": "audit"
+    },
+    {
+      "case_id": "audit-4",
+      "expected": "one",
+      "prompt": "near near near",
+      "role": "audit"
+    },
+    {
+      "case_id": "audit-5",
+      "expected": "zero",
+      "prompt": "stochastic stochastic stochastic",
+      "role": "audit"
+    }
+  ],
+  "context": "hint",
+  "harmful_candidate": "harmful",
+  "helpful_candidate": "helpful",
+  "implementation_digest": "f6443f3a5873be601a00144355de8dea58943c7d43ed3e1480379463ec78ae2e",
+  "limits": {
+    "max_input_tokens": 16,
+    "max_output_tokens": 1,
+    "memory_mb": 512,
+    "wall_seconds": 5.0
+  },
+  "minimum_confirmation_gain": 0.1,
+  "model": {
+    "architecture": "token-sum-linear-v1",
+    "output_tokens": [
+      "zero",
+      "one"
+    ],
+    "schema_version": 1,
+    "vocabulary": [
+      "anchor",
+      "gap",
+      "flipped",
+      "near",
+      "stochastic",
+      "hint"
+    ]
+  },
+  "schema_version": 1,
+  "selected_candidate": "helpful",
+  "study_id": "tiny-cpu-inference-pass-v1",
+  "study_kind": "fixed_candidate_cpu_inference"
+}

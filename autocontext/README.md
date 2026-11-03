@@ -27,6 +27,11 @@ BF16/F16/F32/F64 checks reuse the reconstruction primitives; native seals bind
 input, edit-program and output hashes through adaptive selection and confirmation.
 Legacy controller strings are compatibility projections; verified safetensors
 artifacts are authoritative. Tiny CPU edits do not run Qwen or GPU inference.
+The [CPU inference study](../examples/weight_evolution/cpu_inference/README.md)
+adds actual forward passes through a tiny token-sum classifier. It preserves
+earlier fixture contracts and binds measured responses to verified checkpoint,
+prompt, decoding, runtime, and scorer identities. Its fixed candidates and
+constructed tasks are integration evidence, not model-quality benchmarks.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
