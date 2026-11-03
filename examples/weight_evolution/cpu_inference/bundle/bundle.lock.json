@@ -1,0 +1,8 @@
+{
+  "base_sha256": "8769486603c36aced642b933fde7ba200d2efba3d60a1fbc25e2fe551c85bfd9",
+  "base_size_bytes": 240,
+  "kind": "cpu_inference_bundle",
+  "schema_version": 1,
+  "spec_sha256": "08c62e00b214cfbfae4abd1f84d340646179e67d283f5202d7cdfcf4daa1ccde",
+  "spec_size_bytes": 7483
+}

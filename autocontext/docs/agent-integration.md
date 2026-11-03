@@ -64,6 +64,17 @@ compatibility projections; the typed verified-safetensors artifact is authoritat
 Probe responses remain literal fixtures. Real Qwen/model inference, GPU execution,
 arbitrary editing code and TypeScript parity remain deferred.
 
+The [CPU inference study](../../examples/weight_evolution/cpu_inference/README.md)
+evaluates fixed tiny-model candidates through actual CPU forward passes. Its
+versioned evidence declares model execution and pins the checkpoint, prompt,
+decoding, runtime, and scorer. The worker receives no labels or scorer authority.
+Durable reservations precede each bounded batch; incomplete claims stay charged,
+completed replay dispatches no inference, and confirmation vetoes withhold audit.
+Linux enforces address-space limits; macOS monitors RSS with sampling overshoot.
+Both use hard wall deadlines. This trusted model runner is not an arbitrary-code
+sandbox. GPU execution, Qwen reproduction, and inference-driven adaptive search
+remain deferred.
+
 ## Context mutation safety
 
 Coach and architect output that would change the playbook, hints, prompts,

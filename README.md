@@ -30,6 +30,7 @@ The [comparison-condition harness](examples/weight_evolution/qwen_comparison/REA
 The [CPU-only editing sessions](examples/weight_evolution/qwen_sessions/README.md) create context, weight-descriptor and decoding candidates with finite durable budgets, practice-only adapter views and sealed exports into that comparison harness. Real GPU editing and benchmark practice selection remain deferred.
 The [adaptive editing fixtures](examples/weight_evolution/qwen_adaptive/README.md) add feedback-conditioned proposals, equal search caps, practice-based selection, and a separate confirmation gate before the final fixture audit.
 The [checkpoint-backed editing fixtures](examples/weight_evolution/qwen_checkpoints/README.md) apply typed edits to tiny CPU safetensors and carry independently verified input/program/output hashes through selection and confirmation. Model and GPU inference remain deferred.
+The [CPU inference study](examples/weight_evolution/cpu_inference/README.md) runs a pinned tiny classifier on verified checkpoint bytes and measures baseline, context, weight, combined, and decoding conditions. Its constructed tasks establish execution correctness; Qwen reproduction and GPU execution remain deferred.
 
 ## Install
 

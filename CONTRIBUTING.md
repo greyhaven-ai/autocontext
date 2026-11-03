@@ -89,6 +89,15 @@ string handles are compatibility projections, not authoritative artifacts.
 Keep these edits data-only: real model/GPU execution and arbitrary editing code
 remain outside this fixture workflow.
 
+The [CPU inference study](examples/weight_evolution/cpu_inference/README.md)
+uses a separate true-inference contract; preserve the earlier synthetic fixture
+schemas and pins. Keep gold labels outside worker requests, record actual
+checkpoint/runtime/decoding identities, and reserve bounded batches before
+dispatch. Missing retained evidence must not cause a repeated forward pass.
+Keep measured timing/RSS separate from deterministic semantic evidence and state
+the platform's memory-enforcement mode. Its constructed correlated tasks do not
+establish generalization, optimization, or Qwen benchmark performance.
+
 TypeScript:
 
 ```bash
