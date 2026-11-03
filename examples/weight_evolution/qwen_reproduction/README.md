@@ -16,6 +16,10 @@ Milestone 4 adds [GPU readiness, acceptance and the gated full-study workflow](G
 to start workers. CPU implementation does not require a GPU. See
 [milestone 4 validation](MILESTONE4_VALIDATION.md) for checks and live-run status.
 
+Milestone 5's [comparison-condition harness](../qwen_comparison/README.md) is
+separate from this pinned reproduction. Its A/C/W/CW/D matrix currently uses
+offline synthetic fixtures only; comparison and reproduction GPU runs remain deferred.
+
 Both real checkpoints were reconstructed and verified on CPU during development.
 The Docker execution path and GPU inference have not been exercised on NVIDIA
 hardware. No reproduction benchmark scores are claimed.
@@ -267,7 +271,8 @@ base-versus-patch GPU evaluation is still required. Original private dataset
 identity, scorer-wrapper behavior and runtime/hardware remain fidelity gaps.
 Practice/discovery snapshots and contamination audits remain later work. The
 original editor driver and forward-pass service were not released. Fresh
-discovery and the planned comparison conditions remain subsequent milestones.
+discovery and real execution of the comparison conditions remain subsequent work;
+the offline comparison contract and fixtures are implemented separately.
 
 The original `reproduction.lock.json` remains unchanged so its identity and
 historical milestone-1 fidelity notes stay reproducible. Those notes are not a

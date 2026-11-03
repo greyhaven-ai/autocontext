@@ -1,0 +1,9 @@
+{
+  "execution_kind": "fixture",
+  "model_execution_performed": false,
+  "responses_sha256": "26067951d1089792b917b8e9f38375eeaf3993acf9b396146c92849a554ba5c3",
+  "responses_size_bytes": 31006,
+  "schema_version": 1,
+  "study_sha256": "98dd774cc3544e742c2ab8565ab788cb5915d99100b024c6c3f86128685aab46",
+  "study_size_bytes": 72435
+}
