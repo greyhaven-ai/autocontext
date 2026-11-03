@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Generated CPU search campaigns pin independent task instances, separate seed
+  roles, scorer, policies, budgets and reporting rules. Adaptive, fixed-order and
+  seeded-random search share practice coverage, restoration and confirmation.
+  Durable campaign reservations retain every failure and veto; read-only reports
+  verify completed inference and compute paired task-level comparisons with
+  repeated seeds nested within tasks. GPU/Qwen execution, live proposal models,
+  arbitrary programs, TypeScript parity and benchmark claims remain deferred.
+
 - Adaptive CPU editing uses actual practice scores to choose among pinned finite
   context, tensor, and decoding options under equal search caps. Charged journals,
   earlier-best restoration, native seals, one-look confirmation, and replay

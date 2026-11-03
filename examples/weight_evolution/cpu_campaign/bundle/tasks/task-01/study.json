@@ -1,0 +1,512 @@
+{
+  "baseline_decoding": {
+    "mode": "greedy",
+    "seed": 0,
+    "temperature": 1.0,
+    "top_k": 0
+  },
+  "budget": {
+    "max_inference_calls": 104,
+    "max_input_tokens": 1248,
+    "max_materializations": 5,
+    "max_output_tokens": 104,
+    "max_proposals": 9
+  },
+  "candidates": [
+    {
+      "candidate_id": "base",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 1,
+        "schema_version": 1,
+        "sha256": "2b68aef310e572525ddd7a89d0284a4a8e13ead0020b439b629358819f724d7b",
+        "size_bytes": 256,
+        "tensors": [
+          {
+            "dtype": "F32",
+            "editable": false,
+            "name": "projection.bias",
+            "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "projection.weight",
+            "sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ]
+      },
+      "output_sha256": "2b68aef310e572525ddd7a89d0284a4a8e13ead0020b439b629358819f724d7b",
+      "output_size_bytes": 256,
+      "program": null
+    },
+    {
+      "candidate_id": "coordinate-a-1",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 1,
+        "schema_version": 1,
+        "sha256": "2b68aef310e572525ddd7a89d0284a4a8e13ead0020b439b629358819f724d7b",
+        "size_bytes": 256,
+        "tensors": [
+          {
+            "dtype": "F32",
+            "editable": false,
+            "name": "projection.bias",
+            "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "projection.weight",
+            "sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ]
+      },
+      "output_sha256": "367c56b24a5e02c0c4480c50112e3681af2faaa53f7b26ce356156bbf8e02aaf",
+      "output_size_bytes": 256,
+      "program": {
+        "edits": [
+          {
+            "dtype": "F32",
+            "expected_sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "name": "projection.weight",
+            "replacements": [
+              {
+                "index": 10,
+                "value_hex": "0000a0c0"
+              }
+            ],
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ],
+        "input_digest": "cf850d1fcd69a23f16b784529aa5afef8c3d34085526f9842c650173f0ae1a13",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    },
+    {
+      "candidate_id": "coordinate-a-2",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 1,
+        "schema_version": 1,
+        "sha256": "2b68aef310e572525ddd7a89d0284a4a8e13ead0020b439b629358819f724d7b",
+        "size_bytes": 256,
+        "tensors": [
+          {
+            "dtype": "F32",
+            "editable": false,
+            "name": "projection.bias",
+            "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "projection.weight",
+            "sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ]
+      },
+      "output_sha256": "7fa84c8251670a4d9bbf4434aa88a8532603c2756d39a1dbb0d33bcbda7a69d6",
+      "output_size_bytes": 256,
+      "program": {
+        "edits": [
+          {
+            "dtype": "F32",
+            "expected_sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "name": "projection.weight",
+            "replacements": [
+              {
+                "index": 10,
+                "value_hex": "000000c1"
+              }
+            ],
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ],
+        "input_digest": "cf850d1fcd69a23f16b784529aa5afef8c3d34085526f9842c650173f0ae1a13",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    },
+    {
+      "candidate_id": "coordinate-b-1",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 1,
+        "schema_version": 1,
+        "sha256": "2b68aef310e572525ddd7a89d0284a4a8e13ead0020b439b629358819f724d7b",
+        "size_bytes": 256,
+        "tensors": [
+          {
+            "dtype": "F32",
+            "editable": false,
+            "name": "projection.bias",
+            "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "projection.weight",
+            "sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ]
+      },
+      "output_sha256": "4327f851b236ab3a9e3d714d740d193a4f234ae3ec5ffcb7949cdb4c80c61119",
+      "output_size_bytes": 256,
+      "program": {
+        "edits": [
+          {
+            "dtype": "F32",
+            "expected_sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "name": "projection.weight",
+            "replacements": [
+              {
+                "index": 4,
+                "value_hex": "000000bf"
+              }
+            ],
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ],
+        "input_digest": "cf850d1fcd69a23f16b784529aa5afef8c3d34085526f9842c650173f0ae1a13",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    },
+    {
+      "candidate_id": "coordinate-b-2",
+      "contract": {
+        "format": "safetensors",
+        "max_changed_entries": 1,
+        "schema_version": 1,
+        "sha256": "2b68aef310e572525ddd7a89d0284a4a8e13ead0020b439b629358819f724d7b",
+        "size_bytes": 256,
+        "tensors": [
+          {
+            "dtype": "F32",
+            "editable": false,
+            "name": "projection.bias",
+            "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+            "shape": [
+              2
+            ]
+          },
+          {
+            "dtype": "F32",
+            "editable": true,
+            "name": "projection.weight",
+            "sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ]
+      },
+      "output_sha256": "e00b1371419cefc65b4d6b514b5d37c7f8afa1fd705b8f584a3caebe96aac7af",
+      "output_size_bytes": 256,
+      "program": {
+        "edits": [
+          {
+            "dtype": "F32",
+            "expected_sha256": "6d92e7e89c754c002ac20aef3e6dc9e1fed479f064bd0600137504f5e9d9809c",
+            "name": "projection.weight",
+            "replacements": [
+              {
+                "index": 4,
+                "value_hex": "000020c0"
+              }
+            ],
+            "shape": [
+              8,
+              2
+            ]
+          }
+        ],
+        "input_digest": "cf850d1fcd69a23f16b784529aa5afef8c3d34085526f9842c650173f0ae1a13",
+        "operation": "sparse_replace_bits",
+        "schema_version": 1
+      }
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "practice-01",
+      "expected": "zero",
+      "prompt": "token0 token0 token1 token2 token2 token3 token3 token4 token6",
+      "role": "practice"
+    },
+    {
+      "case_id": "practice-02",
+      "expected": "zero",
+      "prompt": "token0 token1 token2 token3 token4 token5 token7 token7",
+      "role": "practice"
+    },
+    {
+      "case_id": "practice-03",
+      "expected": "zero",
+      "prompt": "token2 token7 token7 token7",
+      "role": "practice"
+    },
+    {
+      "case_id": "practice-04",
+      "expected": "one",
+      "prompt": "token1 token4 token4 token6",
+      "role": "practice"
+    },
+    {
+      "case_id": "confirmation-01",
+      "expected": "zero",
+      "prompt": "token4 token4 token5 token5 token6 token6",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "confirmation-02",
+      "expected": "zero",
+      "prompt": "token0 token1 token2 token2 token2 token4 token6",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "confirmation-03",
+      "expected": "one",
+      "prompt": "token1 token1 token1 token1 token2 token3 token4 token4 token4",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "confirmation-04",
+      "expected": "zero",
+      "prompt": "token0 token1 token4 token6 token7",
+      "role": "confirmation"
+    },
+    {
+      "case_id": "audit-01",
+      "expected": "zero",
+      "prompt": "token0 token1 token2 token2 token2 token4 token4 token6 token7 token7",
+      "role": "audit"
+    },
+    {
+      "case_id": "audit-02",
+      "expected": "one",
+      "prompt": "token1 token3 token3 token3 token4 token4 token5 token7",
+      "role": "audit"
+    },
+    {
+      "case_id": "audit-03",
+      "expected": "zero",
+      "prompt": "token0 token0 token0 token2 token4 token5 token5",
+      "role": "audit"
+    },
+    {
+      "case_id": "audit-04",
+      "expected": "zero",
+      "prompt": "token1 token1 token2 token3 token4 token5 token6 token7 token7",
+      "role": "audit"
+    }
+  ],
+  "evaluation_seed": 0,
+  "gpu_execution_deferred": true,
+  "implementation_digest": "b4f20d7e16274d56da7ac302de607e98d1fb95e2e21b8dd00798256bdc349148",
+  "limits": {
+    "max_input_tokens": 12,
+    "max_output_tokens": 1,
+    "memory_mb": 512,
+    "wall_seconds": 5.0
+  },
+  "minimum_confirmation_gain": 0.1,
+  "model": {
+    "architecture": "token-sum-linear-v1",
+    "output_tokens": [
+      "zero",
+      "one"
+    ],
+    "schema_version": 1,
+    "vocabulary": [
+      "token0",
+      "token1",
+      "token2",
+      "token3",
+      "token4",
+      "token5",
+      "token6",
+      "token7"
+    ]
+  },
+  "options": [
+    {
+      "candidate_id": null,
+      "context": "token5",
+      "decoding": null,
+      "direction": "a",
+      "mechanism": "C",
+      "option_id": "c-a-1",
+      "step": 1
+    },
+    {
+      "candidate_id": null,
+      "context": "token5 token5",
+      "decoding": null,
+      "direction": "a",
+      "mechanism": "C",
+      "option_id": "c-a-2",
+      "step": 2
+    },
+    {
+      "candidate_id": null,
+      "context": "token6",
+      "decoding": null,
+      "direction": "b",
+      "mechanism": "C",
+      "option_id": "c-b-1",
+      "step": 1
+    },
+    {
+      "candidate_id": null,
+      "context": "token6 token6",
+      "decoding": null,
+      "direction": "b",
+      "mechanism": "C",
+      "option_id": "c-b-2",
+      "step": 2
+    },
+    {
+      "candidate_id": "coordinate-a-1",
+      "context": null,
+      "decoding": null,
+      "direction": "a",
+      "mechanism": "W",
+      "option_id": "w-a-1",
+      "step": 1
+    },
+    {
+      "candidate_id": "coordinate-a-2",
+      "context": null,
+      "decoding": null,
+      "direction": "a",
+      "mechanism": "W",
+      "option_id": "w-a-2",
+      "step": 2
+    },
+    {
+      "candidate_id": "coordinate-b-1",
+      "context": null,
+      "decoding": null,
+      "direction": "b",
+      "mechanism": "W",
+      "option_id": "w-b-1",
+      "step": 1
+    },
+    {
+      "candidate_id": "coordinate-b-2",
+      "context": null,
+      "decoding": null,
+      "direction": "b",
+      "mechanism": "W",
+      "option_id": "w-b-2",
+      "step": 2
+    },
+    {
+      "candidate_id": null,
+      "context": null,
+      "decoding": {
+        "mode": "sample",
+        "seed": 0,
+        "temperature": 0.5,
+        "top_k": 2
+      },
+      "direction": "cool",
+      "mechanism": "D",
+      "option_id": "d-cool-1",
+      "step": 1
+    },
+    {
+      "candidate_id": null,
+      "context": null,
+      "decoding": {
+        "mode": "sample",
+        "seed": 0,
+        "temperature": 0.25,
+        "top_k": 2
+      },
+      "direction": "cool",
+      "mechanism": "D",
+      "option_id": "d-cool-2",
+      "step": 2
+    },
+    {
+      "candidate_id": null,
+      "context": null,
+      "decoding": {
+        "mode": "sample",
+        "seed": 0,
+        "temperature": 2.0,
+        "top_k": 2
+      },
+      "direction": "warm",
+      "mechanism": "D",
+      "option_id": "d-warm-1",
+      "step": 1
+    },
+    {
+      "candidate_id": null,
+      "context": null,
+      "decoding": {
+        "mode": "sample",
+        "seed": 0,
+        "temperature": 4.0,
+        "top_k": 2
+      },
+      "direction": "warm",
+      "mechanism": "D",
+      "option_id": "d-warm-2",
+      "step": 2
+    }
+  ],
+  "policy": {
+    "name": "adaptive-v1",
+    "order_seed": 0
+  },
+  "promotion_eligible": false,
+  "rounds": 3,
+  "schema_version": 1,
+  "study_id": "generated-task-01",
+  "study_kind": "adaptive_cpu_inference"
+}

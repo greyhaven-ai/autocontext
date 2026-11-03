@@ -378,7 +378,7 @@
   ],
   "evaluation_seed": 406,
   "gpu_execution_deferred": true,
-  "implementation_digest": "075bde7e79902f91deb59d7889086694ce5e6fcba4fe7017408adfc3db2fdfdb",
+  "implementation_digest": "b4f20d7e16274d56da7ac302de607e98d1fb95e2e21b8dd00798256bdc349148",
   "limits": {
     "max_input_tokens": 16,
     "max_output_tokens": 1,
@@ -532,6 +532,10 @@
       "step": 2
     }
   ],
+  "policy": {
+    "name": "adaptive-v1",
+    "order_seed": 0
+  },
   "promotion_eligible": false,
   "rounds": 3,
   "schema_version": 1,

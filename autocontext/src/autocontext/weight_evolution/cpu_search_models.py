@@ -68,6 +68,19 @@ class CpuSearchBudget(_SearchModel):
     max_output_tokens: int = Field(default=512, ge=1, le=2048)
 
 
+class CpuSearchPolicy(_SearchModel):
+    """Versioned proposal order, independent of the paired evaluation seed."""
+
+    name: Literal["adaptive-v1", "fixed-order-v1", "seeded-random-v1"] = "adaptive-v1"
+    order_seed: int = Field(default=0, ge=0, le=2**32 - 1)
+
+    @model_validator(mode="after")
+    def meaningful_seed(self) -> Self:
+        if self.name != "seeded-random-v1" and self.order_seed != 0:
+            raise ValueError("only seeded-random-v1 accepts a nonzero ordering seed")
+        return self
+
+
 class CpuSearchSpec(_SearchModel):
     schema_version: Literal[1] = 1
     study_kind: Literal["adaptive_cpu_inference"] = "adaptive_cpu_inference"
@@ -78,6 +91,7 @@ class CpuSearchSpec(_SearchModel):
     candidates: tuple[TensorCandidateSpec, ...] = Field(min_length=2, max_length=MAX_CANDIDATES)
     options: tuple[CpuSearchOption, ...] = Field(min_length=3, max_length=48)
     rounds: int = Field(ge=1, le=MAX_CANDIDATES - 1)
+    policy: CpuSearchPolicy = Field(default_factory=CpuSearchPolicy)
     baseline_decoding: CpuDecoding
     evaluation_seed: int = Field(ge=0, le=2**32 - 1)
     limits: CpuWorkerLimits

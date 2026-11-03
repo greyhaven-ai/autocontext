@@ -3,6 +3,6 @@
   "base_size_bytes": 240,
   "kind": "cpu_adaptive_bundle",
   "schema_version": 1,
-  "spec_sha256": "67a848b8b6ca341f7a7201b167fa7bb1bc7014fdaa223ab115103ddc59b7873a",
-  "spec_size_bytes": 13616
+  "spec_sha256": "a054dad00ffdda5376dd019cc9321fa985e9a66e937c0b3d3087bbdaee296ca0",
+  "spec_size_bytes": 13682
 }

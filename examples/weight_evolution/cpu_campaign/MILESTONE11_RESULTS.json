@@ -1,0 +1,605 @@
+{
+  "fixture": {
+    "audit_coverage": {
+      "available": 0,
+      "conditional_on_confirmation": true,
+      "overall_quality_aggregate": null,
+      "scheduled": 9,
+      "withheld_after_veto": 9
+    },
+    "campaign_digest": "a995683c63387e6aa64be7d3a57d316b21c38a1f306fb772e49139f0116733e4",
+    "contrasts": {
+      "adaptive-minus-fixed-order-v1:C": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 3,
+        "upper": 0.0
+      },
+      "adaptive-minus-fixed-order-v1:CW": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 3,
+        "upper": 0.0
+      },
+      "adaptive-minus-fixed-order-v1:D": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 3,
+        "upper": 0.0
+      },
+      "adaptive-minus-fixed-order-v1:W": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 3,
+        "upper": 0.0
+      },
+      "adaptive-minus-seeded-random-v1:C": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 3,
+        "upper": 0.0
+      },
+      "adaptive-minus-seeded-random-v1:CW": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 3,
+        "upper": 0.0
+      },
+      "adaptive-minus-seeded-random-v1:D": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 3,
+        "upper": 0.0
+      },
+      "adaptive-minus-seeded-random-v1:W": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 3,
+        "upper": 0.0
+      }
+    },
+    "costs": {
+      "attempted_capacity": {
+        "inference_calls": 936,
+        "input_tokens": 7947,
+        "materializations": 45,
+        "output_tokens": 936,
+        "proposals": 81
+      },
+      "charged_usage_complete": true,
+      "failed_or_pending_reserved_capacity": {
+        "inference_calls": 0,
+        "input_tokens": 0,
+        "materializations": 0,
+        "output_tokens": 0,
+        "proposals": 0
+      },
+      "known_charged_usage": {
+        "inference_calls": 756,
+        "input_tokens": 5007,
+        "materializations": 45,
+        "output_tokens": 756,
+        "proposals": 81
+      },
+      "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+      "scheduled_capacity": {
+        "inference_calls": 936,
+        "input_tokens": 7947,
+        "materializations": 45,
+        "output_tokens": 936,
+        "proposals": 81
+      },
+      "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+      "unknown_charged_usage_run_ids": []
+    },
+    "exact_resume_and_read_only_report": true,
+    "policy_coverage": {
+      "adaptive-v1": {
+        "completed": 3,
+        "completed_fraction": 1.0,
+        "confirmed": 0,
+        "confirmed_fraction": 0.0,
+        "costs": {
+          "attempted_capacity": {
+            "inference_calls": 312,
+            "input_tokens": 2649,
+            "materializations": 15,
+            "output_tokens": 312,
+            "proposals": 27
+          },
+          "charged_usage_complete": true,
+          "failed_or_pending_reserved_capacity": {
+            "inference_calls": 0,
+            "input_tokens": 0,
+            "materializations": 0,
+            "output_tokens": 0,
+            "proposals": 0
+          },
+          "known_charged_usage": {
+            "inference_calls": 252,
+            "input_tokens": 1669,
+            "materializations": 15,
+            "output_tokens": 252,
+            "proposals": 27
+          },
+          "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+          "scheduled_capacity": {
+            "inference_calls": 312,
+            "input_tokens": 2649,
+            "materializations": 15,
+            "output_tokens": 312,
+            "proposals": 27
+          },
+          "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+          "unknown_charged_usage_run_ids": []
+        },
+        "denominator": 3,
+        "failed": 0,
+        "not-started": 0,
+        "pending": 0,
+        "scheduled": 3,
+        "vetoed": 3,
+        "vetoed_fraction": 1.0
+      },
+      "fixed-order-v1": {
+        "completed": 3,
+        "completed_fraction": 1.0,
+        "confirmed": 0,
+        "confirmed_fraction": 0.0,
+        "costs": {
+          "attempted_capacity": {
+            "inference_calls": 312,
+            "input_tokens": 2649,
+            "materializations": 15,
+            "output_tokens": 312,
+            "proposals": 27
+          },
+          "charged_usage_complete": true,
+          "failed_or_pending_reserved_capacity": {
+            "inference_calls": 0,
+            "input_tokens": 0,
+            "materializations": 0,
+            "output_tokens": 0,
+            "proposals": 0
+          },
+          "known_charged_usage": {
+            "inference_calls": 252,
+            "input_tokens": 1669,
+            "materializations": 15,
+            "output_tokens": 252,
+            "proposals": 27
+          },
+          "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+          "scheduled_capacity": {
+            "inference_calls": 312,
+            "input_tokens": 2649,
+            "materializations": 15,
+            "output_tokens": 312,
+            "proposals": 27
+          },
+          "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+          "unknown_charged_usage_run_ids": []
+        },
+        "denominator": 3,
+        "failed": 0,
+        "not-started": 0,
+        "pending": 0,
+        "scheduled": 3,
+        "vetoed": 3,
+        "vetoed_fraction": 1.0
+      },
+      "seeded-random-v1": {
+        "completed": 3,
+        "completed_fraction": 1.0,
+        "confirmed": 0,
+        "confirmed_fraction": 0.0,
+        "costs": {
+          "attempted_capacity": {
+            "inference_calls": 312,
+            "input_tokens": 2649,
+            "materializations": 15,
+            "output_tokens": 312,
+            "proposals": 27
+          },
+          "charged_usage_complete": true,
+          "failed_or_pending_reserved_capacity": {
+            "inference_calls": 0,
+            "input_tokens": 0,
+            "materializations": 0,
+            "output_tokens": 0,
+            "proposals": 0
+          },
+          "known_charged_usage": {
+            "inference_calls": 252,
+            "input_tokens": 1669,
+            "materializations": 15,
+            "output_tokens": 252,
+            "proposals": 27
+          },
+          "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+          "scheduled_capacity": {
+            "inference_calls": 312,
+            "input_tokens": 2649,
+            "materializations": 15,
+            "output_tokens": 312,
+            "proposals": 27
+          },
+          "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+          "unknown_charged_usage_run_ids": []
+        },
+        "denominator": 3,
+        "failed": 0,
+        "not-started": 0,
+        "pending": 0,
+        "scheduled": 3,
+        "vetoed": 3,
+        "vetoed_fraction": 1.0
+      }
+    },
+    "retained_files": 939,
+    "runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+    "semantic_digest": "bb226a2a7df2d6f8ef731823f96dc1e71d78278341d1e6a153c8f520ce69be04",
+    "status_counts": {
+      "completed": 9,
+      "confirmed": 0,
+      "failed": 0,
+      "not-started": 0,
+      "pending": 0,
+      "scheduled": 9,
+      "vetoed": 9
+    },
+    "validation": {
+      "campaign_digest": "a995683c63387e6aa64be7d3a57d316b21c38a1f306fb772e49139f0116733e4",
+      "gpu_execution_deferred": true,
+      "model_execution_performed": false,
+      "policies": [
+        "adaptive-v1",
+        "fixed-order-v1",
+        "seeded-random-v1"
+      ],
+      "required_usage": {
+        "inference_calls": 936,
+        "input_tokens": 7947,
+        "materializations": 45,
+        "output_tokens": 936,
+        "proposals": 81
+      },
+      "run_count": 9,
+      "scope": "validation-only-no-proposals-or-inference",
+      "task_count": 3
+    }
+  },
+  "m10_regression": {
+    "audit_status": "completed",
+    "selected_options": {
+      "C": "c-hint-1",
+      "D": "d-temperature-1",
+      "W": "w-row-two-1"
+    },
+    "usage": {
+      "inference_calls": 130,
+      "input_tokens": 255,
+      "materializations": 5,
+      "output_tokens": 130,
+      "proposals": 9
+    },
+    "validation": {
+      "candidate_count": 5,
+      "gpu_execution_deferred": true,
+      "model_execution_performed": false,
+      "policy": {
+        "name": "adaptive-v1",
+        "order_seed": 0
+      },
+      "policy_digest": "b475357943712c48e92adde30d5995f7e8a81a786e7149934075265d43fb93d8",
+      "required_usage": {
+        "inference_calls": 130,
+        "input_tokens": 465,
+        "materializations": 5,
+        "output_tokens": 130,
+        "proposals": 9
+      },
+      "rounds_per_mechanism": 3,
+      "scope": "validation-only-no-materialization-proposals-or-inference",
+      "study_digest": "b220112b6a8fcad859728e5b76192a81240801898b8aa9e2f27d9b036cbdebd9"
+    }
+  },
+  "pilot": {
+    "audit_coverage": {
+      "available": 0,
+      "conditional_on_confirmation": true,
+      "overall_quality_aggregate": null,
+      "scheduled": 72,
+      "withheld_after_veto": 72
+    },
+    "campaign_digest": "ee57f595fa2ca10c02b8625f25a2beee6cf4eded8d4daf41d472f54d6eb3b36c",
+    "contrasts": {
+      "adaptive-minus-fixed-order-v1:C": {
+        "lower": -0.26767741463107564,
+        "mean": 0.09375,
+        "task_count": 8,
+        "upper": 0.45517741463107564
+      },
+      "adaptive-minus-fixed-order-v1:CW": {
+        "lower": -0.26767741463107564,
+        "mean": 0.09375,
+        "task_count": 8,
+        "upper": 0.45517741463107564
+      },
+      "adaptive-minus-fixed-order-v1:D": {
+        "lower": -0.03174661859616171,
+        "mean": 0.020833333333333332,
+        "task_count": 8,
+        "upper": 0.07341328526282838
+      },
+      "adaptive-minus-fixed-order-v1:W": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 8,
+        "upper": 0.0
+      },
+      "adaptive-minus-seeded-random-v1:C": {
+        "lower": 0.0,
+        "mean": 0.0,
+        "task_count": 8,
+        "upper": 0.0
+      },
+      "adaptive-minus-seeded-random-v1:CW": {
+        "lower": -0.050575268292341734,
+        "mean": -0.010416666666666666,
+        "task_count": 8,
+        "upper": 0.029741934959008405
+      },
+      "adaptive-minus-seeded-random-v1:D": {
+        "lower": -0.202303286240311,
+        "mean": -0.03125,
+        "task_count": 8,
+        "upper": 0.139803286240311
+      },
+      "adaptive-minus-seeded-random-v1:W": {
+        "lower": -0.050575268292341734,
+        "mean": -0.010416666666666666,
+        "task_count": 8,
+        "upper": 0.029741934959008405
+      }
+    },
+    "costs": {
+      "attempted_capacity": {
+        "inference_calls": 7488,
+        "input_tokens": 64467,
+        "materializations": 360,
+        "output_tokens": 7488,
+        "proposals": 648
+      },
+      "charged_usage_complete": true,
+      "failed_or_pending_reserved_capacity": {
+        "inference_calls": 0,
+        "input_tokens": 0,
+        "materializations": 0,
+        "output_tokens": 0,
+        "proposals": 0
+      },
+      "known_charged_usage": {
+        "inference_calls": 6048,
+        "input_tokens": 41499,
+        "materializations": 360,
+        "output_tokens": 6048,
+        "proposals": 648
+      },
+      "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+      "scheduled_capacity": {
+        "inference_calls": 7488,
+        "input_tokens": 64467,
+        "materializations": 360,
+        "output_tokens": 7488,
+        "proposals": 648
+      },
+      "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+      "unknown_charged_usage_run_ids": []
+    },
+    "exact_resume_and_read_only_report": true,
+    "policy_coverage": {
+      "adaptive-v1": {
+        "completed": 24,
+        "completed_fraction": 1.0,
+        "confirmed": 0,
+        "confirmed_fraction": 0.0,
+        "costs": {
+          "attempted_capacity": {
+            "inference_calls": 2496,
+            "input_tokens": 21489,
+            "materializations": 120,
+            "output_tokens": 2496,
+            "proposals": 216
+          },
+          "charged_usage_complete": true,
+          "failed_or_pending_reserved_capacity": {
+            "inference_calls": 0,
+            "input_tokens": 0,
+            "materializations": 0,
+            "output_tokens": 0,
+            "proposals": 0
+          },
+          "known_charged_usage": {
+            "inference_calls": 2016,
+            "input_tokens": 13833,
+            "materializations": 120,
+            "output_tokens": 2016,
+            "proposals": 216
+          },
+          "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+          "scheduled_capacity": {
+            "inference_calls": 2496,
+            "input_tokens": 21489,
+            "materializations": 120,
+            "output_tokens": 2496,
+            "proposals": 216
+          },
+          "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+          "unknown_charged_usage_run_ids": []
+        },
+        "denominator": 24,
+        "failed": 0,
+        "not-started": 0,
+        "pending": 0,
+        "scheduled": 24,
+        "vetoed": 24,
+        "vetoed_fraction": 1.0
+      },
+      "fixed-order-v1": {
+        "completed": 24,
+        "completed_fraction": 1.0,
+        "confirmed": 0,
+        "confirmed_fraction": 0.0,
+        "costs": {
+          "attempted_capacity": {
+            "inference_calls": 2496,
+            "input_tokens": 21489,
+            "materializations": 120,
+            "output_tokens": 2496,
+            "proposals": 216
+          },
+          "charged_usage_complete": true,
+          "failed_or_pending_reserved_capacity": {
+            "inference_calls": 0,
+            "input_tokens": 0,
+            "materializations": 0,
+            "output_tokens": 0,
+            "proposals": 0
+          },
+          "known_charged_usage": {
+            "inference_calls": 2016,
+            "input_tokens": 13785,
+            "materializations": 120,
+            "output_tokens": 2016,
+            "proposals": 216
+          },
+          "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+          "scheduled_capacity": {
+            "inference_calls": 2496,
+            "input_tokens": 21489,
+            "materializations": 120,
+            "output_tokens": 2496,
+            "proposals": 216
+          },
+          "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+          "unknown_charged_usage_run_ids": []
+        },
+        "denominator": 24,
+        "failed": 0,
+        "not-started": 0,
+        "pending": 0,
+        "scheduled": 24,
+        "vetoed": 24,
+        "vetoed_fraction": 1.0
+      },
+      "seeded-random-v1": {
+        "completed": 24,
+        "completed_fraction": 1.0,
+        "confirmed": 0,
+        "confirmed_fraction": 0.0,
+        "costs": {
+          "attempted_capacity": {
+            "inference_calls": 2496,
+            "input_tokens": 21489,
+            "materializations": 120,
+            "output_tokens": 2496,
+            "proposals": 216
+          },
+          "charged_usage_complete": true,
+          "failed_or_pending_reserved_capacity": {
+            "inference_calls": 0,
+            "input_tokens": 0,
+            "materializations": 0,
+            "output_tokens": 0,
+            "proposals": 0
+          },
+          "known_charged_usage": {
+            "inference_calls": 2016,
+            "input_tokens": 13881,
+            "materializations": 120,
+            "output_tokens": 2016,
+            "proposals": 216
+          },
+          "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+          "scheduled_capacity": {
+            "inference_calls": 2496,
+            "input_tokens": 21489,
+            "materializations": 120,
+            "output_tokens": 2496,
+            "proposals": 216
+          },
+          "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+          "unknown_charged_usage_run_ids": []
+        },
+        "denominator": 24,
+        "failed": 0,
+        "not-started": 0,
+        "pending": 0,
+        "scheduled": 24,
+        "vetoed": 24,
+        "vetoed_fraction": 1.0
+      }
+    },
+    "retained_files": 7491,
+    "runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+    "semantic_digest": "1c4d0a3d4c589afbb05045f7cf4e08605d9778a858f54f982d23d0f61db0d165",
+    "status_counts": {
+      "completed": 72,
+      "confirmed": 0,
+      "failed": 0,
+      "not-started": 0,
+      "pending": 0,
+      "scheduled": 72,
+      "vetoed": 72
+    },
+    "validation": {
+      "campaign_digest": "ee57f595fa2ca10c02b8625f25a2beee6cf4eded8d4daf41d472f54d6eb3b36c",
+      "gpu_execution_deferred": true,
+      "model_execution_performed": false,
+      "policies": [
+        "adaptive-v1",
+        "fixed-order-v1",
+        "seeded-random-v1"
+      ],
+      "required_usage": {
+        "inference_calls": 7488,
+        "input_tokens": 64467,
+        "materializations": 360,
+        "output_tokens": 7488,
+        "proposals": 648
+      },
+      "run_count": 72,
+      "scope": "validation-only-no-proposals-or-inference",
+      "task_count": 8
+    }
+  },
+  "scope": "Local CPU smoke evidence; retained journals live under ignored runs/milestone11-reviewed-validation; no GPU or benchmark claim.",
+  "validation": {
+    "gpu_execution_deferred": true,
+    "linux_amd64_m11_ci": "not-yet-run",
+    "linux_cpu": {
+      "architecture": "aarch64",
+      "cpus": 1,
+      "memory_mb": 768,
+      "network": "none",
+      "passed": 470,
+      "python": "3.11.16",
+      "repository_mount": "read-only",
+      "seconds": 256.34,
+      "skipped": 1,
+      "source_hashes_unchanged": true
+    },
+    "macos_regression": {
+      "architecture": "arm64",
+      "passed": 1957,
+      "python": "3.13.1",
+      "seconds": 311.98,
+      "skipped": 11
+    },
+    "markdown_documents": 168,
+    "markdown_links": 448,
+    "mypy_source_and_examples": 1006,
+    "ruff": "passed"
+  }
+}

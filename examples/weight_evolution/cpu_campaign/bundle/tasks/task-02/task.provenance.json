@@ -1,0 +1,27 @@
+{
+  "base_sha256": "12814c8ad67b3a53c2737476847ab2602f4bcaaf4bd7b74a42da31a616fed1aa",
+  "candidates_digest": "a83674b5ebc66b2b89073d0de54341e9d749e5a9caf987cc93ef24f3c95e88b6",
+  "cases_digest": "5331bb5944e242f5fb20d6be6cb60b0b811d895df4564929fad9e499e8881e9d",
+  "cases_per_role": 4,
+  "family": "linear-separator-v1",
+  "generation_seed": 130363,
+  "generator": "sha256-linear-separator-v1",
+  "generator_source_sha256": "e2bb25eacc8b470665a61bedffe34aef558260dafb2e4074f366c3963c712a25",
+  "model_digest": "68c4e06c17ee5fbf90eee72da53a13510e7a3e9c1d1cbdeffb69e5ec5d9bacca",
+  "options_digest": "b881d0c8c5906e57d7fcb348b92357b1aa42fec17e26c0cad702cc1ee248044c",
+  "schema_version": 1,
+  "semantic_digest": "e07d481ff754cb1da80a9cf4f896955165ccc95886cb326ae96bbcb82d5e4456",
+  "split_identity_rule": "normalized-token-count-ray-v1",
+  "task_id": "task-02",
+  "teacher_bias": 0,
+  "teacher_weights": [
+    2,
+    -1,
+    2,
+    2,
+    1,
+    1,
+    -2,
+    -1
+  ]
+}

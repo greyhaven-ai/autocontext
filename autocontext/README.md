@@ -37,6 +37,11 @@ adds a deterministic policy over pinned finite choices. Actual practice scores
 guide C/W/D trials under equal caps; selected C+W form the combined condition.
 Charged restoration, native seals, one-look confirmation, and verified replay
 retain the complete search evidence. GPU execution remains deferred.
+The [generated CPU campaign](../examples/weight_evolution/cpu_campaign/README.md)
+adds pinned task instances and matched adaptive/fixed-order/seeded-random controls.
+Its complete run roster retains failures and vetoes; reports average repeats
+within tasks before computing paired contrasts. Read-only reporting never
+dispatches or repairs inference evidence. GPU execution remains deferred.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
