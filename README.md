@@ -36,6 +36,8 @@ The [generated CPU campaign](examples/weight_evolution/cpu_campaign/README.md) c
 
 The [CPU search diagnostics](examples/weight_evolution/cpu_diagnostics/README.md) freeze completed selections before probing every declared single-surface option on practice cases. Separate reference costs and descriptive reports distinguish unavailable improvements, missed options, duplicate outputs, and confirmation vetoes. GPU execution remains deferred.
 
+The [controlled CPU transfer experiments](examples/weight_evolution/cpu_controls/README.md) add deterministic weight-repair, already-correct and practice-shortcut controls. A separate pinned contract preserves earlier evidence while family-specific reports test transfer under the unchanged confirmation gate. These constructed controls do not establish benchmark gains; GPU execution remains deferred.
+
 ## Install
 
 For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](docs/security/accelerate-risk-assessment.md).

@@ -1,0 +1,54 @@
+{
+  "base_sha256": "d5aa45c02d3329651e36ca1b519ae73c27e76b1c364fd7d6d5dd1f3aeab7b0b0",
+  "candidates_digest": "93b47e543fbc815d83d663723bb1f5311caf01aba7ad62d8b46e503a0ed3c846",
+  "cases_digest": "d80027f8e184963ff334dfdf34211eae8ab6391b320b558d57b66842576ccbed",
+  "cases_per_role": 8,
+  "expected_behavior": {
+    "baseline_accuracy": {
+      "audit": 0.5,
+      "confirmation": 0.5,
+      "practice": 0.5
+    },
+    "designated_weight_accuracy": {
+      "audit": 1.0,
+      "confirmation": 1.0,
+      "practice": 1.0
+    },
+    "designated_weight_option_ids": [
+      "w-02",
+      "w-01"
+    ],
+    "scope": "analytical-W-calibration-not-joint-gate"
+  },
+  "family": "transfer-repair-v1",
+  "feature_indices": [
+    4,
+    6,
+    7,
+    2,
+    1,
+    0,
+    3,
+    5
+  ],
+  "generation_seed": 1000003,
+  "generator": "sha256-transfer-controls-v1",
+  "generator_source_sha256": "859359a3571e84f17932d6512d217d5bf33fe3e8b06f7379625aa06aa1812531",
+  "model_digest": "68c4e06c17ee5fbf90eee72da53a13510e7a3e9c1d1cbdeffb69e5ec5d9bacca",
+  "options_digest": "c2fbdb285f5d08e08f67342b8e7c39e9059a4dbe6ddab6c169e5a383644a38fb",
+  "schema_version": 1,
+  "semantic_digest": "d472fb8b560e6993ebfe53e5a44ab43c92fb5ff6fc2e34a36464be70498f041e",
+  "split_identity_rule": "normalized-token-count-ray-v1",
+  "task_id": "task-01",
+  "teacher_bias": 0,
+  "teacher_weights": [
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    -2,
+    0
+  ]
+}

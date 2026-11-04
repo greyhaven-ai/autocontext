@@ -21,6 +21,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Adaptive CPU search with measured feedback, bounded edits, and Linux resource acceptance](../examples/weight_evolution/cpu_adaptive/README.md)
 - [Generated CPU campaigns with equal-budget policy controls and paired task-level reports](../examples/weight_evolution/cpu_campaign/README.md)
 - [Pinned CPU search diagnostics and exhaustive practice-only references](../examples/weight_evolution/cpu_diagnostics/README.md)
+- [Controlled CPU transfer experiments with deterministic repair, baseline and shortcut families](../examples/weight_evolution/cpu_controls/README.md)
 
 ## Using The Packages
 

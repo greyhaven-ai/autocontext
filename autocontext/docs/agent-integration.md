@@ -93,6 +93,17 @@ Failed or uncertain reference dispatches retain reservations and cannot be
 retried; unavailable reference metrics remain null. These descriptive results
 do not reselect candidates, change confirmation, or authorize promotion.
 
+The [controlled CPU transfer experiments](../../examples/weight_evolution/cpu_controls/README.md)
+use a new task/campaign adapter with analytically specified weight controls.
+The builder creates deterministic cohorts and neutral candidate identities
+before any search result exists; policy inputs omit teacher, family and expected
+behavior metadata. `validate`, `run` and `report` preserve the existing search
+worker and joint confirmation gate. Separate `diagnostic-plan`,
+`diagnostic-validate`, `diagnostic-run` and `diagnostic-report` operations add
+practice-only references after all source searches complete. Reports keep
+families separate and mark expected control behavior as analytical, including
+theoretical audit values that were never measured after a joint veto.
+
 The [CPU inference study](../../examples/weight_evolution/cpu_inference/README.md)
 evaluates fixed tiny-model candidates through actual CPU forward passes. Its
 versioned evidence declares model execution and pins the checkpoint, prompt,

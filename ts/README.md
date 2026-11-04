@@ -37,6 +37,10 @@ The [CPU search diagnostics](../examples/weight_evolution/cpu_diagnostics/README
 also remain Python-only, reusing the Python CPU runner and retained campaign
 evidence. Exhaustive practice references add no TypeScript runtime or GPU path;
 cross-runtime parity remains deferred while this research workflow is validated.
+The [controlled CPU transfer experiments](../examples/weight_evolution/cpu_controls/README.md)
+also remain Python-only, reusing its CPU search, checkpoint and diagnostic
+primitives. TypeScript runtime parity is deferred; this workflow calibrates
+constructed weight-transfer behavior without GPU execution or promotion.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the

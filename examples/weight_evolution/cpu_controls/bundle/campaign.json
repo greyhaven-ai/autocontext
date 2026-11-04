@@ -1,0 +1,88 @@
+{
+  "budget": {
+    "max_inference_calls": 3744,
+    "max_input_tokens": 32559,
+    "max_materializations": 90,
+    "max_output_tokens": 3744,
+    "max_proposals": 162,
+    "max_runs": 18
+  },
+  "campaign_id": "m13-fixture-v1",
+  "gpu_execution_deferred": true,
+  "implementation_digest": "a7e4bee370e19fe73ab1fe5ca3c332a1aedb193000542deac90b108fbd5c1425",
+  "policies": [
+    "adaptive-v1",
+    "fixed-order-v1",
+    "seeded-random-v1"
+  ],
+  "promotion_eligible": false,
+  "repeats": [
+    {
+      "inference_seed": 4700001,
+      "repeat_id": "repeat-01",
+      "search_order_seed": 5700001
+    }
+  ],
+  "reporting_rule": "descriptive-family-v1",
+  "sampling_unit": "task-instance",
+  "schema_version": 1,
+  "scorer": "exact-label-v1",
+  "stopping_rule": "complete-schedule-one-confirmation-look-v1",
+  "study_kind": "cpu_transfer_control_campaign",
+  "tasks": [
+    {
+      "bundle_lock_sha256": "d56cf19c33c02f9f8cebf7aee1c5f8aef482f22ac33d0f948c7d9895e79dd6d3",
+      "bundle_lock_size_bytes": 283,
+      "family": "transfer-repair-v1",
+      "generation_seed": 1000003,
+      "provenance_sha256": "3e5649c3334728daeb534421a3c8e09e41f100ef3d656dc74c87b238ef6e2a03",
+      "provenance_size_bytes": 1423,
+      "task_id": "task-01"
+    },
+    {
+      "bundle_lock_sha256": "09f6695f218560bb95956582e32ee83c8bf7e1417d8e06c02a9f7eaef582a1ec",
+      "bundle_lock_size_bytes": 283,
+      "family": "transfer-repair-v1",
+      "generation_seed": 1000033,
+      "provenance_sha256": "1ad7c97976595cb2f3aa61742cd2830b76949c8a93249e8a88233f0347831ba8",
+      "provenance_size_bytes": 1423,
+      "task_id": "task-02"
+    },
+    {
+      "bundle_lock_sha256": "c4c2c45197c298b980f0a290fd0ac2e577e649ca8967471c0b9944402c402fd2",
+      "bundle_lock_size_bytes": 283,
+      "family": "correct-baseline-v1",
+      "generation_seed": 1100009,
+      "provenance_sha256": "3e689f2c1037fda64dcfd8e01ba527b35a9fcb89563b40660065f01884653ed7",
+      "provenance_size_bytes": 1424,
+      "task_id": "task-03"
+    },
+    {
+      "bundle_lock_sha256": "0eccc4f162425a448b7231b75080ec83f2745441e28a9b97e3481112bcceba32",
+      "bundle_lock_size_bytes": 283,
+      "family": "correct-baseline-v1",
+      "generation_seed": 1100021,
+      "provenance_sha256": "552030f3f7dcf5df5fc76781c09d0ae6fdc57714865e0b05c2c5dc72340e9b67",
+      "provenance_size_bytes": 1424,
+      "task_id": "task-04"
+    },
+    {
+      "bundle_lock_sha256": "71b7dd64767e42af252219f289adc5d54016b8121fa715f5a4e2af8045a0bd61",
+      "bundle_lock_size_bytes": 283,
+      "family": "practice-shortcut-v1",
+      "generation_seed": 1200007,
+      "provenance_sha256": "49f4069e9e20eed91bf09f7c7d78a0a8520dcd48cbff6399ac81c48e41a27ec4",
+      "provenance_size_bytes": 1425,
+      "task_id": "task-05"
+    },
+    {
+      "bundle_lock_sha256": "669e5c9c0c5e9656c0686aca24f23432cd52398bab3fd1764dfc1c8956603fea",
+      "bundle_lock_size_bytes": 283,
+      "family": "practice-shortcut-v1",
+      "generation_seed": 1200013,
+      "provenance_sha256": "3a2a4aa47d9cbced44c8d5717ba632692992dfe6187c88287818286b08bb77d0",
+      "provenance_size_bytes": 1425,
+      "task_id": "task-06"
+    }
+  ]
+}

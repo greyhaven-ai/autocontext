@@ -1,0 +1,54 @@
+{
+  "base_sha256": "edd1bb634b8dd4d6816790fd4311799a11c65cb44542d9477a0c60770f4d8ab6",
+  "candidates_digest": "7ff15ed852196bffd5a9a40e22dbc63a953c4e1a79a9b2fdc8973864f16cb261",
+  "cases_digest": "f458a73d771de13634d69fbb09d02005cd335b629c653913a1f57b95048d60e5",
+  "cases_per_role": 8,
+  "expected_behavior": {
+    "baseline_accuracy": {
+      "audit": 1.0,
+      "confirmation": 1.0,
+      "practice": 1.0
+    },
+    "designated_weight_accuracy": {
+      "audit": 0.5,
+      "confirmation": 0.5,
+      "practice": 0.5
+    },
+    "designated_weight_option_ids": [
+      "w-02",
+      "w-03"
+    ],
+    "scope": "analytical-W-calibration-not-joint-gate"
+  },
+  "family": "correct-baseline-v1",
+  "feature_indices": [
+    0,
+    4,
+    5,
+    1,
+    2,
+    6,
+    7,
+    3
+  ],
+  "generation_seed": 1100009,
+  "generator": "sha256-transfer-controls-v1",
+  "generator_source_sha256": "859359a3571e84f17932d6512d217d5bf33fe3e8b06f7379625aa06aa1812531",
+  "model_digest": "68c4e06c17ee5fbf90eee72da53a13510e7a3e9c1d1cbdeffb69e5ec5d9bacca",
+  "options_digest": "300c49e5f76ebc0ec6fe4b963ba5e57fb49d27437ad3892cf5f0c44fe1db09db",
+  "schema_version": 1,
+  "semantic_digest": "a71ee9cff290333d35656b2583758353cd3d2e87fdb4900436e9158b4477a50b",
+  "split_identity_rule": "normalized-token-count-ray-v1",
+  "task_id": "task-03",
+  "teacher_bias": 0,
+  "teacher_weights": [
+    2,
+    0,
+    0,
+    0,
+    -2,
+    0,
+    0,
+    0
+  ]
+}

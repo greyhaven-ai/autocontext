@@ -1,0 +1,8 @@
+{
+  "base_sha256": "36a570d1832b0166c403f24df46ff2c5f095117f383f394819a65775cef62d7c",
+  "base_size_bytes": 256,
+  "kind": "cpu_adaptive_bundle",
+  "schema_version": 1,
+  "spec_sha256": "20fdbf346dc8fb79d9f1def7ae0576f8efa5552b62606ee7a3d463a0980e06d0",
+  "spec_size_bytes": 15128
+}

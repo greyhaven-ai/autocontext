@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Controlled CPU transfer campaigns pin deterministic weight-repair,
+  correct-baseline and practice-shortcut families before execution. Matched
+  adaptive/fixed/random searches reuse the bounded CPU worker and unchanged
+  joint confirmation gate. Separate practice references and family reports
+  distinguish analytical control expectations from measured transfer, retain
+  failures and preserve M11/M12 source pins. GPU/Qwen execution, live proposals,
+  larger models, arbitrary programs, TypeScript parity and promotion remain deferred.
+
 - Pinned CPU search diagnostics verify complete campaigns and freeze original
   selections before exhaustive practice-only references. Every declared C/W/D
   option shares a separate bounded budget, read-only checkpoint reuse, durable
