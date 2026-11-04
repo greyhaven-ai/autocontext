@@ -54,6 +54,11 @@ These are copy-paste starting points for people evaluating the repo, integrating
   Run the [CPU search campaign](weight_evolution/cpu_campaign/README.md), with
   pinned adaptive/fixed-order/seeded-random controls, complete failure accounting,
   and task-level paired reports. GPU execution remains deferred.
+- Want to distinguish limited candidate opportunities from missed practice gains?
+  Run the [CPU search diagnostics](weight_evolution/cpu_diagnostics/README.md)
+  after completing a CPU campaign. The pinned exhaustive practice reference
+  reuses verified checkpoints, keeps its costs separate, and preserves selections
+  and confirmation results. GPU execution remains deferred.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

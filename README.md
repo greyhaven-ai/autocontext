@@ -34,6 +34,8 @@ The [CPU inference study](examples/weight_evolution/cpu_inference/README.md) run
 The [adaptive CPU search](examples/weight_evolution/cpu_adaptive/README.md) uses those measured practice scores to choose bounded context, tensor, and decoding edits, restore an earlier winner, and freeze selection before confirmation. Linux acceptance covers real memory/CPU limit failures and cleanup; GPU execution remains deferred.
 The [generated CPU campaign](examples/weight_evolution/cpu_campaign/README.md) compares adaptive, fixed-order, and seeded-random search at equal capacity across pinned task instances. Complete schedule accounting, read-only replay, and paired task-level reports retain failures and vetoes without treating repeated seeds as independent tasks.
 
+The [CPU search diagnostics](examples/weight_evolution/cpu_diagnostics/README.md) freeze completed selections before probing every declared single-surface option on practice cases. Separate reference costs and descriptive reports distinguish unavailable improvements, missed options, duplicate outputs, and confirmation vetoes. GPU execution remains deferred.
+
 ## Install
 
 For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](docs/security/accelerate-risk-assessment.md).

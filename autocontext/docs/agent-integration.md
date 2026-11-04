@@ -83,6 +83,16 @@ retain vetoes in denominators, and average paired repeats within each task.
 Audit scores are conditional on confirmation, not an overall policy-quality mean.
 GPU execution and Qwen reproduction remain deferred.
 
+The [CPU search diagnostics](../../examples/weight_evolution/cpu_diagnostics/README.md)
+require a complete verified source campaign. `plan` pins the source report,
+selections, runtime, full practice reference schedule, and separate budgets;
+`validate` checks those identities without inference. `run` reuses verified
+checkpoints to probe the baseline and every declared C/W/D option on practice
+cases only. `report` verifies retained evidence without writes or inference.
+Failed or uncertain reference dispatches retain reservations and cannot be
+retried; unavailable reference metrics remain null. These descriptive results
+do not reselect candidates, change confirmation, or authorize promotion.
+
 The [CPU inference study](../../examples/weight_evolution/cpu_inference/README.md)
 evaluates fixed tiny-model candidates through actual CPU forward passes. Its
 versioned evidence declares model execution and pins the checkpoint, prompt,

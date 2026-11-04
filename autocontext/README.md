@@ -42,6 +42,11 @@ adds pinned task instances and matched adaptive/fixed-order/seeded-random contro
 Its complete run roster retains failures and vetoes; reports average repeats
 within tasks before computing paired contrasts. Read-only reporting never
 dispatches or repairs inference evidence. GPU execution remains deferred.
+The [CPU search diagnostics](../examples/weight_evolution/cpu_diagnostics/README.md)
+pin a completed campaign before exhaustive practice-only probes. Read-only
+checkpoint reuse, separate reference budgets, and verified replay preserve the
+original selections and confirmation gate. Reports describe finite-option
+opportunity and missed gains without reselection or new held-out evaluation.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,

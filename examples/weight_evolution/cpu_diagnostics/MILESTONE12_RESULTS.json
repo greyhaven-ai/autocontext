@@ -1,0 +1,604 @@
+{
+  "base_commit": "95b9713db02838546dbeae9d6e723f4cb4f4526c",
+  "fixture": {
+    "diagnostic_digest": "435810986449643b7765a4eb564093303548e132756358192d8ed975892168e6",
+    "elapsed_seconds_including_plan_validation_resume_report": 10.07,
+    "exact_resume_and_read_only_report": true,
+    "ledger_digest": "61d121baf309419a809a253d5829a7cefca7317bf683dfe160fa02b137443a43",
+    "observed_dispatch": {
+      "batches": 39,
+      "forward_passes": 156,
+      "input_tokens": 1047
+    },
+    "policy_summary": {
+      "adaptive-v1": {
+        "mechanisms": {
+          "C": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 2,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 2,
+            "positive_practice_gain_runs": 1,
+            "practice_gain_failed_confirmation_runs": 1,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "D": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 3,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 3,
+            "positive_practice_gain_runs": 0,
+            "practice_gain_failed_confirmation_runs": 0,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "W": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 3,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 3,
+            "positive_practice_gain_runs": 0,
+            "practice_gain_failed_confirmation_runs": 0,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          }
+        },
+        "scheduled_runs": 3
+      },
+      "fixed-order-v1": {
+        "mechanisms": {
+          "C": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 2,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 2,
+            "positive_practice_gain_runs": 1,
+            "practice_gain_failed_confirmation_runs": 1,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "D": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 3,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 3,
+            "positive_practice_gain_runs": 0,
+            "practice_gain_failed_confirmation_runs": 0,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "W": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 3,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 3,
+            "positive_practice_gain_runs": 0,
+            "practice_gain_failed_confirmation_runs": 0,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          }
+        },
+        "scheduled_runs": 3
+      },
+      "seeded-random-v1": {
+        "mechanisms": {
+          "C": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 2,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 2,
+            "positive_practice_gain_runs": 1,
+            "practice_gain_failed_confirmation_runs": 1,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "D": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 3,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 3,
+            "positive_practice_gain_runs": 0,
+            "practice_gain_failed_confirmation_runs": 0,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "W": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 3,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 3,
+            "positive_practice_gain_runs": 0,
+            "practice_gain_failed_confirmation_runs": 0,
+            "reference_complete_runs": 3,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 3,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          }
+        },
+        "scheduled_runs": 3
+      }
+    },
+    "reference_costs": {
+      "attempted_capacity": {
+        "inference_calls": 156,
+        "input_tokens": 1047,
+        "materializations": 15,
+        "output_tokens": 156,
+        "proposals": 0
+      },
+      "charged_usage_complete": true,
+      "failed_or_pending_reserved_capacity": {
+        "inference_calls": 0,
+        "input_tokens": 0,
+        "materializations": 0,
+        "output_tokens": 0,
+        "proposals": 0
+      },
+      "known_charged_usage": {
+        "inference_calls": 156,
+        "input_tokens": 1047,
+        "materializations": 15,
+        "output_tokens": 156,
+        "proposals": 0
+      },
+      "reservation_rule": "failed-or-uncertain-reference-capacity-remains-charged-without-refund",
+      "scheduled_capacity": {
+        "inference_calls": 156,
+        "input_tokens": 1047,
+        "materializations": 15,
+        "output_tokens": 156,
+        "proposals": 0
+      },
+      "scope": "reference-capacity-separate-from-original-policy-search-budgets",
+      "unknown_charged_usage_reference_ids": []
+    },
+    "reference_coverage": {
+      "completed": 3,
+      "failed": 0,
+      "not-started": 0,
+      "pending": 0,
+      "scheduled": 3
+    },
+    "reference_opportunity": {
+      "C": {
+        "mean_unique_output_vectors_including_baseline": 1.6666666666666667,
+        "no_declared_practice_improvement": 2,
+        "only_one_output_vector": 2,
+        "positive_declared_practice_improvement": 1,
+        "references": 3
+      },
+      "D": {
+        "mean_unique_output_vectors_including_baseline": 1.0,
+        "no_declared_practice_improvement": 3,
+        "only_one_output_vector": 3,
+        "positive_declared_practice_improvement": 0,
+        "references": 3
+      },
+      "W": {
+        "mean_unique_output_vectors_including_baseline": 1.3333333333333333,
+        "no_declared_practice_improvement": 3,
+        "only_one_output_vector": 2,
+        "positive_declared_practice_improvement": 0,
+        "references": 3
+      }
+    },
+    "retained_diagnostic_files": 128,
+    "runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+    "semantic_digest": "67e346aee4c93987213744c4e51848987350633d1ee4ac3cbd824fd79ed7a787",
+    "source_bundle_files": 14,
+    "source_campaign_digest": "a995683c63387e6aa64be7d3a57d316b21c38a1f306fb772e49139f0116733e4",
+    "source_campaign_ledger_digest": "b047f2403392aeb85b038991707d35ed3d25d1c9cfcc4c8ac2c21ff1afefc58f",
+    "source_campaign_report_digest": "846a7529bd3ee848011b186ca35177fd996a972383dd302949778e0cf73a0fdb",
+    "source_files_unchanged": true,
+    "source_output_files": 939,
+    "task_count": 3,
+    "validation": {
+      "campaign_digest": "a995683c63387e6aa64be7d3a57d316b21c38a1f306fb772e49139f0116733e4",
+      "diagnostic_digest": "435810986449643b7765a4eb564093303548e132756358192d8ed975892168e6",
+      "gpu_execution_deferred": true,
+      "model_execution_performed": false,
+      "reference_count": 3,
+      "required_usage": {
+        "inference_calls": 156,
+        "input_tokens": 1047,
+        "materializations": 15,
+        "output_tokens": 156,
+        "proposals": 0,
+        "references": 3
+      },
+      "scope": "read-only-source-and-plan-verification",
+      "source_report_digest": "846a7529bd3ee848011b186ca35177fd996a972383dd302949778e0cf73a0fdb",
+      "source_run_count": 9
+    }
+  },
+  "gpu_execution_performed": false,
+  "implementation_digest": "c78627374d5c08c25d15d4adfd3f8a777e5ef757275a0a7c4b43d9b50d986ccd",
+  "pilot": {
+    "diagnostic_digest": "98b451ccecf79d1282d5a1f44cfd188d459a0f5b55f3efc2ca167bcc9a72c24d",
+    "elapsed_seconds_including_plan_validation_resume_report": 87.82,
+    "exact_resume_and_read_only_report": true,
+    "ledger_digest": "8e7e784a11f3a866c006367dfb50f4ba5d428baf316622db30d6edaab4fcba59",
+    "observed_dispatch": {
+      "batches": 312,
+      "forward_passes": 1248,
+      "input_tokens": 8532
+    },
+    "policy_summary": {
+      "adaptive-v1": {
+        "mechanisms": {
+          "C": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 15,
+            "confirmation_passed_runs": 3,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 15,
+            "positive_practice_gain_runs": 9,
+            "practice_gain_failed_confirmation_runs": 6,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "D": {
+            "available_practice_improvement_missed_runs": 4,
+            "baseline_retained_runs": 17,
+            "confirmation_passed_runs": 2,
+            "mean_selected_gap_if_all_references_complete": 0.0625,
+            "no_declared_practice_improvement_runs": 13,
+            "positive_practice_gain_runs": 7,
+            "practice_gain_failed_confirmation_runs": 5,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "W": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 15,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 15,
+            "positive_practice_gain_runs": 9,
+            "practice_gain_failed_confirmation_runs": 9,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          }
+        },
+        "scheduled_runs": 24
+      },
+      "fixed-order-v1": {
+        "mechanisms": {
+          "C": {
+            "available_practice_improvement_missed_runs": 3,
+            "baseline_retained_runs": 15,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.03125,
+            "no_declared_practice_improvement_runs": 15,
+            "positive_practice_gain_runs": 9,
+            "practice_gain_failed_confirmation_runs": 9,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "D": {
+            "available_practice_improvement_missed_runs": 6,
+            "baseline_retained_runs": 17,
+            "confirmation_passed_runs": 1,
+            "mean_selected_gap_if_all_references_complete": 0.09375,
+            "no_declared_practice_improvement_runs": 13,
+            "positive_practice_gain_runs": 7,
+            "practice_gain_failed_confirmation_runs": 6,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "W": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 15,
+            "confirmation_passed_runs": 0,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 15,
+            "positive_practice_gain_runs": 9,
+            "practice_gain_failed_confirmation_runs": 9,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          }
+        },
+        "scheduled_runs": 24
+      },
+      "seeded-random-v1": {
+        "mechanisms": {
+          "C": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 15,
+            "confirmation_passed_runs": 3,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 15,
+            "positive_practice_gain_runs": 9,
+            "practice_gain_failed_confirmation_runs": 6,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "D": {
+            "available_practice_improvement_missed_runs": 3,
+            "baseline_retained_runs": 16,
+            "confirmation_passed_runs": 3,
+            "mean_selected_gap_if_all_references_complete": 0.041666666666666664,
+            "no_declared_practice_improvement_runs": 13,
+            "positive_practice_gain_runs": 8,
+            "practice_gain_failed_confirmation_runs": 5,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          },
+          "W": {
+            "available_practice_improvement_missed_runs": 0,
+            "baseline_retained_runs": 15,
+            "confirmation_passed_runs": 1,
+            "mean_selected_gap_if_all_references_complete": 0.0,
+            "no_declared_practice_improvement_runs": 15,
+            "positive_practice_gain_runs": 9,
+            "practice_gain_failed_confirmation_runs": 8,
+            "reference_complete_runs": 24,
+            "reference_missing_runs": 0,
+            "scheduled_runs": 24,
+            "scope": "descriptive-run-counts-and-mean-repeats-are-not-independent-tasks"
+          }
+        },
+        "scheduled_runs": 24
+      }
+    },
+    "reference_costs": {
+      "attempted_capacity": {
+        "inference_calls": 1248,
+        "input_tokens": 8532,
+        "materializations": 120,
+        "output_tokens": 1248,
+        "proposals": 0
+      },
+      "charged_usage_complete": true,
+      "failed_or_pending_reserved_capacity": {
+        "inference_calls": 0,
+        "input_tokens": 0,
+        "materializations": 0,
+        "output_tokens": 0,
+        "proposals": 0
+      },
+      "known_charged_usage": {
+        "inference_calls": 1248,
+        "input_tokens": 8532,
+        "materializations": 120,
+        "output_tokens": 1248,
+        "proposals": 0
+      },
+      "reservation_rule": "failed-or-uncertain-reference-capacity-remains-charged-without-refund",
+      "scheduled_capacity": {
+        "inference_calls": 1248,
+        "input_tokens": 8532,
+        "materializations": 120,
+        "output_tokens": 1248,
+        "proposals": 0
+      },
+      "scope": "reference-capacity-separate-from-original-policy-search-budgets",
+      "unknown_charged_usage_reference_ids": []
+    },
+    "reference_coverage": {
+      "completed": 24,
+      "failed": 0,
+      "not-started": 0,
+      "pending": 0,
+      "scheduled": 24
+    },
+    "reference_opportunity": {
+      "C": {
+        "mean_unique_output_vectors_including_baseline": 1.875,
+        "no_declared_practice_improvement": 15,
+        "only_one_output_vector": 12,
+        "positive_declared_practice_improvement": 9,
+        "references": 24
+      },
+      "D": {
+        "mean_unique_output_vectors_including_baseline": 2.125,
+        "no_declared_practice_improvement": 13,
+        "only_one_output_vector": 8,
+        "positive_declared_practice_improvement": 11,
+        "references": 24
+      },
+      "W": {
+        "mean_unique_output_vectors_including_baseline": 1.75,
+        "no_declared_practice_improvement": 15,
+        "only_one_output_vector": 9,
+        "positive_declared_practice_improvement": 9,
+        "references": 24
+      }
+    },
+    "retained_diagnostic_files": 989,
+    "runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+    "semantic_digest": "f4645d2f5a23b69975554279c4062bd5f6e68655a7610f65b4abbd54da8bb9fa",
+    "source_bundle_files": 34,
+    "source_campaign_digest": "ee57f595fa2ca10c02b8625f25a2beee6cf4eded8d4daf41d472f54d6eb3b36c",
+    "source_campaign_ledger_digest": "69baac705c397a9a1daca4c245a480e576d0db37735988a73d4bdbb1f8d2e2fc",
+    "source_campaign_report_digest": "3bb2c28258bc4983f1c11f41afea99e68298a3d12440b5b4f5452b20a5a7533c",
+    "source_files_unchanged": true,
+    "source_output_files": 7491,
+    "task_count": 8,
+    "validation": {
+      "campaign_digest": "ee57f595fa2ca10c02b8625f25a2beee6cf4eded8d4daf41d472f54d6eb3b36c",
+      "diagnostic_digest": "98b451ccecf79d1282d5a1f44cfd188d459a0f5b55f3efc2ca167bcc9a72c24d",
+      "gpu_execution_deferred": true,
+      "model_execution_performed": false,
+      "reference_count": 24,
+      "required_usage": {
+        "inference_calls": 1248,
+        "input_tokens": 8532,
+        "materializations": 120,
+        "output_tokens": 1248,
+        "proposals": 0,
+        "references": 24
+      },
+      "scope": "read-only-source-and-plan-verification",
+      "source_report_digest": "3bb2c28258bc4983f1c11f41afea99e68298a3d12440b5b4f5452b20a5a7533c",
+      "source_run_count": 72
+    }
+  },
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "python": "3.13.1 (main, Jan 14 2025, 23:31:50) [Clang 19.1.6 ]",
+  "remaining_gaps": [
+    "M12 Linux/amd64 CI pending",
+    "finite single-surface practice-space diagnostics only",
+    "no new held-out reference evaluation or exhaustive CW search",
+    "GPU/Qwen acceptance and published reproduction deferred",
+    "live proposals, arbitrary edit programs, larger CPU models and TypeScript parity deferred"
+  ],
+  "schema_version": 1,
+  "scope": "finite-practice-space-diagnostics-no-reselection-or-new-heldout-evaluation",
+  "source_campaign_rerun": false,
+  "validation": {
+    "cli": "help and retained fixture validate passed",
+    "diff_check": "passed",
+    "focused": {
+      "elapsed_seconds": 89.06,
+      "passed": 110
+    },
+    "linux": {
+      "architecture": "aarch64",
+      "captured_files": 102,
+      "captured_hashes_digest": "ffd197c2c8d7b90afdc961a65c52722a56d283a9633ddb9b268054994f0b771e",
+      "command_sha256": "7368f725d70611724a357f29818b096c3e89fde9dca321d60863b15997a7c140",
+      "container_wall_deadline_seconds": 1000,
+      "cpus": 1,
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "log_sha256": "4fab07729523ad13fcbf070f0ed1a0d07957c8c6563856b2fe713fe1433bbab0",
+      "memory_limit_bytes": 805306368,
+      "network": "none",
+      "platform": "Linux-7.0.14-orbstack-00380-ga7e0a2dc9535-aarch64-with-glibc2.41",
+      "pytest_wall_deadline_seconds": 900,
+      "python": "3.11.16 (main, Sep 19 2026, 01:11:34) [GCC 14.2.0]",
+      "repository_mount": "read-only",
+      "result": {
+        "changed_paths": [],
+        "counts": {
+          "passed": 580,
+          "skipped": 1
+        },
+        "elapsed_seconds": 366.072,
+        "exit_code": 0,
+        "junit_present": true,
+        "modules": {
+          "tests.test_weight_cpu_campaign": {
+            "passed": 24
+          },
+          "tests.test_weight_cpu_campaign_models": {
+            "passed": 32
+          },
+          "tests.test_weight_cpu_campaign_report": {
+            "passed": 31
+          },
+          "tests.test_weight_cpu_campaign_tasks": {
+            "passed": 23
+          },
+          "tests.test_weight_cpu_diagnostic": {
+            "passed": 32
+          },
+          "tests.test_weight_cpu_diagnostic_models": {
+            "passed": 27
+          },
+          "tests.test_weight_cpu_diagnostic_plan": {
+            "passed": 16
+          },
+          "tests.test_weight_cpu_diagnostic_report": {
+            "passed": 35
+          },
+          "tests.test_weight_cpu_model": {
+            "passed": 96
+          },
+          "tests.test_weight_cpu_resources": {
+            "passed": 17
+          },
+          "tests.test_weight_cpu_runner": {
+            "passed": 42,
+            "skipped": 1
+          },
+          "tests.test_weight_cpu_search": {
+            "passed": 44
+          },
+          "tests.test_weight_cpu_search_controls": {
+            "passed": 30
+          },
+          "tests.test_weight_cpu_search_models": {
+            "passed": 59
+          },
+          "tests.test_weight_cpu_search_policy": {
+            "passed": 32
+          },
+          "tests.test_weight_cpu_search_review": {
+            "passed": 10
+          },
+          "tests.test_weight_cpu_study": {
+            "passed": 30
+          }
+        },
+        "nonpassing": [
+          {
+            "message": "Darwin RSS monitor",
+            "module": "tests.test_weight_cpu_runner",
+            "name": "test_rss_limit_and_unavailable_monitor_fail_closed",
+            "outcome": "skipped"
+          }
+        ],
+        "source_hashes_unchanged": true
+      }
+    },
+    "macos_broader": {
+      "counts": {
+        "passed": 2067,
+        "skipped": 11
+      },
+      "elapsed_seconds": 394.48,
+      "junit_elapsed_seconds": 394.358,
+      "junit_sha256": "7ecc5d1de8027d62c6104ca43de57a9ad6bbf54dfc73774ce0b846f291ad036b"
+    },
+    "markdown": {
+      "documents": 170,
+      "links": 458,
+      "status": "passed"
+    },
+    "mypy": "passed: 1009 source files plus M12 CLI",
+    "ruff": "passed: src, tests, M12 CLI"
+  }
+}

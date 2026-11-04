@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Pinned CPU search diagnostics verify complete campaigns and freeze original
+  selections before exhaustive practice-only references. Every declared C/W/D
+  option shares a separate bounded budget, read-only checkpoint reuse, durable
+  claims and replay verification. Reports expose available practice improvement,
+  missed gains, output-vector duplicates, search curves and unchanged confirmation
+  vetoes while retaining missing references explicitly. GPU/Qwen execution,
+  reselection, held-out reference optima, TypeScript parity and promotion remain
+  deferred.
+
 - Generated CPU search campaigns pin independent task instances, separate seed
   roles, scorer, policies, budgets and reporting rules. Adaptive, fixed-order and
   seeded-random search share practice coverage, restoration and confirmation.
