@@ -63,6 +63,10 @@ These are copy-paste starting points for people evaluating the repo, integrating
   Run the [controlled CPU transfer experiments](weight_evolution/cpu_controls/README.md),
   with deterministic repair, correct-baseline and practice-shortcut families,
   matched search capacities and separate practice references. GPU execution remains deferred.
+- Need retained evidence for a failed CPU search? Use the
+  [CPU failure supervisor](weight_evolution/cpu_failures/README.md) to pin the host,
+  capture bounded live exception chains and preserve failed-run reservations without
+  automatic retries. Its reference phase requires every source search to complete.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

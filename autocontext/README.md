@@ -53,6 +53,12 @@ Expected weight behavior follows from construction; family reports compare it
 with actual selected-candidate confirmation while retaining the joint gate.
 Policies, worker limits, earlier contracts and GPU deferral are preserved.
 
+The [CPU failure supervisor](../examples/weight_evolution/cpu_failures/README.md)
+captures bounded cause/context chains around unchanged native searches and
+references. A separate host-pinned contract reserves the whole experiment;
+failed or interrupted dispatches retain their reservation and are never retried.
+Missing observations remain unknown. GPU execution stays deferred.
+
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by

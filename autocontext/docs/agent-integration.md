@@ -93,6 +93,16 @@ Failed or uncertain reference dispatches retain reservations and cannot be
 retried; unavailable reference metrics remain null. These descriptive results
 do not reselect candidates, change confirmation, or authorize promotion.
 
+The [CPU failure supervisor](../../examples/weight_evolution/cpu_failures/README.md)
+provides `validate`, `run`, `report` and the four `diagnostic-*` operations under a
+separate pinned host/runtime contract. Its `campaign` report projection retains
+the original family metrics; `failures` and `failure_coverage` describe observed
+exception chains and explicitly missing observations. Resume verifies native
+prefixes and parent bindings before later work, never redispatches a claimed
+child, and may recover a parent result only from retained evidence. References
+require every source search to complete. Failure messages are observations, not
+verified resource-cause classifications. GPU execution remains deferred.
+
 The [controlled CPU transfer experiments](../../examples/weight_evolution/cpu_controls/README.md)
 use a new task/campaign adapter with analytically specified weight controls.
 The builder creates deterministic cohorts and neutral candidate identities
