@@ -41,6 +41,9 @@ The [controlled CPU transfer experiments](../examples/weight_evolution/cpu_contr
 also remain Python-only, reusing its CPU search, checkpoint and diagnostic
 primitives. TypeScript runtime parity is deferred; this workflow calibrates
 constructed weight-transfer behavior without GPU execution or promotion.
+The [CPU failure supervisor](../examples/weight_evolution/cpu_failures/README.md)
+also remains Python-only because it verifies Python search journals and captures
+their live exceptions. TypeScript parity and GPU execution remain deferred.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the

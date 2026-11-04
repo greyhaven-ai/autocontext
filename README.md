@@ -38,6 +38,8 @@ The [CPU search diagnostics](examples/weight_evolution/cpu_diagnostics/README.md
 
 The [controlled CPU transfer experiments](examples/weight_evolution/cpu_controls/README.md) add deterministic weight-repair, already-correct and practice-shortcut controls. A separate pinned contract preserves earlier evidence while family-specific reports test transfer under the unchanged confirmation gate. These constructed controls do not establish benchmark gains; GPU execution remains deferred.
 
+The [CPU failure supervisor](examples/weight_evolution/cpu_failures/README.md) records bounded live exception chains under a separate implementation pin. It preserves earlier journals, keeps unavailable observations unknown, and runs one declared CPU campaign with conditional practice references. GPU execution remains deferred.
+
 ## Install
 
 For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](docs/security/accelerate-risk-assessment.md).

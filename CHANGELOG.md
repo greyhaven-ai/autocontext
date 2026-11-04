@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- A separately pinned CPU failure supervisor captures bounded cause/context
+  chains while preserving native search and reference journals. Host/runtime
+  pins, complete capacity reservations, deterministic fault fixtures and
+  read-only prefix verification keep missing evidence explicit and prevent
+  retries of claimed children. Conditional references require complete source
+  searches; prior pilot evidence and GPU deferral remain intact.
+
 - Controlled CPU transfer campaigns pin deterministic weight-repair,
   correct-baseline and practice-shortcut families before execution. Matched
   adaptive/fixed/random searches reuse the bounded CPU worker and unchanged

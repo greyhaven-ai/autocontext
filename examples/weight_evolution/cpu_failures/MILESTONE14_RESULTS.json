@@ -1,0 +1,3911 @@
+{
+  "base_commit": "14292a45a1ec1fe5910f8513694a1ced7731af5e",
+  "benchmark_result_claimed": false,
+  "compatibility": {
+    "all_retained_files_unchanged": true,
+    "blocked_call_attempts": 0,
+    "completed_at": "2026-11-04T18:57:04.599911+00:00",
+    "elapsed_seconds": 24.306,
+    "exact_retained_reports_equal": true,
+    "gpu_execution_deferred": true,
+    "guarded_calls": [
+      "Path.mkdir",
+      "Path.unlink",
+      "Path.write_bytes",
+      "Path.write_text",
+      "TensorCandidateRegistry.materialize",
+      "autocontext.weight_evolution.cpu_diagnostic_reference.run_cpu_batch",
+      "autocontext.weight_evolution.cpu_runner.run_cpu_batch",
+      "autocontext.weight_evolution.cpu_search.run_cpu_batch",
+      "autocontext.weight_evolution.cpu_study.run_cpu_batch",
+      "cpu_model.infer_cpu",
+      "os.open writable flags"
+    ],
+    "implementation_digests": {
+      "m11": "cfa3e59d986316c5eeec43876cc839605fe904aa1e3adf80016fb7b77ef93bca",
+      "m12": "c78627374d5c08c25d15d4adfd3f8a777e5ef757275a0a7c4b43d9b50d986ccd",
+      "m13": "a7e4bee370e19fe73ab1fe5ca3c332a1aedb193000542deac90b108fbd5c1425"
+    },
+    "m12_reference_coverage": {
+      "completed": 24,
+      "failed": 0,
+      "not-started": 0,
+      "pending": 0,
+      "scheduled": 24
+    },
+    "m12_source_search_count": 72,
+    "m13_failed_pilot_status_counts": {
+      "completed": 71,
+      "confirmed": 0,
+      "failed": 1,
+      "not-started": 0,
+      "pending": 0,
+      "scheduled": 72,
+      "vetoed": 71
+    },
+    "m13_fixture_reference_coverage": {
+      "completed": 6,
+      "failed": 0,
+      "not-started": 0,
+      "pending": 0,
+      "scheduled": 6
+    },
+    "method": "read-only-retained-M11-M12-M13-compatibility-replay-from-M14-worktree",
+    "model_execution_performed": false,
+    "old_implementation_pins_match": true,
+    "reports": {
+      "m12_pilot": {
+        "ledger_digest": "8e7e784a11f3a866c006367dfb50f4ba5d428baf316622db30d6edaab4fcba59",
+        "semantic_digest": "f4645d2f5a23b69975554279c4062bd5f6e68655a7610f65b4abbd54da8bb9fa"
+      },
+      "m13_failed_pilot": {
+        "ledger_digest": "3e05ac37e1db1bb7a8f536ae64ce58f567c1bd3eb2b48ac8fa2e76b94df1fbec",
+        "semantic_digest": "ff73098ecf57f3f1652f5504234930b0b2da4962945ed587dcd2b3c8357603d1"
+      },
+      "m13_fixture_diagnostic": {
+        "ledger_digest": "5a0911800331dcd3d87c5ad3a03074d0e9f62d852d664f3efd0b954e188468b7",
+        "semantic_digest": "effc01853dcd94a4764ae6eb3f58de614ed7fbf10d39ec867b9e08aaf6a382f8"
+      }
+    },
+    "schema_version": 1,
+    "snapshots": {
+      "m11_bundle": {
+        "after_sha256": "7a9c6a6bffd76d88dbe2707020b15b1972ce17989a93e66ed0d31b2dadb80d22",
+        "before_sha256": "7a9c6a6bffd76d88dbe2707020b15b1972ce17989a93e66ed0d31b2dadb80d22",
+        "file_count": 34,
+        "total_bytes": 122413,
+        "unchanged": true
+      },
+      "m11_output": {
+        "after_sha256": "0959866e83efdc5987069e082e2fc3bd52399ee4975a426a3431ded696607758",
+        "before_sha256": "0959866e83efdc5987069e082e2fc3bd52399ee4975a426a3431ded696607758",
+        "file_count": 7491,
+        "total_bytes": 15811581,
+        "unchanged": true
+      },
+      "m12_output": {
+        "after_sha256": "695678c0233f76be84d2cc3b53a04233a755f7e71c4cd8b730ab00c58a905d4e",
+        "before_sha256": "695678c0233f76be84d2cc3b53a04233a755f7e71c4cd8b730ab00c58a905d4e",
+        "file_count": 987,
+        "total_bytes": 3046535,
+        "unchanged": true
+      },
+      "m12_plan": {
+        "after_sha256": "263e29e280587deaa1508275e2c60bb6fc7c96a64e357d6eed6bd4eac48ea9c9",
+        "before_sha256": "263e29e280587deaa1508275e2c60bb6fc7c96a64e357d6eed6bd4eac48ea9c9",
+        "file_count": 2,
+        "total_bytes": 350279,
+        "unchanged": true
+      },
+      "m13_fixture_bundle": {
+        "after_sha256": "035a27c9f8fd1da2530d6ccef909a8b689d7dbf05d59d9c77dac3b7899e1d3f6",
+        "before_sha256": "035a27c9f8fd1da2530d6ccef909a8b689d7dbf05d59d9c77dac3b7899e1d3f6",
+        "file_count": 26,
+        "total_bytes": 106312,
+        "unchanged": true
+      },
+      "m13_fixture_diagnostic": {
+        "after_sha256": "3e9a55e60006f8a616e7f22ddcd78bebda7d23cd67cf5c5a98983f67eef8a552",
+        "before_sha256": "3e9a55e60006f8a616e7f22ddcd78bebda7d23cd67cf5c5a98983f67eef8a552",
+        "file_count": 249,
+        "total_bytes": 1222767,
+        "unchanged": true
+      },
+      "m13_fixture_output": {
+        "after_sha256": "9e26ce4f3c7d81ac8928543818605d105114199883ae11405b804c423873e43b",
+        "before_sha256": "9e26ce4f3c7d81ac8928543818605d105114199883ae11405b804c423873e43b",
+        "file_count": 1875,
+        "total_bytes": 5794853,
+        "unchanged": true
+      },
+      "m13_fixture_plan": {
+        "after_sha256": "135d184dfa1d82660b8956c46a3424964392e8569683d5c33721518f3dd008f6",
+        "before_sha256": "135d184dfa1d82660b8956c46a3424964392e8569683d5c33721518f3dd008f6",
+        "file_count": 2,
+        "total_bytes": 91712,
+        "unchanged": true
+      },
+      "m13_pilot_bundle": {
+        "after_sha256": "971bffb1d8879f8c600d1b5627b6866929fa9a0aeb06e30e96cd5c14f4ec1334",
+        "before_sha256": "971bffb1d8879f8c600d1b5627b6866929fa9a0aeb06e30e96cd5c14f4ec1334",
+        "file_count": 50,
+        "total_bytes": 211582,
+        "unchanged": true
+      },
+      "m13_pilot_output": {
+        "after_sha256": "f95986a9329da806208ffcfed148fbd9c41e9a54978ad56eaa91c7e00786e1f0",
+        "before_sha256": "f95986a9329da806208ffcfed148fbd9c41e9a54978ad56eaa91c7e00786e1f0",
+        "file_count": 7486,
+        "total_bytes": 23043200,
+        "unchanged": true
+      }
+    },
+    "started_at": "2026-11-04T18:56:40.293340+00:00",
+    "status": "passed"
+  },
+  "family_pooling_performed": false,
+  "gpu_execution_deferred": true,
+  "historical_failure_cause_recovered": false,
+  "implementation_digest": "0be62f4d842832f9bcdce1159c4c0029a7d977040000527447cb69ebae0c6d08",
+  "implementation_source_sha256": {
+    "cpu_failure_campaign.py": "2bf6099522236f82ceef9ff0530c8cf8ef715871f956e7acf0830560e0f75160",
+    "cpu_failure_campaign_models.py": "ded4030de9c876323660582df8876546a79716a2b1e55177c1bf1ba1221a61cd",
+    "cpu_failure_diagnostic.py": "1faffc258b4b7614fa58aa5fb2649c61ef1dd7e178649a3b951faa10481c5b2d",
+    "cpu_failure_models.py": "9dca51c442b831828e8db5bae5e2c212cfa1f62c10a1282201416d63d837afa8",
+    "cpu_failure_prefix.py": "d259140b4ccbba5bec351ebee0281fc105df5780eeb2ff16f9e34d0dcf52220b",
+    "cpu_failure_record.py": "50203509d14c19ca22d4ae58d8395c97671cef31b4e1e9613885844c8295ead8"
+  },
+  "milestone": 14,
+  "pilot": {
+    "attempt_count": 1,
+    "before_bundle": {
+      "file_count": 53,
+      "sha256": "5330770a3f7613ef201173dd27fe52f0434b9ddef8936a149c4dd4d0473783d7",
+      "total_bytes": 215813
+    },
+    "completed_at": "2026-11-04T19:08:50.215318+00:00",
+    "declaration": {
+      "campaign_digest": "50ff1cde79860c475cdef8d0a9e70fbbff6951187c13e6d42eab6b589aa711d0",
+      "conditional_reference_budget": {
+        "max_inference_calls": 2496,
+        "max_input_tokens": 17688,
+        "max_materializations": 120,
+        "max_output_tokens": 2496,
+        "max_proposals": 0,
+        "max_references": 24
+      },
+      "gpu_execution_deferred": true,
+      "model_execution_performed": false,
+      "promotion_eligible": false,
+      "runtime_matches": true,
+      "search_budget": {
+        "max_inference_calls": 14976,
+        "max_input_tokens": 129288,
+        "max_materializations": 360,
+        "max_output_tokens": 14976,
+        "max_proposals": 648,
+        "max_runs": 72
+      },
+      "search_count": 72,
+      "supervisor_digest": "14fa08ada03eaf96744988a116e6274b2e7d5963d7b9247be5fb91d0fe731ff7",
+      "task_count": 12
+    },
+    "elapsed_seconds": 413.695,
+    "evidence_location": "runs/milestone14-validation (local, Git-ignored)",
+    "gpu_execution_deferred": true,
+    "historical_failure_cause_recovered": false,
+    "implementation_digest": "0be62f4d842832f9bcdce1159c4c0029a7d977040000527447cb69ebae0c6d08",
+    "native_campaign_fields_changed_from_m13": [
+      "campaign_id"
+    ],
+    "promotion_eligible": false,
+    "reference": {
+      "binding_digest": "03fb711a04516691ce5a30cf4953f53657ac08ab6b91083cd270d05583552171",
+      "diagnostic_digest": "357e545ef6dac232d3ea1cf1a940353388a1f673dd2c6fad9217e2bbd64b13ba",
+      "failure_coverage": {
+        "failed_runs": 0,
+        "historical_failure_cause_recovered": false,
+        "lost_observations": 0,
+        "recorded_observations": 0,
+        "scope": "observed-exception-text-not-inferred-worker-cause-or-usage"
+      },
+      "failures": [],
+      "ledger_digest": "3b0a9ba7bbf7edf4d0cbf734f56182327041e7bb65748a701926bbbe947bd204",
+      "reference_costs": {
+        "attempted_capacity": {
+          "inference_calls": 2496,
+          "input_tokens": 17688,
+          "materializations": 120,
+          "output_tokens": 2496,
+          "proposals": 0
+        },
+        "charged_usage_complete": true,
+        "failed_or_pending_reserved_capacity": {
+          "inference_calls": 0,
+          "input_tokens": 0,
+          "materializations": 0,
+          "output_tokens": 0,
+          "proposals": 0
+        },
+        "known_charged_usage": {
+          "inference_calls": 2496,
+          "input_tokens": 17688,
+          "materializations": 120,
+          "output_tokens": 2496,
+          "proposals": 0
+        },
+        "reservation_rule": "failed-or-uncertain-reference-capacity-remains-charged-without-refund",
+        "scheduled_capacity": {
+          "inference_calls": 2496,
+          "input_tokens": 17688,
+          "materializations": 120,
+          "output_tokens": 2496,
+          "proposals": 0
+        },
+        "scope": "reference-capacity-separate-from-original-policy-search-budgets",
+        "unknown_charged_usage_reference_ids": []
+      },
+      "reference_coverage": {
+        "completed": 24,
+        "failed": 0,
+        "not-started": 0,
+        "pending": 0,
+        "scheduled": 24
+      },
+      "semantic_digest": "c12616b82c12a7f0496100e93cd14864480c690390a00152762f22e1a8a04732",
+      "transfer": {
+        "benchmark_result_claimed": false,
+        "campaign_digest": "50ff1cde79860c475cdef8d0a9e70fbbff6951187c13e6d42eab6b589aa711d0",
+        "campaign_report_digest": "c5b8533c2f7bab0eda9ab5e89eeaad0134d4152e3ba1a4c85cc03966ac5a3e1d",
+        "confirmation_rule_changed": false,
+        "diagnostic_digest": "357e545ef6dac232d3ea1cf1a940353388a1f673dd2c6fad9217e2bbd64b13ba",
+        "diagnostic_report_digest": "529d696be9f3f046d882e1150149d9a7aa515cb7121b2257da0cc011b1148010",
+        "family_pooling_performed": false,
+        "family_results": {
+          "correct-baseline-v1": {
+            "calibration": {
+              "observed_matches": 48,
+              "observed_mismatches": 0,
+              "scope": "analytical-W-calibration-not-joint-gate",
+              "unavailable_or_nondesignated_checks": 0,
+              "unselected_heldout_options_evaluated": false
+            },
+            "expected_control_behaviors": {
+              "task-05": {
+                "baseline_accuracy": {
+                  "audit": 1.0,
+                  "confirmation": 1.0,
+                  "practice": 1.0
+                },
+                "designated_weight_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_option_ids": [
+                  "w-02",
+                  "w-03"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-06": {
+                "baseline_accuracy": {
+                  "audit": 1.0,
+                  "confirmation": 1.0,
+                  "practice": 1.0
+                },
+                "designated_weight_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_option_ids": [
+                  "w-04",
+                  "w-03"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-07": {
+                "baseline_accuracy": {
+                  "audit": 1.0,
+                  "confirmation": 1.0,
+                  "practice": 1.0
+                },
+                "designated_weight_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_option_ids": [
+                  "w-02",
+                  "w-03"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-08": {
+                "baseline_accuracy": {
+                  "audit": 1.0,
+                  "confirmation": 1.0,
+                  "practice": 1.0
+                },
+                "designated_weight_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_option_ids": [
+                  "w-02",
+                  "w-04"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              }
+            },
+            "policy_summary": {
+              "adaptive-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              },
+              "fixed-order-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              },
+              "seeded-random-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-05"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-06"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-07"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-08"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              }
+            },
+            "reference_costs": {
+              "attempted_capacity": {
+                "inference_calls": 832,
+                "input_tokens": 6026,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "charged_usage_complete": true,
+              "failed_or_pending_reserved_capacity": {
+                "inference_calls": 0,
+                "input_tokens": 0,
+                "materializations": 0,
+                "output_tokens": 0,
+                "proposals": 0
+              },
+              "known_charged_usage": {
+                "inference_calls": 832,
+                "input_tokens": 6026,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "reservation_rule": "failed-or-uncertain-reference-capacity-remains-charged-without-refund",
+              "scheduled_capacity": {
+                "inference_calls": 832,
+                "input_tokens": 6026,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "scope": "reference-capacity-separate-from-original-policy-search-budgets",
+              "unknown_charged_usage_reference_ids": []
+            },
+            "reference_coverage": {
+              "completed": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8
+            },
+            "reference_opportunity": {
+              "C": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 3.0,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 8,
+                "only_one_output_vector": 0,
+                "positive_declared_practice_improvement": 0,
+                "scheduled_references": 8
+              },
+              "D": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 1.0,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 8,
+                "only_one_output_vector": 8,
+                "positive_declared_practice_improvement": 0,
+                "scheduled_references": 8
+              },
+              "W": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 2.0,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 8,
+                "only_one_output_vector": 0,
+                "positive_declared_practice_improvement": 0,
+                "scheduled_references": 8
+              }
+            },
+            "task_count": 4,
+            "task_ids": [
+              "task-05",
+              "task-06",
+              "task-07",
+              "task-08"
+            ]
+          },
+          "practice-shortcut-v1": {
+            "calibration": {
+              "observed_matches": 48,
+              "observed_mismatches": 0,
+              "scope": "analytical-W-calibration-not-joint-gate",
+              "unavailable_or_nondesignated_checks": 0,
+              "unselected_heldout_options_evaluated": false
+            },
+            "expected_control_behaviors": {
+              "task-09": {
+                "baseline_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_accuracy": {
+                  "audit": 0.0,
+                  "confirmation": 0.0,
+                  "practice": 1.0
+                },
+                "designated_weight_option_ids": [
+                  "w-04",
+                  "w-01"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-10": {
+                "baseline_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_accuracy": {
+                  "audit": 0.0,
+                  "confirmation": 0.0,
+                  "practice": 1.0
+                },
+                "designated_weight_option_ids": [
+                  "w-01",
+                  "w-03"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-11": {
+                "baseline_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_accuracy": {
+                  "audit": 0.0,
+                  "confirmation": 0.0,
+                  "practice": 1.0
+                },
+                "designated_weight_option_ids": [
+                  "w-01",
+                  "w-02"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-12": {
+                "baseline_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_accuracy": {
+                  "audit": 0.0,
+                  "confirmation": 0.0,
+                  "practice": 1.0
+                },
+                "designated_weight_option_ids": [
+                  "w-04",
+                  "w-02"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              }
+            },
+            "policy_summary": {
+              "adaptive-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 0,
+                    "component_veto_reasons": {
+                      "selected-confirmation-gain-below-frozen-minimum": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 8,
+                    "practice_gain_failed_confirmation_runs": 8,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": -0.5,
+                    "task_mean_practice_gain": 0.5,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              },
+              "fixed-order-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 0,
+                    "component_veto_reasons": {
+                      "selected-confirmation-gain-below-frozen-minimum": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 8,
+                    "practice_gain_failed_confirmation_runs": 8,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": -0.5,
+                    "task_mean_practice_gain": 0.5,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              },
+              "seeded-random-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 0,
+                    "component_veto_reasons": {
+                      "selected-confirmation-gain-below-frozen-minimum": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 8,
+                    "practice_gain_failed_confirmation_runs": 8,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-09"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-10"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-11"
+                      },
+                      {
+                        "mean_confirmation_gain": -0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-12"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": -0.5,
+                    "task_mean_practice_gain": 0.5,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              }
+            },
+            "reference_costs": {
+              "attempted_capacity": {
+                "inference_calls": 832,
+                "input_tokens": 6234,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "charged_usage_complete": true,
+              "failed_or_pending_reserved_capacity": {
+                "inference_calls": 0,
+                "input_tokens": 0,
+                "materializations": 0,
+                "output_tokens": 0,
+                "proposals": 0
+              },
+              "known_charged_usage": {
+                "inference_calls": 832,
+                "input_tokens": 6234,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "reservation_rule": "failed-or-uncertain-reference-capacity-remains-charged-without-refund",
+              "scheduled_capacity": {
+                "inference_calls": 832,
+                "input_tokens": 6234,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "scope": "reference-capacity-separate-from-original-policy-search-budgets",
+              "unknown_charged_usage_reference_ids": []
+            },
+            "reference_coverage": {
+              "completed": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8
+            },
+            "reference_opportunity": {
+              "C": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 1.0,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 8,
+                "only_one_output_vector": 8,
+                "positive_declared_practice_improvement": 0,
+                "scheduled_references": 8
+              },
+              "D": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 1.5,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 8,
+                "only_one_output_vector": 4,
+                "positive_declared_practice_improvement": 0,
+                "scheduled_references": 8
+              },
+              "W": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 2.0,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 0,
+                "only_one_output_vector": 0,
+                "positive_declared_practice_improvement": 8,
+                "scheduled_references": 8
+              }
+            },
+            "task_count": 4,
+            "task_ids": [
+              "task-09",
+              "task-10",
+              "task-11",
+              "task-12"
+            ]
+          },
+          "transfer-repair-v1": {
+            "calibration": {
+              "observed_matches": 48,
+              "observed_mismatches": 0,
+              "scope": "analytical-W-calibration-not-joint-gate",
+              "unavailable_or_nondesignated_checks": 0,
+              "unselected_heldout_options_evaluated": false
+            },
+            "expected_control_behaviors": {
+              "task-01": {
+                "baseline_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_accuracy": {
+                  "audit": 1.0,
+                  "confirmation": 1.0,
+                  "practice": 1.0
+                },
+                "designated_weight_option_ids": [
+                  "w-02",
+                  "w-01"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-02": {
+                "baseline_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_accuracy": {
+                  "audit": 1.0,
+                  "confirmation": 1.0,
+                  "practice": 1.0
+                },
+                "designated_weight_option_ids": [
+                  "w-02",
+                  "w-03"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-03": {
+                "baseline_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_accuracy": {
+                  "audit": 1.0,
+                  "confirmation": 1.0,
+                  "practice": 1.0
+                },
+                "designated_weight_option_ids": [
+                  "w-01",
+                  "w-02"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              },
+              "task-04": {
+                "baseline_accuracy": {
+                  "audit": 0.5,
+                  "confirmation": 0.5,
+                  "practice": 0.5
+                },
+                "designated_weight_accuracy": {
+                  "audit": 1.0,
+                  "confirmation": 1.0,
+                  "practice": 1.0
+                },
+                "designated_weight_option_ids": [
+                  "w-04",
+                  "w-02"
+                ],
+                "scope": "analytical-W-calibration-not-joint-gate"
+              }
+            },
+            "policy_summary": {
+              "adaptive-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 0,
+                    "component_veto_reasons": {},
+                    "confirmation_passed_runs": 8,
+                    "positive_practice_gain_runs": 8,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.5,
+                    "task_mean_practice_gain": 0.5,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              },
+              "fixed-order-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 0,
+                    "component_veto_reasons": {},
+                    "confirmation_passed_runs": 8,
+                    "positive_practice_gain_runs": 8,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.5,
+                    "task_mean_practice_gain": 0.5,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              },
+              "seeded-random-v1": {
+                "mechanisms": {
+                  "C": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "D": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 8,
+                    "component_veto_reasons": {
+                      "unchanged-baseline-retained": 8
+                    },
+                    "confirmation_passed_runs": 0,
+                    "positive_practice_gain_runs": 0,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.0,
+                        "mean_practice_gain": 0.0,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.0,
+                    "task_mean_practice_gain": 0.0,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  },
+                  "W": {
+                    "aggregation_unit": "task-mean-over-nested-repeats",
+                    "available_practice_improvement_missed_runs": 0,
+                    "baseline_retained_runs": 0,
+                    "component_veto_reasons": {},
+                    "confirmation_passed_runs": 8,
+                    "positive_practice_gain_runs": 8,
+                    "practice_gain_failed_confirmation_runs": 0,
+                    "reference_complete_runs": 8,
+                    "reference_missing_runs": 0,
+                    "scheduled_runs": 8,
+                    "task_details": [
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-01"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-02"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-03"
+                      },
+                      {
+                        "mean_confirmation_gain": 0.5,
+                        "mean_practice_gain": 0.5,
+                        "mean_selected_gap_if_references_complete": 0.0,
+                        "repeat_count": 2,
+                        "task_id": "task-04"
+                      }
+                    ],
+                    "task_mean_confirmation_gain": 0.5,
+                    "task_mean_practice_gain": 0.5,
+                    "task_mean_selected_gap_if_references_complete": 0.0
+                  }
+                },
+                "scheduled_runs": 8
+              }
+            },
+            "reference_costs": {
+              "attempted_capacity": {
+                "inference_calls": 832,
+                "input_tokens": 5428,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "charged_usage_complete": true,
+              "failed_or_pending_reserved_capacity": {
+                "inference_calls": 0,
+                "input_tokens": 0,
+                "materializations": 0,
+                "output_tokens": 0,
+                "proposals": 0
+              },
+              "known_charged_usage": {
+                "inference_calls": 832,
+                "input_tokens": 5428,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "reservation_rule": "failed-or-uncertain-reference-capacity-remains-charged-without-refund",
+              "scheduled_capacity": {
+                "inference_calls": 832,
+                "input_tokens": 5428,
+                "materializations": 40,
+                "output_tokens": 832,
+                "proposals": 0
+              },
+              "scope": "reference-capacity-separate-from-original-policy-search-budgets",
+              "unknown_charged_usage_reference_ids": []
+            },
+            "reference_coverage": {
+              "completed": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8
+            },
+            "reference_opportunity": {
+              "C": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 1.0,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 8,
+                "only_one_output_vector": 8,
+                "positive_declared_practice_improvement": 0,
+                "scheduled_references": 8
+              },
+              "D": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 1.0,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 8,
+                "only_one_output_vector": 8,
+                "positive_declared_practice_improvement": 0,
+                "scheduled_references": 8
+              },
+              "W": {
+                "completed_references": 8,
+                "mean_unique_output_vectors_if_complete": 2.0,
+                "missing_references": 0,
+                "no_declared_practice_improvement": 0,
+                "only_one_output_vector": 0,
+                "positive_declared_practice_improvement": 8,
+                "scheduled_references": 8
+              }
+            },
+            "task_count": 4,
+            "task_ids": [
+              "task-01",
+              "task-02",
+              "task-03",
+              "task-04"
+            ]
+          }
+        },
+        "gpu_execution_deferred": true,
+        "inferential_statistics_computed": false,
+        "model_execution_performed": false,
+        "promotion_eligible": false,
+        "provenance_digests": {
+          "task-01": "917f02bc2b2e00c5d55b6a887d0da87f9c798bc69679f639e17abe3e995ed24c",
+          "task-02": "0dd853aa839d4e4c928425e46dc5a24f7c1fa99fe8668a2feade95fd1afd4149",
+          "task-03": "e8dc22949722ae6eec96fcdfe009e084e9d94e5207db19b76a7dc08b6dd212cb",
+          "task-04": "5c4e2f5ea41d3c84562c071b5dc010f9bdc48a90bff345c5b4f7059ba81d77d3",
+          "task-05": "4df3bf9de95a35f426bad6849eedc5e37299fadc3c7adcd3001adbd39c255cf6",
+          "task-06": "8e433f2144c7357fb68856a9fa80bc29016f574e09e69894f47861802c00431e",
+          "task-07": "d197cef937b6a552fe7ca52d9a9a4987048c37f61ffd9c038b675b12a2952244",
+          "task-08": "39960693e6f57704298134d6c90452abcfa947a6aa2f82eb3d743346e9da38a3",
+          "task-09": "69c3a7f4d4ac61c96b2eb8254aaad602f1121dc960645284cefb311f4d8d278a",
+          "task-10": "f9a4d84748cd9680932a3e50483d00de198e765702cf46f1283cd1760d09f9f2",
+          "task-11": "efff00cf2ed4b1b039c0d8d8b1b8bfadc793c45efd537386afb5bfc651611343",
+          "task-12": "a014a41c6743f8c1c5866bb6952aca70214da8ff2cbe43aa611a289412d84e6f"
+        },
+        "report_kind": "cpu_control_transfer",
+        "runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+        "schema_version": 1,
+        "scope": "analytical-control-calibration-and-descriptive-transfer-no-pooled-winner-or-unselected-heldout-evaluation",
+        "semantic_digest": "fcd995b78bd59f6db0051286338493dac3a85e7ce18e310c75433d59ea776934"
+      }
+    },
+    "reference_observed_dispatch": {
+      "batches": 312,
+      "input_tokens": 17688,
+      "requests": 2496
+    },
+    "reference_report_file_sha256": "cf831f7227d8c4348258597619b7cdbeab10e5ec164fb903f43e4e9c495bb20f",
+    "replay_evidence_unchanged": true,
+    "replay_reports_equal": true,
+    "runtime": {
+      "device": "cpu",
+      "executable": {
+        "name": "python3.13",
+        "sha256": "828da833e2698e86d0bbc22b1546b010d79da4de80ce6c251ac5e38c9b01f5cd",
+        "size_bytes": 49968
+      },
+      "gpu_execution_performed": false,
+      "implementation": "trusted-token-sum-cpu-subprocess-v1",
+      "machine": "arm64",
+      "pydantic": "2.14.1",
+      "pydantic_core": "2.50.1",
+      "python": "3.13.1",
+      "python_implementation": "CPython",
+      "release": "27.0.0",
+      "resource_policy": {
+        "cpu_limit": "rlimit_cpu",
+        "memory_enforcement": "monitored_rss",
+        "peak_rss_source": "getrusage-self-bytes",
+        "rss_poll_interval_seconds": 0.01,
+        "rss_sampling_may_overshoot": true,
+        "scope": "trusted_fixed_model_only",
+        "wall_limit": "parent_monotonic"
+      },
+      "schema_version": 1,
+      "sources": [
+        {
+          "name": "cpu_models.py",
+          "sha256": "83444f8b70cdef4a3f49727ada218df958633fb157e81686a04f565915dd3f80",
+          "size_bytes": 5718
+        },
+        {
+          "name": "cpu_model.py",
+          "sha256": "bad01820b1720829c915d539cff7c580fd180f9a0610812ce5994309c35a8964",
+          "size_bytes": 8682
+        },
+        {
+          "name": "cpu_runner.py",
+          "sha256": "21f0d4fe2c5cfc48ab543fb273c2a0a8614911d7a91835bc87bab2d09ad25007",
+          "size_bytes": 18831
+        },
+        {
+          "name": "cpu_worker.py",
+          "sha256": "91683340cd777f628f61b5c1870dded9f48553ed0bf785b7f55e35878a60e6fc",
+          "size_bytes": 7491
+        },
+        {
+          "name": "artifacts.py",
+          "sha256": "762bfa6561c12e486aea1d2c94b2227b18bf8d5039aad0d0ff4850254bfe002a",
+          "size_bytes": 8952
+        },
+        {
+          "name": "models.py",
+          "sha256": "7ead6d2a777f248adfb56948ba1b4f2ab5a62e343abb8a84df37d24f211fccc7",
+          "size_bytes": 10496
+        },
+        {
+          "name": "tensor_edits.py",
+          "sha256": "460f2162e500b8043ac65d90d94be92e80e7197b3d5d472d01998a2965efb6c7",
+          "size_bytes": 16493
+        },
+        {
+          "name": "models.py",
+          "sha256": "511d4b0a8afd239277234d1dedf5b730be7a8436cf2ec9b1920fa78c39d0471a",
+          "size_bytes": 561
+        },
+        {
+          "name": "file_lock.py",
+          "sha256": "1a0bd5a8be3c317e57f819a7a0178daa43a5bae65d9652e420d97841e70164ce",
+          "size_bytes": 3167
+        },
+        {
+          "name": "_process_group.py",
+          "sha256": "62f05592305d51e63ca5aa75e8f061f3ed77000de764fdf137fa5f593ed8cc51",
+          "size_bytes": 3457
+        }
+      ],
+      "system": "Darwin"
+    },
+    "schema_version": 1,
+    "snapshots": {
+      "pilot": {
+        "file_count": 7491,
+        "sha256": "a07ebd81e2db48a5fbe12bf8a1518a4938055eb51749e628271dbcffc5a91cb1",
+        "total_bytes": 23067499
+      },
+      "pilot-bundle": {
+        "file_count": 53,
+        "sha256": "5330770a3f7613ef201173dd27fe52f0434b9ddef8936a149c4dd4d0473783d7",
+        "total_bytes": 215813
+      },
+      "pilot-diagnostic": {
+        "file_count": 987,
+        "sha256": "a4188149805f15742e5fc47d1cd3c2c574dde3d8fc3b17d9846f82a112a90e39",
+        "total_bytes": 4801665
+      },
+      "pilot-plan": {
+        "file_count": 3,
+        "sha256": "2fbe0944a76659620298cb716de38afa8c7472caaeccc399ddfaa154e2fc4246",
+        "total_bytes": 363471
+      }
+    },
+    "source": {
+      "costs": {
+        "attempted_capacity": {
+          "inference_calls": 14976,
+          "input_tokens": 129288,
+          "materializations": 360,
+          "output_tokens": 14976,
+          "proposals": 648
+        },
+        "charged_usage_complete": true,
+        "failed_or_pending_reserved_capacity": {
+          "inference_calls": 0,
+          "input_tokens": 0,
+          "materializations": 0,
+          "output_tokens": 0,
+          "proposals": 0
+        },
+        "known_charged_usage": {
+          "inference_calls": 12096,
+          "input_tokens": 82518,
+          "materializations": 360,
+          "output_tokens": 12096,
+          "proposals": 648
+        },
+        "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+        "scheduled_capacity": {
+          "inference_calls": 14976,
+          "input_tokens": 129288,
+          "materializations": 360,
+          "output_tokens": 14976,
+          "proposals": 648
+        },
+        "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+        "unknown_charged_usage_run_ids": []
+      },
+      "failure_coverage": {
+        "failed_runs": 0,
+        "historical_failure_cause_recovered": false,
+        "lost_observations": 0,
+        "recorded_observations": 0,
+        "scope": "observed-exception-text-not-inferred-worker-cause-or-usage"
+      },
+      "failures": [],
+      "family_results": {
+        "correct-baseline-v1": {
+          "audit_coverage": {
+            "available": 0,
+            "conditional_on_confirmation": true,
+            "overall_quality_aggregate": null,
+            "scheduled": 24,
+            "withheld_after_veto": 24
+          },
+          "costs": {
+            "attempted_capacity": {
+              "inference_calls": 4992,
+              "input_tokens": 43566,
+              "materializations": 120,
+              "output_tokens": 4992,
+              "proposals": 216
+            },
+            "charged_usage_complete": true,
+            "failed_or_pending_reserved_capacity": {
+              "inference_calls": 0,
+              "input_tokens": 0,
+              "materializations": 0,
+              "output_tokens": 0,
+              "proposals": 0
+            },
+            "known_charged_usage": {
+              "inference_calls": 4032,
+              "input_tokens": 28156,
+              "materializations": 120,
+              "output_tokens": 4032,
+              "proposals": 216
+            },
+            "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+            "scheduled_capacity": {
+              "inference_calls": 4992,
+              "input_tokens": 43566,
+              "materializations": 120,
+              "output_tokens": 4992,
+              "proposals": 216
+            },
+            "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+            "unknown_charged_usage_run_ids": []
+          },
+          "policy_coverage": {
+            "adaptive-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14522,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 9380,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14522,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            },
+            "fixed-order-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14522,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 9380,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14522,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            },
+            "seeded-random-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14522,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 9396,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14522,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            }
+          },
+          "status_counts": {
+            "completed": 24,
+            "confirmed": 0,
+            "failed": 0,
+            "not-started": 0,
+            "pending": 0,
+            "scheduled": 24,
+            "vetoed": 24
+          },
+          "task_count": 4,
+          "task_ids": [
+            "task-05",
+            "task-06",
+            "task-07",
+            "task-08"
+          ]
+        },
+        "practice-shortcut-v1": {
+          "audit_coverage": {
+            "available": 0,
+            "conditional_on_confirmation": true,
+            "overall_quality_aggregate": null,
+            "scheduled": 24,
+            "withheld_after_veto": 24
+          },
+          "costs": {
+            "attempted_capacity": {
+              "inference_calls": 4992,
+              "input_tokens": 44274,
+              "materializations": 120,
+              "output_tokens": 4992,
+              "proposals": 216
+            },
+            "charged_usage_complete": true,
+            "failed_or_pending_reserved_capacity": {
+              "inference_calls": 0,
+              "input_tokens": 0,
+              "materializations": 0,
+              "output_tokens": 0,
+              "proposals": 0
+            },
+            "known_charged_usage": {
+              "inference_calls": 4032,
+              "input_tokens": 28610,
+              "materializations": 120,
+              "output_tokens": 4032,
+              "proposals": 216
+            },
+            "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+            "scheduled_capacity": {
+              "inference_calls": 4992,
+              "input_tokens": 44274,
+              "materializations": 120,
+              "output_tokens": 4992,
+              "proposals": 216
+            },
+            "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+            "unknown_charged_usage_run_ids": []
+          },
+          "policy_coverage": {
+            "adaptive-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14758,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 9526,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14758,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            },
+            "fixed-order-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14758,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 9526,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14758,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            },
+            "seeded-random-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14758,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 9558,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 14758,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            }
+          },
+          "status_counts": {
+            "completed": 24,
+            "confirmed": 0,
+            "failed": 0,
+            "not-started": 0,
+            "pending": 0,
+            "scheduled": 24,
+            "vetoed": 24
+          },
+          "task_count": 4,
+          "task_ids": [
+            "task-09",
+            "task-10",
+            "task-11",
+            "task-12"
+          ]
+        },
+        "transfer-repair-v1": {
+          "audit_coverage": {
+            "available": 0,
+            "conditional_on_confirmation": true,
+            "overall_quality_aggregate": null,
+            "scheduled": 24,
+            "withheld_after_veto": 24
+          },
+          "costs": {
+            "attempted_capacity": {
+              "inference_calls": 4992,
+              "input_tokens": 41448,
+              "materializations": 120,
+              "output_tokens": 4992,
+              "proposals": 216
+            },
+            "charged_usage_complete": true,
+            "failed_or_pending_reserved_capacity": {
+              "inference_calls": 0,
+              "input_tokens": 0,
+              "materializations": 0,
+              "output_tokens": 0,
+              "proposals": 0
+            },
+            "known_charged_usage": {
+              "inference_calls": 4032,
+              "input_tokens": 25752,
+              "materializations": 120,
+              "output_tokens": 4032,
+              "proposals": 216
+            },
+            "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+            "scheduled_capacity": {
+              "inference_calls": 4992,
+              "input_tokens": 41448,
+              "materializations": 120,
+              "output_tokens": 4992,
+              "proposals": 216
+            },
+            "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+            "unknown_charged_usage_run_ids": []
+          },
+          "policy_coverage": {
+            "adaptive-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 13816,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 8584,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 13816,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            },
+            "fixed-order-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 13816,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 8584,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 13816,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            },
+            "seeded-random-v1": {
+              "completed": 8,
+              "completed_fraction": 1.0,
+              "confirmed": 0,
+              "confirmed_fraction": 0.0,
+              "costs": {
+                "attempted_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 13816,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "charged_usage_complete": true,
+                "failed_or_pending_reserved_capacity": {
+                  "inference_calls": 0,
+                  "input_tokens": 0,
+                  "materializations": 0,
+                  "output_tokens": 0,
+                  "proposals": 0
+                },
+                "known_charged_usage": {
+                  "inference_calls": 1344,
+                  "input_tokens": 8584,
+                  "materializations": 40,
+                  "output_tokens": 1344,
+                  "proposals": 72
+                },
+                "reservation_rule": "failed-or-uncertain-run-capacity-remains-charged-without-refund",
+                "scheduled_capacity": {
+                  "inference_calls": 1664,
+                  "input_tokens": 13816,
+                  "materializations": 40,
+                  "output_tokens": 1664,
+                  "proposals": 72
+                },
+                "scope": "declared-capacity-and-journal-charges-not-timing-or-memory-telemetry",
+                "unknown_charged_usage_run_ids": []
+              },
+              "denominator": 8,
+              "failed": 0,
+              "not-started": 0,
+              "pending": 0,
+              "scheduled": 8,
+              "vetoed": 8,
+              "vetoed_fraction": 1.0
+            }
+          },
+          "status_counts": {
+            "completed": 24,
+            "confirmed": 0,
+            "failed": 0,
+            "not-started": 0,
+            "pending": 0,
+            "scheduled": 24,
+            "vetoed": 24
+          },
+          "task_count": 4,
+          "task_ids": [
+            "task-01",
+            "task-02",
+            "task-03",
+            "task-04"
+          ]
+        }
+      },
+      "ledger_digest": "ccf6996c36fc58f6442eb9760fd73d636b10dc1c446b13d30a276bc1c1b6cf9b",
+      "semantic_digest": "5910314166a6e0d199f52de1704bfea1eade515c3d4446aeef33a45a256e0666",
+      "status_counts": {
+        "completed": 72,
+        "confirmed": 0,
+        "failed": 0,
+        "not-started": 0,
+        "pending": 0,
+        "scheduled": 72,
+        "vetoed": 72
+      },
+      "supervisor_digest": "14fa08ada03eaf96744988a116e6274b2e7d5963d7b9247be5fb91d0fe731ff7"
+    },
+    "source_elapsed_seconds": 259.071,
+    "source_evidence_unchanged_by_references": true,
+    "source_report_digest": "a5fd8be27da0607f3e15a4f4a00f223ab997d0d0750ec70d14d1787a98eb3803",
+    "source_report_file_sha256": "32eaed5e02d768c1722074fb13c57048a49068bfe4d70872a2a0fed526ffd26c",
+    "source_snapshot": {
+      "file_count": 7491,
+      "sha256": "a07ebd81e2db48a5fbe12bf8a1518a4938055eb51749e628271dbcffc5a91cb1",
+      "total_bytes": 23067499
+    },
+    "started_at": "2026-11-04T19:01:56.518264+00:00",
+    "supervisor_contract": {
+      "campaign_id": "m14-observed-pilot-v1",
+      "control_campaign_digest": "50ff1cde79860c475cdef8d0a9e70fbbff6951187c13e6d42eab6b589aa711d0",
+      "control_lock_sha256": "66d8b38ff84f3b1ecc33043b594cf1ec946fd4fc5f1bbe82bd7bb5b251dff9fd",
+      "control_lock_size_bytes": 188,
+      "dispatch_rule": "one-parent-claim-one-dispatch-no-retry",
+      "failure_contract": {
+        "attribution_rule": "observed-exception-not-verified-root-cause",
+        "causal_retroclaim_permitted": false,
+        "gpu_execution_deferred": true,
+        "kind": "bounded-cpu-failure-observation-v1",
+        "max_exception_nodes": 8,
+        "max_message_bytes": 1024,
+        "max_record_bytes": 65536,
+        "max_stream_bytes": 2048,
+        "max_type_bytes": 256,
+        "refund_permitted": false,
+        "retry_permitted": false,
+        "schema_version": 1
+      },
+      "gpu_execution_deferred": true,
+      "implementation_digest": "0be62f4d842832f9bcdce1159c4c0029a7d977040000527447cb69ebae0c6d08",
+      "promotion_eligible": false,
+      "reference_budget": {
+        "max_inference_calls": 2496,
+        "max_input_tokens": 17688,
+        "max_materializations": 120,
+        "max_output_tokens": 2496,
+        "max_proposals": 0,
+        "max_references": 24
+      },
+      "reference_rule": "all-source-searches-complete-before-practice-reference",
+      "runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+      "schema_version": 1,
+      "search_budget": {
+        "max_inference_calls": 14976,
+        "max_input_tokens": 129288,
+        "max_materializations": 360,
+        "max_output_tokens": 14976,
+        "max_proposals": 648,
+        "max_runs": 72
+      },
+      "study_kind": "observed_cpu_control_campaign"
+    },
+    "task_bytes_identical_to_m13": true,
+    "validation_status": "passed"
+  },
+  "promotion_eligible": false,
+  "remaining_gaps": [
+    "M14 Linux/amd64 GitHub CI remains unexecuted before PR publication; local Linux acceptance is ARM64.",
+    "The initial broader macOS and Linux suites had older incomplete-campaign fixture failures. Separate serial rechecks are reported independently and do not turn the initial full runs green or establish their cause.",
+    "The original M13 confirmation-CW failure remains unexplained; this follow-up cannot recover its missing observations.",
+    "Native worker failure telemetry remains null when unavailable; observed exception text does not establish root cause.",
+    "Capture/replay supports the pinned multi-token generated prompts; arbitrary short prompts can collide with the redaction marker and require a new pin with regression coverage.",
+    "Constructed CPU controls do not establish language-model generalization, adaptive-policy superiority or benchmark gains.",
+    "GPU/Qwen acceptance and published base-versus-patch reproduction, larger models, live proposals, arbitrary programs, TypeScript parity and promotion remain deferred."
+  ],
+  "schema_version": 1,
+  "validation": {
+    "linux_arm64_cpu_suite_initial": {
+      "architecture": "aarch64",
+      "command_sha256": "4f2d48366088565111463ec9efd26663a4dfec9f7fd30d66bed4ff2dd03bc59e",
+      "container_wall_deadline_seconds": 1900,
+      "cpus": 1,
+      "gpu_execution": false,
+      "hashed_file_count": 154,
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "log_sha256": "9bf37c629ea5a400bf8e9e63d66f38421cb2dc94305aa54bf14a2b674f2cdb61",
+      "memory_limit_bytes": 1073741824,
+      "network": "none",
+      "platform": "Linux-7.0.14-orbstack-00380-ga7e0a2dc9535-aarch64-with-glibc2.41",
+      "pytest_reported_elapsed_seconds": 1406.33,
+      "pytest_summary": "1 failed, 834 passed, 1 skipped in 1406.33s (0:23:26)",
+      "pytest_wall_deadline_seconds": 1800,
+      "python": "3.11.16 (main, Sep 19 2026, 01:11:34) [GCC 14.2.0]",
+      "receipt_sha256": "a3ad5d7c69bd31dd0688cf5b84bf9a48e67d9054ffcb47adf48d8718473d1f01",
+      "remaining_gap": "New M14 Linux/amd64 CI is not executed by this local ARM64 acceptance; GPU inference and Qwen reproduction remain deferred.",
+      "repository_mount": "read-only",
+      "result": {
+        "changed_paths": [],
+        "counts": {
+          "failure": 1,
+          "passed": 834,
+          "skipped": 1
+        },
+        "elapsed_seconds": 1406.321,
+        "exit_code": 1,
+        "junit_present": true,
+        "modules": {
+          "tests.test_weight_cpu_campaign": {
+            "passed": 24
+          },
+          "tests.test_weight_cpu_campaign_models": {
+            "passed": 32
+          },
+          "tests.test_weight_cpu_campaign_report": {
+            "passed": 31
+          },
+          "tests.test_weight_cpu_campaign_tasks": {
+            "passed": 23
+          },
+          "tests.test_weight_cpu_control": {
+            "failure": 1,
+            "passed": 17
+          },
+          "tests.test_weight_cpu_control_models": {
+            "passed": 27
+          },
+          "tests.test_weight_cpu_control_report": {
+            "passed": 42
+          },
+          "tests.test_weight_cpu_control_tasks": {
+            "passed": 30
+          },
+          "tests.test_weight_cpu_diagnostic": {
+            "passed": 32
+          },
+          "tests.test_weight_cpu_diagnostic_models": {
+            "passed": 27
+          },
+          "tests.test_weight_cpu_diagnostic_plan": {
+            "passed": 16
+          },
+          "tests.test_weight_cpu_diagnostic_report": {
+            "passed": 35
+          },
+          "tests.test_weight_cpu_failure_campaign": {
+            "passed": 22
+          },
+          "tests.test_weight_cpu_failure_campaign_models": {
+            "passed": 19
+          },
+          "tests.test_weight_cpu_failure_diagnostic": {
+            "passed": 24
+          },
+          "tests.test_weight_cpu_failure_faults": {
+            "passed": 16
+          },
+          "tests.test_weight_cpu_failure_models": {
+            "passed": 33
+          },
+          "tests.test_weight_cpu_failure_record": {
+            "passed": 24
+          },
+          "tests.test_weight_cpu_model": {
+            "passed": 96
+          },
+          "tests.test_weight_cpu_resources": {
+            "passed": 17
+          },
+          "tests.test_weight_cpu_runner": {
+            "passed": 42,
+            "skipped": 1
+          },
+          "tests.test_weight_cpu_search": {
+            "passed": 44
+          },
+          "tests.test_weight_cpu_search_controls": {
+            "passed": 30
+          },
+          "tests.test_weight_cpu_search_models": {
+            "passed": 59
+          },
+          "tests.test_weight_cpu_search_policy": {
+            "passed": 32
+          },
+          "tests.test_weight_cpu_search_review": {
+            "passed": 10
+          },
+          "tests.test_weight_cpu_study": {
+            "passed": 30
+          }
+        },
+        "nonpassing": [
+          {
+            "message": "AssertionError: assert ['failed', 'f...mpleted', ...] == ['failed', 'c...mpleted', ...]\n  \n  At index 1 diff: 'failed' != 'completed'\n  Use -v to get more diff",
+            "module": "tests.test_weight_cpu_control",
+            "name": "test_failed_search_preserves_family_denominators_and_cannot_be_retried",
+            "outcome": "failure"
+          },
+          {
+            "message": "Darwin RSS monitor",
+            "module": "tests.test_weight_cpu_runner",
+            "name": "test_rss_limit_and_unavailable_monitor_fail_closed",
+            "outcome": "skipped"
+          }
+        ],
+        "source_hashes_unchanged": true
+      },
+      "scope": "all 27 test_weight_cpu_*.py modules, no exclusions",
+      "source_manifest_sha256": "c539250d942ec7ec8c7200afce8f9df2b39d1cee1c67ae8885a9fb53abeb6631",
+      "test_files": [
+        "autocontext/tests/test_weight_cpu_campaign.py",
+        "autocontext/tests/test_weight_cpu_campaign_models.py",
+        "autocontext/tests/test_weight_cpu_campaign_report.py",
+        "autocontext/tests/test_weight_cpu_campaign_tasks.py",
+        "autocontext/tests/test_weight_cpu_control.py",
+        "autocontext/tests/test_weight_cpu_control_models.py",
+        "autocontext/tests/test_weight_cpu_control_report.py",
+        "autocontext/tests/test_weight_cpu_control_tasks.py",
+        "autocontext/tests/test_weight_cpu_diagnostic.py",
+        "autocontext/tests/test_weight_cpu_diagnostic_models.py",
+        "autocontext/tests/test_weight_cpu_diagnostic_plan.py",
+        "autocontext/tests/test_weight_cpu_diagnostic_report.py",
+        "autocontext/tests/test_weight_cpu_failure_campaign.py",
+        "autocontext/tests/test_weight_cpu_failure_campaign_models.py",
+        "autocontext/tests/test_weight_cpu_failure_diagnostic.py",
+        "autocontext/tests/test_weight_cpu_failure_faults.py",
+        "autocontext/tests/test_weight_cpu_failure_models.py",
+        "autocontext/tests/test_weight_cpu_failure_record.py",
+        "autocontext/tests/test_weight_cpu_model.py",
+        "autocontext/tests/test_weight_cpu_resources.py",
+        "autocontext/tests/test_weight_cpu_runner.py",
+        "autocontext/tests/test_weight_cpu_search.py",
+        "autocontext/tests/test_weight_cpu_search_controls.py",
+        "autocontext/tests/test_weight_cpu_search_models.py",
+        "autocontext/tests/test_weight_cpu_search_policy.py",
+        "autocontext/tests/test_weight_cpu_search_review.py",
+        "autocontext/tests/test_weight_cpu_study.py"
+      ]
+    },
+    "linux_arm64_serial_failed_module_recheck": {
+      "architecture": "aarch64",
+      "command_sha256": "75a06dbb9edff88ac4cfe1e7a23e67ae869c65e94806465cce2c1723fafa03d0",
+      "container_wall_deadline_seconds": 1000,
+      "cpus": 1,
+      "gpu_execution": false,
+      "hashed_file_count": 154,
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "initial_failure_cause_recovered": false,
+      "interpretation": "This fresh serial test recheck does not recover messages or causes missing from the initial class-only journals; no pilot was rerun.",
+      "log_sha256": "de07a5d183bda5a93d5a53fa71736f512909d03177d29b434ea3be6aa15a27ac",
+      "memory_limit_bytes": 1073741824,
+      "network": "none",
+      "observer_hash_unchanged": true,
+      "platform": "Linux-7.0.14-orbstack-00380-ga7e0a2dc9535-aarch64-with-glibc2.41",
+      "pytest_reported_elapsed_seconds": 147.92,
+      "pytest_summary": "18 passed in 147.92s (0:02:27)",
+      "pytest_wall_deadline_seconds": 900,
+      "python": "3.11.16 (main, Sep 19 2026, 01:11:34) [GCC 14.2.0]",
+      "receipt_sha256": "e269fd4ff288b4c9490f3572ed3777a9556468efd040e62b65632e40b294bb40",
+      "remaining_gap": "New M14 Linux/amd64 CI is not executed by this local ARM64 acceptance; GPU inference and Qwen reproduction remain deferred.",
+      "repository_mount": "read-only",
+      "result": {
+        "changed_paths": [],
+        "counts": {
+          "passed": 18
+        },
+        "elapsed_seconds": 147.922,
+        "exit_code": 0,
+        "junit_present": true,
+        "modules": {
+          "tests.test_weight_cpu_control": {
+            "passed": 18
+          }
+        },
+        "nonpassing": [],
+        "source_hashes_unchanged": true,
+        "test_observer": [
+          {
+            "no_traceback_or_frame_inspection": true,
+            "observer_dispatches_or_retries": false,
+            "pytest_exitstatus": 0,
+            "test_only_observer_summary": {
+              "bytes": 0,
+              "calls": 448,
+              "dropped": 0,
+              "failure_events": 0,
+              "observer_errors": 0,
+              "records": 0
+            },
+            "worker_caps_unchanged": true
+          }
+        ]
+      },
+      "scope": "serial targeted test_weight_cpu_control.py; original worker limits; test-only exception observer",
+      "source_hashes_match_initial": true,
+      "test_files": [
+        "autocontext/tests/test_weight_cpu_control.py"
+      ],
+      "test_only_observer_sha256": "a3087bc09ad750d28a036313797e3302fa40d1fd3f683bbb730e17fe0cd8ec91"
+    },
+    "macos_broader_initial": {
+      "changed_source_paths": [],
+      "elapsed_seconds": 1150.834,
+      "exit_code": 1,
+      "failure_details": [
+        {
+          "classname": "tests.test_weight_cpu_campaign",
+          "kind": "failures",
+          "message": "AssertionError: assert '275899e76a87...340eefe7bb7c0' == '408826f2632f...e2a2872e42078'\n  \n  - 408826f2632f567661c1e51710fec5accbddc59eaa7b291fff7e2a2872e42078\n  + 275899e76a8749ce530014fecae349a9a8106dc2954d2ec91db340eefe7bb7c0",
+          "name": "test_fresh_campaigns_share_semantic_report"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "failures",
+          "message": "FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/5l/4d99c0cd27183q3rdnm8ybg00000gn/T/pytest-of-jayscambler/pytest-952/cpu-control-source0/output/searches/task-01.r0.seeded-random-v1/complete.json'",
+          "name": "test_control_families_exercise_weight_transfer_without_changing_joint_gate"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "failures",
+          "message": "assert 60 == 81",
+          "name": "test_search_policy_inputs_exclude_family_or_control_oracles"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_diagnostics_preserve_each_family_and_original_search_evidence"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_reports_and_validation_need_no_writable_file_open"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_completed_campaign_and_diagnostic_resume_without_dispatch"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_source_and_diagnostic_tampering_reject_before_dispatch[task-provenance]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_source_and_diagnostic_tampering_reject_before_dispatch[source-selection]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_source_and_diagnostic_tampering_reject_before_dispatch[source-result]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_source_and_diagnostic_tampering_reject_before_dispatch[plan]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_source_and_diagnostic_tampering_reject_before_dispatch[reference-result]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "failures",
+          "message": "ValueError: control references require every source search to be completed and sealed",
+          "name": "test_failed_reference_keeps_all_policy_rows_and_reservation_without_retry[False]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "failures",
+          "message": "ValueError: control references require every source search to be completed and sealed",
+          "name": "test_failed_reference_keeps_all_policy_rows_and_reservation_without_retry[True]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_parent_components_cannot_alias_source_or_plan_for_diagnostic_output[bundle]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_parent_components_cannot_alias_source_or_plan_for_diagnostic_output[campaign]"
+        },
+        {
+          "classname": "tests.test_weight_cpu_control",
+          "kind": "errors",
+          "message": "failed on setup with \"ValueError: control references require every source search to be completed and sealed\"",
+          "name": "test_parent_components_cannot_alias_source_or_plan_for_diagnostic_output[plan]"
+        }
+      ],
+      "finished_at": "2026-11-04T22:10:19.700511+00:00",
+      "junit_sha256": "2daf3868e85f60f8a3a5607e944654badae73bf3e543f1bb05defca76a477aed",
+      "log_sha256": "e3f858aee8f2675d3969f04b39ade9b1ebe867ffa55d77d5f454ace1404191c3",
+      "m14_modules": {
+        "test_weight_cpu_failure_campaign": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 22,
+          "skipped": 0,
+          "tests": 22
+        },
+        "test_weight_cpu_failure_campaign_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 19,
+          "skipped": 0,
+          "tests": 19
+        },
+        "test_weight_cpu_failure_diagnostic": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0,
+          "tests": 24
+        },
+        "test_weight_cpu_failure_faults": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 14,
+          "skipped": 2,
+          "tests": 16
+        },
+        "test_weight_cpu_failure_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 33,
+          "skipped": 0,
+          "tests": 33
+        },
+        "test_weight_cpu_failure_record": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0,
+          "tests": 24
+        }
+      },
+      "modules": {
+        "test_dict_type_consistency": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 4,
+          "skipped": 0,
+          "tests": 4
+        },
+        "test_docker_kernel_worker": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 59,
+          "skipped": 1,
+          "tests": 60
+        },
+        "test_docker_watchdog_ownership": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 10,
+          "skipped": 0,
+          "tests": 10
+        },
+        "test_kernel_benchmark_contract": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 41,
+          "skipped": 4,
+          "tests": 45
+        },
+        "test_kernel_generation_campaign": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 69,
+          "skipped": 0,
+          "tests": 69
+        },
+        "test_protected_kernel_authority_runner": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 21,
+          "skipped": 0,
+          "tests": 21
+        },
+        "test_training_statistical_confirmation": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 23,
+          "skipped": 0,
+          "tests": 23
+        },
+        "test_weight_acceptance": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 26,
+          "skipped": 0,
+          "tests": 26
+        },
+        "test_weight_adaptive": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 31,
+          "skipped": 0,
+          "tests": 31
+        },
+        "test_weight_adaptive_confirmation": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 34,
+          "skipped": 0,
+          "tests": 34
+        },
+        "test_weight_adaptive_provider": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 54,
+          "skipped": 0,
+          "tests": 54
+        },
+        "test_weight_adaptive_workflow": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 23,
+          "skipped": 0,
+          "tests": 23
+        },
+        "test_weight_checkpoint_candidates": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 27,
+          "skipped": 0,
+          "tests": 27
+        },
+        "test_weight_checkpoint_reconstruction": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 39,
+          "skipped": 0,
+          "tests": 39
+        },
+        "test_weight_checkpoint_seal": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 26,
+          "skipped": 0,
+          "tests": 26
+        },
+        "test_weight_checkpoint_workflow": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 28,
+          "skipped": 0,
+          "tests": 28
+        },
+        "test_weight_cohort": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0,
+          "tests": 24
+        },
+        "test_weight_comparison_evaluation": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 35,
+          "skipped": 0,
+          "tests": 35
+        },
+        "test_weight_comparison_fixtures": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 44,
+          "skipped": 0,
+          "tests": 44
+        },
+        "test_weight_comparison_io": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 15,
+          "skipped": 0,
+          "tests": 15
+        },
+        "test_weight_comparison_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 39,
+          "skipped": 0,
+          "tests": 39
+        },
+        "test_weight_cpu_campaign": {
+          "errors": 0,
+          "failures": 1,
+          "passed": 23,
+          "skipped": 0,
+          "tests": 24
+        },
+        "test_weight_cpu_campaign_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 32,
+          "skipped": 0,
+          "tests": 32
+        },
+        "test_weight_cpu_campaign_report": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 31,
+          "skipped": 0,
+          "tests": 31
+        },
+        "test_weight_cpu_campaign_tasks": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 23,
+          "skipped": 0,
+          "tests": 23
+        },
+        "test_weight_cpu_control": {
+          "errors": 11,
+          "failures": 4,
+          "passed": 3,
+          "skipped": 0,
+          "tests": 18
+        },
+        "test_weight_cpu_control_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 27,
+          "skipped": 0,
+          "tests": 27
+        },
+        "test_weight_cpu_control_report": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 42,
+          "skipped": 0,
+          "tests": 42
+        },
+        "test_weight_cpu_control_tasks": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 30,
+          "skipped": 0,
+          "tests": 30
+        },
+        "test_weight_cpu_diagnostic": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 32,
+          "skipped": 0,
+          "tests": 32
+        },
+        "test_weight_cpu_diagnostic_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 27,
+          "skipped": 0,
+          "tests": 27
+        },
+        "test_weight_cpu_diagnostic_plan": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 16,
+          "skipped": 0,
+          "tests": 16
+        },
+        "test_weight_cpu_diagnostic_report": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 35,
+          "skipped": 0,
+          "tests": 35
+        },
+        "test_weight_cpu_failure_campaign": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 22,
+          "skipped": 0,
+          "tests": 22
+        },
+        "test_weight_cpu_failure_campaign_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 19,
+          "skipped": 0,
+          "tests": 19
+        },
+        "test_weight_cpu_failure_diagnostic": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0,
+          "tests": 24
+        },
+        "test_weight_cpu_failure_faults": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 14,
+          "skipped": 2,
+          "tests": 16
+        },
+        "test_weight_cpu_failure_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 33,
+          "skipped": 0,
+          "tests": 33
+        },
+        "test_weight_cpu_failure_record": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0,
+          "tests": 24
+        },
+        "test_weight_cpu_model": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 96,
+          "skipped": 0,
+          "tests": 96
+        },
+        "test_weight_cpu_resources": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 14,
+          "skipped": 3,
+          "tests": 17
+        },
+        "test_weight_cpu_runner": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 42,
+          "skipped": 1,
+          "tests": 43
+        },
+        "test_weight_cpu_search": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 44,
+          "skipped": 0,
+          "tests": 44
+        },
+        "test_weight_cpu_search_controls": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 30,
+          "skipped": 0,
+          "tests": 30
+        },
+        "test_weight_cpu_search_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 59,
+          "skipped": 0,
+          "tests": 59
+        },
+        "test_weight_cpu_search_policy": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 32,
+          "skipped": 0,
+          "tests": 32
+        },
+        "test_weight_cpu_search_review": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 10,
+          "skipped": 0,
+          "tests": 10
+        },
+        "test_weight_cpu_study": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 30,
+          "skipped": 0,
+          "tests": 30
+        },
+        "test_weight_datasets": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 58,
+          "skipped": 0,
+          "tests": 58
+        },
+        "test_weight_docker_runner": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 51,
+          "skipped": 0,
+          "tests": 51
+        },
+        "test_weight_gpu_commands": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 15,
+          "skipped": 0,
+          "tests": 15
+        },
+        "test_weight_gpu_readiness": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 37,
+          "skipped": 0,
+          "tests": 37
+        },
+        "test_weight_inference": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 56,
+          "skipped": 0,
+          "tests": 56
+        },
+        "test_weight_reference": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 6,
+          "skipped": 0,
+          "tests": 6
+        },
+        "test_weight_replay": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 35,
+          "skipped": 0,
+          "tests": 35
+        },
+        "test_weight_replay_commands": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 14,
+          "skipped": 0,
+          "tests": 14
+        },
+        "test_weight_reproduction_contract": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 56,
+          "skipped": 0,
+          "tests": 56
+        },
+        "test_weight_reproduction_evaluation": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 41,
+          "skipped": 2,
+          "tests": 43
+        },
+        "test_weight_reproduction_run": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 27,
+          "skipped": 0,
+          "tests": 27
+        },
+        "test_weight_reproduction_scorers": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 57,
+          "skipped": 0,
+          "tests": 57
+        },
+        "test_weight_runtime": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 47,
+          "skipped": 0,
+          "tests": 47
+        },
+        "test_weight_scorer_runtime": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 30,
+          "skipped": 0,
+          "tests": 30
+        },
+        "test_weight_session": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 62,
+          "skipped": 0,
+          "tests": 62
+        },
+        "test_weight_session_data": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 36,
+          "skipped": 0,
+          "tests": 36
+        },
+        "test_weight_session_fixtures": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 30,
+          "skipped": 0,
+          "tests": 30
+        },
+        "test_weight_session_models": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 56,
+          "skipped": 0,
+          "tests": 56
+        },
+        "test_weight_session_workflow": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 26,
+          "skipped": 0,
+          "tests": 26
+        },
+        "test_weight_tensor_edits": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 60,
+          "skipped": 0,
+          "tests": 60
+        },
+        "test_weight_worker_entrypoint": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 18,
+          "skipped": 0,
+          "tests": 18
+        }
+      },
+      "receipt_sha256": "2bc356de1ad5ee3e57bf6bc637d556570430b0ded2bc23da70e025a260e9b0c5",
+      "skip_details": [
+        {
+          "classname": "tests.test_weight_cpu_failure_faults",
+          "message": "Linux hard address-space allocation failure",
+          "name": "test_linux_allocation_denial_records_observed_exit_without_claiming_memory_kill"
+        },
+        {
+          "classname": "tests.test_weight_cpu_failure_faults",
+          "message": "Linux hard CPU limit with independent wall watchdog",
+          "name": "test_linux_cpu_limit_records_signal_observation_without_inferring_root_cause"
+        },
+        {
+          "classname": "tests.test_weight_cpu_resources",
+          "message": "Linux RLIMIT_AS allocation denial",
+          "name": "test_linux_address_space_exhaustion_is_rejected_and_reaped"
+        },
+        {
+          "classname": "tests.test_weight_cpu_resources",
+          "message": "Linux RLIMIT_CPU hard-limit termination",
+          "name": "test_linux_cpu_exhaustion_is_kernel_killed_before_wall_watchdog_and_reaped"
+        },
+        {
+          "classname": "tests.test_weight_cpu_resources",
+          "message": "Linux worker limits plus parent wall deadline",
+          "name": "test_linux_wall_deadline_reaps_a_worker_with_installed_limits"
+        },
+        {
+          "classname": "tests.test_weight_cpu_runner",
+          "message": "Linux preserves pre-exec getrusage RSS",
+          "name": "test_large_parent_rss_does_not_reject_small_exec_worker"
+        },
+        {
+          "classname": "tests.test_weight_reproduction_evaluation",
+          "message": "requires explicit pinned scorer environment/assets",
+          "name": "test_official_scorer_replays_synthetic_raw_evidence[math500]"
+        },
+        {
+          "classname": "tests.test_weight_reproduction_evaluation",
+          "message": "requires explicit pinned scorer environment/assets",
+          "name": "test_official_scorer_replays_synthetic_raw_evidence[ifeval]"
+        },
+        {
+          "classname": "tests.test_docker_kernel_worker",
+          "message": "requires an explicit real Docker+MIG release-gate environment",
+          "name": "test_real_docker_mig_security_and_crash_cleanup_release_gate"
+        },
+        {
+          "classname": "tests.test_kernel_benchmark_contract",
+          "message": "requires the native Windows launcher path",
+          "name": "test_external_runner_uses_site_isolated_windows_launcher_argv"
+        },
+        {
+          "classname": "tests.test_kernel_benchmark_contract",
+          "message": "requires a native Windows Job Object",
+          "name": "test_external_runner_never_starts_target_when_windows_job_assignment_fails"
+        },
+        {
+          "classname": "tests.test_kernel_benchmark_contract",
+          "message": "requires a native Windows Job Object",
+          "name": "test_external_runner_surfaces_windows_job_cleanup_failure[wait_until_empty-benchmark Windows Job status query failed: OSError:]"
+        },
+        {
+          "classname": "tests.test_kernel_benchmark_contract",
+          "message": "requires a native Windows Job Object",
+          "name": "test_external_runner_surfaces_windows_job_cleanup_failure[close-benchmark Windows Job handle close failed: OSError:]"
+        }
+      ],
+      "source_files_unchanged": true,
+      "source_hash_after": "53c461c17eb439010dc763c6318a2979d72bce4105c8e3c669160e2ce6061f8c",
+      "source_hash_before": "53c461c17eb439010dc763c6318a2979d72bce4105c8e3c669160e2ce6061f8c",
+      "started_at": "2026-11-04T19:08:08.265021+00:00",
+      "status": "failed",
+      "timed_out": false,
+      "total": {
+        "errors": 11,
+        "failures": 5,
+        "passed": 2304,
+        "skipped": 13,
+        "tests": 2333
+      }
+    },
+    "macos_serial_failed_module_recheck": {
+      "attempt_count": 1,
+      "changed_source_paths": [],
+      "elapsed_seconds": 202.831,
+      "exception_event_count": 0,
+      "exit_code": 0,
+      "finished_at": "2026-11-04T22:18:24.819637+00:00",
+      "instrumentation": "test-only pass-through wrappers; unchanged exception/return behavior; no inferred telemetry",
+      "matches_initial_broader_source": true,
+      "modules": {
+        "test_weight_cpu_campaign": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0,
+          "tests": 24
+        },
+        "test_weight_cpu_control": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 18,
+          "skipped": 0,
+          "tests": 18
+        }
+      },
+      "receipt_sha256": "457d7224eba5fe0d53d5ed771ee921c76729a6be80303105ad6961c5fdf03513",
+      "scope": "serial recheck of failing test modules only; initial broad result remains failed; no pilot retry",
+      "selected_modules": [
+        "tests/test_weight_cpu_campaign.py",
+        "tests/test_weight_cpu_control.py"
+      ],
+      "source_file_count": 1091,
+      "source_files_unchanged": true,
+      "source_hash_after": "53c461c17eb439010dc763c6318a2979d72bce4105c8e3c669160e2ce6061f8c",
+      "source_hash_before": "53c461c17eb439010dc763c6318a2979d72bce4105c8e3c669160e2ce6061f8c",
+      "started_at": "2026-11-04T22:15:01.988348+00:00",
+      "status": "passed",
+      "timed_out": false,
+      "total": {
+        "errors": 0,
+        "failures": 0,
+        "passed": 42,
+        "skipped": 0,
+        "tests": 42
+      }
+    },
+    "mypy": {
+      "scope": "src and CPU failure example wrappers",
+      "source_files": 1022,
+      "status": "passed"
+    },
+    "ruff": {
+      "scope": "src, tests and CPU failure example wrappers",
+      "status": "passed"
+    }
+  }
+}

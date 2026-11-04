@@ -135,6 +135,15 @@ reports; never discard a calibration mismatch or use it to regenerate a task.
 An individual weight component passing cannot unlock audit without the existing
 joint gate. Preserve earlier source pins and keep GPU execution deferred.
 
+The [CPU failure supervisor](examples/weight_evolution/cpu_failures/README.md)
+has its own contract and implementation pin. Preserve the native M11–M13 files
+and never monkeypatch their runtime while claiming an unchanged implementation.
+Test deterministic faults, bounded observations, cause/context cycles, missing
+telemetry, interrupted publication and full native-prefix verification. An
+existing parent claim must never dispatch its child again; missing live evidence
+cannot be reconstructed during replay. Keep reference budgets separate, preserve
+the original failed pilot, and declare each follow-up before its first dispatch.
+
 TypeScript:
 
 ```bash
