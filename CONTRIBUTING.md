@@ -115,6 +115,16 @@ dispatch outcomes, interrupted parent publication, read-only reporting, source
 drift and evidence tampering. Shared search-source changes require repinning the
 M10 example; changes to generated-task source require rebuilding the M11 bundle.
 
+The [CPU search diagnostics](examples/weight_evolution/cpu_diagnostics/README.md)
+pin a complete verified campaign before any practice reference dispatch. Preserve
+source files, selections, confirmation outcomes, and separate diagnostic costs.
+Test full option coverage, missed/no-op opportunities, output-vector ties,
+confirmation failures, uncertain claims, prefix replay, read-only reporting,
+bounded inventories, and changed source evidence. Do not put gold labels or
+held-out cases in reference worker requests. Source changes invalidate diagnostic
+plans; generate plans after freezing the implementation and completing the source
+campaign on the same runtime. GPU execution remains deferred.
+
 TypeScript:
 
 ```bash

@@ -33,6 +33,10 @@ runtime or GPU execution path.
 The [generated CPU campaign](../examples/weight_evolution/cpu_campaign/README.md)
 also remains Python-only. It compares search policies at equal capacity on tiny
 generated tasks; TypeScript parity and GPU/Qwen reproduction remain deferred.
+The [CPU search diagnostics](../examples/weight_evolution/cpu_diagnostics/README.md)
+also remain Python-only, reusing the Python CPU runner and retained campaign
+evidence. Exhaustive practice references add no TypeScript runtime or GPU path;
+cross-runtime parity remains deferred while this research workflow is validated.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
