@@ -47,6 +47,11 @@ pin a completed campaign before exhaustive practice-only probes. Read-only
 checkpoint reuse, separate reference budgets, and verified replay preserve the
 original selections and confirmation gate. Reports describe finite-option
 opportunity and missed gains without reselection or new held-out evaluation.
+The [controlled CPU transfer experiments](../examples/weight_evolution/cpu_controls/README.md)
+use separately versioned repair, correct-baseline and shortcut generators.
+Expected weight behavior follows from construction; family reports compare it
+with actual selected-candidate confirmation while retaining the joint gate.
+Policies, worker limits, earlier contracts and GPU deferral are preserved.
 
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,

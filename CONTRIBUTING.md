@@ -125,6 +125,16 @@ held-out cases in reference worker requests. Source changes invalidate diagnosti
 plans; generate plans after freezing the implementation and completing the source
 campaign on the same runtime. GPU execution remains deferred.
 
+The [controlled CPU transfer experiments](examples/weight_evolution/cpu_controls/README.md)
+add a separate generator and campaign contract; never relabel a control as an
+M11 task or relax its frozen provenance validator. Test construction algebra,
+neutral option placement, deterministic bytes, structurally disjoint splits,
+policy input isolation and actual weight-component transfer/veto behavior.
+Keep all selected confirmation measurements and failures in family-specific
+reports; never discard a calibration mismatch or use it to regenerate a task.
+An individual weight component passing cannot unlock audit without the existing
+joint gate. Preserve earlier source pins and keep GPU execution deferred.
+
 TypeScript:
 
 ```bash
