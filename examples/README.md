@@ -50,6 +50,10 @@ These are copy-paste starting points for people evaluating the repo, integrating
   finite C/W/D choices, equal search caps, earlier-best restoration, and a
   confirmation veto. Linux tests exercise memory/CPU failures and cleanup;
   GPU execution remains deferred.
+- Want to compare search policies at the same budget across generated tasks?
+  Run the [CPU search campaign](weight_evolution/cpu_campaign/README.md), with
+  pinned adaptive/fixed-order/seeded-random controls, complete failure accounting,
+  and task-level paired reports. GPU execution remains deferred.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

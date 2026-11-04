@@ -255,7 +255,7 @@ def test_failed_or_ambiguous_work_remains_charged_without_retry(
     if operation == "materialize":
         monkeypatch.setattr(TensorCandidateRegistry, "materialize", interrupted)
     elif operation == "proposal":
-        monkeypatch.setattr(cpu_search, "choose_next_option", interrupted)
+        monkeypatch.setattr(cpu_search, "choose_policy_option", interrupted)
     else:
         monkeypatch.setattr(cpu_search, "run_cpu_batch", interrupted)
     expected = KeyboardInterrupt if failure is KeyboardInterrupt else cpu_search.CpuSearchBlockedError

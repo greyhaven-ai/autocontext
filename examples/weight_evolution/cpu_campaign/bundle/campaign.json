@@ -1,0 +1,62 @@
+{
+  "budget": {
+    "max_inference_calls": 936,
+    "max_input_tokens": 7947,
+    "max_materializations": 45,
+    "max_output_tokens": 936,
+    "max_proposals": 81,
+    "max_runs": 9
+  },
+  "campaign_id": "generated-cpu-search-fixture-v1",
+  "confidence_z": 1.959963984540054,
+  "gpu_execution_deferred": true,
+  "implementation_digest": "cfa3e59d986316c5eeec43876cc839605fe904aa1e3adf80016fb7b77ef93bca",
+  "policies": [
+    "adaptive-v1",
+    "fixed-order-v1",
+    "seeded-random-v1"
+  ],
+  "promotion_eligible": false,
+  "repeats": [
+    {
+      "inference_seed": 15485863,
+      "repeat_id": "repeat-01",
+      "search_order_seed": 32452843
+    }
+  ],
+  "reporting_rule": "task-mean-paired-t-8-contrasts-v1",
+  "sampling_unit": "task-instance",
+  "schema_version": 1,
+  "scorer": "exact-label-v1",
+  "stopping_rule": "complete-schedule-one-confirmation-look-v1",
+  "study_kind": "generated_cpu_search_campaign",
+  "tasks": [
+    {
+      "bundle_lock_sha256": "ca8ed3c164d4b3a60bb81cb853b028b6dfcea44ed245c817fdae67a40c4377fa",
+      "bundle_lock_size_bytes": 283,
+      "family": "linear-separator-v1",
+      "generation_seed": 104729,
+      "provenance_sha256": "75de8d4acf0200ab5bbd1663e671b60c09ed6a717ec5ab66cb87aa446c681e92",
+      "provenance_size_bytes": 968,
+      "task_id": "task-01"
+    },
+    {
+      "bundle_lock_sha256": "ba657e04fb5537776fafa12a288ea2e07aceb797f94742292d18a0161232292d",
+      "bundle_lock_size_bytes": 283,
+      "family": "linear-separator-v1",
+      "generation_seed": 130363,
+      "provenance_sha256": "1c3ce054594de98a9a9cb746b1959fddfc9cb927b02f970dcec423de74137fd3",
+      "provenance_size_bytes": 969,
+      "task_id": "task-02"
+    },
+    {
+      "bundle_lock_sha256": "7a8fb716850e9720a8982b0a5bc87b880312693d4bd5ec6bfcb967a9860062d2",
+      "bundle_lock_size_bytes": 283,
+      "family": "linear-separator-v1",
+      "generation_seed": 155921,
+      "provenance_sha256": "6c883b4c9558f4bd98ae5a565f94c7a88554877d1354dce1375136fef5ae575c",
+      "provenance_size_bytes": 968,
+      "task_id": "task-03"
+    }
+  ]
+}

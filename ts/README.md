@@ -30,6 +30,9 @@ The [adaptive CPU search](../examples/weight_evolution/cpu_adaptive/README.md)
 also remains Python-only. It uses measured practice feedback for bounded edits,
 selection, restoration, and confirmation; this milestone adds no TypeScript
 runtime or GPU execution path.
+The [generated CPU campaign](../examples/weight_evolution/cpu_campaign/README.md)
+also remains Python-only. It compares search policies at equal capacity on tiny
+generated tasks; TypeScript parity and GPU/Qwen reproduction remain deferred.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the

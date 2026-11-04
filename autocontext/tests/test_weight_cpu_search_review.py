@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Any
 import pytest
 
 from autocontext.weight_evolution import cpu_search
+from autocontext.weight_evolution.artifacts import canonical_digest
 from autocontext.weight_evolution.checkpoint_candidates import TensorCandidateRegistry
 from autocontext.weight_evolution.cpu_models import CpuInferenceRequest
 from autocontext.weight_evolution.cpu_runner import CpuBatchReceipt
@@ -34,6 +36,69 @@ def snapshot(root: Path) -> dict[str, bytes]:
 
 def forbidden(*args: Any, **kwargs: Any) -> Any:
     raise AssertionError("retained work was repeated")
+
+
+@pytest.mark.parametrize("tamper", [None, "prior-result", "checkpoint", "incomplete-claim"])
+def test_incomplete_dispatch_checks_retained_prefix_before_blocking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tamper: str | None,
+) -> None:
+    bundle, output = tmp_path / "bundle", tmp_path / "output"
+    build_bundle(bundle)
+
+    def interrupt(*args: Any, **kwargs: Any) -> Any:
+        raise KeyboardInterrupt("unknown first probe outcome")
+
+    monkeypatch.setattr(cpu_search, "run_cpu_batch", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        cpu_search.run_cpu_search(bundle, output_dir=output)
+    claims = sorted((output / "claims").iterdir())
+    results = sorted((output / "results").iterdir())
+    assert len(claims) == len(results) + 1
+    assert _read_record(claims[-1])["kind"] == "inference"
+    if tamper == "checkpoint":
+        checkpoint = next((output / "materializations").glob("*/model.safetensors"))
+        content = checkpoint.read_bytes()
+        checkpoint.write_bytes(content[:-1] + bytes([content[-1] ^ 1]))
+    elif tamper in {"prior-result", "incomplete-claim"}:
+        path = results[1] if tamper == "prior-result" else claims[-1]
+        payload = _read_record(path)
+        if tamper == "prior-result":
+            payload["value"]["unexpected"] = True
+        else:
+            payload["reserved"]["inference_calls"] -= 1
+        path.write_text(json.dumps({"payload": payload, "digest": canonical_digest(payload)}))
+    before = snapshot(output)
+    monkeypatch.setattr(cpu_search, "run_cpu_batch", forbidden)
+    monkeypatch.setattr(TensorCandidateRegistry, "materialize", forbidden)
+    with pytest.raises(ValueError) as caught:
+        cpu_search.run_cpu_search(bundle, output_dir=output)
+    # Campaigns may conservatively burn a valid uncertain dispatch and continue
+    # their schedule. Invalid earlier evidence must instead stop the campaign.
+    assert isinstance(caught.value, cpu_search.CpuSearchBlockedError) == (tamper is None)
+    assert snapshot(output) == before
+
+
+@pytest.mark.parametrize("missing", ["middle-result", "two-tail-results"])
+def test_incomplete_dispatch_rejects_noncontiguous_result_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str,
+) -> None:
+    bundle, output = tmp_path / "bundle", tmp_path / "output"
+    build_bundle(bundle)
+
+    def interrupt(*args: Any, **kwargs: Any) -> Any:
+        raise KeyboardInterrupt("unknown first probe outcome")
+
+    monkeypatch.setattr(cpu_search, "run_cpu_batch", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        cpu_search.run_cpu_search(bundle, output_dir=output)
+    results = sorted((output / "results").iterdir())
+    results[0 if missing == "middle-result" else -1].unlink()
+    before = snapshot(output)
+    monkeypatch.setattr(cpu_search, "run_cpu_batch", forbidden)
+    monkeypatch.setattr(TensorCandidateRegistry, "materialize", forbidden)
+    with pytest.raises(cpu_search.CpuSearchError, match="at most one incomplete"):
+        cpu_search.run_cpu_search(bundle, output_dir=output)
+    assert snapshot(output) == before
 
 
 @pytest.mark.parametrize("retained_materializations", [0, 1])

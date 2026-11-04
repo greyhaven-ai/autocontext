@@ -73,6 +73,16 @@ uncertain claims remain charged and block retries. A confirmation veto withholds
 audit. Linux limit-failure acceptance exercises the actual worker installation;
 this remains trusted fixed code on constructed tasks, with GPU execution deferred.
 
+The [generated CPU campaign](../../examples/weight_evolution/cpu_campaign/README.md)
+pins task-generation, inference and search-order seeds separately. `validate`
+checks the contract without inference; `run --output` executes or resumes every
+scheduled policy; `report --output` verifies retained evidence without writing.
+Use common candidate spaces, trial caps, complete practice coverage and the same
+earliest-best rule for every policy. Reserve failed/uncertain runs without retry,
+retain vetoes in denominators, and average paired repeats within each task.
+Audit scores are conditional on confirmation, not an overall policy-quality mean.
+GPU execution and Qwen reproduction remain deferred.
+
 The [CPU inference study](../../examples/weight_evolution/cpu_inference/README.md)
 evaluates fixed tiny-model candidates through actual CPU forward passes. Its
 versioned evidence declares model execution and pins the checkpoint, prompt,

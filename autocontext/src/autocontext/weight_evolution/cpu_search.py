@@ -9,13 +9,18 @@ This coordinates trusted fixed code, not an arbitrary-code sandbox.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from autocontext.util.file_lock import advisory_path_lock
+from autocontext.util.file_lock import _lock, _unlock, advisory_path_lock
 from autocontext.weight_evolution.artifacts import canonical_digest, file_identity, load_small_json, regular_file
-from autocontext.weight_evolution.checkpoint_candidates import TensorCandidateRegistry, TensorCandidateSpec
+from autocontext.weight_evolution.checkpoint_candidates import (
+    TensorCandidateRegistry,
+    TensorCandidateSpec,
+    VerifiedTensorCandidate,
+)
 from autocontext.weight_evolution.cpu_model import verify_model_checkpoint
 from autocontext.weight_evolution.cpu_models import CpuInferenceRequest
 from autocontext.weight_evolution.cpu_runner import CpuBatchReceipt, run_cpu_batch, runtime_identity, validate_cpu_receipt
@@ -27,7 +32,7 @@ from autocontext.weight_evolution.cpu_search_models import (
     CpuSearchOption,
     CpuSearchSpec,
 )
-from autocontext.weight_evolution.cpu_search_policy import CpuPracticeScore, choose_next_option, select_best
+from autocontext.weight_evolution.cpu_search_policy import CpuPracticeScore, choose_policy_option, select_best
 from autocontext.weight_evolution.cpu_study import CONDITIONS, CpuCase, _score
 from autocontext.weight_evolution.session import _clear_staging, _immutable_json, _read_record, _same
 
@@ -85,6 +90,39 @@ def _registry(spec: CpuSearchSpec, directory: Path, root: Path) -> TensorCandida
                                    output_dir=root / "materializations")
 
 
+@contextmanager
+def _existing_lock(path: Path) -> Iterator[None]:
+    """Lock a required existing regular file using only a read descriptor."""
+    with regular_file(path) as stream:
+        _lock(stream.fileno())
+        try:
+            yield
+        finally:
+            _unlock(stream.fileno())
+
+
+class _ReadOnlyRegistry(TensorCandidateRegistry):
+    """Use the existing verification implementation without writable lock opens."""
+
+    def verify(self, handle: str) -> VerifiedTensorCandidate:
+        candidate = self.parse_handle(handle)
+        if candidate.program is None:
+            return self._verified(candidate)
+        with _existing_lock(self.output_dir / ".tensor-candidates.lock"):
+            return self._verified(candidate)
+
+    def verify_existing(self) -> tuple[VerifiedTensorCandidate, ...]:
+        with _existing_lock(self.output_dir / ".tensor-candidates.lock"):
+            return self._verify_existing_locked()
+
+    def materialize(self, handle: str) -> VerifiedTensorCandidate:
+        raise CpuSearchError("read-only CPU verification cannot materialize a checkpoint")
+
+
+def _execution_kind(spec: CpuSearchSpec) -> str:
+    return "adaptive_cpu_inference" if spec.policy.name == "adaptive-v1" else "cpu_search_inference"
+
+
 def validate_cpu_search(directory: Path) -> dict[str, Any]:
     """Read-only preflight: no materialization, proposal, worker or output writes."""
     spec = load_cpu_search(directory)
@@ -95,6 +133,7 @@ def validate_cpu_search(directory: Path) -> dict[str, Any]:
                             expected_size_bytes=spec.baseline.output_size_bytes)
     return {"study_digest": spec.digest, "candidate_count": len(spec.candidates),
             "required_usage": spec.required_usage, "rounds_per_mechanism": spec.rounds,
+            "policy": spec.policy.to_dict(), "policy_digest": spec.policy.digest,
             "model_execution_performed": False, "gpu_execution_deferred": True,
             "scope": "validation-only-no-materialization-proposals-or-inference"}
 
@@ -129,6 +168,11 @@ class _Journal:
         claim_path, result_path = self.root / "claims" / name, self.root / "results" / name
         if self.index < self.available:
             _same(_read_record(claim_path), claim, "retained CPU search claim differs from replayed work")
+            if not result_path.exists():
+                # Check every earlier operation and this claim before treating
+                # the uncertain dispatch as blocked. A campaign may continue
+                # other runs only after that retained prefix is validated.
+                raise CpuSearchBlockedError("incomplete CPU search claim remains charged; automatic retry is forbidden")
             result = _read_record(result_path)
         else:
             if self.replay:
@@ -220,10 +264,11 @@ def _practice_score(option: CpuSearchOption | None, score: dict[str, Any]) -> Cp
 
 def _report(journal: _Journal, role: str, scores: dict[str, Any], receipts: dict[str, CpuBatchReceipt],
             selection_digest: str) -> dict[str, Any]:
-    report = {"schema_version": 1, "execution_kind": "adaptive_cpu_inference", "model_execution_performed": True,
+    report = {"schema_version": 1, "execution_kind": _execution_kind(journal.spec), "model_execution_performed": True,
               "gpu_execution_deferred": True, "promotion_eligible": False, "benchmark_result_claimed": False,
               "role": role, "study_digest": journal.spec.digest, "runtime_digest": journal.runtime_digest,
               "selection_digest": selection_digest, "scorer": "exact-label-v1",
+              "policy": journal.spec.policy.to_dict(), "policy_digest": journal.spec.policy.digest,
               "scorer_digest": journal.spec.implementation_digest,
               "conditions": scores,
               "contrasts": {f"{a}-{b}": scores[a]["accuracy"] - scores[b]["accuracy"]
@@ -272,13 +317,14 @@ def _workflow(journal: _Journal, registry: TensorCandidateRegistry) -> dict[str,
         measured: dict[str | None, CpuBatchReceipt] = {None: baseline}
         for trial in range(1, spec.rounds + 1):
             options = spec.options_for(mechanism)
-            inputs = {"mechanism": mechanism, "options": [option.to_dict() for option in options],
+            inputs = {"mechanism": mechanism, "policy": spec.policy.to_dict(), "policy_digest": spec.policy.digest,
+                      "options": [option.to_dict() for option in options],
                       "history": [row.to_dict() for row in history],
                       "practice_receipt_digests": [receipt.semantic_digest for receipt in measured.values()]}
 
             def propose(options: tuple[CpuSearchOption, ...] = options,
                         history: tuple[CpuPracticeScore, ...] = history) -> dict[str, Any]:
-                return choose_next_option(options, history).to_dict()
+                return choose_policy_option(spec.policy, options, history).to_dict()
 
             decision = journal.perform("proposal", f"{mechanism}-proposal-{trial}", inputs, _cost(proposals=1),
                                        propose, lambda raw: _same(raw, propose(), "CPU proposal differs from practice feedback"))
@@ -306,6 +352,7 @@ def _workflow(journal: _Journal, registry: TensorCandidateRegistry) -> dict[str,
         practice_scores[mechanism], practice_receipts[mechanism] = score, restored
         search_usage[mechanism] = {name: journal.spent[name] - before_search[name] for name in _METERS}
     selection = {"schema_version": 1, "kind": "practice-selected-before-confirmation", "study_digest": spec.digest,
+                 "policy": spec.policy.to_dict(), "policy_digest": spec.policy.digest,
                  "selections": selections, "checkpoint_seals": seals,
                  "selection_rule": "highest-practice-correct-then-earliest-round", "evaluation_seed": spec.evaluation_seed,
                  "composition": "selected-C-plus-selected-W-no-extra-search"}
@@ -341,10 +388,11 @@ def _workflow(journal: _Journal, registry: TensorCandidateRegistry) -> dict[str,
     capacity = _cost(proposals=spec.rounds, inference_calls=(spec.rounds + 2) * len(practice),
                      output_tokens=(spec.rounds + 2) * len(practice),
                      input_tokens=(spec.rounds + 2) * sum(len(case.prompt.split()) + prefix for case in practice))
-    summary = {"schema_version": 1, "execution_kind": "adaptive_cpu_inference", "device": "cpu",
+    summary = {"schema_version": 1, "execution_kind": _execution_kind(spec), "device": "cpu",
                "model_execution_performed": True, "gpu_execution_deferred": True,
                "promotion_eligible": False, "benchmark_result_claimed": False,
                "study_digest": spec.digest, "runtime_digest": journal.runtime_digest,
+               "policy": spec.policy.to_dict(), "policy_digest": spec.policy.digest,
                "selection_digest": selection_digest, "histories": histories,
                "proposal_history": proposal_history, "search_usage": search_usage,
                "search_capacity_per_mechanism": capacity,
@@ -373,10 +421,12 @@ def _artifact_inventory(root: Path) -> set[str]:
     }
 
 
-def _prepare(spec: CpuSearchSpec, root: Path, runtime: dict[str, Any]) -> dict[str, Any]:
+def _prepare(spec: CpuSearchSpec, root: Path, runtime: dict[str, Any], *, read_only: bool = False) -> dict[str, Any]:
     allowed = {".cpu-search.lock", "manifest.json", "materializations", *_DIRECTORIES,
                "selection.json", "confirmation.json", "complete.json"}
     entries = {path.name for path in root.iterdir()}
+    if read_only and not {".cpu-search.lock", "manifest.json", "complete.json", "materializations", *_DIRECTORIES} <= entries:
+        raise CpuSearchError("read-only CPU verification requires complete retained evidence")
     if entries - allowed or ("manifest.json" not in entries and entries - {".cpu-search.lock"}):
         raise CpuSearchError("CPU search directory contains unowned evidence")
     for path in root.iterdir():
@@ -392,8 +442,9 @@ def _prepare(spec: CpuSearchSpec, root: Path, runtime: dict[str, Any]) -> dict[s
         path = root / name
         if "complete.json" in entries and not path.is_dir():
             raise CpuSearchError("completed CPU search is missing retained evidence")
-        path.mkdir(exist_ok=True)
-        _clear_staging(path)
+        if not read_only:
+            path.mkdir(exist_ok=True)
+            _clear_staging(path)
         for entry in path.iterdir():
             with regular_file(entry):
                 pass
@@ -401,9 +452,42 @@ def _prepare(spec: CpuSearchSpec, root: Path, runtime: dict[str, Any]) -> dict[s
     results = {path.name for path in (root / "results").iterdir()}
     if claimed != {f"{index:08d}.json" for index in range(len(claimed))} or not results <= claimed:
         raise CpuSearchError("CPU search claims/results are not an ordered prefix")
-    if results != claimed:
-        raise CpuSearchBlockedError("incomplete CPU search claim remains charged; automatic retry is forbidden")
+    if "complete.json" in entries and results != claimed:
+        raise CpuSearchError("completed CPU search is missing retained result evidence")
+    if results != {f"{index:08d}.json" for index in range(len(results))} or len(claimed) - len(results) > 1:
+        raise CpuSearchError("CPU search results must be a prefix with at most one incomplete claim")
     return manifest
+
+
+def verify_cpu_search(directory: Path, *, output_dir: Path) -> dict[str, Any]:
+    """Verify a completed run using existing files and read-only locks only.
+
+    No worker, proposal operation, materialization, directory, lock file, report
+    or staging cleanup is created. Pure policy decisions are recomputed from
+    retained practice evidence to validate their claims. Incomplete runs fail.
+    """
+    validate_cpu_search(directory)
+    spec = load_cpu_search(directory)
+    root = output_dir.absolute()
+    _safe(root)
+    if not root.is_dir() or not (root / "complete.json").is_file():
+        raise CpuSearchError("read-only CPU verification requires a completed run")
+    with _existing_lock(root / ".cpu-search.lock"):
+        runtime = runtime_identity()
+        _prepare(spec, root, runtime, read_only=True)
+        registry = _ReadOnlyRegistry(spec.candidates, input_path=directory / "base.safetensors",
+                                     output_dir=root / "materializations")
+        materialized = {item.reference.candidate_digest for item in registry.verify_existing()}
+        replay = _Journal(spec, root, canonical_digest(runtime), replay=True)
+        try:
+            complete = _workflow(replay, registry)
+        except _NeedExecution:
+            raise CpuSearchError("completed CPU search is missing journal evidence") from None
+        if replay.index != replay.available or _artifact_inventory(root) != replay.seen_artifacts:
+            raise CpuSearchError("CPU verification found evidence beyond the retained execution prefix")
+        if materialized != replay.materialized | {spec.baseline.digest}:
+            raise CpuSearchError("CPU verification found an unclaimed checkpoint materialization")
+        return complete
 
 
 def run_cpu_search(directory: Path, *, output_dir: Path) -> dict[str, Any]:

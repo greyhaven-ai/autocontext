@@ -106,6 +106,15 @@ replay all retained evidence before dispatching new work. Test an earlier winner
 changed-feedback branching, veto, incomplete claims, and real Linux limit failures.
 Constructed-task scores establish adaptive execution correctness only.
 
+The [generated CPU campaign](examples/weight_evolution/cpu_campaign/README.md)
+adds a pinned roster of task/repeat/policy runs. Preserve independent generation
+and ordering seeds, equal policy capacities, structural split separation, and
+practice-only proposal inputs. Never drop failed or vetoed runs, optimize the
+inference seed, or count repeated seeds as independent task samples. Test unknown
+dispatch outcomes, interrupted parent publication, read-only reporting, source
+drift and evidence tampering. Shared search-source changes require repinning the
+M10 example; changes to generated-task source require rebuilding the M11 bundle.
+
 TypeScript:
 
 ```bash

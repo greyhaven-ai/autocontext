@@ -5,8 +5,14 @@ import json
 import pytest
 
 from autocontext.weight_evolution.artifacts import canonical_digest
-from autocontext.weight_evolution.cpu_search_models import CpuSearchOption
-from autocontext.weight_evolution.cpu_search_policy import CpuPracticeScore, choose_next_option, select_best
+from autocontext.weight_evolution.cpu_search_models import CpuSearchOption, CpuSearchPolicy
+from autocontext.weight_evolution.cpu_search_policy import (
+    CpuPracticeScore,
+    CpuSearchDecision,
+    choose_next_option,
+    choose_policy_option,
+    select_best,
+)
 
 
 @pytest.fixture
@@ -108,3 +114,83 @@ def test_policy_revalidates_untrusted_model_copies(options: tuple[CpuSearchOptio
     option = options[0].model_copy(update={"candidate_id": "forbidden"})
     with pytest.raises(ValueError):
         choose_next_option((option,), (score(None, 1),))
+    for invalid in (score(None, 1).model_copy(update={"correct": True}),
+                    score(None, 1).model_copy(update={"total": 5.0})):
+        with pytest.raises(ValueError):
+            choose_next_option(options, (invalid,))
+    with pytest.raises(ValueError):
+        choose_next_option((options[0].model_copy(update={"step": True}),), (score(None, 1),))
+
+
+def _order(policy: CpuSearchPolicy, options: tuple[CpuSearchOption, ...], correct: int = 0) -> tuple[str, ...]:
+    history = (score(None, 1),)
+    selected = []
+    for _ in options:
+        decision = choose_policy_option(policy, options, history)
+        assert decision.policy == policy and decision.policy_digest == policy.digest
+        assert decision.option_id is not None
+        selected.append(decision.option_id)
+        history += (score(decision.option_id, correct),)
+    last = choose_policy_option(policy, options, history)
+    assert last.option_id is None and last.reason == "exhausted"
+    return tuple(selected)
+
+
+def test_explicit_adaptive_dispatch_preserves_existing_algorithm(options: tuple[CpuSearchOption, ...]) -> None:
+    for history in ((score(None, 1),), (score(None, 1), score("c1", 0)), (score(None, 1), score("c1", 2))):
+        assert choose_policy_option(CpuSearchPolicy(), options, history) == choose_next_option(options, history)
+
+
+@pytest.mark.parametrize("policy", [CpuSearchPolicy(name="fixed-order-v1"),
+                                    CpuSearchPolicy(name="seeded-random-v1", order_seed=406)])
+def test_control_order_ignores_correct_counts_but_keeps_earliest_best_selection(
+    options: tuple[CpuSearchOption, ...], policy: CpuSearchPolicy,
+) -> None:
+    bad = _order(policy, options, correct=0)
+    good = _order(policy, options, correct=5)
+    assert bad == good and len(set(bad)) == len(options)
+    assert select_best((score(None, 5), *(score(option, 4) for option in bad))).option_id is None
+    assert select_best((score(None, 1), *(score(option, 4) for option in good))).option_id == good[0]
+
+
+def test_fixed_order_follows_pinned_declaration_order(options: tuple[CpuSearchOption, ...]) -> None:
+    policy = CpuSearchPolicy(name="fixed-order-v1")
+    assert _order(policy, options) == ("c1", "c2", "c3", "c4")
+    assert _order(policy, tuple(reversed(options))) == ("c4", "c3", "c2", "c1")
+    assert choose_policy_option(policy, options, (score(None, 1),)).reason == "fixed-order"
+
+
+@pytest.mark.parametrize("seed,expected", [(0, ("c2", "c3", "c4", "c1")), (1, ("c1", "c3", "c2", "c4")),
+                                          (406, ("c3", "c2", "c4", "c1")),
+                                          (2**32 - 1, ("c2", "c1", "c4", "c3"))])
+def test_random_order_has_stable_versioned_vectors_independent_of_declaration_order(
+    options: tuple[CpuSearchOption, ...], seed: int, expected: tuple[str, ...],
+) -> None:
+    policy = CpuSearchPolicy(name="seeded-random-v1", order_seed=seed)
+    assert _order(policy, options) == expected
+    assert _order(policy, tuple(reversed(options))) == expected
+    assert choose_policy_option(policy, options, (score(None, 1),)).reason == "random-order"
+
+
+@pytest.mark.parametrize("policy", [CpuSearchPolicy(name="fixed-order-v1"),
+                                    CpuSearchPolicy(name="seeded-random-v1", order_seed=406)])
+def test_control_dispatch_rejects_incomplete_unknown_or_wrong_order_history(
+    options: tuple[CpuSearchOption, ...], policy: CpuSearchPolicy,
+) -> None:
+    first = choose_policy_option(policy, options, (score(None, 1),)).option_id
+    wrong = next(option.option_id for option in options if option.option_id != first)
+    for history in ((score(None, 1), score(first, 1, total=4)), (score(None, 1), score("outside", 1)),
+                    (score(None, 1), score(wrong, 1))):
+        with pytest.raises(ValueError):
+            choose_policy_option(policy, options, history)
+
+
+def test_policy_and_decision_identity_cannot_be_substituted(options: tuple[CpuSearchOption, ...]) -> None:
+    policy = CpuSearchPolicy(name="seeded-random-v1", order_seed=406)
+    decision = choose_policy_option(policy, options, (score(None, 1),))
+    for fields in ({"policy_digest": "0" * 64}, {"reason": "improvement"}, {"option_id": None}):
+        with pytest.raises(ValueError):
+            CpuSearchDecision.model_validate_json(json.dumps({**decision.to_dict(), **fields}))
+    forged = policy.model_copy(update={"order_seed": True})
+    with pytest.raises(ValueError):
+        choose_policy_option(forged, options, (score(None, 1),))

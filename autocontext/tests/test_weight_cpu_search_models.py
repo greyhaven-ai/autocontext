@@ -11,6 +11,7 @@ from autocontext.weight_evolution.cpu_search_models import (
     CpuSearchBudget,
     CpuSearchBundleLock,
     CpuSearchOption,
+    CpuSearchPolicy,
     CpuSearchSpec,
 )
 from autocontext.weight_evolution.cpu_study import CpuStudySpec
@@ -187,3 +188,28 @@ def test_bundle_lock_is_distinct_from_prior_cpu_fixture_and_strict() -> None:
     for change in ({"schema_version": True}, {"kind": "cpu_inference_bundle"}, {"spec_size_bytes": 1048577}):
         with pytest.raises(ValueError):
             CpuSearchBundleLock.model_validate_json(json.dumps({**lock.to_dict(), **change}))
+
+
+@pytest.mark.parametrize("value", [
+    {"name": "unknown"}, {"name": "adaptive-v1", "order_seed": 1}, {"name": "fixed-order-v1", "order_seed": 1},
+    {"name": "seeded-random-v1", "order_seed": -1}, {"name": "seeded-random-v1", "order_seed": 2**32},
+    {"name": "seeded-random-v1", "order_seed": True}, {"name": "seeded-random-v1", "evaluation_seed": 7},
+])
+def test_policy_contract_rejects_unknown_or_meaningless_configuration(value: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        CpuSearchPolicy.model_validate_json(json.dumps(value))
+
+
+def test_search_policy_is_explicit_and_does_not_change_search_capacity(search_spec: CpuSearchSpec) -> None:
+    assert search_spec.policy == CpuSearchPolicy(name="adaptive-v1", order_seed=0)
+    identities = set()
+    for policy in (CpuSearchPolicy(), CpuSearchPolicy(name="fixed-order-v1"),
+                   CpuSearchPolicy(name="seeded-random-v1", order_seed=2**32 - 1)):
+        value = search_spec.to_dict()
+        value["policy"] = policy.to_dict()
+        controlled = CpuSearchSpec.model_validate_json(json.dumps(value))
+        assert controlled.policy == policy
+        assert controlled.evaluation_seed == search_spec.evaluation_seed
+        assert controlled.required_usage == search_spec.required_usage
+        identities.add(controlled.digest)
+    assert len(identities) == 3
