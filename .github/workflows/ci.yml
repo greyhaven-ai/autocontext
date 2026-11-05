@@ -65,7 +65,9 @@ jobs:
 
   python-test-shards:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Module-preserving shards include long CPU evidence-replay fixtures.
+    # Leave time to preserve diagnostics after the test-step deadline.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +90,7 @@ jobs:
       - name: Install
         run: uv sync --locked --group dev
       - name: Tests
+        timeout-minutes: 40
         env:
           COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
         run: >-

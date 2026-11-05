@@ -208,6 +208,25 @@
       "raw_journal_audit_only": true,
       "prior_attempt_replaced": false
     },
+    "corrected_head_standard_ci": {
+      "head": "4ab1259ba85d961efa7f75c8b8642bdb41b3f264",
+      "run_id": 42091271478,
+      "attempt": 1,
+      "conclusion": "cancelled",
+      "successful_jobs": 31,
+      "cancelled_python_shard": 2,
+      "aggregate_test_gate": "failure",
+      "cancelled_shard_artifacts_present": false,
+      "assertion_failure_reported": false,
+      "prior_roster_duration_seconds": 1512,
+      "prior_pilot_module_duration_seconds": 764.881,
+      "corrected_test_step_deadline_minutes": 40,
+      "corrected_job_deadline_minutes": 45,
+      "test_selection_changed": false,
+      "pilot_source_pins_changed": false,
+      "diagnosis_receipt": "/private/tmp/autocontext-m17-ci-42091271478/roster-runtime-diagnosis.json",
+      "final_head_result": "pending"
+    },
     "correction": {
       "acceptance_step_deadline_minutes": 165,
       "job_deadline_minutes": 180,

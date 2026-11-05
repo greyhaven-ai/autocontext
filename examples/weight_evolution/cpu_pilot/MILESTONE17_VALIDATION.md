@@ -144,6 +144,19 @@ attempt's source inventory. The new progress observer only scans bounded
 directory entries and writes advisory stderr logs; guarded replay still blocks
 evidence writes and worker dispatch.
 
+[Corrected-head standard CI run 42091271478](https://github.com/greyhaven-ai/autocontext/actions/runs/42091271478)
+then hit the separate 30-minute Python shard deadline on head
+`4ab1259ba85d961efa7f75c8b8642bdb41b3f264`: shard 2 was cancelled and the
+aggregate test gate failed, while 31 jobs passed. No assertion failure was
+printed, and shard 2 did not publish JUnit or coverage. Prior successful JUnit
+durations sum to 25m12s for its current module roster; the expensive 28-test
+pilot module alone previously took 12m45s. Current progress was about 20%
+slower before that block, consistent with exceeding the job allowance.
+Python shards now allow 40 minutes for tests inside a 45-minute job limit.
+No test, assertion, coverage requirement or shard selection changed. This
+workflow-only correction leaves all 93 files pinned by pilot acceptance
+unchanged; new-head CI and full-pilot acceptance still must finish.
+
 ## Compatibility and remaining gaps
 
 All 81 preexisting weight-evolution production files remain byte-identical to
