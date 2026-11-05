@@ -153,6 +153,17 @@ small declared parity schedule; do not rerun a campaign to replace missing
 evidence. Verify interrupted publication and read-only replay before dispatching
 later declared work. GPU execution and TypeScript parity remain deferred.
 
+The [measured CPU search integration](examples/weight_evolution/cpu_execution/README.md)
+uses new execution contracts and journals around the frozen search/reference
+workflows. Keep earlier execution sources byte-identical. Test exact claim and
+outcome bindings, failed-prefix replay, interrupted publication, drift after
+dispatch, conditional audit and practice-only reference authority. Freeze source
+before building a measured plan: the measured profile fingerprints every Python
+module in the weight-evolution package, so adding modules creates a new profile.
+Replay earlier M15 evidence from its original snapshot. Declare the bounded
+paired schedule before dispatch, retain every failure, and never replace it with
+a cleaner attempt. GPU execution and TypeScript parity remain deferred.
+
 TypeScript:
 
 ```bash

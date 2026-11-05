@@ -71,6 +71,11 @@ These are copy-paste starting points for people evaluating the repo, integrating
   [measured CPU outcomes](weight_evolution/cpu_measured/README.md) for v2 redaction,
   separate primary/cleanup evidence and a bounded native-versus-measured parity
   schedule. Missing measurements stay null and GPU execution remains deferred.
+- Need those observations throughout a CPU search? Use
+  [measured CPU search integration](weight_evolution/cpu_execution/README.md)
+  for pinned operation outcomes, search/reference adapters and a bounded
+  18-search comparison. Conditional references require complete source cohorts;
+  failed and uncertain operations remain charged. GPU execution stays deferred.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

@@ -1,0 +1,705 @@
+{
+  "cases": {
+    "materialization-failed": {
+      "check": null,
+      "check_digest": null,
+      "claim": {
+        "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+        "index": 3,
+        "input": {
+          "candidate": {
+            "candidate_id": "base",
+            "contract": {
+              "format": "safetensors",
+              "max_changed_entries": 4096,
+              "schema_version": 1,
+              "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "size_bytes": 256,
+              "tensors": [
+                {
+                  "dtype": "F32",
+                  "editable": false,
+                  "name": "projection.weight",
+                  "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+                  "shape": [
+                    2,
+                    2
+                  ]
+                }
+              ]
+            },
+            "output_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "output_size_bytes": 256,
+            "program": null
+          }
+        },
+        "kind": "materialize",
+        "label": "C-baseline",
+        "previous_result_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "reserved": {
+          "inference_calls": 0,
+          "input_tokens": 0,
+          "materializations": 1,
+          "output_tokens": 0,
+          "proposals": 0
+        },
+        "schema_version": 1
+      },
+      "claim_digest": "b542ad6b1b4382002104cba1d31cbc23b5fd09ac6e022c6c5bb7310d8e3af0d7",
+      "contract": {
+        "capacity": {
+          "inference_calls": 208,
+          "input_tokens": 1664,
+          "materializations": 5,
+          "output_tokens": 208,
+          "proposals": 9
+        },
+        "design_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "failure_contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "gpu_execution_deferred": true,
+        "implementation_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "kind": "measured-cpu-workflow-contract-v1",
+        "measured_profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "native_runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "promotion_eligible": false,
+        "refund_permitted": false,
+        "retry_permitted": false,
+        "schema_version": 1,
+        "scope": "search",
+        "workflow_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "workflow_implementation_digest": "8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+      "outcome": {
+        "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+        "failure": {
+          "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+          "candidate_digest": null,
+          "checkpoints": [],
+          "contract": {
+            "attribution_rule": "observed-exception-not-verified-root-cause",
+            "causal_retroclaim_permitted": false,
+            "gpu_execution_deferred": true,
+            "kind": "bounded-cpu-failure-observation-v2",
+            "max_exception_nodes": 8,
+            "max_message_bytes": 1024,
+            "max_record_bytes": 65536,
+            "max_stream_bytes": 2048,
+            "max_type_bytes": 256,
+            "redaction_marker": "[redacted]",
+            "redaction_rule": "normalized-span-replacement-or-empty-v1",
+            "refund_permitted": false,
+            "retry_permitted": false,
+            "schema_version": 2
+          },
+          "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+          "diagnostic_digest": null,
+          "exception_chain_truncated": false,
+          "exception_cycle_detected": false,
+          "exceptions": [
+            {
+              "cause_id": null,
+              "cause_truncated": false,
+              "context_id": null,
+              "context_truncated": false,
+              "exception_module": "builtins",
+              "exception_type": "OSError",
+              "message": {
+                "encoding_replaced": false,
+                "omission_reason": null,
+                "omitted": false,
+                "redacted": false,
+                "rendering_failed": false,
+                "text": "materializer failed",
+                "truncated": false
+              },
+              "module_truncated": false,
+              "node_id": 0,
+              "suppress_context": false,
+              "type_truncated": false
+            }
+          ],
+          "kind": "cpu-failure-record-v2",
+          "native_journal_kind": "absent",
+          "observation_kind": "live-exception",
+          "observations": {
+            "elapsed_seconds": null,
+            "peak_rss_bytes": null,
+            "returncode": null,
+            "signal": null,
+            "stderr": null,
+            "stdout": null
+          },
+          "operation_index": null,
+          "operation_input_digest": null,
+          "operation_kind": null,
+          "operation_label": null,
+          "redaction_count": 0,
+          "redaction_digest": "3156dc8880ff45caad9d118a041f1ee6ea13a587ba0f75efb30932f956513149",
+          "requests": [],
+          "retained_error_type": null,
+          "retained_type_truncated": false,
+          "run_id": "operation-3",
+          "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "schema_version": 2,
+          "study_digest": "b542ad6b1b4382002104cba1d31cbc23b5fd09ac6e022c6c5bb7310d8e3af0d7",
+          "supervisor_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+          "terminal_claim_digest": null,
+          "terminal_result_digest": null,
+          "terminal_status": "absent"
+        },
+        "gpu_execution_deferred": true,
+        "kind": "measured-cpu-operation-outcome-v1",
+        "measured": null,
+        "operation_claim_digest": "b542ad6b1b4382002104cba1d31cbc23b5fd09ac6e022c6c5bb7310d8e3af0d7",
+        "operation_index": 3,
+        "operation_input_digest": "cf4900768f160cc48b578d59d44127c522bde3a6a98823a7a3bcfda0ebe03d06",
+        "operation_kind": "materialize",
+        "operation_label": "C-baseline",
+        "promotion_eligible": false,
+        "refund_permitted": false,
+        "reserved": {
+          "inference_calls": 0,
+          "input_tokens": 0,
+          "materializations": 1,
+          "output_tokens": 0,
+          "proposals": 0
+        },
+        "retry_permitted": false,
+        "schema_version": 1,
+        "status": "failed",
+        "value": null
+      },
+      "outcome_digest": "a077b83d2bc996d7618b8d0d331eb623b7ad296c2c00abac587bcc73a2e72d22"
+    },
+    "measured-inference-failed": {
+      "check": null,
+      "check_digest": null,
+      "claim": {
+        "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+        "index": 3,
+        "input": {
+          "candidate_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "case_ids": [
+            "case-0",
+            "case-1"
+          ],
+          "requests": [
+            {
+              "checkpoint_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "checkpoint_size_bytes": 256,
+              "decoding": {
+                "mode": "greedy",
+                "seed": 0,
+                "temperature": 1.0,
+                "top_k": 0
+              },
+              "limits": {
+                "max_input_tokens": 64,
+                "max_output_tokens": 1,
+                "memory_mb": 512,
+                "wall_seconds": 5.0
+              },
+              "model": {
+                "architecture": "token-sum-linear-v1",
+                "output_tokens": [
+                  "yes",
+                  "no"
+                ],
+                "schema_version": 1,
+                "vocabulary": [
+                  "a",
+                  "prompt"
+                ]
+              },
+              "prompt": "a",
+              "request_id": "probe-0",
+              "schema_version": 1
+            },
+            {
+              "checkpoint_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "checkpoint_size_bytes": 256,
+              "decoding": {
+                "mode": "greedy",
+                "seed": 0,
+                "temperature": 1.0,
+                "top_k": 0
+              },
+              "limits": {
+                "max_input_tokens": 64,
+                "max_output_tokens": 1,
+                "memory_mb": 512,
+                "wall_seconds": 5.0
+              },
+              "model": {
+                "architecture": "token-sum-linear-v1",
+                "output_tokens": [
+                  "yes",
+                  "no"
+                ],
+                "schema_version": 1,
+                "vocabulary": [
+                  "a",
+                  "prompt"
+                ]
+              },
+              "prompt": "prompt",
+              "request_id": "probe-1",
+              "schema_version": 1
+            }
+          ]
+        },
+        "kind": "inference",
+        "label": "C-baseline",
+        "previous_result_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "reserved": {
+          "inference_calls": 2,
+          "input_tokens": 2,
+          "materializations": 0,
+          "output_tokens": 2,
+          "proposals": 0
+        },
+        "schema_version": 1
+      },
+      "claim_digest": "457c76f28ad593c9975aa8fc673c45eb197b2008adc9ca27a4aa3ab76dc8dc6f",
+      "contract": {
+        "capacity": {
+          "inference_calls": 208,
+          "input_tokens": 1664,
+          "materializations": 5,
+          "output_tokens": 208,
+          "proposals": 9
+        },
+        "design_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "failure_contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "gpu_execution_deferred": true,
+        "implementation_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "kind": "measured-cpu-workflow-contract-v1",
+        "measured_profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "native_runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "promotion_eligible": false,
+        "refund_permitted": false,
+        "retry_permitted": false,
+        "schema_version": 1,
+        "scope": "search",
+        "workflow_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "workflow_implementation_digest": "8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+      "outcome": {
+        "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+        "failure": null,
+        "gpu_execution_deferred": true,
+        "kind": "measured-cpu-operation-outcome-v1",
+        "measured": {
+          "batch_digest": "4b6e5a4ca6f202f69e60a1755409a26945c8fa69e4bfb2e39151febcf666b445",
+          "checkpoint_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "checkpoint_size_bytes": 256,
+          "cleanup_failure": null,
+          "contract": {
+            "attribution_rule": "observed-exception-not-verified-root-cause",
+            "causal_retroclaim_permitted": false,
+            "gpu_execution_deferred": true,
+            "kind": "bounded-cpu-failure-observation-v2",
+            "max_exception_nodes": 8,
+            "max_message_bytes": 1024,
+            "max_record_bytes": 65536,
+            "max_stream_bytes": 2048,
+            "max_type_bytes": 256,
+            "redaction_marker": "[redacted]",
+            "redaction_rule": "normalized-span-replacement-or-empty-v1",
+            "refund_permitted": false,
+            "retry_permitted": false,
+            "schema_version": 2
+          },
+          "failure": {
+            "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+            "candidate_digest": null,
+            "checkpoints": [],
+            "contract": {
+              "attribution_rule": "observed-exception-not-verified-root-cause",
+              "causal_retroclaim_permitted": false,
+              "gpu_execution_deferred": true,
+              "kind": "bounded-cpu-failure-observation-v2",
+              "max_exception_nodes": 8,
+              "max_message_bytes": 1024,
+              "max_record_bytes": 65536,
+              "max_stream_bytes": 2048,
+              "max_type_bytes": 256,
+              "redaction_marker": "[redacted]",
+              "redaction_rule": "normalized-span-replacement-or-empty-v1",
+              "refund_permitted": false,
+              "retry_permitted": false,
+              "schema_version": 2
+            },
+            "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+            "diagnostic_digest": null,
+            "exception_chain_truncated": false,
+            "exception_cycle_detected": false,
+            "exceptions": [
+              {
+                "cause_id": null,
+                "cause_truncated": false,
+                "context_id": null,
+                "context_truncated": false,
+                "exception_module": "builtins",
+                "exception_type": "RuntimeError",
+                "message": {
+                  "encoding_replaced": false,
+                  "omission_reason": "redaction-collision",
+                  "omitted": true,
+                  "redacted": true,
+                  "rendering_failed": false,
+                  "text": "",
+                  "truncated": false
+                },
+                "module_truncated": false,
+                "node_id": 0,
+                "suppress_context": false,
+                "type_truncated": false
+              }
+            ],
+            "kind": "cpu-failure-record-v2",
+            "native_journal_kind": "absent",
+            "observation_kind": "live-exception",
+            "observations": {
+              "elapsed_seconds": 5.0,
+              "peak_rss_bytes": null,
+              "returncode": null,
+              "signal": null,
+              "stderr": {
+                "encoding_replaced": false,
+                "omission_reason": null,
+                "omitted": false,
+                "redacted": false,
+                "rendering_failed": false,
+                "text": "",
+                "truncated": false
+              },
+              "stdout": {
+                "encoding_replaced": false,
+                "omission_reason": "redaction-collision",
+                "omitted": true,
+                "redacted": true,
+                "rendering_failed": false,
+                "text": "",
+                "truncated": false
+              }
+            },
+            "operation_index": null,
+            "operation_input_digest": null,
+            "operation_kind": null,
+            "operation_label": null,
+            "redaction_count": 2,
+            "redaction_digest": "8b807370243576913770f1162b9cdf6a0b8d60fa7cb9c2f02dda91fdb31f817f",
+            "requests": [],
+            "retained_error_type": null,
+            "retained_type_truncated": false,
+            "run_id": "measured-batch",
+            "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "schema_version": 2,
+            "study_digest": "4b6e5a4ca6f202f69e60a1755409a26945c8fa69e4bfb2e39151febcf666b445",
+            "supervisor_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "terminal_claim_digest": null,
+            "terminal_result_digest": null,
+            "terminal_status": "absent"
+          },
+          "failure_phase": "transport",
+          "gpu_execution_deferred": true,
+          "kind": "measured-cpu-batch-outcome-v2",
+          "model_digest": "2cf8e1f4c1193978abdf06c46bcc88987857d0f0c9336af60ced046a7a493008",
+          "native_runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "process": {
+            "additional_cleanup_errors": 0,
+            "cleanup_seconds": 0.01,
+            "cleanup_state": "completed",
+            "dispatched": true,
+            "elapsed_to_trigger_seconds": 5.0,
+            "leader_reaped": true,
+            "peak_rss_bytes": null,
+            "returncode_after_cleanup": -9,
+            "returncode_before_cleanup": null,
+            "rss_source": null,
+            "schema_version": 1,
+            "signal_attempted": true,
+            "signal_number": 9,
+            "signal_sent": true,
+            "state_before_cleanup": "running",
+            "stderr_capped": false,
+            "stdout_capped": false,
+            "total_seconds": 5.01,
+            "trigger": "wall-deadline"
+          },
+          "profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "promotion_eligible": false,
+          "receipt": null,
+          "refund_permitted": false,
+          "request_digests": [
+            "b4aa0f9e7607be099e2bcaf691168c9056b7cf3704d993f9e406935255f6064a",
+            "bbb4335499889eae5b77e51959d2c318d1616a634292a5999158433270c58a9e"
+          ],
+          "retry_permitted": false,
+          "schema_version": 1,
+          "status": "failed"
+        },
+        "operation_claim_digest": "457c76f28ad593c9975aa8fc673c45eb197b2008adc9ca27a4aa3ab76dc8dc6f",
+        "operation_index": 3,
+        "operation_input_digest": "4a3484a56988588055eee390155f92825586f79301f1f2d90a59166e23cfcd7f",
+        "operation_kind": "inference",
+        "operation_label": "C-baseline",
+        "promotion_eligible": false,
+        "refund_permitted": false,
+        "reserved": {
+          "inference_calls": 2,
+          "input_tokens": 2,
+          "materializations": 0,
+          "output_tokens": 2,
+          "proposals": 0
+        },
+        "retry_permitted": false,
+        "schema_version": 1,
+        "status": "failed",
+        "value": null
+      },
+      "outcome_digest": "6c2f7efa57b1b2c5319a8984ca2f572f69b177e4a6fb79f7bab4948d809395fb"
+    },
+    "returned-proposal-rejected": {
+      "check": {
+        "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+        "failure": {
+          "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+          "candidate_digest": null,
+          "checkpoints": [],
+          "contract": {
+            "attribution_rule": "observed-exception-not-verified-root-cause",
+            "causal_retroclaim_permitted": false,
+            "gpu_execution_deferred": true,
+            "kind": "bounded-cpu-failure-observation-v2",
+            "max_exception_nodes": 8,
+            "max_message_bytes": 1024,
+            "max_record_bytes": 65536,
+            "max_stream_bytes": 2048,
+            "max_type_bytes": 256,
+            "redaction_marker": "[redacted]",
+            "redaction_rule": "normalized-span-replacement-or-empty-v1",
+            "refund_permitted": false,
+            "retry_permitted": false,
+            "schema_version": 2
+          },
+          "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+          "diagnostic_digest": null,
+          "exception_chain_truncated": false,
+          "exception_cycle_detected": false,
+          "exceptions": [
+            {
+              "cause_id": null,
+              "cause_truncated": false,
+              "context_id": null,
+              "context_truncated": false,
+              "exception_module": "builtins",
+              "exception_type": "ValueError",
+              "message": {
+                "encoding_replaced": false,
+                "omission_reason": null,
+                "omitted": false,
+                "redacted": true,
+                "rendering_failed": false,
+                "text": "[redacted] callback rejected",
+                "truncated": false
+              },
+              "module_truncated": false,
+              "node_id": 0,
+              "suppress_context": false,
+              "type_truncated": false
+            }
+          ],
+          "kind": "cpu-failure-record-v2",
+          "native_journal_kind": "absent",
+          "observation_kind": "live-exception",
+          "observations": {
+            "elapsed_seconds": null,
+            "peak_rss_bytes": null,
+            "returncode": null,
+            "signal": null,
+            "stderr": null,
+            "stdout": null
+          },
+          "operation_index": null,
+          "operation_input_digest": null,
+          "operation_kind": null,
+          "operation_label": null,
+          "redaction_count": 1,
+          "redaction_digest": "6005adab588fc6758330e89fa77af6260247fe11cbd0f4303846d654bfd667aa",
+          "requests": [],
+          "retained_error_type": null,
+          "retained_type_truncated": false,
+          "run_id": "operation-check-3",
+          "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "schema_version": 2,
+          "study_digest": "5d2b2d320bba9a695587187ae3011bf0eeb94aadb4d8a80cb69b3ad32ddfd0c8",
+          "supervisor_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+          "terminal_claim_digest": null,
+          "terminal_result_digest": null,
+          "terminal_status": "absent"
+        },
+        "operation_claim_digest": "5d2b2d320bba9a695587187ae3011bf0eeb94aadb4d8a80cb69b3ad32ddfd0c8",
+        "outcome_digest": "8d4f6a58560b59c81ab4a2e211c7600c143a49d6fc9a01172c1d1c9e26682bd5",
+        "schema_version": 1,
+        "status": "rejected"
+      },
+      "check_digest": "8ac6924657bf894b0609f7a77000c2c40502ee297394449c3cbb12d9b4945e51",
+      "claim": {
+        "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+        "index": 3,
+        "input": {
+          "history": [
+            {
+              "correct": 0,
+              "option_id": null,
+              "total": 2
+            }
+          ],
+          "mechanism": "C",
+          "options": [
+            {
+              "candidate_id": null,
+              "context": "a prompt",
+              "decoding": null,
+              "direction": "left",
+              "mechanism": "C",
+              "option_id": "c0",
+              "step": 1
+            }
+          ],
+          "policy": {
+            "name": "adaptive-v1",
+            "order_seed": 0
+          },
+          "policy_digest": "b475357943712c48e92adde30d5995f7e8a81a786e7149934075265d43fb93d8",
+          "practice_receipt_digests": [
+            "6666666666666666666666666666666666666666666666666666666666666666"
+          ]
+        },
+        "kind": "proposal",
+        "label": "C-baseline",
+        "previous_result_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "reserved": {
+          "inference_calls": 0,
+          "input_tokens": 0,
+          "materializations": 0,
+          "output_tokens": 0,
+          "proposals": 1
+        },
+        "schema_version": 1
+      },
+      "claim_digest": "5d2b2d320bba9a695587187ae3011bf0eeb94aadb4d8a80cb69b3ad32ddfd0c8",
+      "contract": {
+        "capacity": {
+          "inference_calls": 208,
+          "input_tokens": 1664,
+          "materializations": 5,
+          "output_tokens": 208,
+          "proposals": 9
+        },
+        "design_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "failure_contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "gpu_execution_deferred": true,
+        "implementation_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "kind": "measured-cpu-workflow-contract-v1",
+        "measured_profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "native_runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "promotion_eligible": false,
+        "refund_permitted": false,
+        "retry_permitted": false,
+        "schema_version": 1,
+        "scope": "search",
+        "workflow_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "workflow_implementation_digest": "8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+      "outcome": {
+        "contract_digest": "0554dd4152bc278ae720058fe8f06c3d6a1188c69d1f0c02a8d7e7571a9d9771",
+        "failure": null,
+        "gpu_execution_deferred": true,
+        "kind": "measured-cpu-operation-outcome-v1",
+        "measured": null,
+        "operation_claim_digest": "5d2b2d320bba9a695587187ae3011bf0eeb94aadb4d8a80cb69b3ad32ddfd0c8",
+        "operation_index": 3,
+        "operation_input_digest": "cbe9e9baad1ed42411c45e471254edd0af85884f1e3afe21f08c12bc51d4010e",
+        "operation_kind": "proposal",
+        "operation_label": "C-baseline",
+        "promotion_eligible": false,
+        "refund_permitted": false,
+        "reserved": {
+          "inference_calls": 0,
+          "input_tokens": 0,
+          "materializations": 0,
+          "output_tokens": 0,
+          "proposals": 1
+        },
+        "retry_permitted": false,
+        "schema_version": 1,
+        "status": "completed",
+        "value": {
+          "history_digest": "b1feb598c1e287db774437a4338b0c28ff1e8898f840dd6618423e73c218d27b",
+          "option_id": "c0",
+          "policy": {
+            "name": "adaptive-v1",
+            "order_seed": 0
+          },
+          "policy_digest": "b475357943712c48e92adde30d5995f7e8a81a786e7149934075265d43fb93d8",
+          "reason": "initial"
+        }
+      },
+      "outcome_digest": "8d4f6a58560b59c81ab4a2e211c7600c143a49d6fc9a01172c1d1c9e26682bd5"
+    }
+  },
+  "fixture_kind": "synthetic-pure-cpu-operation-outcomes-v1",
+  "model_execution_performed": false,
+  "schema_version": 1
+}

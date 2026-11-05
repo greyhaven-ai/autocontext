@@ -114,6 +114,18 @@ unknown RSS/exit status remain null, and cleanup kills do not establish OOM.
 The original M13 failure cannot be diagnosed retroactively. GPU execution stays
 deferred.
 
+The [measured CPU search integration](../../examples/weight_evolution/cpu_execution/README.md)
+pins the execution contract separately from the original search design. New
+journals retain per-operation measured outcomes before terminal results while
+the existing workflow consumes validated native receipts. Practice, restoration,
+confirmation and conditional audit keep their original selection and scoring
+rules. Exhaustive references use only practice inputs and verified completed
+sources. A saved outcome can recover missing result publication; a claim without
+an outcome stays uncertain and cannot dispatch again. Read-only reports verify
+the retained prefix and keep unknown process facts explicit. The fixed paired
+schedule contains 18 searches and at most six separately budgeted references.
+GPU execution remains deferred.
+
 The [controlled CPU transfer experiments](../../examples/weight_evolution/cpu_controls/README.md)
 use a new task/campaign adapter with analytically specified weight controls.
 The builder creates deterministic cohorts and neutral candidate identities

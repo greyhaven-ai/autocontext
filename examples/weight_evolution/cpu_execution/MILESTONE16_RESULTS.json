@@ -1,0 +1,818 @@
+{
+  "base_commit": "062addf1555146bb906eace5437840d6845b8a34",
+  "branch": "codex/cpu-measured-search",
+  "declared_run": {
+    "acceptance_passed": true,
+    "attempt": {
+      "acceptance_passed": true,
+      "elapsed_seconds": 169.7692652500118,
+      "report_digest": "20e7a118e7abdc1689d5adf29a0308d602a63220dba915ac1a4412488079a4e4",
+      "sources_unchanged": true,
+      "status_counts": {
+        "reference": {
+          "blocked": 0,
+          "completed": 6,
+          "failed": 0,
+          "not-started": 0,
+          "uncertain": 0
+        },
+        "search": {
+          "blocked": 0,
+          "completed": 18,
+          "failed": 0,
+          "not-started": 0,
+          "uncertain": 0
+        }
+      }
+    },
+    "audit_status_counts": {
+      "withheld": 18
+    },
+    "campaign_digest": "16a26de37c9c4a2caae96a0af38d892dd00a94b8d8e10baf2208ca11054983ab",
+    "cases_per_role": 4,
+    "charged_capacity": {
+      "reference": {
+        "inference_calls": 312,
+        "input_tokens": 1964,
+        "materializations": 30,
+        "output_tokens": 312,
+        "proposals": 0
+      },
+      "search": {
+        "inference_calls": 1872,
+        "input_tokens": 15294,
+        "materializations": 90,
+        "output_tokens": 1872,
+        "proposals": 162
+      }
+    },
+    "completed_verified_usage": {
+      "reference": {
+        "inference_calls": 312,
+        "input_tokens": 1964,
+        "materializations": 30,
+        "output_tokens": 312,
+        "proposals": 0
+      },
+      "search": {
+        "inference_calls": 1512,
+        "input_tokens": 9266,
+        "materializations": 90,
+        "output_tokens": 1512,
+        "proposals": 162
+      }
+    },
+    "conditional_reference_slots": 6,
+    "confirmation_status_counts": {
+      "vetoed": 18
+    },
+    "family_pooling_performed": false,
+    "family_status_counts": {
+      "correct-baseline-v1": {
+        "legacy-v1": {
+          "reference": {
+            "blocked": 0,
+            "completed": 1,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          },
+          "search": {
+            "blocked": 0,
+            "completed": 3,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          }
+        },
+        "measured-v2": {
+          "reference": {
+            "blocked": 0,
+            "completed": 1,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          },
+          "search": {
+            "blocked": 0,
+            "completed": 3,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          }
+        }
+      },
+      "practice-shortcut-v1": {
+        "legacy-v1": {
+          "reference": {
+            "blocked": 0,
+            "completed": 1,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          },
+          "search": {
+            "blocked": 0,
+            "completed": 3,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          }
+        },
+        "measured-v2": {
+          "reference": {
+            "blocked": 0,
+            "completed": 1,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          },
+          "search": {
+            "blocked": 0,
+            "completed": 3,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          }
+        }
+      },
+      "transfer-repair-v1": {
+        "legacy-v1": {
+          "reference": {
+            "blocked": 0,
+            "completed": 1,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          },
+          "search": {
+            "blocked": 0,
+            "completed": 3,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          }
+        },
+        "measured-v2": {
+          "reference": {
+            "blocked": 0,
+            "completed": 1,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          },
+          "search": {
+            "blocked": 0,
+            "completed": 3,
+            "failed": 0,
+            "not-started": 0,
+            "uncertain": 0
+          }
+        }
+      }
+    },
+    "guarded_replay": {
+      "acceptance_passed": true,
+      "bundle_files": 17,
+      "dispatch_blocked": true,
+      "hashes_unchanged": true,
+      "materialization_blocked": true,
+      "output_files": 2897,
+      "publication_blocked": true,
+      "report_digest": "20e7a118e7abdc1689d5adf29a0308d602a63220dba915ac1a4412488079a4e4"
+    },
+    "historical_failure_cause_recovered": false,
+    "ledger_digest": "e1bb74c0601319e189ba9609a0d6459c874b7363937cd39fd07597a17892ea11",
+    "measured_coverage": {
+      "all_operation_outcomes": 369,
+      "check_status": {
+        "accepted": 228
+      },
+      "inference_phases": {
+        "confirmation": 45,
+        "practice": 117,
+        "reference": 39,
+        "restoration": 27
+      },
+      "missing_process_observations": 0,
+      "outcome_status": {
+        "completed": 228
+      },
+      "result_status": {
+        "completed": 228
+      }
+    },
+    "pairs": [
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "transfer-repair-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-01.repeat-01.adaptive-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "transfer-repair-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-01.repeat-01.fixed-order-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "transfer-repair-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-01.repeat-01.seeded-random-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "correct-baseline-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-02.repeat-01.adaptive-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "correct-baseline-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-02.repeat-01.fixed-order-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "correct-baseline-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-02.repeat-01.seeded-random-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "practice-shortcut-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-03.repeat-01.adaptive-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "practice-shortcut-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-03.repeat-01.fixed-order-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "audit_status": true,
+          "confirmation": true,
+          "histories": true,
+          "policy": true,
+          "proposal_history": true,
+          "receipt_digests": true,
+          "reserved_usage": true,
+          "restoration_verified": true,
+          "runtime_digest": true,
+          "search_usage": true,
+          "selected_options": true,
+          "selection_digest": true,
+          "study_digest": true
+        },
+        "family": "practice-shortcut-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-03.repeat-01.seeded-random-v1",
+        "stage": "search"
+      },
+      {
+        "available": true,
+        "components": {
+          "charged_usage": true,
+          "checkpoint_seals": true,
+          "receipt_digests": true,
+          "runtime_digest": true,
+          "scores": true
+        },
+        "family": "transfer-repair-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-01.repeat-01",
+        "stage": "reference"
+      },
+      {
+        "available": true,
+        "components": {
+          "charged_usage": true,
+          "checkpoint_seals": true,
+          "receipt_digests": true,
+          "runtime_digest": true,
+          "scores": true
+        },
+        "family": "correct-baseline-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-02.repeat-01",
+        "stage": "reference"
+      },
+      {
+        "available": true,
+        "components": {
+          "charged_usage": true,
+          "checkpoint_seals": true,
+          "receipt_digests": true,
+          "runtime_digest": true,
+          "scores": true
+        },
+        "family": "practice-shortcut-v1",
+        "legacy_status": "completed",
+        "matches": true,
+        "measured_status": "completed",
+        "run_id": "task-03.repeat-01",
+        "stage": "reference"
+      }
+    ],
+    "pending_results": 0,
+    "reference_budget": {
+      "max_inference_calls": 312,
+      "max_input_tokens": 1964,
+      "max_materializations": 30,
+      "max_output_tokens": 312,
+      "max_proposals": 0,
+      "max_references": 6
+    },
+    "repeats": 1,
+    "report_digest": "20e7a118e7abdc1689d5adf29a0308d602a63220dba915ac1a4412488079a4e4",
+    "search_budget": {
+      "max_inference_calls": 1872,
+      "max_input_tokens": 15294,
+      "max_materializations": 90,
+      "max_output_tokens": 1872,
+      "max_proposals": 162,
+      "max_runs": 18
+    },
+    "searches": 18,
+    "status_counts": {
+      "reference": {
+        "blocked": 0,
+        "completed": 6,
+        "failed": 0,
+        "not-started": 0,
+        "uncertain": 0
+      },
+      "search": {
+        "blocked": 0,
+        "completed": 18,
+        "failed": 0,
+        "not-started": 0,
+        "uncertain": 0
+      }
+    },
+    "tasks_per_family": 1,
+    "unknown_usage_rows": {
+      "reference": 0,
+      "search": 0
+    }
+  },
+  "golden_fixture": {
+    "path": "autocontext/tests/fixtures/weight_reproduction/cpu_execution_outcomes.json",
+    "sha256": "fab514649fd6c89e7b540870f7e654536447dd866459c9f2c54ec7d1e4834839",
+    "size_bytes": 28087
+  },
+  "gpu_execution_deferred": true,
+  "milestone": 16,
+  "promotion_eligible": false,
+  "qwen_reproduction_performed": false,
+  "raw_evidence": {
+    "declared_run": "runs/milestone16-validation/",
+    "linux": "/private/tmp/autocontext-m16-linux-evidence/",
+    "linux_command": "/private/tmp/autocontext-m16-linux-validation.sh",
+    "macos_compatibility_junit": "/private/tmp/autocontext-m16-macos-compatibility.xml",
+    "macos_new_junit": "/private/tmp/autocontext-m16-macos-new.xml"
+  },
+  "remaining_gaps": [
+    "M16 Linux/amd64 CI has not run.",
+    "No new 72-search pilot or replacement of earlier evidence.",
+    "Original M13 missing failure observations cannot be recovered retroactively.",
+    "Existing control families retain joint vetoes; no scientific transfer or adaptive-advantage claim.",
+    "Live proposals, larger models, arbitrary worker programs, TypeScript parity and promotion are deferred.",
+    "Qwen GPU acceptance, full base-versus-patch inference and benchmark reproduction remain deferred."
+  ],
+  "schema_version": 1,
+  "scope": "bounded-native-versus-measured-cpu-search-integration",
+  "source": {
+    "existing_files_checked": 74,
+    "existing_files_unchanged": true,
+    "failure_contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+    "implementation_digest": "8d077d3e7c0b8947ed407864622793c74e55e45c59e8711b58e049759693f18b",
+    "measured_profile_digest": "a9085d20b67f5df3829702aaf8b5813dacc1213b57c5e3f4a51dccca6d14b33a",
+    "native_runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+    "new_sources": {
+      "autocontext/src/autocontext/weight_evolution/cpu_execution_campaign.py": "1b6ee31b4444898fef2c0ffe7c2487d93b4ef5e70168d64d9e9c7cca89b7e1f6",
+      "autocontext/src/autocontext/weight_evolution/cpu_execution_campaign_models.py": "9a0215afb430d61baf694e2d0e8360ba4fce8d94d252677b076e4ce66a739139",
+      "autocontext/src/autocontext/weight_evolution/cpu_execution_journal.py": "42d7a8a157a3223cc4c12b75b3aa36cdcdd72407e791cd16581210ccc4789eb4",
+      "autocontext/src/autocontext/weight_evolution/cpu_execution_models.py": "ce6557c95fcec3a02b89a3bf64a7506566adbf9aac55f2b56b48d69493778273",
+      "autocontext/src/autocontext/weight_evolution/cpu_execution_outcomes.py": "bdc671c40fbf3489336cd89060606960ff328a9652094cff852d69d27f9d31a0",
+      "autocontext/src/autocontext/weight_evolution/cpu_execution_reference.py": "ae035b7e222ee1b636bfe0afbffae406002a96cf0e7777a5700835c5815ac24e",
+      "autocontext/src/autocontext/weight_evolution/cpu_execution_search.py": "22d02955654b6f174f7caf13ef6ce7efe567269d24fec9bf5dff4fb4527607f0"
+    },
+    "source_files": 81,
+    "source_inventory_digest": "b57cc22e19cf116b3509530b0e981b98293c86627efaf5541bdd810144df6e7b"
+  },
+  "validation": {
+    "linux_environment": {
+      "architecture": "aarch64",
+      "cpus": 1,
+      "gpu_execution": false,
+      "memory_limit_bytes": 1073741824,
+      "network": "none",
+      "platform": "Linux-7.0.14-orbstack-00380-ga7e0a2dc9535-aarch64-with-glibc2.41",
+      "python": "3.11.16 (main, Sep 19 2026, 01:11:34) [GCC 14.2.0]",
+      "repository_mount": "read-only"
+    },
+    "linux_tests": {
+      "counts": {
+        "passed": 204
+      },
+      "elapsed_seconds": 96.998,
+      "exit_code": 0,
+      "modules": {
+        "tests.test_weight_cpu_execution_campaign": {
+          "passed": 21
+        },
+        "tests.test_weight_cpu_execution_journal": {
+          "passed": 21
+        },
+        "tests.test_weight_cpu_execution_models": {
+          "passed": 31
+        },
+        "tests.test_weight_cpu_execution_outcomes": {
+          "passed": 60
+        },
+        "tests.test_weight_cpu_execution_reference": {
+          "passed": 15
+        },
+        "tests.test_weight_cpu_execution_search": {
+          "passed": 15
+        },
+        "tests.test_weight_cpu_measured_runner": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_resources": {
+          "passed": 17
+        }
+      },
+      "nonpassing": [],
+      "sources_unchanged": true
+    },
+    "m15_original_snapshot_replay": {
+      "files": 9,
+      "hashes_unchanged": true,
+      "milestone": 15,
+      "redispatch_blocked": true,
+      "report_digest": "ae4f011c5d568484969b37c915731ae827c834327b7fa9d3b3b648e8465e88ca",
+      "snapshot": "cacc558d6ee4451a9fb6070aae8d8b6bcbe6c1d3"
+    },
+    "macos_compatibility": {
+      "counts": {
+        "passed": 1034,
+        "skipped": 9
+      },
+      "elapsed_seconds": 425.48,
+      "modules": {
+        "tests.test_weight_cpu_campaign": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_campaign_models": {
+          "passed": 32
+        },
+        "tests.test_weight_cpu_campaign_report": {
+          "passed": 31
+        },
+        "tests.test_weight_cpu_campaign_tasks": {
+          "passed": 23
+        },
+        "tests.test_weight_cpu_control": {
+          "passed": 18
+        },
+        "tests.test_weight_cpu_control_models": {
+          "passed": 27
+        },
+        "tests.test_weight_cpu_control_report": {
+          "passed": 42
+        },
+        "tests.test_weight_cpu_control_tasks": {
+          "passed": 30
+        },
+        "tests.test_weight_cpu_diagnostic": {
+          "passed": 32
+        },
+        "tests.test_weight_cpu_diagnostic_models": {
+          "passed": 27
+        },
+        "tests.test_weight_cpu_diagnostic_plan": {
+          "passed": 16
+        },
+        "tests.test_weight_cpu_diagnostic_report": {
+          "passed": 35
+        },
+        "tests.test_weight_cpu_failure_campaign": {
+          "passed": 22
+        },
+        "tests.test_weight_cpu_failure_campaign_models": {
+          "passed": 19
+        },
+        "tests.test_weight_cpu_failure_diagnostic": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_failure_faults": {
+          "passed": 14,
+          "skipped": 2
+        },
+        "tests.test_weight_cpu_failure_models": {
+          "passed": 33
+        },
+        "tests.test_weight_cpu_failure_record": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_failure_v2_models": {
+          "passed": 45
+        },
+        "tests.test_weight_cpu_failure_v2_record": {
+          "passed": 53
+        },
+        "tests.test_weight_cpu_measured_acceptance": {
+          "passed": 40
+        },
+        "tests.test_weight_cpu_measured_runner": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_measured_transport": {
+          "passed": 42,
+          "skipped": 3
+        },
+        "tests.test_weight_cpu_model": {
+          "passed": 96
+        },
+        "tests.test_weight_cpu_resources": {
+          "passed": 14,
+          "skipped": 3
+        },
+        "tests.test_weight_cpu_runner": {
+          "passed": 42,
+          "skipped": 1
+        },
+        "tests.test_weight_cpu_search": {
+          "passed": 44
+        },
+        "tests.test_weight_cpu_search_controls": {
+          "passed": 30
+        },
+        "tests.test_weight_cpu_search_models": {
+          "passed": 59
+        },
+        "tests.test_weight_cpu_search_policy": {
+          "passed": 32
+        },
+        "tests.test_weight_cpu_search_review": {
+          "passed": 10
+        },
+        "tests.test_weight_cpu_study": {
+          "passed": 30
+        }
+      },
+      "nonpassing": [
+        {
+          "message": "Linux hard address-space allocation failure",
+          "name": "test_linux_allocation_denial_records_observed_exit_without_claiming_memory_kill",
+          "status": "skipped"
+        },
+        {
+          "message": "Linux hard CPU limit with independent wall watchdog",
+          "name": "test_linux_cpu_limit_records_signal_observation_without_inferring_root_cause",
+          "status": "skipped"
+        },
+        {
+          "message": "Linux subreaper makes orphan cleanup directly waitable",
+          "name": "test_exited_leader_keeps_group_identity_until_lingering_child_is_stopped",
+          "status": "skipped"
+        },
+        {
+          "message": "Linux RLIMIT_AS allocation denial",
+          "name": "test_linux_allocation_denial_has_observed_exit_and_no_oom_claim",
+          "status": "skipped"
+        },
+        {
+          "message": "Linux RLIMIT_CPU termination",
+          "name": "test_linux_kernel_signal_is_observed_before_supervisor_cleanup",
+          "status": "skipped"
+        },
+        {
+          "message": "Linux RLIMIT_AS allocation denial",
+          "name": "test_linux_address_space_exhaustion_is_rejected_and_reaped",
+          "status": "skipped"
+        },
+        {
+          "message": "Linux RLIMIT_CPU hard-limit termination",
+          "name": "test_linux_cpu_exhaustion_is_kernel_killed_before_wall_watchdog_and_reaped",
+          "status": "skipped"
+        },
+        {
+          "message": "Linux worker limits plus parent wall deadline",
+          "name": "test_linux_wall_deadline_reaps_a_worker_with_installed_limits",
+          "status": "skipped"
+        },
+        {
+          "message": "Linux preserves pre-exec getrusage RSS",
+          "name": "test_large_parent_rss_does_not_reject_small_exec_worker",
+          "status": "skipped"
+        }
+      ]
+    },
+    "macos_environment": {
+      "architecture": "arm64",
+      "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+      "python": "3.13.1 (main, Jan 14 2025, 23:31:50) [Clang 19.1.6 ]"
+    },
+    "macos_new": {
+      "counts": {
+        "passed": 163
+      },
+      "elapsed_seconds": 140.642,
+      "modules": {
+        "tests.test_weight_cpu_execution_campaign": {
+          "passed": 21
+        },
+        "tests.test_weight_cpu_execution_journal": {
+          "passed": 21
+        },
+        "tests.test_weight_cpu_execution_models": {
+          "passed": 31
+        },
+        "tests.test_weight_cpu_execution_outcomes": {
+          "passed": 60
+        },
+        "tests.test_weight_cpu_execution_reference": {
+          "passed": 15
+        },
+        "tests.test_weight_cpu_execution_search": {
+          "passed": 15
+        }
+      }
+    },
+    "prior_implementation_pins": {
+      "existing_files_checked": 74,
+      "existing_files_unchanged": true,
+      "implementation_digests": {
+        "11": "cfa3e59d986316c5eeec43876cc839605fe904aa1e3adf80016fb7b77ef93bca",
+        "12": "c78627374d5c08c25d15d4adfd3f8a777e5ef757275a0a7c4b43d9b50d986ccd",
+        "13": "a7e4bee370e19fe73ab1fe5ca3c332a1aedb193000542deac90b108fbd5c1425",
+        "14": "0be62f4d842832f9bcdce1159c4c0029a7d977040000527447cb69ebae0c6d08"
+      }
+    },
+    "static_checks": {
+      "git_diff_check": "passed",
+      "markdown_links": "passed",
+      "mypy": "passed",
+      "mypy_source_files": 1033,
+      "protocol_generation": "passed",
+      "ruff": "passed"
+    }
+  }
+}
