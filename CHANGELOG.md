@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Separately pinned measured CPU outcomes add a v2 failure contract with bounded
+  collision-safe redaction, explicit message omission and deterministic replay.
+  Process observations survive failure and preserve primary and cleanup errors
+  separately, including pre-cleanup exit status and parent signal actions. A
+  small declared native-versus-measured parity schedule retains every reservation
+  without retries or evidence backfill. Earlier source pins are preserved;
+  GPU/Qwen execution, TypeScript parity and promotion remain deferred.
+
 - A separately pinned CPU failure supervisor captures bounded cause/context
   chains while preserving native search and reference journals. Host/runtime
   pins, complete capacity reservations, deterministic fault fixtures and

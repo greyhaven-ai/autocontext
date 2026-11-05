@@ -40,6 +40,8 @@ The [controlled CPU transfer experiments](examples/weight_evolution/cpu_controls
 
 The [CPU failure supervisor](examples/weight_evolution/cpu_failures/README.md) records bounded live exception chains under a separate implementation pin. It preserves earlier journals, keeps unavailable observations unknown, and runs one declared CPU campaign with conditional practice references. GPU execution remains deferred.
 
+The [measured CPU outcomes](examples/weight_evolution/cpu_measured/README.md) add a pinned v2 failure codec, deterministic prompt redaction, and process measurements that survive errors. A small declared comparison checks native-versus-measured receipt parity without retries. Earlier evidence remains intact; GPU execution is deferred.
+
 ## Install
 
 For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](docs/security/accelerate-risk-assessment.md).

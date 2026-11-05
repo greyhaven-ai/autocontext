@@ -23,6 +23,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Pinned CPU search diagnostics and exhaustive practice-only references](../examples/weight_evolution/cpu_diagnostics/README.md)
 - [Controlled CPU transfer experiments with deterministic repair, baseline and shortcut families](../examples/weight_evolution/cpu_controls/README.md)
 - [Pinned CPU failure observations, deterministic fault fixtures and one-attempt supervision](../examples/weight_evolution/cpu_failures/README.md)
+- [Measured CPU outcomes, v2 redaction and bounded native-versus-measured acceptance](../examples/weight_evolution/cpu_measured/README.md)
 
 ## Using The Packages
 
