@@ -63,8 +63,14 @@ Use `--execution-context emulated-linux-amd64` when an ARM host emulates x86_64.
 The context is operator-declared metadata, not hardware attestation. Emulated
 acceptance does not close the native Linux/amd64 CI gap. The
 [CPU measured pilot workflow](../../../.github/workflows/cpu-measured-pilot.yml)
-runs a single job with a 90-minute deadline on an Ubuntu 24.04 X64 runner for relevant pull requests, and
-can also be dispatched manually. It records the exact checked-out commit and
+runs one Ubuntu 24.04 X64 job for relevant pull requests and can also be
+dispatched manually. Acceptance has a 165-minute step deadline within a
+180-minute job limit, leaving time to preserve partial evidence. The first
+90-minute attempt retained all 72 searches and 14 of 24 references before
+cancellation; the revised allowance provides additional time for full-prefix checks
+and final guarded replays. Progress logs contain advisory publication counts,
+which are not verified results and do not determine acceptance.
+The workflow records the exact checked-out commit and
 GitHub run/attempt, installs locked dependencies, and uploads complete or partial
 evidence even after failure. There is no matrix, automatic retry, GPU setup or
 external model provider. A newer revision does not cancel an in-progress pilot.

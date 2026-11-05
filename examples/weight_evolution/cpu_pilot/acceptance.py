@@ -15,6 +15,8 @@ import os
 import platform
 import subprocess
 import sys
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
@@ -37,6 +39,8 @@ CONTEXTS = ("github-actions-linux-amd64", "local-linux-amd64", "emulated-linux-a
 _MAX_FILES = 100_000
 _MAX_FILE_BYTES = 16 * 1024 * 1024
 _MAX_TOTAL_BYTES = 512 * 1024 * 1024
+_PROGRESS_INTERVAL_SECONDS = 60.0
+_PROGRESS_MAX_ENTRIES = 96 + 16
 
 
 class PilotAcceptanceError(RuntimeError):
@@ -45,6 +49,80 @@ class PilotAcceptanceError(RuntimeError):
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _progress_counts(campaign: Path) -> dict[str, Any]:
+    """Bounded directory observations only; never parse or validate evidence."""
+    results = campaign / "results"
+    counts = {"published_search_results": 0, "published_reference_results": 0}
+    try:
+        if results.is_symlink():
+            return {"count_status": "unavailable"}
+        with os.scandir(results) as entries:
+            for index, entry in enumerate(entries):
+                if index >= _PROGRESS_MAX_ENTRIES:
+                    return {"count_status": "entry-bound-exceeded"}
+                name = entry.name
+                if (len(name) == 13 and name.endswith(".json") and name[:8].isascii()
+                        and name[:8].isdigit() and int(name[:8]) < 96 and entry.is_file(follow_symlinks=False)):
+                    key = "published_search_results" if int(name[:8]) < 72 else "published_reference_results"
+                    counts[key] += 1
+    except FileNotFoundError:
+        return {"count_status": "not-created"}
+    except OSError:
+        return {"count_status": "unavailable"}
+    return {"count_status": "observed", "published_parent_results": sum(counts.values()), **counts}
+
+
+def _emit_progress(stage: str, event: str, *, campaign: Path | None = None, elapsed: float = 0.0) -> None:
+    message: dict[str, Any] = {
+        "kind": "cpu-pilot-progress", "stage": stage, "event": event, "at": _utc_now(),
+        "elapsed_seconds": round(elapsed, 3), "authoritative": False, "used_for_acceptance": False,
+        "counts_are_unverified_directory_observations": True,
+    }
+    if campaign is not None:
+        message.update(_progress_counts(campaign))
+    try:
+        # Keep stdout reserved for the final acceptance receipt. Progress failure
+        # cannot change the scientific result or suppress retained evidence.
+        print(json.dumps(message, sort_keys=True), file=sys.stderr, flush=True)
+    except (OSError, ValueError):
+        pass
+
+
+@contextmanager
+def _progress(stage: str, *, campaign: Path | None = None) -> Iterator[None]:
+    """Report liveness with a read-only observer, including under replay guards."""
+    started = time.monotonic()
+    _emit_progress(stage, "started", campaign=campaign)
+    stopped = threading.Event()
+
+    def observe() -> None:
+        while not stopped.wait(_PROGRESS_INTERVAL_SECONDS):
+            _emit_progress(stage, "heartbeat", campaign=campaign, elapsed=time.monotonic() - started)
+
+    observer = None
+    if campaign is not None:
+        candidate = threading.Thread(target=observe, name="cpu-pilot-advisory-progress", daemon=True)
+        try:
+            candidate.start()
+        except RuntimeError:
+            _emit_progress(stage, "observer-unavailable", campaign=campaign)
+        else:
+            observer = candidate
+    event = "finished"
+    try:
+        yield
+    except BaseException:
+        event = "interrupted"
+        raise
+    finally:
+        stopped.set()
+        if observer is not None:
+            # Advisory I/O must not indefinitely delay acceptance or exception
+            # preservation. A delayed daemon can only finish its read/log call.
+            observer.join(timeout=1.0)
+        _emit_progress(stage, event, campaign=campaign, elapsed=time.monotonic() - started)
 
 
 def _json_new(path: Path, value: Any) -> None:
@@ -159,16 +237,18 @@ def _readonly_guards() -> Iterator[None]:
 def _verify_replay(bundle: Path, campaign: Path, report: dict[str, Any]) -> dict[str, Any]:
     before = {"bundle": _inventory(bundle), "campaign": _inventory(campaign)}
     with _readonly_guards():
-        readonly = cpu_pilot.report_cpu_pilot(bundle, output_dir=campaign)
-        if canonical_digest(readonly) != canonical_digest(report):
-            raise PilotAcceptanceError("read-only report changed")
+        with _progress("report-replay", campaign=campaign):
+            readonly = cpu_pilot.report_cpu_pilot(bundle, output_dir=campaign)
+            if canonical_digest(readonly) != canonical_digest(report):
+                raise PilotAcceptanceError("read-only report changed")
         # The coordinator seals report.json only after every scheduled decision.
         # A sealed partial pilot may include failed searches and blocked refs.
         terminal_replayed = (campaign / "report.json").is_file()
         if terminal_replayed:
-            replayed = cpu_pilot.run_cpu_pilot(bundle, output_dir=campaign)
-            if canonical_digest(replayed) != canonical_digest(report):
-                raise PilotAcceptanceError("terminal campaign replay changed")
+            with _progress("terminal-replay", campaign=campaign):
+                replayed = cpu_pilot.run_cpu_pilot(bundle, output_dir=campaign)
+                if canonical_digest(replayed) != canonical_digest(report):
+                    raise PilotAcceptanceError("terminal campaign replay changed")
     after = {"bundle": _inventory(bundle), "campaign": _inventory(campaign)}
     if before != after:
         raise PilotAcceptanceError("guarded replay changed retained evidence")
@@ -192,9 +272,11 @@ def run_acceptance(output: Path, *, campaign_id: str, execution_context: str) ->
         "gpu_execution_deferred": True, "prior_attempt_replaced": False})
     try:
         bundle, campaign = output / "bundle", output / "campaign"
-        build_cpu_pilot_bundle(bundle, campaign_id=campaign_id)
-        _json_new(output / "validation.json", validate_cpu_pilot_bundle(bundle))
-        report = cpu_pilot.run_cpu_pilot(bundle, output_dir=campaign)
+        with _progress("build"):
+            build_cpu_pilot_bundle(bundle, campaign_id=campaign_id)
+            _json_new(output / "validation.json", validate_cpu_pilot_bundle(bundle))
+        with _progress("execute", campaign=campaign):
+            report = cpu_pilot.run_cpu_pilot(bundle, output_dir=campaign)
         _json_new(output / "report.json", report)
         replay = _verify_replay(bundle, campaign, report)
         _json_new(output / "replay.json", replay)
@@ -215,6 +297,7 @@ def run_acceptance(output: Path, *, campaign_id: str, execution_context: str) ->
             "exception_type": type(error).__name__, "gpu_execution_deferred": True,
             "partial_evidence_retained": True, "retry_performed": False})
         raise
+    _emit_progress("complete", "finished", campaign=campaign)
     return receipt
 
 

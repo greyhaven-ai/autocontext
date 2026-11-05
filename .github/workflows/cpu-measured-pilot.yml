@@ -25,7 +25,8 @@ jobs:
   linux-amd64-pilot:
     runs-on: ubuntu-24.04
     # Full-prefix verification is intentionally repeated before later dispatch.
-    timeout-minutes: 90
+    # Leave time after the acceptance deadline to preserve partial evidence.
+    timeout-minutes: 180
     env:
       CUDA_VISIBLE_DEVICES: ''
       AUTOCONTEXT_AGENT_PROVIDER: deterministic
@@ -51,6 +52,7 @@ jobs:
       - name: Install locked CPU dependencies
         run: uv sync --locked --group dev
       - name: Run one declared measured CPU pilot and guarded replay
+        timeout-minutes: 165
         run: >-
           uv run --frozen python ../examples/weight_evolution/cpu_pilot/acceptance.py
           --output "$PILOT_EVIDENCE"

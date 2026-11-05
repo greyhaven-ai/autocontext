@@ -2,8 +2,8 @@
 
 Implemented in the isolated `codex/cpu-measured-pilot` worktree from merged M16,
 `2af945996214e5212abb8c000791553392b488a1`. GPU execution remains deferred.
-This document distinguishes implementation validation from the full pilot,
-which requires its own Linux/amd64 acceptance attempt.
+The local validation below records the pre-PR implementation snapshot. The
+CI follow-up records its subsequent Linux/amd64 run and deadline correction.
 
 ## Contract and execution
 
@@ -55,8 +55,9 @@ reported as an RSS measurement. Relative child-evidence paths locate retained
 operation/failure records; observations do not establish a root cause.
 
 The new CPU-only workflow checks out the exact PR head on Ubuntu 24.04/X64,
-installs locked dependencies and permits one declared attempt with a 90-minute
-job deadline. The acceptance driver requires a fresh output directory, captures
+installs locked dependencies and permits one declared attempt with a 165-minute
+acceptance-step deadline inside a 180-minute job limit. The shorter step limit
+reserves time for evidence upload. The acceptance driver requires a fresh output directory, captures
 source/environment identities before execution and rejects incomplete or
 miscalibrated pilots. Raw partial artifacts, hidden lock files and failure
 receipts are uploaded even when the job fails. There is no automatic retry,
@@ -105,10 +106,43 @@ that test are explicitly synthetic. A separate guarded report over the three
 actual search records correctly reports 69 unstarted searches and 24 unstarted
 references rather than claiming a complete pilot.
 
-The full **72-search / 24-reference pilot has not executed**. No pilot completion,
-calibration result, comparative policy result or full-cohort timing is claimed.
-Its first native Linux/amd64 attempt remains pending publication of this branch
-and execution of the new workflow.
+At the pre-PR snapshot, the full **72-search / 24-reference pilot had not
+executed**. Those local results do not claim pilot completion, calibration,
+comparative policy results or full-cohort timing. Subsequent CI evidence follows.
+
+## CI follow-up
+
+[Standard CI run 42074414451](https://github.com/greyhaven-ai/autocontext/actions/runs/42074414451)
+passed all 33 jobs at initial head `41fc04103b72ae6797edb5363deb5a36efb2bce9`.
+All 124 M17 tests passed; the 43 CPU modules passed 1,329 tests with one expected
+Darwin-only skip on Ubuntu 26.04.1/X64, CPython 3.11.18. All five downloaded
+artifact ZIP digests matched GitHub's published values.
+
+[Pilot run 42074414911](https://github.com/greyhaven-ai/autocontext/actions/runs/42074414911),
+attempt 1 on that same head, was cancelled at its original 90-minute job limit.
+The preserved artifact contains 86 completed parent claims, outcomes and
+results: all 72 searches and 14 of 24 references, with no orphan parent claim
+or recorded child failure. No full report, guarded replay or acceptance receipt
+was published, so full calibration and acceptance remain unverified.
+The artifact ZIP SHA-256 is
+`fd4cad83044b2dc63230db6ced5efb5fe034cd74678d367af5e1f76b00f6923b`.
+
+Filesystem publication timestamps show reference intervals increasing from
+96 to 158 seconds, consistent with growing prefix-verification work. These timestamps
+are advisory runtime evidence, not measured worker durations or a completion
+guarantee. The workflow now allows 165 minutes for acceptance and 180 minutes
+for the job, and logs advisory progress counts. Scientific contracts, budgets,
+worker limits, all production sources and acceptance criteria are unchanged.
+The original incomplete attempt remains retained; a fresh run of the corrected
+workflow must pass before native Linux/amd64 full-pilot acceptance is claimed.
+
+The correction passed all **131 M17 tests** on macOS/ARM64 (zero failures or
+skips), including seven new progress-observer cases. Targeted Ruff and mypy,
+JSON/workflow validation and whitespace checks passed. Independent review
+confirmed all 85 production files remain byte-identical to the original
+attempt's source inventory. The new progress observer only scans bounded
+directory entries and writes advisory stderr logs; guarded replay still blocks
+evidence writes and worker dispatch.
 
 ## Compatibility and remaining gaps
 

@@ -178,13 +178,62 @@
       }
     }
   },
+  "ci_followup": {
+    "initial_head": "41fc04103b72ae6797edb5363deb5a36efb2bce9",
+    "standard_ci": {
+      "run_id": 42074414451,
+      "attempt": 1,
+      "successful_jobs": 33,
+      "m17_passed": 124,
+      "cpu_passed": 1329,
+      "cpu_skipped": 1,
+      "artifact_digest_matches": 5
+    },
+    "incomplete_pilot": {
+      "run_id": 42074414911,
+      "attempt": 1,
+      "conclusion": "cancelled",
+      "annotation": "The job has exceeded the maximum execution time of 1h30m0s",
+      "artifact_id": 13444900185,
+      "artifact_sha256": "fd4cad83044b2dc63230db6ced5efb5fe034cd74678d367af5e1f76b00f6923b",
+      "artifact_file_count": 13836,
+      "completed_search_results": 72,
+      "completed_reference_results": 14,
+      "unstarted_reference_slots": 10,
+      "orphan_parent_claims": 0,
+      "recorded_child_failures": 0,
+      "full_report_present": false,
+      "guarded_replay_present": false,
+      "acceptance_receipt_present": false,
+      "raw_journal_audit_only": true,
+      "prior_attempt_replaced": false
+    },
+    "correction": {
+      "acceptance_step_deadline_minutes": 165,
+      "job_deadline_minutes": 180,
+      "progress_counts_are_advisory": true,
+      "production_sources_changed": false,
+      "acceptance_criteria_changed": false,
+      "corrected_workflow_result": "pending",
+      "macos_arm64_m17_passed": 131,
+      "macos_arm64_m17_skipped": 0,
+      "new_progress_test_cases": 7,
+      "junit_receipt": "/private/tmp/autocontext-m17-timeout-fix.xml",
+      "targeted_ruff": "passed",
+      "targeted_mypy": "passed",
+      "json_and_workflow_validation": "passed",
+      "whitespace": "passed",
+      "unchanged_production_file_count": 85
+    }
+  },
   "full_pilot": {
     "calibration_result": null,
-    "completion": null,
+    "completion": false,
     "conditional_references": 24,
-    "executed": false,
-    "job_deadline_minutes": 90,
-    "native_linux_amd64_ci": "pending-first-workflow-execution-after-publication",
+    "executed": true,
+    "acceptance_step_deadline_minutes": 165,
+    "job_deadline_minutes": 180,
+    "native_linux_amd64_ci": "incomplete-at-original-deadline-corrected-workflow-pending",
     "report_digest": null,
     "searches": 72,
     "workflow": ".github/workflows/cpu-measured-pilot.yml"
@@ -502,8 +551,8 @@
     "reference_batches": 13
   },
   "remaining_gaps": [
-    "Native Linux/amd64 full-pilot CI has not executed.",
-    "No complete 72-search measured pilot or its 24 references has executed on any platform.",
+    "Native Linux/amd64 full-pilot acceptance remains incomplete after the original deadline; corrected workflow pending.",
+    "Ten of 24 references, the final report, all 144 calibration checks and guarded replay remain outstanding for attempt 1.",
     "Historical M13 missing failure observations cannot be recovered.",
     "Positive joint-gate control redesign and adaptive-advantage/generalization claims remain deferred.",
     "GPU/Qwen acceptance and full base-versus-patch benchmark reproduction remain unexecuted.",

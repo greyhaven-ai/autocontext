@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import threading
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -151,7 +152,8 @@ def test_replay_guards_deny_dispatch_and_mutating_open(acceptance: ModuleType, t
 
 def test_guarded_replay_verifies_both_entrypoints_and_preserves_bytes(acceptance: ModuleType,
                                                                    monkeypatch: pytest.MonkeyPatch,
-                                                                   tmp_path: Path) -> None:
+                                                                   tmp_path: Path,
+                                                                   capsys: pytest.CaptureFixture[str]) -> None:
     bundle, campaign = tmp_path / "bundle", tmp_path / "campaign"
     bundle.mkdir()
     campaign.mkdir()
@@ -169,6 +171,11 @@ def test_guarded_replay_verifies_both_entrypoints_and_preserves_bytes(acceptance
     replay = acceptance._verify_replay(bundle, campaign, report)
     assert calls == ["read", "read"]
     assert replay["files_unchanged"] and replay["terminal_run_replay_verified"]
+    messages = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert [(message["stage"], message["event"]) for message in messages] == [
+        ("report-replay", "started"), ("report-replay", "finished"),
+        ("terminal-replay", "started"), ("terminal-replay", "finished"),
+    ]
 
 
 def test_guarded_replay_rejects_changed_report(acceptance: ModuleType, monkeypatch: pytest.MonkeyPatch,
@@ -190,3 +197,126 @@ def test_symlink_attempt_parent_is_rejected(fake_pilot: Any, tmp_path: Path) -> 
     with pytest.raises(ValueError, match="symlinks"):
         acceptance.run_acceptance(alias / "attempt", campaign_id="test-pilot", execution_context="local-linux-amd64")
     assert calls == [] and not (real / "attempt").exists()
+
+
+def test_progress_counts_only_bounded_regular_parent_results(acceptance: ModuleType, tmp_path: Path) -> None:
+    campaign = tmp_path / "campaign"
+    assert acceptance._progress_counts(campaign) == {"count_status": "not-created"}
+    results = campaign / "results"
+    results.mkdir(parents=True)
+    # Deliberately invalid payloads prove progress does not interpret evidence.
+    for name in ("00000000.json", "00000071.json", "00000072.json", "00000095.json", "00000096.json",
+                 ".session-publish-scratch", "unowned.json"):
+        (results / name).write_text("unverified")
+    (results / "00000001.json").mkdir()
+    (results / "00000002.json").symlink_to(results / "00000000.json")
+    before = {path.name: path.lstat() for path in results.iterdir()}
+    assert acceptance._progress_counts(campaign) == {
+        "count_status": "observed", "published_parent_results": 4,
+        "published_search_results": 2, "published_reference_results": 2,
+    }
+    assert {path.name: path.lstat() for path in results.iterdir()} == before
+
+
+def test_progress_inventory_stops_at_entry_bound(acceptance: ModuleType, monkeypatch: pytest.MonkeyPatch,
+                                               tmp_path: Path) -> None:
+    visited = []
+
+    class Entries:
+        def __enter__(self) -> Entries:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+        def __iter__(self) -> Any:
+            for index in range(acceptance._PROGRESS_MAX_ENTRIES + 1):
+                visited.append(index)
+                yield type("Entry", (), {"name": "ignored"})()
+            pytest.fail("progress exceeded its bounded scan")
+
+    monkeypatch.setattr(acceptance.os, "scandir", lambda _: Entries())
+    assert acceptance._progress_counts(tmp_path) == {"count_status": "entry-bound-exceeded"}
+    assert len(visited) == acceptance._PROGRESS_MAX_ENTRIES + 1
+
+
+def test_progress_io_failure_cannot_change_acceptance(fake_pilot: Any, monkeypatch: pytest.MonkeyPatch,
+                                                    tmp_path: Path) -> None:
+    acceptance, calls, _ = fake_pilot
+    original = acceptance.os.scandir
+
+    def unavailable(path: Any) -> Any:
+        if Path(path).name == "results":
+            raise PermissionError("progress directory unavailable")
+        return original(path)
+
+    monkeypatch.setattr(acceptance.os, "scandir", unavailable)
+    assert acceptance._progress_counts(tmp_path) == {"count_status": "unavailable"}
+    assert acceptance.run_acceptance(tmp_path / "attempt", campaign_id="test-pilot",
+                                     execution_context="local-linux-amd64")["acceptance_passed"]
+    assert calls == ["run"]
+
+
+def test_progress_is_flushed_advisory_stderr_and_never_acceptance_data(acceptance: ModuleType,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    calls = []
+    monkeypatch.setattr(acceptance.builtins, "print", lambda *args, **kwargs: calls.append((args, kwargs)))
+    acceptance._emit_progress("execute", "heartbeat", campaign=tmp_path, elapsed=12.5)
+    args, kwargs = calls[0]
+    assert kwargs == {"file": acceptance.sys.stderr, "flush": True}
+    message = json.loads(args[0])
+    assert message["stage"] == "execute" and message["event"] == "heartbeat"
+    assert message["authoritative"] is False and message["used_for_acceptance"] is False
+    assert message["counts_are_unverified_directory_observations"] is True
+    assert message["elapsed_seconds"] == 12.5
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_periodic_progress_is_readonly_under_replay_guards_and_stops(acceptance: ModuleType,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, interrupted: bool,
+) -> None:
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "00000072.json").write_text("unverified")
+    before = acceptance._inventory(tmp_path)
+    observed = threading.Event()
+    messages = []
+    original = acceptance._emit_progress
+
+    def emit(stage: str, event: str, **kwargs: Any) -> None:
+        original(stage, event, **kwargs)
+        messages.append((stage, event))
+        if event == "heartbeat":
+            observed.set()
+
+    monkeypatch.setattr(acceptance, "_emit_progress", emit)
+    monkeypatch.setattr(acceptance, "_PROGRESS_INTERVAL_SECONDS", 0.01)
+    with acceptance._readonly_guards():
+        try:
+            with acceptance._progress("report-replay", campaign=tmp_path):
+                assert observed.wait(timeout=5), "progress heartbeat did not arrive"
+                with pytest.raises(AssertionError, match="mutation"):
+                    (tmp_path / "new.json").write_text("forbidden")
+                if interrupted:
+                    raise RuntimeError("replay interrupted")
+        except RuntimeError as error:
+            assert interrupted and str(error) == "replay interrupted"
+    assert messages[0] == ("report-replay", "started")
+    assert messages[-1] == ("report-replay", "interrupted" if interrupted else "finished")
+    assert not any(thread.name == "cpu-pilot-advisory-progress" for thread in threading.enumerate())
+    assert acceptance._inventory(tmp_path) == before
+
+
+def test_successful_acceptance_emits_stages_without_progress_artifacts(
+    fake_pilot: Any, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module, calls, _ = fake_pilot
+    output = tmp_path / "attempt"
+    module.run_acceptance(output, campaign_id="test-pilot", execution_context="local-linux-amd64")
+    captured = capsys.readouterr()
+    messages = [json.loads(line) for line in captured.err.splitlines()]
+    assert [message["stage"] for message in messages if message["event"] == "started"] == ["build", "execute"]
+    assert messages[-1]["stage"] == "complete" and messages[-1]["event"] == "finished"
+    assert captured.out == "" and calls == ["run"]
+    assert not any("progress" in path.name for path in output.rglob("*"))
