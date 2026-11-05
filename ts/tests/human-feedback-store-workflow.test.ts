@@ -12,6 +12,7 @@ import {
 import { migrateDatabase } from "../src/storage/storage-migration-workflow.js";
 
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
+const TIED_CREATED_AT = "2026-01-01 00:00:00";
 
 describe("human feedback store workflow", () => {
   let dir: string;
@@ -44,7 +45,7 @@ describe("human feedback store workflow", () => {
     const feedback = getHumanFeedbackRecords(db, "scenario");
     expect(feedback).toHaveLength(4);
     // Identify the record rather than indexing into the result: `created_at` has
-    // second granularity, so all three rows tie and position is meaningless
+    // second granularity, so rows may tie and position is meaningless
     // except for the id tiebreak asserted in the ordering tests below.
     const withGeneration = feedback.find((row) => row.agent_output === "output");
     expect(withGeneration?.generation_id).toBe("gen-1");
@@ -57,19 +58,21 @@ describe("human feedback store workflow", () => {
   });
 
   it("returns the newest records, not an arbitrary page, when created_at ties", () => {
-    // `created_at` defaults to datetime('now'), which has second granularity
-    // (migrations/008_human_feedback.sql), so a burst of writes shares one value.
+    // Force the tie explicitly: SQLite's datetime('now') uses the native clock,
+    // so even a burst of writes can cross a second boundary.
     // Without a tiebreak, `ORDER BY created_at DESC LIMIT n` returned the OLDEST
     // n rows and hid the newest ones entirely.
     const ids: number[] = [];
     for (let i = 1; i <= 12; i += 1) {
       ids.push(insertHumanFeedbackRecord(db, "scenario", `out-${i}`, 0.5, "notes"));
     }
+    db.prepare("UPDATE human_feedback SET created_at = ? WHERE scenario_name = ?")
+      .run(TIED_CREATED_AT, "scenario");
 
     const distinct = new Set(
       getHumanFeedbackRecords(db, "scenario", 100).map((row) => row.created_at),
     );
-    expect(distinct.size).toBe(1);
+    expect(distinct).toEqual(new Set([TIED_CREATED_AT]));
 
     const page = getHumanFeedbackRecords(db, "scenario", 10);
     expect(page).toHaveLength(10);
@@ -81,9 +84,12 @@ describe("human feedback store workflow", () => {
     for (let i = 1; i <= 8; i += 1) {
       ids.push(insertHumanFeedbackRecord(db, "scenario", `cal-${i}`, 0.7, "scored and noted"));
     }
+    db.prepare("UPDATE human_feedback SET created_at = ? WHERE scenario_name = ?")
+      .run(TIED_CREATED_AT, "scenario");
 
     const page = getCalibrationExampleRecords(db, "scenario", 5);
     expect(page).toHaveLength(5);
+    expect(new Set(page.map((row) => row.created_at))).toEqual(new Set([TIED_CREATED_AT]));
     expect(page.map((row) => row.id)).toEqual([...ids].reverse().slice(0, 5));
   });
 });
