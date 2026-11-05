@@ -75,6 +75,13 @@ schedule declares 18 searches and at most six practice references, keeps their
 budgets separate, and reports failures and missing observations without retries.
 GPU execution remains deferred.
 
+The [full measured CPU pilot](../examples/weight_evolution/cpu_pilot/README.md)
+declares 72 searches and 24 conditional practice references over the unchanged
+control tasks, policies and gate. Its Linux/amd64 acceptance driver records one
+fresh attempt, retains partial evidence and verifies replay without dispatch or
+writes. Integrity, completion and calibration remain separate results. GPU
+execution remains deferred.
+
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by

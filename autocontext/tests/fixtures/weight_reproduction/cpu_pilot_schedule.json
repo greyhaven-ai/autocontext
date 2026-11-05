@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "scope": "offline-72-search-24-reference-capacity-fixture-no-model-outcomes",
+  "profile": "measured-v2",
+  "searches": 72,
+  "references": 24,
+  "tasks": 12,
+  "repeats": 2,
+  "policies": 3,
+  "cases_per_role": 8,
+  "search_capacity": {
+    "proposals": 648,
+    "materializations": 360,
+    "inference_calls": 14976,
+    "input_tokens": 129288,
+    "output_tokens": 14976
+  },
+  "reference_capacity": {
+    "proposals": 0,
+    "materializations": 120,
+    "inference_calls": 2496,
+    "input_tokens": 17688,
+    "output_tokens": 2496
+  },
+  "reference_accounting": "five-existing-checkpoint-verifications-and-13-practice-batches-per-task-repeat",
+  "first_search": "task-01.repeat-01.adaptive-v1",
+  "last_search": "task-12.repeat-02.seeded-random-v1",
+  "first_reference": "task-01.repeat-01",
+  "last_reference": "task-12.repeat-02"
+}

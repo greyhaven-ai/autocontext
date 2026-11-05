@@ -164,6 +164,17 @@ Replay earlier M15 evidence from its original snapshot. Declare the bounded
 paired schedule before dispatch, retain every failure, and never replace it with
 a cleaner attempt. GPU execution and TypeScript parity remain deferred.
 
+The [full measured CPU pilot](examples/weight_evolution/cpu_pilot/README.md)
+reuses the frozen control design and measured execution adapters. Preserve its
+72-search roster and 24 conditional practice references; do not filter tasks,
+relax the gate, retry failed children or replace an unsuccessful attempt. Test
+schedule/accounting fixtures without running the pilot in the unit suite. The
+separate CPU-only workflow records a fresh Linux/amd64 attempt and uploads raw
+evidence on failure. Verify read-only report and terminal replay with worker
+launch, materialization and writes blocked. Report integrity, completion and
+calibration separately, and identify emulated hosts explicitly. GPU execution
+and TypeScript parity remain deferred.
+
 TypeScript:
 
 ```bash
