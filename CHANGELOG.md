@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Generated CPU joint controls pin positive, correct-baseline and practice-only repair
+  tasks with independent deterministic expectations before measured execution.
+  A separate 18-search/six-reference campaign preserves equal budgets, the joint
+  confirmation gate, failure accounting and read-only replay. CPU acceptance
+  checks component gains and actual audit routing while retaining partial
+  evidence. Decoding calibration is conditional on frozen seeds; adaptive
+  superiority, GPU/Qwen reproduction, TypeScript parity and promotion remain
+  deferred.
+
 - A full measured CPU pilot pins the existing 72-search control schedule and
   24 conditional practice references before execution. Separate integrity,
   completion and calibration results retain failed or uncertain rows and full

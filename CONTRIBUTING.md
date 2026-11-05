@@ -175,6 +175,16 @@ launch, materialization and writes blocked. Report integrity, completion and
 calibration separately, and identify emulated hosts explicitly. GPU execution
 and TypeScript parity remain deferred.
 
+The [generated CPU joint controls](examples/weight_evolution/cpu_joint_controls/README.md)
+use a new versioned contract and independent direct-calculation oracle. Preserve
+older task and campaign identities. Test deterministic generation, input-ray
+separation, expectation isolation, each component veto and threshold boundaries
+before running the bounded measured campaign. Do not select task seeds or filter
+instances using confirmation outcomes. Keep the gate unchanged and verify real
+audit observations for passes, no audit launches for vetoes, full reservations,
+and read-only replay. Adaptive superiority is not an acceptance criterion;
+GPU execution and TypeScript parity remain deferred.
+
 TypeScript:
 
 ```bash

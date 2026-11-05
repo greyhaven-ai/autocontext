@@ -135,6 +135,15 @@ blocked. A valid evidence record does not make an incomplete pilot pass.
 Every claimed child remains charged and cannot dispatch twice; GPU execution
 remains deferred.
 
+The [generated CPU joint controls](../../examples/weight_evolution/cpu_joint_controls/README.md)
+pin a separate task generator, oracle and 18-search/six-reference schedule.
+Policies receive ordinary practice views without control expectations; reference
+evaluation remains practice-only and follows all scheduled searches. Expected
+component gains, selections and audit routing are fixed before measured execution.
+Reports distinguish calibration from evidence integrity and campaign completion.
+Decoding expectations are conditional on pinned seeds, and no result enables
+promotion or GPU execution.
+
 The [controlled CPU transfer experiments](../../examples/weight_evolution/cpu_controls/README.md)
 use a new task/campaign adapter with analytically specified weight controls.
 The builder creates deterministic cohorts and neutral candidate identities
