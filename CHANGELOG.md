@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Pinned CPU execution contracts and per-operation outcomes integrate the
+  measured runner with existing search and practice-reference workflows. New
+  journals retain outcomes before result publication, preserve unknown failures
+  and prevent claimed operations from dispatching twice. A bounded comparison
+  declares 18 native/measured searches and up to six separately budgeted
+  references while preserving policies, scoring, selection and confirmation.
+  Earlier execution sources remain unchanged; new modules create a new measured
+  profile. GPU/Qwen execution, TypeScript parity and promotion remain deferred.
+
 - Separately pinned measured CPU outcomes add a v2 failure contract with bounded
   collision-safe redaction, explicit message omission and deterministic replay.
   Process observations survive failure and preserve primary and cleanup errors

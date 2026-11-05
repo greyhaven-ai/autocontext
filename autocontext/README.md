@@ -67,6 +67,14 @@ cannot preserve useful text. A small immutable parity schedule checks successful
 receipt semantics while retaining failed or uncertain attempts without retries.
 GPU execution remains deferred.
 
+The [measured CPU search integration](../examples/weight_evolution/cpu_execution/README.md)
+uses a separately pinned execution contract and per-operation outcomes around
+the existing search and practice-reference workflows. Selection, restoration,
+scoring and the joint confirmation gate remain unchanged. Its bounded paired
+schedule declares 18 searches and at most six practice references, keeps their
+budgets separate, and reports failures and missing observations without retries.
+GPU execution remains deferred.
+
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by

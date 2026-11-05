@@ -48,6 +48,11 @@ The [measured CPU outcomes](../examples/weight_evolution/cpu_measured/README.md)
 also remain Python-only: their v2 failure codec and process observations wrap the
 fixed Python CPU worker. TypeScript parity is deferred while this bounded
 acceptance workflow is validated; no GPU path is added.
+The [measured CPU search integration](../examples/weight_evolution/cpu_execution/README.md)
+also remains Python-only because it adapts the existing Python search and
+reference workflows to measured operation outcomes. TypeScript parity is
+deferred while execution and replay acceptance are validated; GPU execution
+remains deferred.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
