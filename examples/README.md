@@ -76,6 +76,10 @@ These are copy-paste starting points for people evaluating the repo, integrating
   for pinned operation outcomes, search/reference adapters and a bounded
   18-search comparison. Conditional references require complete source cohorts;
   failed and uncertain operations remain charged. GPU execution stays deferred.
+- Need the full control pilot through the measured runner? Use the
+  [full measured CPU pilot](weight_evolution/cpu_pilot/README.md) for 72 declared
+  searches, 24 conditional practice references and CPU-only Linux/amd64 acceptance.
+  Every scheduled row and partial attempt remains visible; GPU execution stays deferred.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

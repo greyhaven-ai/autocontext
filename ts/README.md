@@ -54,6 +54,11 @@ reference workflows to measured operation outcomes. TypeScript parity is
 deferred while execution and replay acceptance are validated; GPU execution
 remains deferred.
 
+The [full measured CPU pilot](../examples/weight_evolution/cpu_pilot/README.md)
+also remains Python-only because it reuses the measured Python adapters and
+source journals. Its 72-search Linux/amd64 acceptance job adds no TypeScript
+runtime path. TypeScript parity, GPU execution and promotion remain deferred.
+
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
 Python control plane. It validates the same shared fixtures and can be used by

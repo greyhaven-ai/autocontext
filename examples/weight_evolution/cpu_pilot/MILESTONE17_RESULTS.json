@@ -1,0 +1,687 @@
+{
+  "base_commit": "2af945996214e5212abb8c000791553392b488a1",
+  "branch": "codex/cpu-measured-pilot",
+  "compatibility": {
+    "acceptance_passed": true,
+    "blocked_call_attempts": 0,
+    "bundle_files": 17,
+    "bundle_inventory_digest": "999d69f73928122e7ec1176c661c06d3ef4aee1621d19b486a293d4969a68b0d",
+    "dispatch_blocked": true,
+    "elapsed_seconds": 17.497703916975297,
+    "gpu_execution_deferred": true,
+    "hashes_unchanged": true,
+    "m14_task_compatibility": {
+      "all_match_current_generation": true,
+      "control_digest": "50ff1cde79860c475cdef8d0a9e70fbbff6951187c13e6d42eab6b589aa711d0",
+      "files": 48,
+      "hashes_unchanged": true,
+      "inventory_digest": "cb5739a67e8295ab49f124a671020c493b7c86688d06848a58c87d7e712d9acc",
+      "path": "/Users/jayscambler/Repositories/autocontext/cpu-failure-evidence/runs/milestone14-validation/pilot-bundle/campaign/tasks"
+    },
+    "materialization_blocked": true,
+    "original_source": "/Users/jayscambler/Repositories/autocontext/cpu-measured-search",
+    "output_files": 2897,
+    "output_inventory_digest": "2ca938bb9b4f002c97c19df6ff9a2902b35d282da0e9dcd805eac97a5822337b",
+    "preexisting_production_source_compatibility": {
+      "base_commit": "2af945996214e5212abb8c000791553392b488a1",
+      "changed_paths": [],
+      "files": 81,
+      "hashes": {
+        "autocontext/src/autocontext/weight_evolution/__init__.py": "cc18bbd37c7bf99efb7c09df96e13f51f87793ca05867de9fe700988921d1b87",
+        "autocontext/src/autocontext/weight_evolution/acceptance.py": "400f3e51ffc474abc38baf77d5bdf03490c4a88145f6f8f6758f2fcb46c59e4c",
+        "autocontext/src/autocontext/weight_evolution/adaptive.py": "af8a3e289c7e8b376e02cbb106b1791c8f144b6b71f38c2b2e744482bca183f6",
+        "autocontext/src/autocontext/weight_evolution/adaptive_confirmation.py": "954cb6c6d95304199b5001615cb5c094b52bc9b021861818da542253564fde31",
+        "autocontext/src/autocontext/weight_evolution/adaptive_provider.py": "32a794c8813d9ca980b49c3880c9c22e4d5b43b189e28b875f3ec37090d2336f",
+        "autocontext/src/autocontext/weight_evolution/adaptive_workflow.py": "33a79756e411eea5f4182ba288c09bd068b967e1f6ed6f5f4022302e1aff0232",
+        "autocontext/src/autocontext/weight_evolution/artifacts.py": "762bfa6561c12e486aea1d2c94b2227b18bf8d5039aad0d0ff4850254bfe002a",
+        "autocontext/src/autocontext/weight_evolution/assets.py": "e16b861a36ff65cde51e5085daf7e880aa78e7b9ac0b1dd9459302edf10d51b9",
+        "autocontext/src/autocontext/weight_evolution/checkpoint_candidates.py": "5add59afc403dafe16f2bdc19243772eeb938b2cefa3d7f6b84e9fe5b012ddaa",
+        "autocontext/src/autocontext/weight_evolution/checkpoint_seal.py": "a2daae182fced528433e6e4053490c40d52ba8294a72c378dc620e845fc2c7a1",
+        "autocontext/src/autocontext/weight_evolution/checkpoint_workflow.py": "16227a8919885be6b1ceafc1ddef45fad827b7ac27b732090fd6ac19e3edb149",
+        "autocontext/src/autocontext/weight_evolution/cohort.py": "541fd0b800998ace2c85d083ea184cf6c5a3c0a52d6ddbe69b0133c8700a8b56",
+        "autocontext/src/autocontext/weight_evolution/comparison_evaluation.py": "e24329fb00c783a29562365da3850a5783aa7d148fcb1e2293e6affdcae6fe6e",
+        "autocontext/src/autocontext/weight_evolution/comparison_fixtures.py": "948ed5e1dac542f4cdc6a73f4b234d7095675b79e29a6ef9054bf5506dad03d2",
+        "autocontext/src/autocontext/weight_evolution/comparison_io.py": "d66e0ab420ebf5cb553dc46d91b1f699790b22f21f95550ee6a2bdc66e905a5c",
+        "autocontext/src/autocontext/weight_evolution/comparison_models.py": "7c3692d637b292186b2cef3402953410943e8112e0e27c79347d077795e32d94",
+        "autocontext/src/autocontext/weight_evolution/cpu_campaign.py": "d926101c3badd2a44b730f42a413ab59e705dde5d5cba3af017502d5b0dddce1",
+        "autocontext/src/autocontext/weight_evolution/cpu_campaign_models.py": "fab166d0f4981c63d1f32bfd49efac2a69e8fdfd8d25f13d1e8ffd4e7d235813",
+        "autocontext/src/autocontext/weight_evolution/cpu_campaign_report.py": "d3818343e2a0bc55650259d8b65981c76d617cb07e4eb320440a1da8cb88fa2c",
+        "autocontext/src/autocontext/weight_evolution/cpu_campaign_tasks.py": "e2bb25eacc8b470665a61bedffe34aef558260dafb2e4074f366c3963c712a25",
+        "autocontext/src/autocontext/weight_evolution/cpu_control.py": "318a62226cb4291d84c336ec206addbdae1c8de2b86d48161a7188ad694e44a5",
+        "autocontext/src/autocontext/weight_evolution/cpu_control_diagnostic.py": "d334242040a7b1f8c01154873801935c09d9b64c6122598835ebb089b53a149d",
+        "autocontext/src/autocontext/weight_evolution/cpu_control_models.py": "a896cf36ec1126a32fc6467f8dceb46088f59a198a6f5fa88373555d7739e5de",
+        "autocontext/src/autocontext/weight_evolution/cpu_control_report.py": "ae1fe2194e0404d3cacc39f99aa5de620cff4b3e463adfe2b01d7ad06e896a6f",
+        "autocontext/src/autocontext/weight_evolution/cpu_control_tasks.py": "859359a3571e84f17932d6512d217d5bf33fe3e8b06f7379625aa06aa1812531",
+        "autocontext/src/autocontext/weight_evolution/cpu_diagnostic.py": "da01afb65eec8f0ce3066f3539153d630aef4f713d1f2fb7830981ad12eaf09d",
+        "autocontext/src/autocontext/weight_evolution/cpu_diagnostic_models.py": "ed79ccffa110306c8ccf29cf77e67d4b55030fe4b0da759d753ef78d800de5eb",
+        "autocontext/src/autocontext/weight_evolution/cpu_diagnostic_plan.py": "5a8cc5be0f9694c5e9deae17da394d924db3c7771e94ec27ca8b58873b1292d3",
+        "autocontext/src/autocontext/weight_evolution/cpu_diagnostic_reference.py": "cd7b6b5435d9140fb36909274294c80c5752b83a462fea639157ec5e151e907a",
+        "autocontext/src/autocontext/weight_evolution/cpu_diagnostic_report.py": "1cbd2c6da7dd19d0a525c5d2b19aae98e9699b376e3ae227136f43954d7b3ddb",
+        "autocontext/src/autocontext/weight_evolution/cpu_execution_campaign.py": "1b6ee31b4444898fef2c0ffe7c2487d93b4ef5e70168d64d9e9c7cca89b7e1f6",
+        "autocontext/src/autocontext/weight_evolution/cpu_execution_campaign_models.py": "9a0215afb430d61baf694e2d0e8360ba4fce8d94d252677b076e4ce66a739139",
+        "autocontext/src/autocontext/weight_evolution/cpu_execution_journal.py": "42d7a8a157a3223cc4c12b75b3aa36cdcdd72407e791cd16581210ccc4789eb4",
+        "autocontext/src/autocontext/weight_evolution/cpu_execution_models.py": "ce6557c95fcec3a02b89a3bf64a7506566adbf9aac55f2b56b48d69493778273",
+        "autocontext/src/autocontext/weight_evolution/cpu_execution_outcomes.py": "bdc671c40fbf3489336cd89060606960ff328a9652094cff852d69d27f9d31a0",
+        "autocontext/src/autocontext/weight_evolution/cpu_execution_reference.py": "ae035b7e222ee1b636bfe0afbffae406002a96cf0e7777a5700835c5815ac24e",
+        "autocontext/src/autocontext/weight_evolution/cpu_execution_search.py": "22d02955654b6f174f7caf13ef6ce7efe567269d24fec9bf5dff4fb4527607f0",
+        "autocontext/src/autocontext/weight_evolution/cpu_failure_campaign.py": "2bf6099522236f82ceef9ff0530c8cf8ef715871f956e7acf0830560e0f75160",
+        "autocontext/src/autocontext/weight_evolution/cpu_failure_campaign_models.py": "ded4030de9c876323660582df8876546a79716a2b1e55177c1bf1ba1221a61cd",
+        "autocontext/src/autocontext/weight_evolution/cpu_failure_diagnostic.py": "1faffc258b4b7614fa58aa5fb2649c61ef1dd7e178649a3b951faa10481c5b2d",
+        "autocontext/src/autocontext/weight_evolution/cpu_failure_models.py": "9dca51c442b831828e8db5bae5e2c212cfa1f62c10a1282201416d63d837afa8",
+        "autocontext/src/autocontext/weight_evolution/cpu_failure_prefix.py": "d259140b4ccbba5bec351ebee0281fc105df5780eeb2ff16f9e34d0dcf52220b",
+        "autocontext/src/autocontext/weight_evolution/cpu_failure_record.py": "50203509d14c19ca22d4ae58d8395c97671cef31b4e1e9613885844c8295ead8",
+        "autocontext/src/autocontext/weight_evolution/cpu_failure_v2_models.py": "03eb71761aaa40f17a9b9b9d5fc1454e308e862fb4e5b634acafff76a416aaab",
+        "autocontext/src/autocontext/weight_evolution/cpu_failure_v2_record.py": "acc9ed7945db47fae18a80c733e3960ecc0f7f1a2a4786e26dda0002884e22eb",
+        "autocontext/src/autocontext/weight_evolution/cpu_measured_acceptance.py": "93d86505429ae868965831ff3fefab02bb912f9d91c2d434bdeee46923aa53d0",
+        "autocontext/src/autocontext/weight_evolution/cpu_measured_models.py": "f0fea4c49e1c4224801ccfcfed4855bbcc1cff766780e022ceae8e3f0e52a23a",
+        "autocontext/src/autocontext/weight_evolution/cpu_measured_runner.py": "65ba2c57b50d5610c6a67cf479fad0332b9eedd1192f1a06b53cfc87d05611e4",
+        "autocontext/src/autocontext/weight_evolution/cpu_measured_transport.py": "2cfd5241661fd5fc0cda805996ec6d142f21bb461f010727521d05d6354b124d",
+        "autocontext/src/autocontext/weight_evolution/cpu_model.py": "bad01820b1720829c915d539cff7c580fd180f9a0610812ce5994309c35a8964",
+        "autocontext/src/autocontext/weight_evolution/cpu_models.py": "83444f8b70cdef4a3f49727ada218df958633fb157e81686a04f565915dd3f80",
+        "autocontext/src/autocontext/weight_evolution/cpu_runner.py": "21f0d4fe2c5cfc48ab543fb273c2a0a8614911d7a91835bc87bab2d09ad25007",
+        "autocontext/src/autocontext/weight_evolution/cpu_search.py": "bcafe534e603beee249321b88c8f65719424526a579cd10d57deb22b5121071e",
+        "autocontext/src/autocontext/weight_evolution/cpu_search_models.py": "60afbb1b941ed60a838ec4890c28f6e00abafc70c9041066c41009726629d6ae",
+        "autocontext/src/autocontext/weight_evolution/cpu_search_policy.py": "96602c0aaadac4d5555d23e6370ee7a672dad3214b44ba01e21fdc5ed930f1c6",
+        "autocontext/src/autocontext/weight_evolution/cpu_study.py": "e3a15460203a63d2acec84c02b951121a39ff8e6fcc5026b18d881f981f92192",
+        "autocontext/src/autocontext/weight_evolution/cpu_worker.py": "91683340cd777f628f61b5c1870dded9f48553ed0bf785b7f55e35878a60e6fc",
+        "autocontext/src/autocontext/weight_evolution/datasets.py": "aecc2a24bcdde6a98d2fdd1dcb7c349d59354211f2b5d961c065f7ca60916847",
+        "autocontext/src/autocontext/weight_evolution/docker_runner.py": "1f9d7e880de82bf1bc04674d9359aec17b94c49a6fae079385bc6ab6b3cf1344",
+        "autocontext/src/autocontext/weight_evolution/evaluation.py": "eacf318ba22473a2672c17b89dc524016eb23dee8814fe72bb79269c2bc89ee6",
+        "autocontext/src/autocontext/weight_evolution/gpu_commands.py": "f8b82bb74ac6662bc30672f8549b0f5206dc83d47afa4807b1dac08681479a7b",
+        "autocontext/src/autocontext/weight_evolution/gpu_readiness.py": "73dad958d652a500c46b4a44ddde042bb703583ab24675d458048d772b498849",
+        "autocontext/src/autocontext/weight_evolution/inference_models.py": "65f4c93c9a24f81ae114172a17487984dbb60522ebb81f5a6ee731c2dcacb363",
+        "autocontext/src/autocontext/weight_evolution/inference_worker.py": "3effd36e7654b93a096e659b48fe067fa765ddef91120d2b45684a47edc41658",
+        "autocontext/src/autocontext/weight_evolution/models.py": "7ead6d2a777f248adfb56948ba1b4f2ab5a62e343abb8a84df37d24f211fccc7",
+        "autocontext/src/autocontext/weight_evolution/patch_worker.py": "905bcead508f7185685156b9ff41793e679e50aeae78366e94e89b69f035043f",
+        "autocontext/src/autocontext/weight_evolution/reference.py": "012b044ec08a9da45aa45896d4161a33e7eab381bd15c9bf9be389880a271e78",
+        "autocontext/src/autocontext/weight_evolution/replay.py": "203981ea0770158cdfae670424094e79abde06f4ab0daa92dc61605b945f6d95",
+        "autocontext/src/autocontext/weight_evolution/replay_commands.py": "4e36d2a6c92e2ea5c7c0ef686be8734ff4de7ccf4433597ffa6e7ddd3b2e6309",
+        "autocontext/src/autocontext/weight_evolution/report.py": "5a1cb04ae1b4749a4a0dc80ad5a01ab04cc16503b45f56b656fdc980771841e5",
+        "autocontext/src/autocontext/weight_evolution/reproduction.py": "612d5a6a3ea39d6c9c83a73b9699c700d405e1f69c664eba688edee531965b12",
+        "autocontext/src/autocontext/weight_evolution/runtime.py": "e1803c404a4b160f8ecfc95149e7033b45b53634898fbbcbd95247d3370007b4",
+        "autocontext/src/autocontext/weight_evolution/scorer_runtime.py": "1bd3fe225ad3411651e5d262082c4824ee7a48acd5a99cd513461fd98c70110d",
+        "autocontext/src/autocontext/weight_evolution/scorers.py": "642d560c3be8e6550cca1c98e67551bfa4386fa6f4bec8d90b71a64855231c91",
+        "autocontext/src/autocontext/weight_evolution/session.py": "aa267f4cda1d1abc5d796f580bcdc29874cf14a5439f78ed703b0dbb80617107",
+        "autocontext/src/autocontext/weight_evolution/session_data.py": "77b35c894a9a3a51b6bff76b1ec83963b8aca0b874586d220e462145d257ebd3",
+        "autocontext/src/autocontext/weight_evolution/session_fixtures.py": "0ca99ca1ab14a1b79934c075be7e985545b2e72bc14fbe992e93b9a827d67b31",
+        "autocontext/src/autocontext/weight_evolution/session_models.py": "cbbab04126d54e9db35ac1f68c4ad66fb5e5156a02e08dde70fc0f013b05b4b2",
+        "autocontext/src/autocontext/weight_evolution/session_workflow.py": "0a03850d6327f798c2f9935b29d87dd17ecd1867ce88eca11d0e3544719c99f8",
+        "autocontext/src/autocontext/weight_evolution/tensor_edits.py": "460f2162e500b8043ac65d90d94be92e80e7197b3d5d472d01998a2965efb6c7",
+        "autocontext/src/autocontext/weight_evolution/worker_entrypoint.py": "1fa8e58308732f9cea7857dd28ba04ab3fd95ce4d1d2abba36bca7e4b6683274"
+      },
+      "source_inventory_digest": "b57cc22e19cf116b3509530b0e981b98293c86627efaf5541bdd810144df6e7b"
+    },
+    "publication_blocked": true,
+    "python": "3.13.1 (main, Jan 14 2025, 23:31:50) [Clang 19.1.6 ]",
+    "report_digest": "20e7a118e7abdc1689d5adf29a0308d602a63220dba915ac1a4412488079a4e4",
+    "report_matches_retained": true,
+    "report_only": true,
+    "scope": "read-only-original-M16-profile-replay-and-M17-source-compatibility",
+    "writable_evidence_open_blocked": true
+  },
+  "contract": {
+    "build_validation_performed_inference": false,
+    "digest": "f9c6240ac63fa22d26398a4478325efd341136a30fe9b13c94c27e8bf964a187",
+    "spec": {
+      "accounting_rule": "full-claimed-child-capacity-no-refunds-blocked-reference-zero-charge",
+      "campaign_id": "cpu-measured-pilot-v1",
+      "control_campaign_digest": "a5de6ccc113d3897598cbf3886acae4400ef34b68945ef325afa71551fa981f9",
+      "control_lock_sha256": "ed3a8a1a8241e3205d8b91a861e91044351e894a95601c7f6f35e6612e78e748",
+      "control_lock_size_bytes": 188,
+      "dispatch_rule": "72-searches-24-reference-decisions-no-claimed-child-redispatch",
+      "execution_implementation_digest": "8d077d3e7c0b8947ed407864622793c74e55e45c59e8711b58e049759693f18b",
+      "failure_contract": {
+        "attribution_rule": "observed-exception-not-verified-root-cause",
+        "causal_retroclaim_permitted": false,
+        "gpu_execution_deferred": true,
+        "kind": "bounded-cpu-failure-observation-v2",
+        "max_exception_nodes": 8,
+        "max_message_bytes": 1024,
+        "max_record_bytes": 65536,
+        "max_stream_bytes": 2048,
+        "max_type_bytes": 256,
+        "redaction_marker": "[redacted]",
+        "redaction_rule": "normalized-span-replacement-or-empty-v1",
+        "refund_permitted": false,
+        "retry_permitted": false,
+        "schema_version": 2
+      },
+      "gpu_execution_deferred": true,
+      "implementation_digest": "a2d59ff6307cf3e6fa7abdebba9f53b728304595b807575ac2e143f561676bcd",
+      "kind": "measured-cpu-control-pilot-v1",
+      "measured_profile_digest": "4e018dcb311496321fcd54b8951b8c6424655ef1ee253fce19286165864a134d",
+      "native_runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+      "profile": "measured-v2",
+      "promotion_eligible": false,
+      "reference_budget": {
+        "max_inference_calls": 2496,
+        "max_input_tokens": 17688,
+        "max_materializations": 120,
+        "max_output_tokens": 2496,
+        "max_proposals": 0,
+        "max_references": 24
+      },
+      "reference_rule": "all-72-searches-completed-and-published-before-24-practice-references",
+      "refund_permitted": false,
+      "reporting_rule": "separate-evidence-integrity-completion-and-family-calibration-v1",
+      "retry_permitted": false,
+      "roster_digest": "5c1aebcef59f6490c5fbd58b2a77149bb11e337ecf4ec36813ea48162085ed61",
+      "schedule_digest": "544eccad70145317b61905e3fb149262af5cb5678a9a1486f137468ba33719ab",
+      "schema_version": 1,
+      "search_budget": {
+        "max_inference_calls": 14976,
+        "max_input_tokens": 129288,
+        "max_materializations": 360,
+        "max_output_tokens": 14976,
+        "max_proposals": 648,
+        "max_runs": 72
+      }
+    }
+  },
+  "ci_followup": {
+    "initial_head": "41fc04103b72ae6797edb5363deb5a36efb2bce9",
+    "standard_ci": {
+      "run_id": 42074414451,
+      "attempt": 1,
+      "successful_jobs": 33,
+      "m17_passed": 124,
+      "cpu_passed": 1329,
+      "cpu_skipped": 1,
+      "artifact_digest_matches": 5
+    },
+    "incomplete_pilot": {
+      "run_id": 42074414911,
+      "attempt": 1,
+      "conclusion": "cancelled",
+      "annotation": "The job has exceeded the maximum execution time of 1h30m0s",
+      "artifact_id": 13444900185,
+      "artifact_sha256": "fd4cad83044b2dc63230db6ced5efb5fe034cd74678d367af5e1f76b00f6923b",
+      "artifact_file_count": 13836,
+      "completed_search_results": 72,
+      "completed_reference_results": 14,
+      "unstarted_reference_slots": 10,
+      "orphan_parent_claims": 0,
+      "recorded_child_failures": 0,
+      "full_report_present": false,
+      "guarded_replay_present": false,
+      "acceptance_receipt_present": false,
+      "raw_journal_audit_only": true,
+      "prior_attempt_replaced": false
+    },
+    "corrected_head_standard_ci": {
+      "head": "4ab1259ba85d961efa7f75c8b8642bdb41b3f264",
+      "run_id": 42091271478,
+      "attempt": 1,
+      "conclusion": "cancelled",
+      "successful_jobs": 31,
+      "cancelled_python_shard": 2,
+      "aggregate_test_gate": "failure",
+      "cancelled_shard_artifacts_present": false,
+      "assertion_failure_reported": false,
+      "prior_roster_duration_seconds": 1512,
+      "prior_pilot_module_duration_seconds": 764.881,
+      "corrected_test_step_deadline_minutes": 40,
+      "corrected_job_deadline_minutes": 45,
+      "test_selection_changed": false,
+      "pilot_source_pins_changed": false,
+      "diagnosis_receipt": "/private/tmp/autocontext-m17-ci-42091271478/roster-runtime-diagnosis.json",
+      "final_head_result": "pending"
+    },
+    "correction": {
+      "acceptance_step_deadline_minutes": 165,
+      "job_deadline_minutes": 180,
+      "progress_counts_are_advisory": true,
+      "production_sources_changed": false,
+      "acceptance_criteria_changed": false,
+      "corrected_workflow_result": "pending",
+      "macos_arm64_m17_passed": 131,
+      "macos_arm64_m17_skipped": 0,
+      "new_progress_test_cases": 7,
+      "junit_receipt": "/private/tmp/autocontext-m17-timeout-fix.xml",
+      "targeted_ruff": "passed",
+      "targeted_mypy": "passed",
+      "json_and_workflow_validation": "passed",
+      "whitespace": "passed",
+      "unchanged_production_file_count": 85
+    }
+  },
+  "full_pilot": {
+    "calibration_result": null,
+    "completion": false,
+    "conditional_references": 24,
+    "executed": true,
+    "acceptance_step_deadline_minutes": 165,
+    "job_deadline_minutes": 180,
+    "native_linux_amd64_ci": "incomplete-at-original-deadline-corrected-workflow-pending",
+    "report_digest": null,
+    "searches": 72,
+    "workflow": ".github/workflows/cpu-measured-pilot.yml"
+  },
+  "gpu_execution_deferred": true,
+  "gpu_execution_performed": false,
+  "linux_arm64_validation": {
+    "counts": {
+      "passed": 165
+    },
+    "elapsed_seconds": 442.026,
+    "environment_receipt": "/private/tmp/autocontext-m17-linux-final-evidence/environment.json",
+    "exit_code": 0,
+    "full_pilot_executed": false,
+    "junit_receipt": "/private/tmp/autocontext-m17-linux-final-evidence/tests.xml",
+    "m17_counts": {
+      "passed": 124
+    },
+    "modules": {
+      "tests.test_weight_cpu_measured_runner": {
+        "passed": 24
+      },
+      "tests.test_weight_cpu_pilot": {
+        "passed": 28
+      },
+      "tests.test_weight_cpu_pilot_acceptance": {
+        "passed": 15
+      },
+      "tests.test_weight_cpu_pilot_bundle": {
+        "passed": 33
+      },
+      "tests.test_weight_cpu_pilot_models": {
+        "passed": 37
+      },
+      "tests.test_weight_cpu_pilot_report": {
+        "passed": 11
+      },
+      "tests.test_weight_cpu_resources": {
+        "passed": 17
+      }
+    },
+    "native_linux_amd64_acceptance_claimed": false,
+    "nonpassing": [],
+    "scope": "M17-fixtures-and-real-child-integration-plus-measured-runner-and-resource-enforcement",
+    "sources_unchanged": true
+  },
+  "macos_validation": {
+    "distinct_counts": {
+      "passed": 1321,
+      "skipped": 9
+    },
+    "environment": {
+      "machine": "arm64",
+      "python": "3.13.1 (main, Jan 14 2025, 23:31:50) [Clang 19.1.6 ]",
+      "system": "Darwin"
+    },
+    "execution_note": "The first broad run was deliberately interrupted, without failures, to fix the M17 scratch-file byte bound. All remaining modules completed afterwards. All five new M17 modules passed on the final source snapshot; preexisting production sources were unchanged. Counts are deduplicated across runs.",
+    "m17_counts": {
+      "passed": 124
+    },
+    "modules": {
+      "tests.test_weight_cpu_campaign": {
+        "passed": 24
+      },
+      "tests.test_weight_cpu_campaign_models": {
+        "passed": 32
+      },
+      "tests.test_weight_cpu_campaign_report": {
+        "passed": 31
+      },
+      "tests.test_weight_cpu_campaign_tasks": {
+        "passed": 23
+      },
+      "tests.test_weight_cpu_control": {
+        "passed": 18
+      },
+      "tests.test_weight_cpu_control_models": {
+        "passed": 27
+      },
+      "tests.test_weight_cpu_control_report": {
+        "passed": 42
+      },
+      "tests.test_weight_cpu_control_tasks": {
+        "passed": 30
+      },
+      "tests.test_weight_cpu_diagnostic": {
+        "passed": 32
+      },
+      "tests.test_weight_cpu_diagnostic_models": {
+        "passed": 27
+      },
+      "tests.test_weight_cpu_diagnostic_plan": {
+        "passed": 16
+      },
+      "tests.test_weight_cpu_diagnostic_report": {
+        "passed": 35
+      },
+      "tests.test_weight_cpu_execution_campaign": {
+        "passed": 21
+      },
+      "tests.test_weight_cpu_execution_journal": {
+        "passed": 21
+      },
+      "tests.test_weight_cpu_execution_models": {
+        "passed": 31
+      },
+      "tests.test_weight_cpu_execution_outcomes": {
+        "passed": 60
+      },
+      "tests.test_weight_cpu_execution_reference": {
+        "passed": 15
+      },
+      "tests.test_weight_cpu_execution_search": {
+        "passed": 15
+      },
+      "tests.test_weight_cpu_failure_campaign": {
+        "passed": 22
+      },
+      "tests.test_weight_cpu_failure_campaign_models": {
+        "passed": 19
+      },
+      "tests.test_weight_cpu_failure_diagnostic": {
+        "passed": 24
+      },
+      "tests.test_weight_cpu_failure_faults": {
+        "passed": 14,
+        "skipped": 2
+      },
+      "tests.test_weight_cpu_failure_models": {
+        "passed": 33
+      },
+      "tests.test_weight_cpu_failure_record": {
+        "passed": 24
+      },
+      "tests.test_weight_cpu_failure_v2_models": {
+        "passed": 45
+      },
+      "tests.test_weight_cpu_failure_v2_record": {
+        "passed": 53
+      },
+      "tests.test_weight_cpu_measured_acceptance": {
+        "passed": 40
+      },
+      "tests.test_weight_cpu_measured_runner": {
+        "passed": 24
+      },
+      "tests.test_weight_cpu_measured_transport": {
+        "passed": 42,
+        "skipped": 3
+      },
+      "tests.test_weight_cpu_model": {
+        "passed": 96
+      },
+      "tests.test_weight_cpu_pilot": {
+        "passed": 28
+      },
+      "tests.test_weight_cpu_pilot_acceptance": {
+        "passed": 15
+      },
+      "tests.test_weight_cpu_pilot_bundle": {
+        "passed": 33
+      },
+      "tests.test_weight_cpu_pilot_models": {
+        "passed": 37
+      },
+      "tests.test_weight_cpu_pilot_report": {
+        "passed": 11
+      },
+      "tests.test_weight_cpu_resources": {
+        "passed": 14,
+        "skipped": 3
+      },
+      "tests.test_weight_cpu_runner": {
+        "passed": 42,
+        "skipped": 1
+      },
+      "tests.test_weight_cpu_search": {
+        "passed": 44
+      },
+      "tests.test_weight_cpu_search_controls": {
+        "passed": 30
+      },
+      "tests.test_weight_cpu_search_models": {
+        "passed": 59
+      },
+      "tests.test_weight_cpu_search_policy": {
+        "passed": 32
+      },
+      "tests.test_weight_cpu_search_review": {
+        "passed": 10
+      },
+      "tests.test_weight_cpu_study": {
+        "passed": 30
+      }
+    },
+    "preexisting_cpu_counts": {
+      "passed": 1197,
+      "skipped": 9
+    },
+    "receipts": [
+      "/private/tmp/autocontext-m17-macos-regression.xml",
+      "/private/tmp/autocontext-m17-macos-final-part.xml",
+      "/private/tmp/autocontext-m17-coordinator-final.xml"
+    ],
+    "scope": "all-43-CPU-modules-with-expected-Linux-only-skips"
+  },
+  "milestone": 17,
+  "promotion_eligible": false,
+  "real_integration": {
+    "cohort_is_test_fixture": true,
+    "guarded_partial_report": {
+      "acceptance_passed": false,
+      "calibration": {
+        "matches": 3,
+        "mismatches": 0,
+        "unavailable_or_nondesignated": 141
+      },
+      "campaign_completed": false,
+      "campaign_digest": "f9c6240ac63fa22d26398a4478325efd341136a30fe9b13c94c27e8bf964a187",
+      "files_unchanged": 648,
+      "gpu_execution_deferred": true,
+      "measurements": {
+        "linux_address_space_limit_is_not_rss_measurement": true,
+        "phases": {
+          "audit": {
+            "dispatched_observations": 0,
+            "duration_observations": 0,
+            "max_observed_rss_bytes": null,
+            "missing_process_observations": 0,
+            "observed_duration_seconds": null,
+            "observed_inference_claims": 0,
+            "process_observations": 0,
+            "reaped_observations": 0,
+            "rss_observations": 0,
+            "saved_outcomes": 0
+          },
+          "confirmation": {
+            "dispatched_observations": 15,
+            "duration_observations": 15,
+            "max_observed_rss_bytes": 40091648,
+            "missing_process_observations": 0,
+            "observed_duration_seconds": 1.9687680829083547,
+            "observed_inference_claims": 15,
+            "process_observations": 15,
+            "reaped_observations": 15,
+            "rss_observations": 15,
+            "saved_outcomes": 15
+          },
+          "practice": {
+            "dispatched_observations": 39,
+            "duration_observations": 39,
+            "max_observed_rss_bytes": 40566784,
+            "missing_process_observations": 0,
+            "observed_duration_seconds": 5.589343837520573,
+            "observed_inference_claims": 39,
+            "process_observations": 39,
+            "reaped_observations": 39,
+            "rss_observations": 39,
+            "saved_outcomes": 39
+          },
+          "reference": {
+            "dispatched_observations": 0,
+            "duration_observations": 0,
+            "max_observed_rss_bytes": null,
+            "missing_process_observations": 0,
+            "observed_duration_seconds": null,
+            "observed_inference_claims": 0,
+            "process_observations": 0,
+            "reaped_observations": 0,
+            "rss_observations": 0,
+            "saved_outcomes": 0
+          },
+          "restoration": {
+            "dispatched_observations": 9,
+            "duration_observations": 9,
+            "max_observed_rss_bytes": 40255488,
+            "missing_process_observations": 0,
+            "observed_duration_seconds": 1.300866249075625,
+            "observed_inference_claims": 9,
+            "process_observations": 9,
+            "reaped_observations": 9,
+            "rss_observations": 9,
+            "saved_outcomes": 9
+          }
+        },
+        "scope": "retained-process-observations-not-complete-campaign-cost-or-root-cause",
+        "unobserved_resources_imputed": false
+      },
+      "report_digest": "40436b7cd782c60bff324a0f75f35a1904bf39a3b7c03ead7af74d6630977304",
+      "retained_copy_directory": "/Users/jayscambler/Repositories/autocontext/cpu-measured-pilot/runs/milestone17-validation/real-integration-final",
+      "retained_copy_inventory_matches": true,
+      "scope": "read-only-report-from-three-actual-fixture-searches-with-in-memory-parent-envelopes-not-declared-pilot",
+      "source_directory": "/private/var/folders/5l/4d99c0cd27183q3rdnm8ybg00000gn/T/pytest-of-jayscambler/pytest-979/test_real_dispatch_preserves_t0",
+      "source_inventory_digest": "4de17a90dd307f64fe19ef541cb11159076ab696b809eea791d73a86eba82e8a",
+      "status_counts": {
+        "reference": {
+          "blocked": 0,
+          "completed": 0,
+          "failed": 0,
+          "not-started": 24,
+          "uncertain": 0
+        },
+        "search": {
+          "blocked": 0,
+          "completed": 3,
+          "failed": 0,
+          "not-started": 69,
+          "uncertain": 0
+        }
+      }
+    },
+    "other_reference_source_bindings_are_synthetic": true,
+    "policy_searches": 3,
+    "practice_references": 1,
+    "reference_batches": 13
+  },
+  "remaining_gaps": [
+    "Native Linux/amd64 full-pilot acceptance remains incomplete after the original deadline; corrected workflow pending.",
+    "Ten of 24 references, the final report, all 144 calibration checks and guarded replay remain outstanding for attempt 1.",
+    "Historical M13 missing failure observations cannot be recovered.",
+    "Positive joint-gate control redesign and adaptive-advantage/generalization claims remain deferred.",
+    "GPU/Qwen acceptance and full base-versus-patch benchmark reproduction remain unexecuted.",
+    "Live proposals, larger models, arbitrary workers, TypeScript runtime parity and promotion remain deferred."
+  ],
+  "schema_version": 1,
+  "source_inventory": {
+    "__init__.py": "cc18bbd37c7bf99efb7c09df96e13f51f87793ca05867de9fe700988921d1b87",
+    "acceptance.py": "400f3e51ffc474abc38baf77d5bdf03490c4a88145f6f8f6758f2fcb46c59e4c",
+    "adaptive.py": "af8a3e289c7e8b376e02cbb106b1791c8f144b6b71f38c2b2e744482bca183f6",
+    "adaptive_confirmation.py": "954cb6c6d95304199b5001615cb5c094b52bc9b021861818da542253564fde31",
+    "adaptive_provider.py": "32a794c8813d9ca980b49c3880c9c22e4d5b43b189e28b875f3ec37090d2336f",
+    "adaptive_workflow.py": "33a79756e411eea5f4182ba288c09bd068b967e1f6ed6f5f4022302e1aff0232",
+    "artifacts.py": "762bfa6561c12e486aea1d2c94b2227b18bf8d5039aad0d0ff4850254bfe002a",
+    "assets.py": "e16b861a36ff65cde51e5085daf7e880aa78e7b9ac0b1dd9459302edf10d51b9",
+    "checkpoint_candidates.py": "5add59afc403dafe16f2bdc19243772eeb938b2cefa3d7f6b84e9fe5b012ddaa",
+    "checkpoint_seal.py": "a2daae182fced528433e6e4053490c40d52ba8294a72c378dc620e845fc2c7a1",
+    "checkpoint_workflow.py": "16227a8919885be6b1ceafc1ddef45fad827b7ac27b732090fd6ac19e3edb149",
+    "cohort.py": "541fd0b800998ace2c85d083ea184cf6c5a3c0a52d6ddbe69b0133c8700a8b56",
+    "comparison_evaluation.py": "e24329fb00c783a29562365da3850a5783aa7d148fcb1e2293e6affdcae6fe6e",
+    "comparison_fixtures.py": "948ed5e1dac542f4cdc6a73f4b234d7095675b79e29a6ef9054bf5506dad03d2",
+    "comparison_io.py": "d66e0ab420ebf5cb553dc46d91b1f699790b22f21f95550ee6a2bdc66e905a5c",
+    "comparison_models.py": "7c3692d637b292186b2cef3402953410943e8112e0e27c79347d077795e32d94",
+    "cpu_campaign.py": "d926101c3badd2a44b730f42a413ab59e705dde5d5cba3af017502d5b0dddce1",
+    "cpu_campaign_models.py": "fab166d0f4981c63d1f32bfd49efac2a69e8fdfd8d25f13d1e8ffd4e7d235813",
+    "cpu_campaign_report.py": "d3818343e2a0bc55650259d8b65981c76d617cb07e4eb320440a1da8cb88fa2c",
+    "cpu_campaign_tasks.py": "e2bb25eacc8b470665a61bedffe34aef558260dafb2e4074f366c3963c712a25",
+    "cpu_control.py": "318a62226cb4291d84c336ec206addbdae1c8de2b86d48161a7188ad694e44a5",
+    "cpu_control_diagnostic.py": "d334242040a7b1f8c01154873801935c09d9b64c6122598835ebb089b53a149d",
+    "cpu_control_models.py": "a896cf36ec1126a32fc6467f8dceb46088f59a198a6f5fa88373555d7739e5de",
+    "cpu_control_report.py": "ae1fe2194e0404d3cacc39f99aa5de620cff4b3e463adfe2b01d7ad06e896a6f",
+    "cpu_control_tasks.py": "859359a3571e84f17932d6512d217d5bf33fe3e8b06f7379625aa06aa1812531",
+    "cpu_diagnostic.py": "da01afb65eec8f0ce3066f3539153d630aef4f713d1f2fb7830981ad12eaf09d",
+    "cpu_diagnostic_models.py": "ed79ccffa110306c8ccf29cf77e67d4b55030fe4b0da759d753ef78d800de5eb",
+    "cpu_diagnostic_plan.py": "5a8cc5be0f9694c5e9deae17da394d924db3c7771e94ec27ca8b58873b1292d3",
+    "cpu_diagnostic_reference.py": "cd7b6b5435d9140fb36909274294c80c5752b83a462fea639157ec5e151e907a",
+    "cpu_diagnostic_report.py": "1cbd2c6da7dd19d0a525c5d2b19aae98e9699b376e3ae227136f43954d7b3ddb",
+    "cpu_execution_campaign.py": "1b6ee31b4444898fef2c0ffe7c2487d93b4ef5e70168d64d9e9c7cca89b7e1f6",
+    "cpu_execution_campaign_models.py": "9a0215afb430d61baf694e2d0e8360ba4fce8d94d252677b076e4ce66a739139",
+    "cpu_execution_journal.py": "42d7a8a157a3223cc4c12b75b3aa36cdcdd72407e791cd16581210ccc4789eb4",
+    "cpu_execution_models.py": "ce6557c95fcec3a02b89a3bf64a7506566adbf9aac55f2b56b48d69493778273",
+    "cpu_execution_outcomes.py": "bdc671c40fbf3489336cd89060606960ff328a9652094cff852d69d27f9d31a0",
+    "cpu_execution_reference.py": "ae035b7e222ee1b636bfe0afbffae406002a96cf0e7777a5700835c5815ac24e",
+    "cpu_execution_search.py": "22d02955654b6f174f7caf13ef6ce7efe567269d24fec9bf5dff4fb4527607f0",
+    "cpu_failure_campaign.py": "2bf6099522236f82ceef9ff0530c8cf8ef715871f956e7acf0830560e0f75160",
+    "cpu_failure_campaign_models.py": "ded4030de9c876323660582df8876546a79716a2b1e55177c1bf1ba1221a61cd",
+    "cpu_failure_diagnostic.py": "1faffc258b4b7614fa58aa5fb2649c61ef1dd7e178649a3b951faa10481c5b2d",
+    "cpu_failure_models.py": "9dca51c442b831828e8db5bae5e2c212cfa1f62c10a1282201416d63d837afa8",
+    "cpu_failure_prefix.py": "d259140b4ccbba5bec351ebee0281fc105df5780eeb2ff16f9e34d0dcf52220b",
+    "cpu_failure_record.py": "50203509d14c19ca22d4ae58d8395c97671cef31b4e1e9613885844c8295ead8",
+    "cpu_failure_v2_models.py": "03eb71761aaa40f17a9b9b9d5fc1454e308e862fb4e5b634acafff76a416aaab",
+    "cpu_failure_v2_record.py": "acc9ed7945db47fae18a80c733e3960ecc0f7f1a2a4786e26dda0002884e22eb",
+    "cpu_measured_acceptance.py": "93d86505429ae868965831ff3fefab02bb912f9d91c2d434bdeee46923aa53d0",
+    "cpu_measured_models.py": "f0fea4c49e1c4224801ccfcfed4855bbcc1cff766780e022ceae8e3f0e52a23a",
+    "cpu_measured_runner.py": "65ba2c57b50d5610c6a67cf479fad0332b9eedd1192f1a06b53cfc87d05611e4",
+    "cpu_measured_transport.py": "2cfd5241661fd5fc0cda805996ec6d142f21bb461f010727521d05d6354b124d",
+    "cpu_model.py": "bad01820b1720829c915d539cff7c580fd180f9a0610812ce5994309c35a8964",
+    "cpu_models.py": "83444f8b70cdef4a3f49727ada218df958633fb157e81686a04f565915dd3f80",
+    "cpu_pilot.py": "a8989618592bcbc3c83ea2021f5f27190497272c47163248980bdff871d9e73b",
+    "cpu_pilot_bundle.py": "9549a6d5e7e3ada617a67f15a300a623a1139bc03d6251ce3739b067656f1953",
+    "cpu_pilot_models.py": "e0ac73c085ee7807863d22715952745d42301918c1d76819a97466ffc5336ba6",
+    "cpu_pilot_report.py": "5d3c41fcaa83c525718257bf5a7be96031dee23740ba06927878fd1a29f44240",
+    "cpu_runner.py": "21f0d4fe2c5cfc48ab543fb273c2a0a8614911d7a91835bc87bab2d09ad25007",
+    "cpu_search.py": "bcafe534e603beee249321b88c8f65719424526a579cd10d57deb22b5121071e",
+    "cpu_search_models.py": "60afbb1b941ed60a838ec4890c28f6e00abafc70c9041066c41009726629d6ae",
+    "cpu_search_policy.py": "96602c0aaadac4d5555d23e6370ee7a672dad3214b44ba01e21fdc5ed930f1c6",
+    "cpu_study.py": "e3a15460203a63d2acec84c02b951121a39ff8e6fcc5026b18d881f981f92192",
+    "cpu_worker.py": "91683340cd777f628f61b5c1870dded9f48553ed0bf785b7f55e35878a60e6fc",
+    "datasets.py": "aecc2a24bcdde6a98d2fdd1dcb7c349d59354211f2b5d961c065f7ca60916847",
+    "docker_runner.py": "1f9d7e880de82bf1bc04674d9359aec17b94c49a6fae079385bc6ab6b3cf1344",
+    "evaluation.py": "eacf318ba22473a2672c17b89dc524016eb23dee8814fe72bb79269c2bc89ee6",
+    "gpu_commands.py": "f8b82bb74ac6662bc30672f8549b0f5206dc83d47afa4807b1dac08681479a7b",
+    "gpu_readiness.py": "73dad958d652a500c46b4a44ddde042bb703583ab24675d458048d772b498849",
+    "inference_models.py": "65f4c93c9a24f81ae114172a17487984dbb60522ebb81f5a6ee731c2dcacb363",
+    "inference_worker.py": "3effd36e7654b93a096e659b48fe067fa765ddef91120d2b45684a47edc41658",
+    "models.py": "7ead6d2a777f248adfb56948ba1b4f2ab5a62e343abb8a84df37d24f211fccc7",
+    "patch_worker.py": "905bcead508f7185685156b9ff41793e679e50aeae78366e94e89b69f035043f",
+    "reference.py": "012b044ec08a9da45aa45896d4161a33e7eab381bd15c9bf9be389880a271e78",
+    "replay.py": "203981ea0770158cdfae670424094e79abde06f4ab0daa92dc61605b945f6d95",
+    "replay_commands.py": "4e36d2a6c92e2ea5c7c0ef686be8734ff4de7ccf4433597ffa6e7ddd3b2e6309",
+    "report.py": "5a1cb04ae1b4749a4a0dc80ad5a01ab04cc16503b45f56b656fdc980771841e5",
+    "reproduction.py": "612d5a6a3ea39d6c9c83a73b9699c700d405e1f69c664eba688edee531965b12",
+    "runtime.py": "e1803c404a4b160f8ecfc95149e7033b45b53634898fbbcbd95247d3370007b4",
+    "scorer_runtime.py": "1bd3fe225ad3411651e5d262082c4824ee7a48acd5a99cd513461fd98c70110d",
+    "scorers.py": "642d560c3be8e6550cca1c98e67551bfa4386fa6f4bec8d90b71a64855231c91",
+    "session.py": "aa267f4cda1d1abc5d796f580bcdc29874cf14a5439f78ed703b0dbb80617107",
+    "session_data.py": "77b35c894a9a3a51b6bff76b1ec83963b8aca0b874586d220e462145d257ebd3",
+    "session_fixtures.py": "0ca99ca1ab14a1b79934c075be7e985545b2e72bc14fbe992e93b9a827d67b31",
+    "session_models.py": "cbbab04126d54e9db35ac1f68c4ad66fb5e5156a02e08dde70fc0f013b05b4b2",
+    "session_workflow.py": "0a03850d6327f798c2f9935b29d87dd17ecd1867ce88eca11d0e3544719c99f8",
+    "tensor_edits.py": "460f2162e500b8043ac65d90d94be92e80e7197b3d5d472d01998a2965efb6c7",
+    "worker_entrypoint.py": "1fa8e58308732f9cea7857dd28ba04ab3fd95ce4d1d2abba36bca7e4b6683274"
+  },
+  "static_checks": {
+    "dependency_boundary_ratchet": "passed",
+    "dependency_boundary_scanner_tests": "passed",
+    "local_markdown_links": {
+      "links": 511,
+      "markdown_files": 180,
+      "status": "passed"
+    },
+    "mypy": {
+      "source_files": 1037,
+      "status": "passed"
+    },
+    "protocol_generation": "passed",
+    "role_output_schema_generation": "passed",
+    "ruff": "passed",
+    "whitespace": "passed",
+    "workflow_structure_and_pinned_action_references": "passed"
+  },
+  "validation_date": "2026-11-05"
+}

@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- A full measured CPU pilot pins the existing 72-search control schedule and
+  24 conditional practice references before execution. Separate integrity,
+  completion and calibration results retain failed or uncertain rows and full
+  reservations. CPU-only Linux/amd64 acceptance records source/environment
+  evidence, preserves partial attempts and guards replay against dispatch and
+  writes. Existing policies, scorer and joint gate remain unchanged; GPU/Qwen
+  execution, TypeScript parity and promotion remain deferred.
+
 - Pinned CPU execution contracts and per-operation outcomes integrate the
   measured runner with existing search and practice-reference workflows. New
   journals retain outcomes before result publication, preserve unknown failures

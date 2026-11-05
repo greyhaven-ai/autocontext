@@ -126,6 +126,15 @@ the retained prefix and keep unknown process facts explicit. The fixed paired
 schedule contains 18 searches and at most six separately budgeted references.
 GPU execution remains deferred.
 
+The [full measured CPU pilot](../../examples/weight_evolution/cpu_pilot/README.md)
+freezes the existing twelve tasks, two repeats and three policies as 72 measured
+searches, with 24 separately budgeted practice references gated on complete
+source searches. The acceptance driver requires a fresh Linux/amd64 attempt,
+retains partial artifacts on failure and verifies replay with side effects
+blocked. A valid evidence record does not make an incomplete pilot pass.
+Every claimed child remains charged and cannot dispatch twice; GPU execution
+remains deferred.
+
 The [controlled CPU transfer experiments](../../examples/weight_evolution/cpu_controls/README.md)
 use a new task/campaign adapter with analytically specified weight controls.
 The builder creates deterministic cohorts and neutral candidate identities

@@ -44,6 +44,8 @@ The [measured CPU outcomes](examples/weight_evolution/cpu_measured/README.md) ad
 
 The [measured CPU search integration](examples/weight_evolution/cpu_execution/README.md) carries those outcomes through practice, restoration, confirmation, conditional audit, and exhaustive practice references. A pinned 18-search native-versus-measured schedule checks semantic parity and preserves failed or uncertain operations and their charges. GPU execution remains deferred.
 
+The [full measured CPU pilot](examples/weight_evolution/cpu_pilot/README.md) declares 72 searches and 24 conditional practice references over the unchanged control tasks. Its CPU-only Linux/amd64 acceptance job retains complete or partial evidence, separates integrity from completion and calibration, and verifies replay without dispatch or writes. GPU execution remains deferred.
+
 ## Install
 
 For Python CUDA/SFT installation, follow the [maintained Accelerate build guide](docs/security/accelerate-risk-assessment.md).
