@@ -67,6 +67,10 @@ These are copy-paste starting points for people evaluating the repo, integrating
   [CPU failure supervisor](weight_evolution/cpu_failures/README.md) to pin the host,
   capture bounded live exception chains and preserve failed-run reservations without
   automatic retries. Its reference phase requires every source search to complete.
+- Need process measurements that survive CPU worker failures? Use
+  [measured CPU outcomes](weight_evolution/cpu_measured/README.md) for v2 redaction,
+  separate primary/cleanup evidence and a bounded native-versus-measured parity
+  schedule. Missing measurements stay null and GPU execution remains deferred.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

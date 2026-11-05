@@ -144,6 +144,15 @@ existing parent claim must never dispatch its child again; missing live evidence
 cannot be reconstructed during replay. Keep reference budgets separate, preserve
 the original failed pilot, and declare each follow-up before its first dispatch.
 
+The [measured CPU outcomes](examples/weight_evolution/cpu_measured/README.md)
+preserve all M11–M14 source pins with new modules and a separately pinned parent
+profile. Test v2 short-prompt/marker collisions, Unicode, bounded serialization,
+and explicit omission. Process tests must retain the original error separately
+from cleanup and distinguish pre-cleanup status from parent signals. Use the
+small declared parity schedule; do not rerun a campaign to replace missing
+evidence. Verify interrupted publication and read-only replay before dispatching
+later declared work. GPU execution and TypeScript parity remain deferred.
+
 TypeScript:
 
 ```bash

@@ -44,6 +44,10 @@ constructed weight-transfer behavior without GPU execution or promotion.
 The [CPU failure supervisor](../examples/weight_evolution/cpu_failures/README.md)
 also remains Python-only because it verifies Python search journals and captures
 their live exceptions. TypeScript parity and GPU execution remain deferred.
+The [measured CPU outcomes](../examples/weight_evolution/cpu_measured/README.md)
+also remain Python-only: their v2 failure codec and process observations wrap the
+fixed Python CPU worker. TypeScript parity is deferred while this bounded
+acceptance workflow is validated; no GPU path is added.
 
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the

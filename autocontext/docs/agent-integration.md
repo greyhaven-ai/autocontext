@@ -103,6 +103,17 @@ child, and may recover a parent result only from retained evidence. References
 require every source search to complete. Failure messages are observations, not
 verified resource-cause classifications. GPU execution remains deferred.
 
+The [measured CPU outcomes](../../examples/weight_evolution/cpu_measured/README.md)
+provide a separate v2 failure contract and measured runner. Build and validate
+the fixed practice-only acceptance schedule before `run`; `report` verifies its
+immutable prefix without dispatch. Native and measured calls are declared
+comparison conditions, each charged once. A claimed call never executes again:
+resume can recover publication from a retained outcome, while a missing outcome
+remains uncertain. Messages use bounded redaction with explicit omission;
+unknown RSS/exit status remain null, and cleanup kills do not establish OOM.
+The original M13 failure cannot be diagnosed retroactively. GPU execution stays
+deferred.
+
 The [controlled CPU transfer experiments](../../examples/weight_evolution/cpu_controls/README.md)
 use a new task/campaign adapter with analytically specified weight controls.
 The builder creates deterministic cohorts and neutral candidate identities

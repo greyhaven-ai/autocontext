@@ -1,0 +1,555 @@
+{
+  "cases": {
+    "cycle": {
+      "record": {
+        "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+        "candidate_digest": null,
+        "checkpoints": [],
+        "contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+        "diagnostic_digest": null,
+        "exception_chain_truncated": false,
+        "exception_cycle_detected": true,
+        "exceptions": [
+          {
+            "cause_id": 1,
+            "cause_truncated": false,
+            "context_id": 1,
+            "context_truncated": false,
+            "exception_module": "builtins",
+            "exception_type": "RuntimeError",
+            "message": {
+              "encoding_replaced": false,
+              "omission_reason": null,
+              "omitted": false,
+              "redacted": true,
+              "rendering_failed": false,
+              "text": "outer [redacted]",
+              "truncated": false
+            },
+            "module_truncated": false,
+            "node_id": 0,
+            "suppress_context": true,
+            "type_truncated": false
+          },
+          {
+            "cause_id": null,
+            "cause_truncated": false,
+            "context_id": 0,
+            "context_truncated": false,
+            "exception_module": "builtins",
+            "exception_type": "ValueError",
+            "message": {
+              "encoding_replaced": false,
+              "omission_reason": null,
+              "omitted": false,
+              "redacted": true,
+              "rendering_failed": false,
+              "text": "inner [redacted]",
+              "truncated": false
+            },
+            "module_truncated": false,
+            "node_id": 1,
+            "suppress_context": false,
+            "type_truncated": false
+          }
+        ],
+        "kind": "cpu-failure-record-v2",
+        "native_journal_kind": "absent",
+        "observation_kind": "live-exception",
+        "observations": {
+          "elapsed_seconds": null,
+          "peak_rss_bytes": null,
+          "returncode": null,
+          "signal": null,
+          "stderr": null,
+          "stdout": null
+        },
+        "operation_index": null,
+        "operation_input_digest": null,
+        "operation_kind": null,
+        "operation_label": null,
+        "redaction_count": 1,
+        "redaction_digest": "ba9846ebcbedf04591d73625a4a0b62f0fa58a6d292e2b253d55091e39ef8faa",
+        "requests": [],
+        "retained_error_type": null,
+        "retained_type_truncated": false,
+        "run_id": "task-01.repeat-01.fixed-order-v1",
+        "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_version": 2,
+        "study_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "supervisor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "terminal_claim_digest": null,
+        "terminal_result_digest": null,
+        "terminal_status": "absent"
+      },
+      "record_digest": "a6547879f158f14dc766230ecca363f21468eefc0504f1c228094cdf4eb7a2d4",
+      "serialized_texts": [
+        "\"outer [redacted]\"",
+        "\"inner [redacted]\""
+      ]
+    },
+    "invalid-bytes": {
+      "record": {
+        "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+        "candidate_digest": null,
+        "checkpoints": [],
+        "contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+        "diagnostic_digest": null,
+        "exception_chain_truncated": false,
+        "exception_cycle_detected": false,
+        "exceptions": [
+          {
+            "cause_id": null,
+            "cause_truncated": false,
+            "context_id": null,
+            "context_truncated": false,
+            "exception_module": "builtins",
+            "exception_type": "RuntimeError",
+            "message": {
+              "encoding_replaced": true,
+              "omission_reason": null,
+              "omitted": false,
+              "redacted": false,
+              "rendering_failed": false,
+              "text": "bad? text",
+              "truncated": false
+            },
+            "module_truncated": false,
+            "node_id": 0,
+            "suppress_context": false,
+            "type_truncated": false
+          }
+        ],
+        "kind": "cpu-failure-record-v2",
+        "native_journal_kind": "absent",
+        "observation_kind": "live-exception",
+        "observations": {
+          "elapsed_seconds": 0.125,
+          "peak_rss_bytes": null,
+          "returncode": 3,
+          "signal": null,
+          "stderr": {
+            "encoding_replaced": true,
+            "omission_reason": null,
+            "omitted": false,
+            "redacted": true,
+            "rendering_failed": false,
+            "text": "[redacted]\ufffdtail",
+            "truncated": false
+          },
+          "stdout": {
+            "encoding_replaced": true,
+            "omission_reason": null,
+            "omitted": false,
+            "redacted": false,
+            "rendering_failed": false,
+            "text": "ok\ufffd",
+            "truncated": false
+          }
+        },
+        "operation_index": null,
+        "operation_input_digest": null,
+        "operation_kind": null,
+        "operation_label": null,
+        "redaction_count": 1,
+        "redaction_digest": "e62f47398b26c50d91ed58001d2bf80a21e4f2ab11423744aab31f6700c3e5bc",
+        "requests": [],
+        "retained_error_type": null,
+        "retained_type_truncated": false,
+        "run_id": "task-01.repeat-01.fixed-order-v1",
+        "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_version": 2,
+        "study_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "supervisor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "terminal_claim_digest": null,
+        "terminal_result_digest": null,
+        "terminal_status": "absent"
+      },
+      "record_digest": "52ed3a1b2bdd6881629d1d74ec378e3aaf3b31b9909aef9a234a07b06e64a24c",
+      "serialized_texts": [
+        "\"bad? text\"",
+        "\"ok\\ufffd\"",
+        "\"[redacted]\\ufffdtail\""
+      ]
+    },
+    "overlap": {
+      "record": {
+        "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+        "candidate_digest": null,
+        "checkpoints": [],
+        "contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+        "diagnostic_digest": null,
+        "exception_chain_truncated": false,
+        "exception_cycle_detected": false,
+        "exceptions": [
+          {
+            "cause_id": null,
+            "cause_truncated": false,
+            "context_id": null,
+            "context_truncated": false,
+            "exception_module": "builtins",
+            "exception_type": "ValueError",
+            "message": {
+              "encoding_replaced": false,
+              "omission_reason": null,
+              "omitted": false,
+              "redacted": true,
+              "rendering_failed": false,
+              "text": "[redacted] [redacted]",
+              "truncated": false
+            },
+            "module_truncated": false,
+            "node_id": 0,
+            "suppress_context": false,
+            "type_truncated": false
+          }
+        ],
+        "kind": "cpu-failure-record-v2",
+        "native_journal_kind": "absent",
+        "observation_kind": "live-exception",
+        "observations": {
+          "elapsed_seconds": null,
+          "peak_rss_bytes": null,
+          "returncode": null,
+          "signal": null,
+          "stderr": null,
+          "stdout": null
+        },
+        "operation_index": null,
+        "operation_input_digest": null,
+        "operation_kind": null,
+        "operation_label": null,
+        "redaction_count": 3,
+        "redaction_digest": "0045a8cfd7faf2c011f8737be4db57464663222dff4ff1402b0b7d374e69331e",
+        "requests": [],
+        "retained_error_type": null,
+        "retained_type_truncated": false,
+        "run_id": "task-01.repeat-01.fixed-order-v1",
+        "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_version": 2,
+        "study_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "supervisor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "terminal_claim_digest": null,
+        "terminal_result_digest": null,
+        "terminal_status": "absent"
+      },
+      "record_digest": "eae2415ce89c8d7a2aa64de1d2b290c75ddd81bdb0fdb9fa3486533b15644741",
+      "serialized_texts": [
+        "\"[redacted] [redacted]\""
+      ]
+    },
+    "rendering-failed": {
+      "record": {
+        "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+        "candidate_digest": null,
+        "checkpoints": [],
+        "contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+        "diagnostic_digest": null,
+        "exception_chain_truncated": false,
+        "exception_cycle_detected": false,
+        "exceptions": [
+          {
+            "cause_id": null,
+            "cause_truncated": false,
+            "context_id": null,
+            "context_truncated": false,
+            "exception_module": "failure.fixture.v2",
+            "exception_type": "_GoldenRenderingError",
+            "message": {
+              "encoding_replaced": false,
+              "omission_reason": "rendering-failed",
+              "omitted": true,
+              "redacted": false,
+              "rendering_failed": true,
+              "text": "",
+              "truncated": false
+            },
+            "module_truncated": false,
+            "node_id": 0,
+            "suppress_context": false,
+            "type_truncated": false
+          }
+        ],
+        "kind": "cpu-failure-record-v2",
+        "native_journal_kind": "absent",
+        "observation_kind": "live-exception",
+        "observations": {
+          "elapsed_seconds": null,
+          "peak_rss_bytes": null,
+          "returncode": null,
+          "signal": null,
+          "stderr": null,
+          "stdout": null
+        },
+        "operation_index": null,
+        "operation_input_digest": null,
+        "operation_kind": null,
+        "operation_label": null,
+        "redaction_count": 2,
+        "redaction_digest": "6654389dc007925eb5a84d4f17d615fb60a59c91061470e2df72289532d5087e",
+        "requests": [],
+        "retained_error_type": null,
+        "retained_type_truncated": false,
+        "run_id": "task-01.repeat-01.fixed-order-v1",
+        "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_version": 2,
+        "study_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "supervisor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "terminal_claim_digest": null,
+        "terminal_result_digest": null,
+        "terminal_status": "absent"
+      },
+      "record_digest": "307ffa7c02358c4ce0a0caf867295474f93e011a7ac9b8aeb966babf9bc5f434",
+      "serialized_texts": [
+        "\"\""
+      ]
+    },
+    "short-marker": {
+      "record": {
+        "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+        "candidate_digest": null,
+        "checkpoints": [],
+        "contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+        "diagnostic_digest": null,
+        "exception_chain_truncated": false,
+        "exception_cycle_detected": false,
+        "exceptions": [
+          {
+            "cause_id": null,
+            "cause_truncated": false,
+            "context_id": null,
+            "context_truncated": false,
+            "exception_module": "builtins",
+            "exception_type": "RuntimeError",
+            "message": {
+              "encoding_replaced": false,
+              "omission_reason": "redaction-collision",
+              "omitted": true,
+              "redacted": true,
+              "rendering_failed": false,
+              "text": "",
+              "truncated": false
+            },
+            "module_truncated": false,
+            "node_id": 0,
+            "suppress_context": false,
+            "type_truncated": false
+          }
+        ],
+        "kind": "cpu-failure-record-v2",
+        "native_journal_kind": "absent",
+        "observation_kind": "live-exception",
+        "observations": {
+          "elapsed_seconds": null,
+          "peak_rss_bytes": null,
+          "returncode": null,
+          "signal": null,
+          "stderr": null,
+          "stdout": null
+        },
+        "operation_index": null,
+        "operation_input_digest": null,
+        "operation_kind": null,
+        "operation_label": null,
+        "redaction_count": 2,
+        "redaction_digest": "5465ea0655ad629b91a37082a8cbf83d94bbca8c06cc95192c278d4b6aed9c72",
+        "requests": [],
+        "retained_error_type": null,
+        "retained_type_truncated": false,
+        "run_id": "task-01.repeat-01.fixed-order-v1",
+        "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_version": 2,
+        "study_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "supervisor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "terminal_claim_digest": null,
+        "terminal_result_digest": null,
+        "terminal_status": "absent"
+      },
+      "record_digest": "beeea1187f42de6b1abea3e84e2dd4fca0b02d0c93e6f74fae896723ac7229fe",
+      "serialized_texts": [
+        "\"\""
+      ]
+    },
+    "unicode": {
+      "record": {
+        "attribution": "terminal-binding-does-not-attribute-failure-to-operation",
+        "candidate_digest": null,
+        "checkpoints": [],
+        "contract": {
+          "attribution_rule": "observed-exception-not-verified-root-cause",
+          "causal_retroclaim_permitted": false,
+          "gpu_execution_deferred": true,
+          "kind": "bounded-cpu-failure-observation-v2",
+          "max_exception_nodes": 8,
+          "max_message_bytes": 1024,
+          "max_record_bytes": 65536,
+          "max_stream_bytes": 2048,
+          "max_type_bytes": 256,
+          "redaction_marker": "[redacted]",
+          "redaction_rule": "normalized-span-replacement-or-empty-v1",
+          "refund_permitted": false,
+          "retry_permitted": false,
+          "schema_version": 2
+        },
+        "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+        "diagnostic_digest": null,
+        "exception_chain_truncated": false,
+        "exception_cycle_detected": false,
+        "exceptions": [
+          {
+            "cause_id": null,
+            "cause_truncated": false,
+            "context_id": null,
+            "context_truncated": false,
+            "exception_module": "builtins",
+            "exception_type": "RuntimeError",
+            "message": {
+              "encoding_replaced": false,
+              "omission_reason": null,
+              "omitted": false,
+              "redacted": true,
+              "rendering_failed": false,
+              "text": "r\u00e9ponse: [redacted] [redacted]",
+              "truncated": false
+            },
+            "module_truncated": false,
+            "node_id": 0,
+            "suppress_context": false,
+            "type_truncated": false
+          }
+        ],
+        "kind": "cpu-failure-record-v2",
+        "native_journal_kind": "absent",
+        "observation_kind": "live-exception",
+        "observations": {
+          "elapsed_seconds": null,
+          "peak_rss_bytes": null,
+          "returncode": null,
+          "signal": null,
+          "stderr": null,
+          "stdout": null
+        },
+        "operation_index": null,
+        "operation_input_digest": null,
+        "operation_kind": null,
+        "operation_label": null,
+        "redaction_count": 2,
+        "redaction_digest": "f4b687f97ef565f46ccc72e015dcda5e090cc73db5c34d1294d03150b93ac0eb",
+        "requests": [],
+        "retained_error_type": null,
+        "retained_type_truncated": false,
+        "run_id": "task-01.repeat-01.fixed-order-v1",
+        "runtime_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_version": 2,
+        "study_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "supervisor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "terminal_claim_digest": null,
+        "terminal_result_digest": null,
+        "terminal_status": "absent"
+      },
+      "record_digest": "9fc541c240f9098841e16b92346266201b1c5f77258bc1b6952d00b958ffb91a",
+      "serialized_texts": [
+        "\"r\\u00e9ponse: [redacted] [redacted]\""
+      ]
+    }
+  },
+  "contract": {
+    "attribution_rule": "observed-exception-not-verified-root-cause",
+    "causal_retroclaim_permitted": false,
+    "gpu_execution_deferred": true,
+    "kind": "bounded-cpu-failure-observation-v2",
+    "max_exception_nodes": 8,
+    "max_message_bytes": 1024,
+    "max_record_bytes": 65536,
+    "max_stream_bytes": 2048,
+    "max_type_bytes": 256,
+    "redaction_marker": "[redacted]",
+    "redaction_rule": "normalized-span-replacement-or-empty-v1",
+    "refund_permitted": false,
+    "retry_permitted": false,
+    "schema_version": 2
+  },
+  "contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+  "fixture_kind": "cpu-failure-v2-golden-v1",
+  "schema_version": 1
+}

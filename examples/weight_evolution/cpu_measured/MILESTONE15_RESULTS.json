@@ -1,0 +1,448 @@
+{
+  "base_commit": "af48af6a1db0bd13277eb5dd65956ab48f2ba930",
+  "branch": "codex/cpu-measured-outcomes",
+  "failure_contract_digest": "5ebe4b6952bca866a61a8e5960b9f597957a052499de6cf785180b720ef6a5f8",
+  "generated_at_utc": "2026-11-05T00:49:37.345147+00:00",
+  "golden_fixture_sha256": "75798ed29ddf4c51f2ee7eab388c9a2d08fcea4c0fcd97a7f32e22c18e45b36a",
+  "gpu_execution_performed": false,
+  "kind": "measured-cpu-validation-summary",
+  "legacy_implementation_digests_unchanged": {
+    "m11": "cfa3e59d986316c5eeec43876cc839605fe904aa1e3adf80016fb7b77ef93bca",
+    "m12": "c78627374d5c08c25d15d4adfd3f8a777e5ef757275a0a7c4b43d9b50d986ccd",
+    "m13": "a7e4bee370e19fe73ab1fe5ca3c332a1aedb193000542deac90b108fbd5c1425",
+    "m14": "0be62f4d842832f9bcdce1159c4c0029a7d977040000527447cb69ebae0c6d08"
+  },
+  "linux": {
+    "acceptance": {
+      "acceptance_digest": "4c074d659b777c5dcb2e6c80f56c04fe6930a63ad209e0689eea902009b5c3f0",
+      "acceptance_id": "milestone15-linux-arm64-acceptance",
+      "acceptance_passed": true,
+      "charged_capacity": {
+        "inference_calls": 8,
+        "input_tokens": 16,
+        "output_tokens": 8
+      },
+      "implementation_digest": "587991218df9605257ad0bb19fbea90779ee0e62441742a7a23255d295f9b2e6",
+      "ledger_digest": "71fddb5cddce600d4884febc23f19f856a9a514fb432970ee3a0126bbacbd35b",
+      "native_runtime_digest": "b458ba6b3f34c1f9660695203339278e592f473e6706e0c782c8dbab55145d07",
+      "process": {
+        "additional_cleanup_errors": 0,
+        "cleanup_seconds": 0.00010291696526110172,
+        "cleanup_state": "completed",
+        "dispatched": true,
+        "elapsed_to_trigger_seconds": 0.2580515560111962,
+        "leader_reaped": true,
+        "peak_rss_bytes": null,
+        "returncode_after_cleanup": 0,
+        "returncode_before_cleanup": 0,
+        "rss_source": null,
+        "schema_version": 1,
+        "signal_attempted": true,
+        "signal_number": 9,
+        "signal_sent": true,
+        "state_before_cleanup": "exited",
+        "stderr_capped": false,
+        "stdout_capped": false,
+        "total_seconds": 0.2581970149767585,
+        "trigger": "completed"
+      },
+      "profile_digest": "00662c9e1496275dae73e026600732fdb3323a883016b9dd8aefdf1911f13a54",
+      "replay": {
+        "hashes_unchanged": true,
+        "immutable_files": 9,
+        "redispatch_blocked": true,
+        "report_digest": "3b1289fd03bf349482d69dc136fe44eb13dd1d4fa296542d34ddc0ed3f4dea3d"
+      },
+      "report_digest": "3b1289fd03bf349482d69dc136fe44eb13dd1d4fa296542d34ddc0ed3f4dea3d",
+      "rows": [
+        {
+          "charged_capacity": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          },
+          "outcome_digest": "522fd4f7b51b8de5894e680fd72f330cfb3a4aee24ab21c4ec64aec336514f83",
+          "profile": "legacy-v1",
+          "receipt_semantic_digest": "54c6e802c9c91274be335dbe71016cbfea10adba1683d8f32cc7af331fdeb3c7",
+          "reserved_capacity": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          },
+          "result_published": true,
+          "status": "completed",
+          "verified_usage": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          }
+        },
+        {
+          "charged_capacity": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          },
+          "outcome_digest": "7efdb230b2512952822ddd8c16641e0b571e023c35fdfc7b93f06d975e1ba56c",
+          "profile": "measured-v2",
+          "receipt_semantic_digest": "54c6e802c9c91274be335dbe71016cbfea10adba1683d8f32cc7af331fdeb3c7",
+          "reserved_capacity": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          },
+          "result_published": true,
+          "status": "completed",
+          "verified_usage": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          }
+        }
+      ],
+      "semantic_parity": true,
+      "status_counts": {
+        "completed": 2,
+        "failed": 0,
+        "not-started": 0,
+        "uncertain": 0
+      },
+      "verified_usage": {
+        "inference_calls": 8,
+        "input_tokens": 16,
+        "output_tokens": 8
+      }
+    },
+    "environment": {
+      "architecture": "aarch64",
+      "cpus": 1,
+      "gpu_execution": false,
+      "memory_limit_bytes": 1073741824,
+      "network": "none",
+      "platform": "Linux-7.0.14-orbstack-00380-ga7e0a2dc9535-aarch64-with-glibc2.41",
+      "python": "3.11.16 (main, Sep 19 2026, 01:11:34) [GCC 14.2.0]",
+      "repository_mount": "read-only"
+    },
+    "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+    "tests": {
+      "counts": {
+        "passed": 404,
+        "skipped": 1
+      },
+      "elapsed_seconds": 190.732,
+      "exit_code": 0,
+      "modules": {
+        "tests.test_weight_cpu_failure_campaign": {
+          "passed": 22
+        },
+        "tests.test_weight_cpu_failure_campaign_models": {
+          "passed": 19
+        },
+        "tests.test_weight_cpu_failure_diagnostic": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_failure_faults": {
+          "passed": 16
+        },
+        "tests.test_weight_cpu_failure_models": {
+          "passed": 33
+        },
+        "tests.test_weight_cpu_failure_record": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_failure_v2_models": {
+          "passed": 45
+        },
+        "tests.test_weight_cpu_failure_v2_record": {
+          "passed": 53
+        },
+        "tests.test_weight_cpu_measured_acceptance": {
+          "passed": 40
+        },
+        "tests.test_weight_cpu_measured_runner": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_measured_transport": {
+          "passed": 45
+        },
+        "tests.test_weight_cpu_resources": {
+          "passed": 17
+        },
+        "tests.test_weight_cpu_runner": {
+          "passed": 42,
+          "skipped": 1
+        }
+      },
+      "nonpassing": [
+        {
+          "message": "Darwin RSS monitor",
+          "name": "test_rss_limit_and_unavailable_monitor_fail_closed",
+          "status": "skipped"
+        }
+      ],
+      "sources_unchanged": true
+    }
+  },
+  "macos": {
+    "acceptance": {
+      "acceptance_digest": "b2fd33015adbee857753b08fb7a477cc47b78d697e983bfd0adb69a01a1db0b4",
+      "acceptance_id": "milestone15-macos-arm64-acceptance",
+      "acceptance_passed": true,
+      "charged_capacity": {
+        "inference_calls": 8,
+        "input_tokens": 16,
+        "output_tokens": 8
+      },
+      "implementation_digest": "ab9839663a247d39ef063fdb6f793efd9fa9d0e1192cfd3fdb02daf12f670de2",
+      "ledger_digest": "d094581dbbb1a5ce7ca0b24b871dc9b6ea170994d013614c34ebe47b8b3edd0b",
+      "native_runtime_digest": "f4c588e1e9586095b280e2604d6b414ad7db181db6f602ff45426dda19089b00",
+      "process": {
+        "additional_cleanup_errors": 0,
+        "cleanup_seconds": 0.0003435409744270146,
+        "cleanup_state": "completed",
+        "dispatched": true,
+        "elapsed_to_trigger_seconds": 0.10179895797045901,
+        "leader_reaped": true,
+        "peak_rss_bytes": 38993920,
+        "returncode_after_cleanup": 0,
+        "returncode_before_cleanup": 0,
+        "rss_source": "parent-darwin-proc_pidinfo",
+        "schema_version": 1,
+        "signal_attempted": true,
+        "signal_number": 9,
+        "signal_sent": false,
+        "state_before_cleanup": "exited",
+        "stderr_capped": false,
+        "stdout_capped": false,
+        "total_seconds": 0.10237158404197544,
+        "trigger": "completed"
+      },
+      "profile_digest": "dffe594f216cd73bd6f85e55d71fe233079ba322f2be1582d033b96a2873f792",
+      "replay": {
+        "hashes_unchanged": true,
+        "immutable_files": 9,
+        "redispatch_blocked": true,
+        "report_digest": "ae4f011c5d568484969b37c915731ae827c834327b7fa9d3b3b648e8465e88ca"
+      },
+      "report_digest": "ae4f011c5d568484969b37c915731ae827c834327b7fa9d3b3b648e8465e88ca",
+      "rows": [
+        {
+          "charged_capacity": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          },
+          "outcome_digest": "430f258c2ed558f0b24c8e6184d23b4fb139ee1c22561f46f31fe20e1ac45968",
+          "profile": "legacy-v1",
+          "receipt_semantic_digest": "d04ae7c7ab05e7f67ec5ebcc67f5856c7216c1801ed2cc0782ef147ba2fb49ab",
+          "reserved_capacity": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          },
+          "result_published": true,
+          "status": "completed",
+          "verified_usage": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          }
+        },
+        {
+          "charged_capacity": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          },
+          "outcome_digest": "a1c5c283149a20ec5ce80f212aacb6d937a2b358df7b646702f3215e5b04320e",
+          "profile": "measured-v2",
+          "receipt_semantic_digest": "d04ae7c7ab05e7f67ec5ebcc67f5856c7216c1801ed2cc0782ef147ba2fb49ab",
+          "reserved_capacity": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          },
+          "result_published": true,
+          "status": "completed",
+          "verified_usage": {
+            "inference_calls": 4,
+            "input_tokens": 8,
+            "output_tokens": 4
+          }
+        }
+      ],
+      "semantic_parity": true,
+      "status_counts": {
+        "completed": 2,
+        "failed": 0,
+        "not-started": 0,
+        "uncertain": 0
+      },
+      "verified_usage": {
+        "inference_calls": 8,
+        "input_tokens": 16,
+        "output_tokens": 8
+      }
+    },
+    "compatibility_before_final_grace_fix": {
+      "counts": {
+        "passed": 393,
+        "skipped": 9
+      },
+      "elapsed_seconds": 173.104,
+      "modules": {
+        "tests.test_weight_cpu_failure_campaign": {
+          "passed": 22
+        },
+        "tests.test_weight_cpu_failure_campaign_models": {
+          "passed": 19
+        },
+        "tests.test_weight_cpu_failure_diagnostic": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_failure_faults": {
+          "passed": 14,
+          "skipped": 2
+        },
+        "tests.test_weight_cpu_failure_models": {
+          "passed": 33
+        },
+        "tests.test_weight_cpu_failure_record": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_failure_v2_models": {
+          "passed": 45
+        },
+        "tests.test_weight_cpu_failure_v2_record": {
+          "passed": 53
+        },
+        "tests.test_weight_cpu_measured_acceptance": {
+          "passed": 38
+        },
+        "tests.test_weight_cpu_measured_runner": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_measured_transport": {
+          "passed": 41,
+          "skipped": 3
+        },
+        "tests.test_weight_cpu_resources": {
+          "passed": 14,
+          "skipped": 3
+        },
+        "tests.test_weight_cpu_runner": {
+          "passed": 42,
+          "skipped": 1
+        }
+      },
+      "skipped": [
+        {
+          "name": "test_exited_leader_keeps_group_identity_until_lingering_child_is_stopped",
+          "reason": "Linux subreaper makes orphan cleanup directly waitable"
+        },
+        {
+          "name": "test_linux_allocation_denial_has_observed_exit_and_no_oom_claim",
+          "reason": "Linux RLIMIT_AS allocation denial"
+        },
+        {
+          "name": "test_linux_kernel_signal_is_observed_before_supervisor_cleanup",
+          "reason": "Linux RLIMIT_CPU termination"
+        },
+        {
+          "name": "test_large_parent_rss_does_not_reject_small_exec_worker",
+          "reason": "Linux preserves pre-exec getrusage RSS"
+        },
+        {
+          "name": "test_linux_address_space_exhaustion_is_rejected_and_reaped",
+          "reason": "Linux RLIMIT_AS allocation denial"
+        },
+        {
+          "name": "test_linux_cpu_exhaustion_is_kernel_killed_before_wall_watchdog_and_reaped",
+          "reason": "Linux RLIMIT_CPU hard-limit termination"
+        },
+        {
+          "name": "test_linux_wall_deadline_reaps_a_worker_with_installed_limits",
+          "reason": "Linux worker limits plus parent wall deadline"
+        },
+        {
+          "name": "test_linux_allocation_denial_records_observed_exit_without_claiming_memory_kill",
+          "reason": "Linux hard address-space allocation failure"
+        },
+        {
+          "name": "test_linux_cpu_limit_records_signal_observation_without_inferring_root_cause",
+          "reason": "Linux hard CPU limit with independent wall watchdog"
+        }
+      ]
+    },
+    "environment": {
+      "machine": "arm64",
+      "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+      "python": "3.13.1 (main, Jan 14 2025, 23:31:50) [Clang 19.1.6 ]"
+    },
+    "final_focused": {
+      "counts": {
+        "passed": 204,
+        "skipped": 3
+      },
+      "elapsed_seconds": 5.669,
+      "modules": {
+        "tests.test_weight_cpu_failure_v2_models": {
+          "passed": 45
+        },
+        "tests.test_weight_cpu_failure_v2_record": {
+          "passed": 53
+        },
+        "tests.test_weight_cpu_measured_acceptance": {
+          "passed": 40
+        },
+        "tests.test_weight_cpu_measured_runner": {
+          "passed": 24
+        },
+        "tests.test_weight_cpu_measured_transport": {
+          "passed": 42,
+          "skipped": 3
+        }
+      },
+      "skipped": [
+        {
+          "name": "test_exited_leader_keeps_group_identity_until_lingering_child_is_stopped",
+          "reason": "Linux subreaper makes orphan cleanup directly waitable"
+        },
+        {
+          "name": "test_linux_allocation_denial_has_observed_exit_and_no_oom_claim",
+          "reason": "Linux RLIMIT_AS allocation denial"
+        },
+        {
+          "name": "test_linux_kernel_signal_is_observed_before_supervisor_cleanup",
+          "reason": "Linux RLIMIT_CPU termination"
+        }
+      ]
+    }
+  },
+  "milestone": 15,
+  "new_source_sha256": {
+    "autocontext/src/autocontext/weight_evolution/cpu_failure_v2_models.py": "03eb71761aaa40f17a9b9b9d5fc1454e308e862fb4e5b634acafff76a416aaab",
+    "autocontext/src/autocontext/weight_evolution/cpu_failure_v2_record.py": "acc9ed7945db47fae18a80c733e3960ecc0f7f1a2a4786e26dda0002884e22eb",
+    "autocontext/src/autocontext/weight_evolution/cpu_measured_acceptance.py": "93d86505429ae868965831ff3fefab02bb912f9d91c2d434bdeee46923aa53d0",
+    "autocontext/src/autocontext/weight_evolution/cpu_measured_models.py": "f0fea4c49e1c4224801ccfcfed4855bbcc1cff766780e022ceae8e3f0e52a23a",
+    "autocontext/src/autocontext/weight_evolution/cpu_measured_runner.py": "65ba2c57b50d5610c6a67cf479fad0332b9eedd1192f1a06b53cfc87d05611e4",
+    "autocontext/src/autocontext/weight_evolution/cpu_measured_transport.py": "2cfd5241661fd5fc0cda805996ec6d142f21bb461f010727521d05d6354b124d"
+  },
+  "qwen_inference_performed": false,
+  "remaining_gaps": [
+    "M15 Linux/amd64 CI has not run; local Linux was ARM64.",
+    "No full search/reference campaign uses the new measured profile yet; no new scientific pilot was run.",
+    "Historical M13 failure cause and missing telemetry remain unknown.",
+    "No verified Linux failed-process RSS observation is fabricated.",
+    "Positive joint-gate acceptance, model-quality claims, live proposals, larger models, TypeScript parity and promotion remain deferred.",
+    "GPU acceptance, full Qwen base-versus-patch inference and benchmark reproduction remain deferred."
+  ],
+  "schema_version": 1,
+  "static_checks": {
+    "git_diff_check": "passed",
+    "markdown_links": "passed",
+    "mypy_src": "passed",
+    "protocol_sync": "passed",
+    "ruff_src_tests_examples": "passed"
+  }
+}

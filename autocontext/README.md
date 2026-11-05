@@ -59,6 +59,14 @@ references. A separate host-pinned contract reserves the whole experiment;
 failed or interrupted dispatches retain their reservation and are never retried.
 Missing observations remain unknown. GPU execution stays deferred.
 
+The [measured CPU outcomes](../examples/weight_evolution/cpu_measured/README.md)
+pin a v2 failure contract and a separate parent implementation around that fixed
+worker. They retain measured process facts across errors, distinguish cleanup
+signals from pre-cleanup exit status, and safely omit messages when redaction
+cannot preserve useful text. A small immutable parity schedule checks successful
+receipt semantics while retaining failed or uncertain attempts without retries.
+GPU execution remains deferred.
+
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by
