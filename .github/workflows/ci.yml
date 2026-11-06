@@ -66,12 +66,13 @@ jobs:
   python-test-shards:
     runs-on: ubuntu-latest
     # Module-preserving shards include long CPU evidence-replay fixtures.
+    # Six shards keep those fixtures below the unchanged test-step deadline.
     # Leave time to preserve diagnostics after the test-step deadline.
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     defaults:
       run:
         working-directory: autocontext
@@ -94,7 +95,7 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
         run: >-
-          uv run python scripts/pytest_shard.py ${{ matrix.shard }}/4
+          uv run python scripts/pytest_shard.py ${{ matrix.shard }}/6
           --cov=src/autocontext --cov-report=
           --junitxml=junit-shard-${{ matrix.shard }}.xml -m "not live"
       - name: Upload coverage
@@ -181,7 +182,7 @@ jobs:
           merge-multiple: true
       - name: Combine coverage
         run: |
-          for shard in 1 2 3 4; do
+          for shard in 1 2 3 4 5 6; do
             test -s ".coverage.shard-$shard"
           done
           uv run coverage combine
