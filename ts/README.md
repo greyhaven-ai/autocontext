@@ -65,6 +65,12 @@ search/reference adapters. Their separate 18-search contract adds generated
 pass/veto controls and an independent deterministic oracle. TypeScript parity,
 GPU execution and promotion remain deferred.
 
+The [budget-limited CPU search landscapes](../examples/weight_evolution/cpu_search_landscapes/README.md)
+also remain Python-only because they reuse the existing measured worker and
+search/reference adapters. The 36-search/twelve-reference calibration adds no
+TypeScript runtime surface. TypeScript parity, GPU execution and promotion
+remain deferred.
+
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
 Python control plane. It validates the same shared fixtures and can be used by

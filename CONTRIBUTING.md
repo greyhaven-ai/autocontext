@@ -185,6 +185,16 @@ audit observations for passes, no audit launches for vetoes, full reservations,
 and read-only replay. Adaptive superiority is not an acceptance criterion;
 GPU execution and TypeScript parity remain deferred.
 
+The [budget-limited CPU search landscapes](examples/weight_evolution/cpu_search_landscapes/README.md)
+add a separate contract and independent oracle for informative, misleading and
+neutral weight-search tasks. Preserve older modules and bundle identities.
+Freeze all tasks, option order, seeds, five-meter budgets and expected histories
+before measured execution; never filter seeds or tasks using observed outcomes.
+Test nonzero policy contrasts and reference gaps, including expected adaptive
+losses and nulls. Keep nested repeats within task instances, preserve the joint
+gate and all failure reservations, and verify replay without dispatch or writes.
+GPU execution and TypeScript parity remain deferred.
+
 TypeScript:
 
 ```bash

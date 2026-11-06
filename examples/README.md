@@ -85,6 +85,11 @@ These are copy-paste starting points for people evaluating the repo, integrating
   for an independent oracle, 18 equal-budget searches and six practice-only
   references. Positive and veto controls retain separate expected and observed
   outcomes; GPU execution stays deferred.
+- Need known search advantages, traps and null controls under a tight budget? Use
+  [budget-limited CPU search landscapes](weight_evolution/cpu_search_landscapes/README.md)
+  for 36 measured searches, twelve practice-only references and an independent
+  oracle. Prefix curves and resource accounting retain all policies and failures;
+  GPU execution stays deferred.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

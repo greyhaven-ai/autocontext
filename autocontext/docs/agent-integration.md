@@ -144,6 +144,16 @@ Reports distinguish calibration from evidence integrity and campaign completion.
 Decoding expectations are conditional on pinned seeds, and no result enables
 promotion or GPU execution.
 
+The [budget-limited CPU search landscapes](../../examples/weight_evolution/cpu_search_landscapes/README.md)
+freeze six structural task instances, two nested repeats and three policies.
+Thirty-six searches use three trials from six options per mechanism; twelve
+exhaustive practice references follow complete publication of every search.
+Oracle metadata never enters policy inputs. Expected weight-search wins, losses
+and ties are calibration targets; no aggregate adaptive win is required.
+References cannot guide selection, and prefix curves add no worker calls.
+Context/decoding are neutral anchors and the unchanged joint gate vetoes audit.
+Failed and uncertain work remains charged; GPU execution remains deferred.
+
 The [controlled CPU transfer experiments](../../examples/weight_evolution/cpu_controls/README.md)
 use a new task/campaign adapter with analytically specified weight controls.
 The builder creates deterministic cohorts and neutral candidate identities
