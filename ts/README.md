@@ -59,6 +59,12 @@ also remains Python-only because it reuses the measured Python adapters and
 source journals. Its 72-search Linux/amd64 acceptance job adds no TypeScript
 runtime path. TypeScript parity, GPU execution and promotion remain deferred.
 
+The [generated CPU joint controls](../examples/weight_evolution/cpu_joint_controls/README.md)
+remain Python-only because they calibrate the existing Python worker and measured
+search/reference adapters. Their separate 18-search contract adds generated
+pass/veto controls and an independent deterministic oracle. TypeScript parity,
+GPU execution and promotion remain deferred.
+
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
 Python control plane. It validates the same shared fixtures and can be used by

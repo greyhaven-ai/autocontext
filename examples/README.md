@@ -80,6 +80,11 @@ These are copy-paste starting points for people evaluating the repo, integrating
   [full measured CPU pilot](weight_evolution/cpu_pilot/README.md) for 72 declared
   searches, 24 conditional practice references and CPU-only Linux/amd64 acceptance.
   Every scheduled row and partial attempt remains visible; GPU execution stays deferred.
+- Need generated controls for the complete confirmation-to-audit path? Use the
+  [generated CPU joint controls](weight_evolution/cpu_joint_controls/README.md)
+  for an independent oracle, 18 equal-budget searches and six practice-only
+  references. Positive and veto controls retain separate expected and observed
+  outcomes; GPU execution stays deferred.
 - Want to compare transfer and specialist behavior across kernel families? Run
   the synthetic [multi-workload kernel study](kernel_evolution/multi_workload/README.md).
 - Want a scenario campaign on a managed accelerator? Use the

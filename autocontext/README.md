@@ -82,6 +82,14 @@ fresh attempt, retains partial evidence and verifies replay without dispatch or
 writes. Integrity, completion and calibration remain separate results. GPU
 execution remains deferred.
 
+The [generated CPU joint controls](../examples/weight_evolution/cpu_joint_controls/README.md)
+declare positive, correct-baseline and practice-only repair tasks before execution.
+An independent deterministic oracle pins expected selections and gate outcomes
+for 18 equal-budget measured searches and six conditional practice references.
+Acceptance checks actual audit observations for passing rows and no audit launches
+for vetoes. Seed-conditional constructed results do not establish adaptive
+superiority or benchmark gains; GPU execution remains deferred.
+
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by

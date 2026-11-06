@@ -1,0 +1,1097 @@
+{
+  "runs": {
+    "task-01.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "completed",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": true,
+          "D": true,
+          "W": true
+        },
+        "status": "confirmed"
+      },
+      "family": "joint-positive-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 0.5,
+        "d-04": 1.0,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-02",
+        "D": "d-02",
+        "W": "w-01"
+      }
+    },
+    "task-01.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "completed",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": true,
+          "D": true,
+          "W": true
+        },
+        "status": "confirmed"
+      },
+      "family": "joint-positive-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 0.5,
+        "d-04": 1.0,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-02",
+        "D": "d-02",
+        "W": "w-01"
+      }
+    },
+    "task-01.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "completed",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": true,
+          "D": true,
+          "W": true
+        },
+        "status": "confirmed"
+      },
+      "family": "joint-positive-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 0.5,
+        "d-04": 1.0,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-03",
+        "D": "d-02",
+        "W": "w-01"
+      }
+    },
+    "task-01.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "completed",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": true,
+          "D": true,
+          "W": true
+        },
+        "status": "confirmed"
+      },
+      "family": "joint-positive-v1",
+      "inference_seed": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 0.5,
+        "d-04": 1.0,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-02",
+        "D": "d-02",
+        "W": "w-01"
+      }
+    },
+    "task-01.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "completed",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": true,
+          "D": true,
+          "W": true
+        },
+        "status": "confirmed"
+      },
+      "family": "joint-positive-v1",
+      "inference_seed": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 0.5,
+        "d-04": 1.0,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-02",
+        "D": "d-02",
+        "W": "w-01"
+      }
+    },
+    "task-01.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "completed",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": true,
+          "D": true,
+          "W": true
+        },
+        "status": "confirmed"
+      },
+      "family": "joint-positive-v1",
+      "inference_seed": 1,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 0.5,
+        "d-04": 1.0,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-01",
+        "D": "d-02",
+        "W": "w-02"
+      }
+    },
+    "task-02.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-correct-baseline-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 1.0,
+        "c-01": 1.0,
+        "c-02": 1.0,
+        "c-03": 1.0,
+        "c-04": 1.0,
+        "d-01": 1.0,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 1.0,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 1.0,
+        "w-04": 1.0
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-02.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-correct-baseline-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 1.0,
+        "c-01": 1.0,
+        "c-02": 1.0,
+        "c-03": 1.0,
+        "c-04": 1.0,
+        "d-01": 1.0,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 1.0,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 1.0,
+        "w-04": 1.0
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-02.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-correct-baseline-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 1.0,
+        "c-01": 1.0,
+        "c-02": 1.0,
+        "c-03": 1.0,
+        "c-04": 1.0,
+        "d-01": 1.0,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 1.0,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 1.0,
+        "w-04": 1.0
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-02.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-correct-baseline-v1",
+      "inference_seed": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 1.0,
+        "c-01": 1.0,
+        "c-02": 1.0,
+        "c-03": 1.0,
+        "c-04": 1.0,
+        "d-01": 1.0,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 1.0,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 1.0,
+        "w-04": 1.0
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-02.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-correct-baseline-v1",
+      "inference_seed": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 1.0,
+        "c-01": 1.0,
+        "c-02": 1.0,
+        "c-03": 1.0,
+        "c-04": 1.0,
+        "d-01": 1.0,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 1.0,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 1.0,
+        "w-04": 1.0
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-02.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-correct-baseline-v1",
+      "inference_seed": 1,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 1.0,
+        "c-01": 1.0,
+        "c-02": 1.0,
+        "c-03": 1.0,
+        "c-04": 1.0,
+        "d-01": 1.0,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 1.0,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 1.0,
+        "w-04": 1.0
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-03.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-practice-only-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-01",
+        "D": "d-03",
+        "W": "w-02"
+      }
+    },
+    "task-03.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-practice-only-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-01",
+        "D": "d-03",
+        "W": "w-02"
+      }
+    },
+    "task-03.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-practice-only-v1",
+      "inference_seed": 0,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-03",
+        "D": "d-02",
+        "W": "w-01"
+      }
+    },
+    "task-03.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-practice-only-v1",
+      "inference_seed": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-01",
+        "D": "d-03",
+        "W": "w-02"
+      }
+    },
+    "task-03.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-practice-only-v1",
+      "inference_seed": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-01",
+        "D": "d-03",
+        "W": "w-02"
+      }
+    },
+    "task-03.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 1.0,
+          "C": 1.0,
+          "CW": 1.0,
+          "D": 1.0,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.75,
+          "CW": 0.75,
+          "D": 1.0,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "joint-practice-only-v1",
+      "inference_seed": 1,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.75,
+        "c-02": 0.75,
+        "c-03": 0.75,
+        "c-04": 0.75,
+        "d-01": 0.5,
+        "d-02": 1.0,
+        "d-03": 1.0,
+        "d-04": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75
+      },
+      "selected_options": {
+        "C": "c-01",
+        "D": "d-02",
+        "W": "w-02"
+      }
+    }
+  },
+  "schema_version": 1,
+  "scope": "offline-construction-fixture-not-measured-evidence",
+  "single_component_veto": {
+    "C": {
+      "minimum_gain": 0.1,
+      "outcomes": {
+        "C": false,
+        "D": true,
+        "W": true
+      },
+      "status": "vetoed"
+    },
+    "D": {
+      "minimum_gain": 0.1,
+      "outcomes": {
+        "C": true,
+        "D": false,
+        "W": true
+      },
+      "status": "vetoed"
+    },
+    "W": {
+      "minimum_gain": 0.1,
+      "outcomes": {
+        "C": true,
+        "D": true,
+        "W": false
+      },
+      "status": "vetoed"
+    }
+  }
+}

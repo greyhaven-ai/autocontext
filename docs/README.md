@@ -26,6 +26,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Measured CPU outcomes, v2 redaction and bounded native-versus-measured acceptance](../examples/weight_evolution/cpu_measured/README.md)
 - [Measured CPU search and reference adapters with pinned operation outcomes](../examples/weight_evolution/cpu_execution/README.md)
 - [Full measured CPU pilot with Linux/amd64 acceptance and retained partial evidence](../examples/weight_evolution/cpu_pilot/README.md)
+- [Generated CPU joint controls with an independent oracle and measured audit acceptance](../examples/weight_evolution/cpu_joint_controls/README.md)
 
 ## Using The Packages
 
