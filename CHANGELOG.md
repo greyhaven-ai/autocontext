@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Budget-limited CPU search landscapes pin informative, misleading and neutral
+  weight-search controls across six structural task instances. Thirty-six
+  measured searches and twelve exhaustive practice references preserve equal
+  budgets, failure accounting and the existing joint gate. Independent oracle
+  calibration includes expected adaptive wins, losses and ties; practice prefix
+  curves require no extra inference. CPU-only acceptance retains complete or
+  partial evidence and guarded replay. GPU/Qwen reproduction, TypeScript parity
+  and promotion remain deferred.
+
 - Generated CPU joint controls pin positive, correct-baseline and practice-only repair
   tasks with independent deterministic expectations before measured execution.
   A separate 18-search/six-reference campaign preserves equal budgets, the joint

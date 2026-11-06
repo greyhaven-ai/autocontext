@@ -90,6 +90,14 @@ Acceptance checks actual audit observations for passing rows and no audit launch
 for vetoes. Seed-conditional constructed results do not establish adaptive
 superiority or benchmark gains; GPU execution remains deferred.
 
+The [budget-limited CPU search landscapes](../examples/weight_evolution/cpu_search_landscapes/README.md)
+compare three unchanged policies on six constructed task instances, with three
+trials among six options per mechanism. Thirty-six measured searches precede
+twelve exhaustive practice references. An independent oracle pins weight-search
+wins, losses and ties; progress curves use retained practice history only.
+Context and decoding remain neutral, and the existing joint gate withholds audit.
+GPU execution and promotion remain deferred.
+
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by

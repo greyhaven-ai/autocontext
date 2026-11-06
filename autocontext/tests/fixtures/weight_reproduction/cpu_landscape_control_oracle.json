@@ -1,0 +1,4866 @@
+{
+  "runs": {
+    "task-01.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "018237d119d1d7aa51cd74b30c0d7e65281bdcb741f30b232880d32ceec8d467",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-05",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-02",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      }
+    },
+    "task-01.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "09913874fbe60bc6cf973c3b557ddda07e733759ae9ea063a116852cc21b6fe0",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-03"
+      }
+    },
+    "task-01.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "00692b3df7ca311409658394998ae054fb03488d5b7fe872f07c39adf5817631",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-04",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-02"
+      }
+    },
+    "task-01.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "c4a1d37a7c1ed72c3d04ecdbdcb5dfa956f3fa694a292c0ce4b351eb72408fab",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-05",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-02",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      }
+    },
+    "task-01.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "38e337efc27ad27b53c75ce712177f0ca724766b0a6a80d265244b56cc418cd5",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-03"
+      }
+    },
+    "task-01.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "75f80689126b3f9c71b1391e16644d0ac2d14dc694e72d17c0dff8ffa1143d79",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.75,
+        "w-03": 0.75,
+        "w-04": 0.75,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-02"
+      }
+    },
+    "task-02.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "fc640783def17b2aaef5d1316f8c55047933111daf0e6f0a836e59bde5370dba",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-05",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 0.5,
+        "w-03": 0.25,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      }
+    },
+    "task-02.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "568b3872104f6e6a5506ac36dcf1811d8c15f5a67dc0a0c81bf9b7d7e57d7193",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-05",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 0.5,
+        "w-03": 0.25,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      }
+    },
+    "task-02.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "aee3e5f8562c41a4cbd99e0e0cb0ae61622d24efa43cf177206488833fa6d126",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 0.5,
+        "w-03": 0.25,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      }
+    },
+    "task-02.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "a2096bfab9e6af9685485918bc39e8b1a28633fcc994ad2a01d79a20710920c5",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-05",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 0.5,
+        "w-03": 0.25,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      }
+    },
+    "task-02.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "0f7e118f0243dd6764b6413499e840b0f02e265aee0dd242e3a4b589e249389d",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-05",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 0.5,
+        "w-03": 0.25,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      }
+    },
+    "task-02.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "98599f3c4e01a1c8a4019d5d631fdb4120289c8081a3b20c3283b3553f9fc0e1",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 0.5,
+        "w-03": 0.25,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-02"
+      }
+    },
+    "task-03.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "0c93baaf119d60693b6541c8899a1da15ef6c4981a58cf569baf9de76235e723",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.5,
+        "w-03": 0.75,
+        "w-04": 1.0,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      }
+    },
+    "task-03.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "3b058c1e1b2aa61687717946db0ff35c257ea5ede0932bae7d564b7b1b0be129",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-05",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.5,
+        "w-03": 0.75,
+        "w-04": 1.0,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      }
+    },
+    "task-03.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "227d644f5150ad0c4c5fd0cfc151270f6a2ff0fb42ebb4d8397750c2b8190e52",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-04",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.5,
+        "w-03": 0.75,
+        "w-04": 1.0,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-04"
+      }
+    },
+    "task-03.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "28cff8efa08b9ee3ea49069c5c3eb56decc164c4037ee41ffb331a7587136cd8",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.5,
+        "w-03": 0.75,
+        "w-04": 1.0,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      }
+    },
+    "task-03.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 1.0,
+          "D": 0.5,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "df7534736c8205ff830950ac8c45404b67a71c4651cacd134e35b114448ff149",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-05",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.5,
+        "w-03": 0.75,
+        "w-04": 1.0,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      }
+    },
+    "task-03.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.75,
+          "D": 0.5,
+          "W": 0.75
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "2314e675db6be2037bd23185b567c004ad42defd928958e8abaa58b4a2bd1dc8",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 6,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.75,
+        "w-02": 0.5,
+        "w-03": 0.75,
+        "w-04": 1.0,
+        "w-05": 1.0,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-03"
+      }
+    },
+    "task-04.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "8da52d743fe1872a11abdbbf6aeab1d09daf8203c37bb654b318a2cc079f45ee",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-04",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-05",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-03"
+      }
+    },
+    "task-04.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "bbf23183717b1830d6fce8219a5a4d49d034bd283249f72ca2bd09111dc919a6",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-04",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-05",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-01",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      }
+    },
+    "task-04.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "7682e664396320d2ab502e64e1b8b8832999968f136504de1eba7a0102851c54",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      }
+    },
+    "task-04.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.5,
+          "D": 0.25,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "3f6da252e9fbf8c78fceb9d7469ffa0fcb109eee5a0edc9bf82d53f5a15c4640",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-04",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-05",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-03"
+      }
+    },
+    "task-04.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "743035eabfd5588b69e4892628e039e6c502b2b135ff683ded3a417e2e22ec91",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-04",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-05",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-01",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      }
+    },
+    "task-04.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 1.0,
+          "D": 0.25,
+          "W": 1.0
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "87e253f323f0890a6dab409bf486a9f50e014304b0df2e50a952982ed669bf35",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 8,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 1.0,
+        "w-02": 1.0,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-02"
+      }
+    },
+    "task-05.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "350c62fc4c4650a3ed56f77c92a9a119bbdfcd63f40b4094c8b0400f0686b880",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-05",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-05",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.5,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-05.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "2b92620c4bdf99c43f6e7e2228dae015dd4b927f23a3307c68277fb6d5965609",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-05",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-05",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.5,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-05.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "db50225fa0ae4283bb310dfe2064232253575062b8774f5ff26716338df2a5c2",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-04",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.5,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-05.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "166267ab7ed4a19f84679e922b40650d6b5c2928c6222504d98ef36eb62be6f8",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-05",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-05",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.5,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-05.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "3dd3d759cb137531dda60f22de73365d07654e45eaf5d2d6cf6dfbe0813e6410",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-05",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-05",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.5,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-05.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "confirmation": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        },
+        "practice": {
+          "A": 0.5,
+          "C": 0.5,
+          "CW": 0.5,
+          "D": 0.5,
+          "W": 0.5
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "5ee1dd5f56f99a1fbf56d9570ee78673b198305fb7d73c573220946717aaced8",
+      "histories": {
+        "C": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 4,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 4,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 1,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.5,
+        "c-01": 0.5,
+        "c-02": 0.5,
+        "c-03": 0.5,
+        "c-04": 0.5,
+        "c-05": 0.5,
+        "c-06": 0.5,
+        "d-01": 0.5,
+        "d-02": 0.5,
+        "d-03": 0.5,
+        "d-04": 0.5,
+        "d-05": 0.5,
+        "d-06": 0.5,
+        "w-01": 0.5,
+        "w-02": 0.5,
+        "w-03": 0.5,
+        "w-04": 0.5,
+        "w-05": 0.5,
+        "w-06": 0.5
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-06.repeat-01.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "9a29f1e388b1f0d1a87157c1b2260779e028cfb689022fbc746ed456b4f4f753",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 0.25,
+        "w-02": 0.25,
+        "w-03": 0.25,
+        "w-04": 0.25,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-06.repeat-01.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "cd52240eb20acec2f9c5635189f13f602c3c246eadfa2ec6c1976a683bda9831",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 0.25,
+        "w-02": 0.25,
+        "w-03": 0.25,
+        "w-04": 0.25,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-06.repeat-01.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "a8ad61a186a29c0849459e055843ad5a7e76dbe93ed653095232d0eaa1111dc7",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-05",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-05",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-04",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 0,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 0.25,
+        "w-02": 0.25,
+        "w-03": 0.25,
+        "w-04": 0.25,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-06.repeat-02.adaptive-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "a1fd6ea97d7f18ad454fc7ba0e24d380b0a70e423cd63bc8a24d9ec5bf33685e",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "adaptive-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 0.25,
+        "w-02": 0.25,
+        "w-03": 0.25,
+        "w-04": 0.25,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-06.repeat-02.fixed-order-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "49e14e89cd051038a8ab8e88c8d0852196897455562231c5f64811dd68cb27e6",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-02",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-04",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-03",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 0,
+      "policy": "fixed-order-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 0.25,
+        "w-02": 0.25,
+        "w-03": 0.25,
+        "w-04": 0.25,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    },
+    "task-06.repeat-02.seeded-random-v1": {
+      "accuracies": {
+        "audit": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "confirmation": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        },
+        "practice": {
+          "A": 0.25,
+          "C": 0.25,
+          "CW": 0.25,
+          "D": 0.25,
+          "W": 0.25
+        }
+      },
+      "audit_status": "withheld",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "f12a189270953081456866080deada23860b10a18fa632db291162e42c00cebc",
+      "histories": {
+        "C": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-03",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "c-06",
+            "total": 8
+          }
+        ],
+        "D": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-01",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "d-02",
+            "total": 8
+          }
+        ],
+        "W": [
+          {
+            "correct": 2,
+            "option_id": null,
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-06",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-02",
+            "total": 8
+          },
+          {
+            "correct": 2,
+            "option_id": "w-03",
+            "total": 8
+          }
+        ]
+      },
+      "inference_seed": 1,
+      "instance_index": 2,
+      "order_seed": 1,
+      "policy": "seeded-random-v1",
+      "reference_accuracy": {
+        "A": 0.25,
+        "c-01": 0.25,
+        "c-02": 0.25,
+        "c-03": 0.25,
+        "c-04": 0.25,
+        "c-05": 0.25,
+        "c-06": 0.25,
+        "d-01": 0.25,
+        "d-02": 0.25,
+        "d-03": 0.25,
+        "d-04": 0.25,
+        "d-05": 0.25,
+        "d-06": 0.25,
+        "w-01": 0.25,
+        "w-02": 0.25,
+        "w-03": 0.25,
+        "w-04": 0.25,
+        "w-05": 0.25,
+        "w-06": 0.25
+      },
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      }
+    }
+  },
+  "schema_version": 1,
+  "scope": "deterministic-landscape-oracle-fixtures-no-measured-evidence"
+}
