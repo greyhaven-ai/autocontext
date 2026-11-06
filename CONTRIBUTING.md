@@ -195,6 +195,9 @@ losses and nulls. Keep nested repeats within task instances, preserve the joint
 gate and all failure reservations, and verify replay without dispatch or writes.
 GPU execution and TypeScript parity remain deferred.
 
+The [CPU search robustness campaign](examples/weight_evolution/cpu_search_robustness/README.md) varies existing option objects without regenerating ordinal-dependent tensors. Pin all 90 legal orders and offline budgets before executing the 45-search/15-reference panel. Verify random order invariance with stable identities, exact budget prefixes, full-budget zero regret and neutral controls; do not require an aggregate adaptive win. Keep variants nested within six base tasks, require all searches to publish before references, and retain partial attempts without retry or refund. GPU execution and TypeScript parity remain deferred.
+
+
 TypeScript:
 
 ```bash

@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- CPU search robustness pins all 90 legal weight-option orders and budgets 1, 3
+  and 6 across six unchanged task instances. An independent oracle covers 6,480
+  trajectories; a separate 45-search/15-reference measured panel checks order
+  invariance, budget prefixes, full-budget zero regret, neutral anchors and
+  process cleanup. CPU-only acceptance preserves partial evidence, full failure
+  reservations and guarded replay. GPU/Qwen reproduction, TypeScript parity
+  and promotion remain deferred.
+
 - Budget-limited CPU search landscapes pin informative, misleading and neutral
   weight-search controls across six structural task instances. Thirty-six
   measured searches and twelve exhaustive practice references preserve equal

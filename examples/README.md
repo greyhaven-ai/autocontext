@@ -96,6 +96,9 @@ These are copy-paste starting points for people evaluating the repo, integrating
   [capability-validated Prime plan](../docs/campaign-scheduler.md#prime-accelerator-plans);
   accelerator type/count, image, region, and telemetry must be declared and
   are never silently downgraded to CPU.
+  [CPU search robustness](weight_evolution/cpu_search_robustness/README.md) varies ordering
+  and budget on unchanged tasks, with 6,480 offline trajectories and a separate
+  45-search/15-reference measured CPU panel. GPU execution remains deferred.
 
 ## Scoped Policy Candidates
 

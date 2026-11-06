@@ -154,6 +154,9 @@ References cannot guide selection, and prefix curves add no worker calls.
 Context/decoding are neutral anchors and the unchanged joint gate vetoes audit.
 Failed and uncertain work remains charged; GPU execution remains deferred.
 
+The [CPU search robustness campaign](../../examples/weight_evolution/cpu_search_robustness/README.md) freezes six base tasks, 90 legal weight-option orders and three offline budgets before dispatch. Measured execution covers 45 searches and 15 practice references with equal budgets within each cell. Never use oracle or reference results for selection, count variants as independent samples, or treat offline predictions as measured evidence. Preserve all reservations and guarded replay; GPU execution remains deferred.
+
+
 The [controlled CPU transfer experiments](../../examples/weight_evolution/cpu_controls/README.md)
 use a new task/campaign adapter with analytically specified weight controls.
 The builder creates deterministic cohorts and neutral candidate identities
