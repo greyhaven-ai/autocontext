@@ -27,6 +27,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Measured CPU search and reference adapters with pinned operation outcomes](../examples/weight_evolution/cpu_execution/README.md)
 - [Full measured CPU pilot with Linux/amd64 acceptance and retained partial evidence](../examples/weight_evolution/cpu_pilot/README.md)
 - [Budget-limited CPU search landscapes with pinned wins, losses and neutral controls](../examples/weight_evolution/cpu_search_landscapes/README.md)
+- [CPU search robustness to candidate ordering and budget](../examples/weight_evolution/cpu_search_robustness/README.md)
 - [Generated CPU joint controls with an independent oracle and measured audit acceptance](../examples/weight_evolution/cpu_joint_controls/README.md)
 
 ## Using The Packages

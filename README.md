@@ -48,6 +48,9 @@ The [full measured CPU pilot](examples/weight_evolution/cpu_pilot/README.md) dec
 
 The [budget-limited CPU search landscapes](examples/weight_evolution/cpu_search_landscapes/README.md) pin informative, misleading and neutral weight-search tasks with independent oracle expectations. Thirty-six equal-budget searches and twelve practice-only references measure expected wins, losses and ties, practice progress and resource usage. Context and decoding are neutral controls; the unchanged joint gate withholds audit. GPU execution remains deferred.
 
+The [CPU search robustness campaign](examples/weight_evolution/cpu_search_robustness/README.md) preserves those six tasks while varying candidate order and search budget. An exhaustive offline oracle covers 6,480 trajectories; 45 measured CPU searches and 15 practice references test order invariance, full-budget coverage and history prefixes. Variants remain nested within base tasks, and GPU execution remains deferred.
+
+
 The [generated CPU joint controls](examples/weight_evolution/cpu_joint_controls/README.md) pin positive, correct-baseline and practice-only repair tasks with an independent deterministic oracle. Eighteen equal-budget searches and six conditional practice references test component gains, the unchanged joint gate and actual audit routing. These constructed, seed-conditional controls do not establish adaptive superiority or benchmark gains; GPU execution remains deferred.
 
 ## Install

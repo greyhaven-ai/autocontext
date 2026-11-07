@@ -98,6 +98,9 @@ wins, losses and ties; progress curves use retained practice history only.
 Context and decoding remain neutral, and the existing joint gate withholds audit.
 GPU execution and promotion remain deferred.
 
+The [CPU search robustness campaign](../examples/weight_evolution/cpu_search_robustness/README.md) varies declaration order and budget while preserving the six landscape tasks. Its independent offline oracle covers 6,480 trajectories; 45 measured searches and 15 references verify ordering, budget prefixes, zero full-budget regret and cleanup. Earlier modules and gates remain unchanged. GPU execution remains deferred.
+
+
 Generation output that changes prompts or harness behavior is staged as an
 immutable `ContextBundle`. It becomes active only after matched screening,
 adaptive confirmation, and held-out evaluation; a successful strategy gate by

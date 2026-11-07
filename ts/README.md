@@ -71,6 +71,9 @@ search/reference adapters. The 36-search/twelve-reference calibration adds no
 TypeScript runtime surface. TypeScript parity, GPU execution and promotion
 remain deferred.
 
+The [CPU search robustness campaign](../examples/weight_evolution/cpu_search_robustness/README.md) adds a Python-only pinned ordering/budget experiment with 6,480 offline trajectories, 45 CPU searches and 15 references. TypeScript parity is deferred until the CPU experiment stabilizes; GPU execution remains deferred.
+
+
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
 Python control plane. It validates the same shared fixtures and can be used by

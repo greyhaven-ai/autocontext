@@ -1,0 +1,2811 @@
+{
+  "full_oracle_digest": "5db646344804f2202ee0bb1a79f5b7b94110ebcc092c5a0b8a806ed2a9db948a",
+  "offline": {
+    "base_task_count": 6,
+    "budgets": [
+      1,
+      3,
+      6
+    ],
+    "full_offline_digest": "abc2c19702522782d9b634cc6bfc791433f268ac0098bd914cc63d912d3bbfb7",
+    "inference_seed": 0,
+    "invariants": {
+      "all_passed": true,
+      "budget_prefixes": true,
+      "full_budget_zero_regret": true,
+      "neutral_null": true,
+      "random_order_invariant": true,
+      "score_tables_invariant": true
+    },
+    "order_count": 90,
+    "policy_seeds": [
+      {
+        "order_seed": 0,
+        "policy": "adaptive-v1"
+      },
+      {
+        "order_seed": 0,
+        "policy": "fixed-order-v1"
+      },
+      {
+        "order_seed": 0,
+        "policy": "seeded-random-v1"
+      },
+      {
+        "order_seed": 1,
+        "policy": "seeded-random-v1"
+      }
+    ],
+    "sampling_unit": "base-task-instance",
+    "tasks": [
+      {
+        "base_task_id": "task-01",
+        "declared_order_indices": {
+          "canonical": 41,
+          "reverse-lanes": 69
+        },
+        "family": "informative-improvement-v1",
+        "full_task_digest": "16c1cf8480d9262cf3aa79a0af4a131b14240fa4cc89521209c0d9d6c6b0cf62",
+        "score_correct": {
+          "A": 4,
+          "w-01": 4,
+          "w-02": 6,
+          "w-03": 6,
+          "w-04": 6,
+          "w-05": 8,
+          "w-06": 4
+        }
+      },
+      {
+        "base_task_id": "task-02",
+        "declared_order_indices": {
+          "canonical": 84,
+          "reverse-lanes": 8
+        },
+        "family": "informative-improvement-v1",
+        "full_task_digest": "7615be4208c3b390faaa49d08a3134f3f694e22cdaba26dad24412f52eaf59f5",
+        "score_correct": {
+          "A": 2,
+          "w-01": 8,
+          "w-02": 4,
+          "w-03": 2,
+          "w-04": 4,
+          "w-05": 4,
+          "w-06": 2
+        }
+      },
+      {
+        "base_task_id": "task-03",
+        "declared_order_indices": {
+          "canonical": 26,
+          "reverse-lanes": 52
+        },
+        "family": "misleading-improvement-v1",
+        "full_task_digest": "aaf952306899645a4f4d5e1be136acc5fcf96f9403f7b904b518471644f823f4",
+        "score_correct": {
+          "A": 4,
+          "w-01": 6,
+          "w-02": 4,
+          "w-03": 6,
+          "w-04": 8,
+          "w-05": 8,
+          "w-06": 4
+        }
+      },
+      {
+        "base_task_id": "task-04",
+        "declared_order_indices": {
+          "canonical": 51,
+          "reverse-lanes": 22
+        },
+        "family": "misleading-improvement-v1",
+        "full_task_digest": "9c11c46b7eb85b7c8da15ae37a23ed68600083c4b7de85bd603ced257de1407f",
+        "score_correct": {
+          "A": 2,
+          "w-01": 8,
+          "w-02": 8,
+          "w-03": 4,
+          "w-04": 4,
+          "w-05": 2,
+          "w-06": 2
+        }
+      },
+      {
+        "base_task_id": "task-05",
+        "declared_order_indices": {
+          "canonical": 8,
+          "reverse-lanes": 76
+        },
+        "family": "neutral-v1",
+        "full_task_digest": "e290ceca8211baa465c612d2983ca397f395c8061391dad1783d88914580e22b",
+        "score_correct": {
+          "A": 4,
+          "w-01": 4,
+          "w-02": 4,
+          "w-03": 4,
+          "w-04": 4,
+          "w-05": 4,
+          "w-06": 4
+        }
+      },
+      {
+        "base_task_id": "task-06",
+        "declared_order_indices": {
+          "canonical": 21,
+          "reverse-lanes": 52
+        },
+        "family": "neutral-v1",
+        "full_task_digest": "2b20043a60996801dd0376ba9f2055b9d35805659f251c552fa17c3ea2b6b9da",
+        "score_correct": {
+          "A": 2,
+          "w-01": 2,
+          "w-02": 2,
+          "w-03": 2,
+          "w-04": 2,
+          "w-05": 2,
+          "w-06": 2
+        }
+      }
+    ],
+    "trajectory_count": 6480
+  },
+  "runs": {
+    "task-01.canonical.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "c3ea9174373f8a10e3b4203b25d4c5ed75cc65d28ecf193b85b2eed077ffa4b9",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-01.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        }
+      ]
+    },
+    "task-01.canonical.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "45f387074a58c0b65f9b2057a78d5430dd0367b01e006820c145215984b143a4",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 6,
+        "D": 4,
+        "W": 6
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-03"
+      },
+      "task_id": "task-01.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        }
+      ]
+    },
+    "task-01.canonical.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "3e91fbb81e0ab9d7fb62d7a99db638907b7d3a0cffa257a84e3cf47c4725a10f",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 6,
+        "D": 4,
+        "W": 6
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-02"
+      },
+      "task_id": "task-01.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-01.canonical.r6.repeat-01.adaptive-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "9eac207df4526cd735624ef1cfb3ff31696533d77fa330cd26def7a5c6431d3e",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-01.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        }
+      ]
+    },
+    "task-01.canonical.r6.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "09ee23297705750fc3e74d86ba7dfe089c275595611ca9a264cbbcd2f38e9394",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-01.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        }
+      ]
+    },
+    "task-01.canonical.r6.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "7403d0cc12a01ddf86faaeb4e58596107a56850a77dc6a9be9b161d5b26734f1",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-01.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        }
+      ]
+    },
+    "task-01.reverse-lanes.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "d6bd8e0a022eb6c56d62a4dc17dbef396ff164e3fe27834d142d40e6b990f4a7",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 6,
+        "D": 4,
+        "W": 6
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-02"
+      },
+      "task_id": "task-01.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-01.reverse-lanes.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "eb97107852c33abf6a5e95756d72127f217236847b76b13d635bd8399dabc5e0",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 6,
+        "D": 4,
+        "W": 6
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-02"
+      },
+      "task_id": "task-01.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        }
+      ]
+    },
+    "task-01.reverse-lanes.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-01",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "d6dc10c42b2229e6f9a36651d698cc730aa56d01c87c4b9a366239b9b45c0182",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 6,
+        "D": 4,
+        "W": 6
+      },
+      "reference_digest": "58e4b0e90d9c49151bca3f74276b019805e8798cd51abf7bd62ed46b1921e410",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-02"
+      },
+      "task_id": "task-01.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-02.canonical.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-02",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "10747deaf8c0859b27d50a69f41b300b3864314d90955363d76400c0dff3cf10",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 8,
+        "D": 2,
+        "W": 8
+      },
+      "reference_digest": "c8094eaf6b07ecdf630f895cc92ac1754f2ad65a8019ef875811bf1688d5af37",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-02.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-02.canonical.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-02",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "b06f939615d4849b42d5ab7def81ea13ef4abc31a7fea04ac3856264919292d3",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 4,
+        "D": 2,
+        "W": 4
+      },
+      "reference_digest": "c8094eaf6b07ecdf630f895cc92ac1754f2ad65a8019ef875811bf1688d5af37",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-02.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-03",
+          "total": 8
+        }
+      ]
+    },
+    "task-02.canonical.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-02",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "26f24caa7977d56e10a35ca0f2f065c746c015c5b240a568abe4034b203e617b",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 8,
+        "D": 2,
+        "W": 8
+      },
+      "reference_digest": "c8094eaf6b07ecdf630f895cc92ac1754f2ad65a8019ef875811bf1688d5af37",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-02.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-02.reverse-lanes.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-02",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "7ee773349f65ff459924e4657a6df36c4df8cc9df3bb12766c81d86f8f6f4cbd",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 4,
+        "D": 2,
+        "W": 4
+      },
+      "reference_digest": "c8094eaf6b07ecdf630f895cc92ac1754f2ad65a8019ef875811bf1688d5af37",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-04"
+      },
+      "task_id": "task-02.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        }
+      ]
+    },
+    "task-02.reverse-lanes.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-02",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "7e3a6dd6e75f4a89d0f89ccf92c65c30380192ad2865317c2b56dd9b5ec44313",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 4,
+        "D": 2,
+        "W": 4
+      },
+      "reference_digest": "c8094eaf6b07ecdf630f895cc92ac1754f2ad65a8019ef875811bf1688d5af37",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-04"
+      },
+      "task_id": "task-02.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        }
+      ]
+    },
+    "task-02.reverse-lanes.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-02",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "informative-improvement-v1",
+      "full_run_digest": "1ce6484a33d69df085bf335d32742bbdcaf6a090c138694b5dabdd540ce4c218",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 8,
+        "D": 2,
+        "W": 8
+      },
+      "reference_digest": "c8094eaf6b07ecdf630f895cc92ac1754f2ad65a8019ef875811bf1688d5af37",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-02.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.canonical.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "1a7f4f241117e8c3eea13674467880c31d1e0edf15e400e34a7e79ba517edd47",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 6,
+        "D": 4,
+        "W": 6
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-03.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.canonical.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "4473179ef4e3943ef320c8ce6f77d306ba7e05240fd707157a9a7708f34dce2a",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-03.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.canonical.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "5cdf390bf2e7af398f8549ed73ef760632d6f6001b7eb188dcd02dbbd18526d4",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-04"
+      },
+      "task_id": "task-03.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.canonical.r6.repeat-01.adaptive-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "13628a79e14d1823913b51854ebb940cc63fec444d22b3b7d75c2c00154ab657",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-03.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.canonical.r6.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "70c637b7d6189a38fc7b1137266ca270874198177943504d0484b184d10faca7",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-03.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.canonical.r6.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "efcd77ba8ff15b50a58399097b71adb781b41f6d011c8286f59b4495f74eb752",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-04"
+      },
+      "task_id": "task-03.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.reverse-lanes.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "cb55d17bde49f5e03634c1837e8f96cc2e3e9d0ab6767aa8587e3fa9662aa1ff",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-03.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.reverse-lanes.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "8dd9878d81046b5c7da95e0462846c98be202cb0ce7428cc556a13ca40a39044",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-05"
+      },
+      "task_id": "task-03.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-01",
+          "total": 8
+        }
+      ]
+    },
+    "task-03.reverse-lanes.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-03",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "e54ac70585a4a9428fefc4127b881adbe3dd09c818b2886c969882028889767f",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 8,
+        "D": 4,
+        "W": 8
+      },
+      "reference_digest": "742d4026473fd7120509a5efeff75168d528356f2c2c555eaa9d8651c3aafcd8",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-04"
+      },
+      "task_id": "task-03.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 6,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-04.canonical.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-04",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "a3cfa36ebd5d17a73f6f3dbd36a51e785ee96c5cb9bf8c2f542ce64ffcf4d35c",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 4,
+        "D": 2,
+        "W": 4
+      },
+      "reference_digest": "d3d7f9ca63a91b5c89b505a3c75169617ff606a5fdca1dabe5cf5c8bc7bc1140",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-03"
+      },
+      "task_id": "task-04.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-05",
+          "total": 8
+        }
+      ]
+    },
+    "task-04.canonical.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-04",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "f208e5334740b3682000dfc8e0d08a741752f4cd12190d1f57d447f2be2bfe2e",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 8,
+        "D": 2,
+        "W": 8
+      },
+      "reference_digest": "d3d7f9ca63a91b5c89b505a3c75169617ff606a5fdca1dabe5cf5c8bc7bc1140",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-04.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-01",
+          "total": 8
+        }
+      ]
+    },
+    "task-04.canonical.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-04",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "8eedbf263845514ea155cbb8eb1379e4646355c810718ab594b5acf452d704fe",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 8,
+        "D": 2,
+        "W": 8
+      },
+      "reference_digest": "d3d7f9ca63a91b5c89b505a3c75169617ff606a5fdca1dabe5cf5c8bc7bc1140",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-04.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-04.reverse-lanes.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-04",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "3845453b173fdd321327aa136bad9fbfaa00a2d1276687946ebd511a6eba5b25",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 8,
+        "D": 2,
+        "W": 8
+      },
+      "reference_digest": "d3d7f9ca63a91b5c89b505a3c75169617ff606a5fdca1dabe5cf5c8bc7bc1140",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-04.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-05",
+          "total": 8
+        }
+      ]
+    },
+    "task-04.reverse-lanes.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-04",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "87f34aa7c523d84f0fb442428f4b645ef4fe9251621b881f54593d1c6014c945",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 8,
+        "D": 2,
+        "W": 8
+      },
+      "reference_digest": "d3d7f9ca63a91b5c89b505a3c75169617ff606a5fdca1dabe5cf5c8bc7bc1140",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-04.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-03",
+          "total": 8
+        }
+      ]
+    },
+    "task-04.reverse-lanes.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-04",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": true
+        },
+        "status": "vetoed"
+      },
+      "family": "misleading-improvement-v1",
+      "full_run_digest": "9a590c6db99fe971be6e48653d68f3fc8705213e62189668e45cf9f821c6bbf0",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 8,
+        "D": 2,
+        "W": 8
+      },
+      "reference_digest": "d3d7f9ca63a91b5c89b505a3c75169617ff606a5fdca1dabe5cf5c8bc7bc1140",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": "w-01"
+      },
+      "task_id": "task-04.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 8,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.canonical.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "7cd5b637218b959429a9a1c5e804fcae11ebdc2b4a6e48208b30031256747648",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.canonical.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "ceb196d4a9bd55f7446d74783c498abd56bebabb0b2b75589849aed56a66f9d6",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.canonical.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "b14ce8ef621095c10488f69e991862893cdd9ff64ae778c4e9c556e696a4f1da",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.canonical.r6.repeat-01.adaptive-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "f0395fcef14dc05ea0c1f69a6c2f782d56a01808b43b77f37225fb546c90f4c1",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.canonical.r6.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "be337c4851156576d8ecfd8629226855ce3fd65ead063e849fd402b0a93f2165",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.canonical.r6.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "346f1fbd26480b9fed1059c88464ec50d993cc9516e69df717cb9b37c4ccc977",
+      "instance_index": 1,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "full-budget",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 6,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.canonical.r6",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-06",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.reverse-lanes.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "332d2379fcae853b788d559ef059ef6b80803530c0b4412902eebd9fe442054b",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.reverse-lanes.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "ec2e3a9af94aaadee31f3e7f55039a1cf2e590a377d2e07961bec56a3fab681b",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-05",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        }
+      ]
+    },
+    "task-05.reverse-lanes.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-05",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "4d13abfb3b6c77b06b034d674630b62dbd8f6df7840ff815d18bd6e8378db345",
+      "instance_index": 1,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 4,
+        "C": 4,
+        "CW": 4,
+        "D": 4,
+        "W": 4
+      },
+      "reference_digest": "0e668a8bf71f6758cebddb1e8dbfef8182310bbb14cfa6cdc1410b773291aa25",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-05.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 4,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 4,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-06.canonical.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-06",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "4ae851f665f80a506b94fff0f91b83cf191fbdea582c747d55d21473a6c1e68c",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 2,
+        "D": 2,
+        "W": 2
+      },
+      "reference_digest": "ef7994b2093a9b4f6ab57cf3545de1f119cd36712f21e2c65ce6dc990d2c8d95",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-06.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-03",
+          "total": 8
+        }
+      ]
+    },
+    "task-06.canonical.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-06",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "377e9990480355dd7fab282b4f2e3c6ece2029b97570c8ae834c1b40550d94f4",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 2,
+        "D": 2,
+        "W": 2
+      },
+      "reference_digest": "ef7994b2093a9b4f6ab57cf3545de1f119cd36712f21e2c65ce6dc990d2c8d95",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-06.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-03",
+          "total": 8
+        }
+      ]
+    },
+    "task-06.canonical.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-06",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "f61d1fe1d5c9e97d234f16d7824cda18e6d44a0f18701b5de175f2034ffe9c61",
+      "instance_index": 2,
+      "order_id": "canonical",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 2,
+        "D": 2,
+        "W": 2
+      },
+      "reference_digest": "ef7994b2093a9b4f6ab57cf3545de1f119cd36712f21e2c65ce6dc990d2c8d95",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-06.canonical.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    },
+    "task-06.reverse-lanes.r3.repeat-01.adaptive-v1": {
+      "base_task_id": "task-06",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "a45022077a8e7620943c11a2e63a8c6b77399accd40e927b29db25a3fe069f1a",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "adaptive-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 2,
+        "D": 2,
+        "W": 2
+      },
+      "reference_digest": "ef7994b2093a9b4f6ab57cf3545de1f119cd36712f21e2c65ce6dc990d2c8d95",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-06.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-02",
+          "total": 8
+        }
+      ]
+    },
+    "task-06.reverse-lanes.r3.repeat-01.fixed-order-v1": {
+      "base_task_id": "task-06",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "574c2798f0c7a4ef60779e76f607415dd539893f5ec852d8615368e8e5ee836a",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "fixed-order-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 2,
+        "D": 2,
+        "W": 2
+      },
+      "reference_digest": "ef7994b2093a9b4f6ab57cf3545de1f119cd36712f21e2c65ce6dc990d2c8d95",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-06.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-03",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-06",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-02",
+          "total": 8
+        }
+      ]
+    },
+    "task-06.reverse-lanes.r3.repeat-01.seeded-random-v1": {
+      "base_task_id": "task-06",
+      "confirmation": {
+        "minimum_gain": 0.1,
+        "outcomes": {
+          "C": false,
+          "D": false,
+          "W": false
+        },
+        "status": "vetoed"
+      },
+      "family": "neutral-v1",
+      "full_run_digest": "533dcdb144df7826e81fa3fa42aa54a1707189dca7699e1788c9d0da4e7cd8cf",
+      "instance_index": 2,
+      "order_id": "reverse-lanes",
+      "order_seed": 0,
+      "panel": "order-comparison",
+      "policy": "seeded-random-v1",
+      "practice_correct": {
+        "A": 2,
+        "C": 2,
+        "CW": 2,
+        "D": 2,
+        "W": 2
+      },
+      "reference_digest": "ef7994b2093a9b4f6ab57cf3545de1f119cd36712f21e2c65ce6dc990d2c8d95",
+      "rounds": 3,
+      "selected_options": {
+        "C": null,
+        "D": null,
+        "W": null
+      },
+      "task_id": "task-06.reverse-lanes.r3",
+      "weight_history": [
+        {
+          "correct": 2,
+          "option_id": null,
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-01",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-02",
+          "total": 8
+        },
+        {
+          "correct": 2,
+          "option_id": "w-04",
+          "total": 8
+        }
+      ]
+    }
+  },
+  "schema_version": 1,
+  "scope": "construction-expectations-not-measured-evidence"
+}
